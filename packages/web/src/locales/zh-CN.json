@@ -586,9 +586,7 @@
     "noTutorials": "还没有题解",
     "problemsRoot": "题目导入到",
     "deleteTitle": "删除比赛 {name}？",
-    "deleted": "比赛已删除",
-    "printPaper": "打印",
-    "exportPdf": "导出 PDF"
+    "deleted": "比赛已删除"
   },
   "testsets": {
     "title": "测试集与子任务",

@@ -4,14 +4,13 @@ import type { FastifyInstance } from 'fastify';
 import { CONTEST_ACTIONS, type ContestBatchRequest, type ContestImportRequest, type CreateContestRequest, type UpdateContestRequest } from '@polyforge/shared';
 import type { JobManager } from '../jobs.js';
 import { contestExportDir, contestStatements, importContest, runContestBatch, type ContestDeps } from '../judge/contest.js';
-import { printToPdf } from '../pdf.js';
 import { HttpError } from '../util/fs.js';
 import type { WsHub } from '../ws.js';
 
 /** Contest jobs use `contest:<id>` as their owner so the contest page can find them. */
 export const contestJobOwner = (id: string) => `contest:${id}`;
 
-export function contestRoutes(app: FastifyInstance, deps: ContestDeps, jobs: JobManager, hub: WsHub, token: string) {
+export function contestRoutes(app: FastifyInstance, deps: ContestDeps, jobs: JobManager, hub: WsHub) {
   const { contests, judge } = deps;
   type P = { Params: { id: string } };
 
@@ -35,20 +34,6 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps, jobs: Job
     await contests.remove(req.params.id);
     hub.broadcast({ type: 'contests:changed' });
     return { ok: true };
-  });
-
-  /** The print page (statements or tutorials) as a PDF, rendered by a headless Edge / Chrome. */
-  app.get<P & { Querystring: { lang?: string; doc?: string } }>('/api/contests/:id/pdf', async (req, reply) => {
-    const ref = await contests.get(req.params.id);
-    const lang = /^[a-z]{2,8}$/.test(req.query.lang ?? '') ? req.query.lang! : 'zh';
-    const doc = req.query.doc === 'tutorials' ? 'tutorials' : 'statements';
-    // The page is served where the UI is (the Vite dev server in development).
-    const referer = req.headers.referer ? new URL(req.headers.referer).origin : null;
-    const origin = referer && /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(referer) ? referer : `http://${req.headers.host}`;
-    const url = `${origin}/c/${encodeURIComponent(ref.id)}/print?doc=${doc}&lang=${lang}&token=${encodeURIComponent(token)}`;
-    const pdf = await printToPdf(url);
-    const file = `${ref.id}-${doc}-${lang}.pdf`;
-    return reply.type('application/pdf').header('content-disposition', `attachment; filename="${file}"`).send(pdf);
   });
 
   app.get<P & { Querystring: { lang?: string } }>('/api/contests/:id/statements', async (req) => {

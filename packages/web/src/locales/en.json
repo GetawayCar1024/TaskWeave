@@ -586,9 +586,7 @@
     "noTutorials": "No tutorials yet",
     "problemsRoot": "Import problems to",
     "deleteTitle": "Delete contest {name}?",
-    "deleted": "Contest deleted",
-    "printPaper": "Print",
-    "exportPdf": "Export PDF"
+    "deleted": "Contest deleted"
   },
   "testsets": {
     "title": "Testsets and groups",

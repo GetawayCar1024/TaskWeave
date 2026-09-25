@@ -236,7 +236,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   judgeRoutes(app, deps.judge, deps.jobs);
   const sync = new PolygonSync(deps.judge);
   polygonRoutes(app, deps.judge, sync, deps.jobs, hub);
-  contestRoutes(app, { judge: deps.judge, contests: deps.contests, sync }, deps.jobs, hub, token);
+  contestRoutes(app, { judge: deps.judge, contests: deps.contests, sync }, deps.jobs, hub);
   aiRoutes(app, global, new AgentService(deps.judge, hub));
 
   app.post<{ Params: { id: string }; Body: MoveFileRequest }>('/api/problems/:id/move', async (req) => {

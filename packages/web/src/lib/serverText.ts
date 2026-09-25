@@ -100,7 +100,6 @@ const RULES: Rule[] = [
         .join('；')}`,
   ],
 
-  [/^No Edge or Chrome found for PDF export \(set POLYFORGE_BROWSER to its path\)$/, () => '没有找到可用于导出 PDF 的 Edge 或 Chrome（可以用环境变量 POLYFORGE_BROWSER 指定其路径）'],
   [/^Folder already exists: (.+)$/, (m) => `文件夹已存在：${m[1]}`],
   [/^Name must be lowercase letters, digits and dashes$/, () => '名称只能包含小写字母、数字和连字符'],
   [/^Invalid problem index: (.*)$/, (m) => `题号无效：${m[1]}（应为大写字母开头，最多 4 位，如 A、B、C1）`],
