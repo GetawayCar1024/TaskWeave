@@ -608,7 +608,12 @@
     "problemsRoot": "Import problems to",
     "deleteTitle": "Delete contest {name}?",
     "deleted": "Contest deleted",
-    "export": "Export"
+    "export": "Export",
+    "toc": "Contents page",
+    "tocIndex": "#",
+    "tocTitle": "Problem",
+    "tocTime": "Time limit",
+    "tocMemory": "Memory limit"
   },
   "testsets": {
     "title": "Testsets and groups",

@@ -32,6 +32,9 @@ const lang = ref((typeof route.query.lang === 'string' && route.query.lang) || l
 const doc = ref<'statements' | 'tutorials'>(route.query.doc === 'tutorials' ? 'tutorials' : 'statements');
 watch(doc, (d) => router.replace({ query: { ...route.query, doc: d === 'tutorials' ? d : undefined } }));
 const pageBreaks = ref(true);
+/** Contents page: contest title and the list of problems, before the first problem. */
+const withToc = ref(localStorage.getItem('polyforge-print-toc') !== '0');
+watch(withToc, (v) => localStorage.setItem('polyforge-print-toc', v ? '1' : '0'));
 
 const langs = computed(() => {
   const set = new Set<string>();
@@ -86,7 +89,7 @@ const baseName = () => `${detail.value?.summary.name ?? props.id}-${doc.value}-$
 async function onExport(key: string) {
   exporting.value = true;
   try {
-    if (key === 'tex') await api.contestTex(props.id, lang.value, doc.value, pageBreaks.value);
+    if (key === 'tex') await api.contestTex(props.id, lang.value, doc.value, pageBreaks.value, withToc.value);
     else if (key === 'pdf') print();
     else await exportHtml();
   } catch (e) {
@@ -208,6 +211,7 @@ onBeforeUnmount(() => {
         <n-radio-button value="statements">{{ t('contest.docStatements') }}</n-radio-button>
         <n-radio-button value="tutorials">{{ t('contest.docTutorials') }}</n-radio-button>
       </n-radio-group>
+      <label class="opt"><n-switch v-model:value="withToc" size="small" /> {{ t('contest.toc') }}</label>
       <label class="opt"><n-switch v-model:value="pageBreaks" size="small" /> {{ t('contest.pageBreaks') }}</label>
       <n-tag v-if="doc === 'statements' && problemsMissing.length" size="small" type="error" :bordered="false">{{ t('contest.noStatementIn', { lang, list: problemsMissing.join(', ') }) }}</n-tag>
       <n-tag v-if="doc === 'tutorials' && tutorialsMissing.length" size="small" type="warning" :bordered="false">
@@ -222,8 +226,32 @@ onBeforeUnmount(() => {
 
     <div v-if="loading && !statements.length" class="center no-print"><n-spin /></div>
     <n-alert v-else-if="!statements.length" type="info" :show-icon="false" class="no-print empty">{{ t('contest.noProblems') }}</n-alert>
-    <div v-else class="sheet" :class="{ breaks: pageBreaks }">
+    <div v-else class="sheet" :class="{ breaks: pageBreaks, 'with-toc': withToc }">
       <h1 class="contest-title">{{ docTitle }}</h1>
+      <section v-if="withToc && shown.length" class="toc">
+        <table>
+          <thead>
+            <tr>
+              <th class="idx">{{ t('contest.tocIndex') }}</th>
+              <th>{{ t('contest.tocTitle') }}</th>
+              <template v-if="doc === 'statements'">
+                <th class="num">{{ t('contest.tocTime') }}</th>
+                <th class="num">{{ t('contest.tocMemory') }}</th>
+              </template>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in shown" :key="r.s.index">
+              <td class="idx">{{ r.s.index }}</td>
+              <td>{{ r.s.title }}</td>
+              <template v-if="doc === 'statements'">
+                <td class="num">{{ r.s.timeLimit / 1000 }} {{ lang === 'zh' ? '秒' : 's' }}</td>
+                <td class="num">{{ r.s.memoryLimit }} MB</td>
+              </template>
+            </tr>
+          </tbody>
+        </table>
+      </section>
       <div v-if="!shown.length" class="nothing">{{ doc === 'tutorials' ? t('contest.noTutorials') : t('contest.noProblems') }}</div>
       <section v-for="r in shown" :key="r.s.index" class="problem">
         <statement-doc
@@ -294,6 +322,41 @@ onBeforeUnmount(() => {
   --pf-sample-bg: rgb(239, 239, 239);
   --pf-line-even: rgb(224, 224, 224);
 }
+/* Contents page: title and the problem table, then the problems from the next page on. */
+.toc {
+  margin: 8px auto 32px;
+  max-width: 560px;
+  font-family: Verdana, 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  font-size: 14px;
+}
+.toc table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.toc th,
+.toc td {
+  border-bottom: 1px solid #bbb;
+  padding: 6px 10px;
+  text-align: left;
+}
+.toc th {
+  font-family: Arial, 'Microsoft YaHei', sans-serif;
+  border-bottom: 2px solid #888;
+}
+.toc .idx {
+  width: 3em;
+  font-weight: bold;
+  white-space: nowrap;
+}
+.toc .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.with-toc .toc + .problem {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px dashed #bbb;
+}
 .contest-title {
   text-align: center;
   font-family: Arial, 'Microsoft YaHei', 'PingFang SC', sans-serif;
@@ -324,6 +387,15 @@ onBeforeUnmount(() => {
     padding: 0;
     width: auto;
     min-height: 0;
+  }
+  .with-toc .toc {
+    break-after: page;
+    margin-top: 0;
+  }
+  .with-toc .toc + .problem {
+    border-top: none;
+    margin-top: 0;
+    padding-top: 0;
   }
   .breaks .problem + .problem {
     break-before: page;

@@ -38,11 +38,11 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps, jobs: Job
   });
 
   /** Statements or tutorials as a self-contained .tex (a .zip when there are images). */
-  app.get<P & { Querystring: { lang?: string; doc?: string; breaks?: string } }>('/api/contests/:id/tex', async (req, reply) => {
+  app.get<P & { Querystring: { lang?: string; doc?: string; breaks?: string; toc?: string } }>('/api/contests/:id/tex', async (req, reply) => {
     const ref = await contests.get(req.params.id);
     const lang = /^[a-z]{2,8}$/.test(req.query.lang ?? '') ? req.query.lang! : 'zh';
     const doc = req.query.doc === 'tutorials' ? 'tutorials' : 'statements';
-    const r = await contestTex(judge, contests, ref.id, lang, doc, req.query.breaks !== '0');
+    const r = await contestTex(judge, contests, ref.id, lang, doc, req.query.breaks !== '0', req.query.toc !== '0');
     const file = `${ref.id}-${doc}-${lang}.${r.ext}`;
     return reply
       .type(r.ext === 'zip' ? 'application/zip' : 'application/x-tex; charset=utf-8')

@@ -27,6 +27,7 @@ export async function contestTex(
   lang: string,
   doc: 'statements' | 'tutorials',
   pageBreaks: boolean,
+  toc = true,
 ): Promise<{ data: Buffer; ext: 'tex' | 'zip' }> {
   const { ref, config } = await contests.config(contestId);
   const statements = await contestStatements(judge, contests, contestId, lang);
@@ -57,6 +58,27 @@ export async function contestTex(
   const body: string[] = [];
   body.push(`\\begin{center}{\\LARGE ${esc(doc === 'tutorials' ? `${title} — ${h.tutorial}` : title)}}\\end{center}`, '');
   const shown = statements.filter((s) => (doc === 'tutorials' ? !!s.sections.tutorial : !!(s.sections.legend || s.sections.input || s.sections.output)));
+  if (toc && shown.length) {
+    // Contents page: the problems of this document, then the first problem on a new page.
+    const cols = doc === 'statements';
+    const th = zh ? ['题号', '题目', '时间限制', '空间限制'] : ['\\#', 'Problem', 'Time limit', 'Memory limit'];
+    body.push(
+      '\\begin{center}',
+      cols ? '\\begin{tabular}{llrr}' : '\\begin{tabular}{ll}',
+      '\\hline',
+      (cols ? th : th.slice(0, 2)).map((x) => `\\textbf{${x}}`).join(' & ') + ' \\\\ \\hline',
+      ...shown.map((s) => {
+        const cells = [`\\textbf{${esc(s.index)}}`, esc(s.title)];
+        if (cols) cells.push(zh ? `${s.timeLimit / 1000} 秒` : `${s.timeLimit / 1000} s`, `${s.memoryLimit} MB`);
+        return cells.join(' & ') + ' \\\\';
+      }),
+      '\\hline',
+      '\\end{tabular}',
+      '\\end{center}',
+      '\\newpage',
+      '',
+    );
+  }
   for (const [k, s] of shown.entries()) {
     if (k > 0) body.push(pageBreaks ? '\\newpage' : '\\bigskip\\hrule\\bigskip');
     const heading = `${s.index}. ${esc(s.title)}`;
