@@ -17,6 +17,8 @@ const props = defineProps<{
   note?: string;
   /** Tutorial mode: append "— Tutorial" to the title (off when the document title already says it). */
   tutorialSuffix?: boolean;
+  /** Show stdin / stdout too (exports); otherwise only file names are shown. */
+  allStreams?: boolean;
 }>();
 
 const HEADINGS: Record<string, Partial<Record<StatementSection | 'examples', string>>> = {
@@ -54,10 +56,8 @@ function hover(e: MouseEvent, on: boolean) {
         <div v-if="limits" class="limits">
           {{ zh() ? '时间限制' : 'time limit per test' }}: {{ limits.timeLimit / 1000 }} {{ zh() ? '秒' : limits.timeLimit === 1000 ? 'second' : 'seconds' }}<br />
           {{ zh() ? '空间限制' : 'memory limit per test' }}: {{ limits.memoryLimit }} {{ zh() ? 'MB' : 'megabytes' }}
-          <template v-if="limits.input !== undefined">
-            <br />{{ zh() ? '输入' : 'input' }}: {{ stream(limits.input, 'stdin') }}
-            <br />{{ zh() ? '输出' : 'output' }}: {{ stream(limits.output, 'stdout') }}
-          </template>
+          <template v-if="limits.input !== undefined && (allStreams || limits.input !== 'stdin')"><br />{{ zh() ? '输入' : 'input' }}: {{ stream(limits.input, 'stdin') }}</template>
+          <template v-if="limits.output !== undefined && (allStreams || limits.output !== 'stdout')"><br />{{ zh() ? '输出' : 'output' }}: {{ stream(limits.output, 'stdout') }}</template>
         </div>
       </div>
       <div v-if="sections.legend" class="section" v-html="sections.legend" />
