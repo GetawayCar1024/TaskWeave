@@ -17,7 +17,8 @@ monaco.languages.setMonarchTokensProvider('latex', {
       [/%.*$/, 'comment'],
       [/\$\$/, { token: 'string', next: '@displaymath' }],
       [/\$/, { token: 'string', next: '@math' }],
-      [/\\(begin|end)(\{)([^}]*)(\})/, ['keyword', 'delimiter', 'type', 'delimiter']],
+      // With groups, every character of the match must be in a group (backslash included).
+      [/(\\(?:begin|end))(\{)([^}]*)(\})/, ['keyword', 'delimiter', 'type', 'delimiter']],
       [/\\Def[A-Za-z]*/, 'type.identifier'],
       [/\\[A-Za-z@]+/, 'keyword'],
       [/\\./, 'keyword'],

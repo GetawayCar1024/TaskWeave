@@ -423,5 +423,16 @@ export function parseScript(src: string): ScriptCommand[] {
     if (words.length === 0) throw new ScriptError('missing generator name', line);
     cmds.push({ line, generator: words[0], args: words.slice(1), target: parseTarget(text.slice(gt + 1).trim(), line), text });
   });
+  // Polygon rejects a script with two identical commands (same generator and
+  // arguments): they would produce the same test. Vary an argument, e.g. a seed.
+  const seen = new Map<string, number>();
+  const dups: string[] = [];
+  for (const c of cmds) {
+    const key = [c.generator, ...c.args].join('\0');
+    const first = seen.get(key);
+    if (first === undefined) seen.set(key, c.line);
+    else dups.push(`line ${c.line} repeats line ${first}: ${[c.generator, ...c.args].join(' ')}`);
+  }
+  if (dups.length) throw new ScriptError(`duplicate commands (Polygon does not allow them; change an argument, e.g. a seed): ${dups.slice(0, 10).join('; ')}${dups.length > 10 ? ` (+${dups.length - 10} more)` : ''}`);
   return cmds;
 }

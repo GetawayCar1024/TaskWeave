@@ -54,8 +54,6 @@ pnpm release      # 打包成独立的 npm 包到 release/（无运行时依赖�
 | 换行 | 测试统一存为 LF（与 Polygon 一致）；编译 C/C++ 时总会加上 `-DFOR_LINUX`（即使 `languages.toml` 里没写），让 testlib 在 Windows 上也按 LF 校验 |
 | 缓存 | 编译产物、生成的测试、invocation 结果都在题目的 `.polyforge/`，可随时删除 |
 
-> testlib：内置的是原版 0.9.44（未修改）。用 GCC 15 编译时，0.9.44 的 `vtos()` 带 `__attribute__((const))`，会导致 checker 消息里的数字显示成 `0`（结论不受影响）。需要的话把 `~/.polyforge/shared/testlib.h` 换成上游 0.9.45 即可，编译缓存会自动失效。
-
 ## M3 包含
 
 - **设置 → Polygon**：填 API key / secret（只存在全局目录的 `secrets.toml`，接口返回时打码），“测试连接”。

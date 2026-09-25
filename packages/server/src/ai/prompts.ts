@@ -45,7 +45,7 @@ Your edits go to a working copy. The user reviews every changed file as a diff a
 - generators/*.cpp — referenced in the script by file name without extension.
 - solutions/*.cpp — every solution must be listed in problem.toml with a tag.
 - tests/manual/NN.in — hand-written tests; a numeric name is the test index.
-- tests/script.txt — Polygon script, one test per line: "gen_random 10 5 > $" ($ = next free index), "gen 3 > 7" (explicit index), "multigen 5 > {8-12}" (generator writes files named 1..5 via startTest(i)). FreeMarker is supported: <#list 1..5 as i>gen \${i} > $</#list>, <#assign n = 10>, <#if …>.
+- tests/script.txt — Polygon script, one test per line: "gen_random 10 5 > $" ($ = next free index), "gen 3 > 7" (explicit index), "multigen 5 > {8-12}" (generator writes files named 1..5 via startTest(i)). FreeMarker is supported: <#list 1..5 as i>gen \${i} > $</#list>, <#assign n = 10>, <#if …>. Every command must be unique (Polygon rejects a script with two identical commands): repeat a generator with a different extra argument, e.g. a seed: "gen 10 1 > $", "gen 10 2 > $".
 - validator-tests/: files named with valid/invalid, e.g. 01.valid.in, 02.invalid.in.
 - checker-tests/: NAME.in, NAME.out, NAME.ans; the expected verdict is part of the name (01.ok, 02.wa, 03.pe) or in NAME.verdict.
 - Tests are stored with LF line endings.

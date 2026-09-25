@@ -91,6 +91,15 @@ const RULES: Rule[] = [
   [/^buildPackage: ([\s\S]+)$/, (m) => `构建题目包：${m[1]}`],
   [/^(.+) — create the testset "(.+)" on Polygon first \(Tests page → testsets\), then push again$/, (m) => `${m[1]} —— 请先在 Polygon 的 Tests 页面建好测试集“${m[2]}”，再重新推送`],
 
+  [
+    /^script\.txt: duplicate commands \(Polygon does not allow them; change an argument, e\.g\. a seed\): (.+)$/,
+    (m) =>
+      `script.txt：有重复的命令（Polygon 不允许，请改动一个参数，例如加一个种子）：${m[1]
+        .split('; ')
+        .map((d) => d.replace(/^line (\d+) repeats line (\d+): /, '第 $1 行与第 $2 行相同：').replace(/^\(\+(\d+) more\)$/, '另有 $1 处'))
+        .join('；')}`,
+  ],
+
   // ---- AI endpoints ----
   [/^This endpoint does not provide a model list \(([\s\S]*)\)\. Enter the model names by hand, then use Test connection\.$/, (m, tr) => `这个端点不提供模型列表（${tr(m[1])}）。请手动填写模型名称，再点“测试连接”确认。`],
   [/^HTTP (\d+): the server returned a web page(?: \((.+)\))? instead of an API response$/, (m) => `HTTP ${m[1]}：服务器返回的是网页${m[2] ? `（${m[2]}）` : ''}，不是 API 响应`],
