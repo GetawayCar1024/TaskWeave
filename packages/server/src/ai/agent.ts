@@ -114,11 +114,12 @@ export class AgentService {
       const parts = async (withIds: string[]): Promise<ContestPart[]> => {
         const { config } = await contests.config(cid);
         const listed = config.problems.map((p) => ({ id: p.problem, index: p.index }));
+        // Problems no longer in the contest that still have changes: reviewable, not reachable by tools.
         const extra = withIds.filter((id) => !listed.some((p) => p.id === id)).map((id) => ({ id, index: '-' }));
         const out: ContestPart[] = [];
-        for (const p of [...listed, ...extra]) {
+        for (const p of [...listed.map((x) => ({ ...x, listed: true })), ...extra.map((x) => ({ ...x, listed: false }))]) {
           const ref = await this.judge.registry.get(p.id).catch(() => null);
-          if (ref) out.push({ id: ref.id, index: p.index, realDir: ref.dir });
+          if (ref) out.push({ id: ref.id, index: p.index, realDir: ref.dir, listed: p.listed });
         }
         return out;
       };

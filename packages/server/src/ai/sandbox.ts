@@ -160,6 +160,8 @@ export interface ContestPart {
   id: string;
   index: string;
   realDir: string;
+  /** In the contest now. Others only keep changes made earlier (to accept or reject). */
+  listed: boolean;
 }
 
 /**
@@ -188,7 +190,9 @@ export class ContestSandbox implements SandboxLike {
 
   /** (Re)build the problem list; sandboxes of problems that stay keep their state. */
   async refresh(): Promise<void> {
-    const ids = [...new Set([...this.parts.keys(), ...this.pending.map((p) => p.split('/')[0])])];
+    // Besides the contest's problems (resolveParts adds them): only those with changes to review.
+    const withChanges = [...this.parts].filter(([, x]) => x.sandbox.touched.size).map(([id]) => id);
+    const ids = [...new Set([...withChanges, ...this.pending.map((p) => p.split('/')[0])])];
     const next = new Map<string, { part: ContestPart; sandbox: Sandbox }>();
     for (const part of await this.resolveParts(ids)) {
       const old = this.parts.get(part.id);
@@ -208,32 +212,44 @@ export class ContestSandbox implements SandboxLike {
     if (!this.parts.size) await this.refresh();
   }
 
-  /** The problems, in contest order. */
+  /** The contest's problems, in contest order: all that the agent's tools can reach. */
   async list(): Promise<{ part: ContestPart; sandbox: Sandbox }[]> {
     await this.ready();
-    return [...this.parts.values()];
+    return [...this.parts.values()].filter((x) => x.part.listed);
   }
 
-  /** Find the problem of a path by its first segment (problem id, or the contest letter). */
-  async route(p: string): Promise<{ part: ContestPart; sandbox: Sandbox; rest: string }> {
+  private lookup(name: string, any: boolean) {
+    const all = [...this.parts.values()].filter((x) => any || x.part.listed);
+    return all.find((x) => x.part.id === name) ?? all.find((x) => x.part.index.toLowerCase() === name.toLowerCase());
+  }
+
+  private async names() {
+    return (await this.list()).map((x) => `${x.part.id} (${x.part.index})`).join(', ');
+  }
+
+  /**
+   * Find the problem of a path by its first segment (problem id, or the contest letter).
+   * Only problems of the contest, unless `any` (reviewing changes made earlier).
+   */
+  async route(p: string, any = false): Promise<{ part: ContestPart; sandbox: Sandbox; rest: string }> {
     await this.ready();
     const clean = p.replace(/\\/g, '/').replace(/^\.?\//, '');
     const [head, ...tail] = clean.split('/');
-    const hit = this.parts.get(head) ?? [...this.parts.values()].find((x) => x.part.index.toLowerCase() === head.toLowerCase());
-    if (!hit || !tail.length) throw new HttpError(400, 'bad_path', `Path must start with a problem folder (${[...this.parts.keys()].join(', ')}): ${p}`);
+    const hit = this.lookup(head, any);
+    if (!hit || !tail.length) throw new HttpError(400, 'bad_path', `Path must start with a problem folder of this contest (${await this.names()}): ${p}`);
     return { ...hit, rest: tail.join('/') };
   }
 
   async problem(name: string): Promise<{ part: ContestPart; sandbox: Sandbox }> {
     await this.ready();
-    const hit = this.parts.get(name) ?? [...this.parts.values()].find((x) => x.part.index.toLowerCase() === name.toLowerCase());
-    if (!hit) throw new HttpError(400, 'bad_problem', `Unknown problem "${name}"; one of: ${[...this.parts.values()].map((x) => `${x.part.id} (${x.part.index})`).join(', ')}`);
+    const hit = this.lookup(name, false);
+    if (!hit) throw new HttpError(400, 'bad_problem', `Unknown problem "${name}"; this contest has: ${await this.names()}`);
     return hit;
   }
 
   async sync(): Promise<void> {
     await this.refresh();
-    for (const { sandbox } of this.parts.values()) await sandbox.sync();
+    for (const { part, sandbox } of this.parts.values()) if (part.listed) await sandbox.sync();
   }
 
   async changes(): Promise<AiChange[]> {
@@ -243,7 +259,7 @@ export class ContestSandbox implements SandboxLike {
   }
 
   async content(rel: string): Promise<AiChangeContent> {
-    const r = await this.route(rel);
+    const r = await this.route(rel, true);
     const c = await r.sandbox.content(r.rest);
     return { ...c, path: `${r.part.id}/${c.path}` };
   }
@@ -251,7 +267,7 @@ export class ContestSandbox implements SandboxLike {
   private async each(paths: string[], fn: (s: Sandbox, rels: string[]) => Promise<string[]>): Promise<string[]> {
     const by = new Map<string, { part: ContestPart; sandbox: Sandbox; rels: string[] }>();
     for (const p of paths) {
-      const r = await this.route(p);
+      const r = await this.route(p, true);
       const e = by.get(r.part.id) ?? { ...r, rels: [] };
       e.rels.push(r.rest);
       by.set(r.part.id, e);
