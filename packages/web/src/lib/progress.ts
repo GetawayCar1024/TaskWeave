@@ -10,7 +10,8 @@ export function checklist(p: ProblemSummary) {
     { key: 'checker', ok: s.checker },
     { key: 'std', ok: s.std },
     { key: 'tests', ok: s.manualTests > 0 || s.hasScript },
-    { key: 'synced', ok: s.polygonId !== undefined },
+    // A circle next to "synced" reads as synced: say "not synced" when it is not.
+    { key: 'synced', ok: s.polygonId !== undefined, label: s.polygonId !== undefined ? 'synced' : 'unsynced' },
   ];
 }
 

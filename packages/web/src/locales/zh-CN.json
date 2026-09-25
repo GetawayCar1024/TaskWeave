@@ -67,7 +67,9 @@
     "std": "标程",
     "tests": "测试",
     "synced": "已同步",
-    "tutorial": "题解"
+    "tutorial": "题解",
+    "unsynced": "未同步",
+    "syncTodo": "同步到 Polygon"
   },
   "dirPicker": {
     "title": "选择文件夹",

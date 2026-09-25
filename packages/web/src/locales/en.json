@@ -67,7 +67,9 @@
     "std": "Main sol.",
     "tests": "Tests",
     "synced": "Synced",
-    "tutorial": "Tutorial"
+    "tutorial": "Tutorial",
+    "unsynced": "Not synced",
+    "syncTodo": "Sync to Polygon"
   },
   "dirPicker": {
     "title": "Choose folder",

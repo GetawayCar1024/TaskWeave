@@ -207,7 +207,7 @@ function openContest(c: ContestSummary) {
           <span class="mono sub">{{ p.id }}</span>
           <n-progress type="line" :percentage="progress(p)" :height="6" :show-indicator="false" style="width: 120px" :status="progress(p) === 100 ? 'success' : 'default'" />
           <span class="checks">
-            <n-tag v-for="c in checklist(p)" :key="c.key" size="tiny" :type="c.ok ? 'success' : 'default'" :bordered="false">{{ t(`check.${c.key}`) }}</n-tag>
+            <n-tag v-for="c in checklist(p)" :key="c.key" size="tiny" :type="c.ok ? 'success' : 'default'" :bordered="false">{{ t(`check.${c.label ?? c.key}`) }}</n-tag>
           </span>
           <span class="limits">{{ p.timeLimit / 1000 }}s / {{ p.memoryLimit }}MB</span>
         </div>
@@ -236,7 +236,7 @@ function openContest(c: ContestSummary) {
           />
           <div class="checks">
             <n-tag v-for="c in checklist(p)" :key="c.key" size="small" :type="c.ok ? 'success' : 'default'" :bordered="false">
-              <span class="check-tag"><span class="ci"><check v-if="c.ok" :size="11" /><circle-icon v-else :size="7" /></span><span>{{ t(`check.${c.key}`) }}</span></span>
+              <span class="check-tag"><span class="ci"><check v-if="c.ok" :size="11" /><circle-icon v-else :size="7" /></span><span>{{ t(`check.${c.label ?? c.key}`) }}</span></span>
             </n-tag>
             <n-tag v-if="p.interactive" size="small" type="info" :bordered="false">{{ t('problem.interactive') }}</n-tag>
           </div>

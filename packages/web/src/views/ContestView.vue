@@ -273,7 +273,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
     width: 150,
     render: (r) => {
       if (!r.summary) return null;
-      const missing = checklist(r.summary).filter((c) => !c.ok).map((c) => t(`check.${c.key}`));
+      const missing = checklist(r.summary).filter((c) => !c.ok).map((c) => t(c.key === 'synced' ? 'check.syncTodo' : `check.${c.key}`));
       const pct = progress(r.summary);
       return h(NTooltip, { disabled: !missing.length }, {
         trigger: () => h(NProgress, { type: 'line', percentage: pct, height: 6, showIndicator: false, status: pct === 100 ? 'success' : 'default' }),
