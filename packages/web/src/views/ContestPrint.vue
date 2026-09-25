@@ -96,16 +96,14 @@ watch(
   },
   { immediate: true },
 );
-// Running header (contest name) and page numbers on every printed page, via @page
-// margin boxes; the text is escaped into a CSS string.
+// Page numbers on every printed page, via an @page margin box.
 const pageStyle = document.createElement('style');
 document.head.appendChild(pageStyle);
 watch(
   () => [docTitle.value, lang.value],
   () => {
-    const q = (v: string) => JSON.stringify(v).replace(/</g, '\\3c ');
     const page = lang.value === 'zh' ? '"第 " counter(page) " 页，共 " counter(pages) " 页"' : '"Page " counter(page) " of " counter(pages)';
-    pageStyle.textContent = `@page { @top-left { content: ${q(docTitle.value)}; font: 9pt 'Times New Roman', 'SimSun', serif; color: #444; } @bottom-center { content: ${page}; font: 9pt 'Times New Roman', 'SimSun', serif; color: #444; } }`;
+    pageStyle.textContent = `@page { @bottom-center { content: ${page}; font: 9pt Verdana, 'Microsoft YaHei', sans-serif; color: #666; } }`;
   },
   { immediate: true },
 );
@@ -146,8 +144,6 @@ onBeforeUnmount(() => {
       <section v-for="r in shown" :key="r.s.index" class="problem">
         <statement-doc
           v-if="doc === 'statements'"
-          paper
-          :io="{ input: r.s.input, output: r.s.output }"
           :lang="lang"
           :index="r.s.index"
           :title="r.s.title"
@@ -155,7 +151,7 @@ onBeforeUnmount(() => {
           :sections="r.sections"
           :samples="r.s.samples"
         />
-        <statement-doc v-else paper :lang="lang" :index="r.s.index" :title="r.s.title" :sections="r.sections" :samples="[]" mode="tutorial" />
+        <statement-doc v-else :tutorial-suffix="false" :lang="lang" :index="r.s.index" :title="r.s.title" :sections="r.sections" :samples="[]" mode="tutorial" />
       </section>
     </div>
   </div>
@@ -215,9 +211,9 @@ onBeforeUnmount(() => {
 }
 .contest-title {
   text-align: center;
-  font-family: 'Times New Roman', 'CMU Serif', 'Songti SC', 'SimSun', serif;
-  font-size: 20pt;
-  font-weight: bold;
+  font-family: Arial, 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  font-size: 24px;
+  font-weight: normal;
   margin: 0 0 24px;
 }
 .problem + .problem {

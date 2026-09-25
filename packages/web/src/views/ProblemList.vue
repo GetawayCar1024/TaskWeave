@@ -12,7 +12,7 @@ import { api, errorMessage } from '../lib/api';
 import { onWs } from '../lib/ws';
 import { problemTitle } from '../lib/format';
 import { checklist, progress } from '../lib/progress';
-import { Anvil, Check, Circle, LayoutGrid, List, Trash2 } from 'lucide-vue-next';
+import { Anvil, Check, Circle as CircleIcon, LayoutGrid, List, Trash2 } from 'lucide-vue-next';
 import { useDialog } from 'naive-ui';
 import { confirmDeleteContest, confirmDeleteProblem } from '../lib/deleteProblem';
 
@@ -236,7 +236,7 @@ function openContest(c: ContestSummary) {
           />
           <div class="checks">
             <n-tag v-for="c in checklist(p)" :key="c.key" size="small" :type="c.ok ? 'success' : 'default'" :bordered="false">
-              <span class="check-tag"><check v-if="c.ok" :size="11" /><circle v-else :size="8" />{{ t(`check.${c.key}`) }}</span>
+              <span class="check-tag"><span class="ci"><check v-if="c.ok" :size="11" /><circle-icon v-else :size="7" /></span><span>{{ t(`check.${c.key}`) }}</span></span>
             </n-tag>
             <n-tag v-if="p.interactive" size="small" type="info" :bordered="false">{{ t('problem.interactive') }}</n-tag>
           </div>
@@ -280,7 +280,19 @@ function openContest(c: ContestSummary) {
 .card:hover .card-del {
   opacity: 0.7;
 }
+/* Same icon box for done / not done so the text of all tags lines up. */
+.ci {
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
 .check-tag {
+  line-height: 1;
+  /* Middle, not baseline: the first child (the icon box) would set the baseline. */
+  vertical-align: middle;
   display: inline-flex;
   align-items: center;
   gap: 3px;

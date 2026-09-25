@@ -29,7 +29,7 @@ import { PRESETS, pastedStatementPrompt } from '../lib/aiPresets';
 import { renderMarkdown } from '../lib/markdown';
 import { languageForPath } from '../lib/monaco';
 import TextDiff from './TextDiff.vue';
-import { Check, ChevronDown, ChevronRight, Circle, Lightbulb, Minus, Play, Plus, RotateCw, Trash2, X } from 'lucide-vue-next';
+import { Check, ChevronDown, ChevronRight, Circle as CircleIcon, Lightbulb, Minus, Play, Plus, RotateCw, Trash2, X } from 'lucide-vue-next';
 import { FALLBACK_TOOL_ICON, TOOL_ICONS } from '../lib/icons';
 import { fmtMoney, fmtTokens } from '../lib/usageFormat';
 import type { Workspace } from '../lib/workspace';
@@ -293,7 +293,7 @@ const usageTitle = computed(() => {
 
           <div v-if="s.current?.plan.length" class="plan">
             <div v-for="(p, i) in s.current.plan" :key="i" :class="['step', p.status]">
-              <span class="mark"><check v-if="p.status === 'done'" :size="12" /><play v-else-if="p.status === 'in_progress'" :size="11" /><minus v-else-if="p.status === 'skipped'" :size="12" /><circle v-else :size="10" /></span>
+              <span class="mark"><check v-if="p.status === 'done'" :size="12" /><play v-else-if="p.status === 'in_progress'" :size="11" /><minus v-else-if="p.status === 'skipped'" :size="12" /><circle-icon v-else :size="10" /></span>
               {{ p.title }}
             </div>
           </div>
