@@ -2,8 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { onBeforeRouteLeave, useRouter } from 'vue-router';
-import { NButton, NInput, NModal, NResult, NScrollbar, NSpace, NSpin, NSplit, NTabPane, NTabs, NTooltip, useDialog, useMessage } from 'naive-ui';
-import { isSourceFile } from '@polyforge/shared';
+import { NButton, NDropdown, NInput, NModal, NResult, NScrollbar, NSpace, NSpin, NSplit, NTabPane, NTabs, NTooltip, useDialog, useMessage } from 'naive-ui';
+import { isSourceFile, statementLanguages } from '@polyforge/shared';
 import AppHeader from '../components/AppHeader.vue';
 import DiffDialog from '../components/DiffDialog.vue';
 import EditorPane from '../components/EditorPane.vue';
@@ -12,6 +12,14 @@ import InfoPanel from '../components/InfoPanel.vue';
 import InvocationDrawer from '../components/InvocationDrawer.vue';
 import SyncDialog from '../components/SyncDialog.vue';
 import AiDrawer from '../components/AiDrawer.vue';
+import CommandPalette, { type Command } from '../components/CommandPalette.vue';
+import LintDialog from '../components/LintDialog.vue';
+import ShortcutsDialog from '../components/ShortcutsDialog.vue';
+import StatusBar from '../components/StatusBar.vue';
+import StressDialog from '../components/StressDialog.vue';
+import { waitJob } from '../lib/jobs';
+import { patchSettings } from '../lib/settings';
+import type { PackageResult } from '../lib/types';
 import { useAi } from '../lib/ai';
 import QuickOpen from '../components/QuickOpen.vue';
 import RunPanel from '../components/RunPanel.vue';
@@ -41,6 +49,93 @@ const rightTab = ref<'info' | 'tests' | 'run' | 'selftest'>('info');
 const runPanel = ref<InstanceType<typeof RunPanel>>();
 const showInvocation = ref(false);
 const showSync = ref(false);
+const showLint = ref(false);
+const showStress = ref(false);
+const showPalette = ref(false);
+const showShortcuts = ref(false);
+const exporting = ref(false);
+
+async function exportPackage() {
+  exporting.value = true;
+  try {
+    const done = await waitJob(await api.exportPackage(props.id));
+    if (done.status !== 'done') throw new Error(done.error ?? done.status);
+    const r = done.result as PackageResult;
+    await api.downloadExport(props.id, r.file);
+    message.success(t('export.done', { file: r.file, n: r.tests }));
+    if (r.warnings.length) message.warning(r.warnings.slice(0, 5).join('\n'), { duration: 8000 });
+  } catch (e) {
+    message.error(errorMessage(e));
+  } finally {
+    exporting.value = false;
+  }
+}
+
+const aiDrawer = ref<InstanceType<typeof AiDrawer>>();
+function openAiReview() {
+  showAi.value = true;
+  aiDrawer.value?.openTab('review');
+}
+
+const moreOptions = computed(() => [
+  { key: 'lint', label: `${t('toolbar.lint')}  (Ctrl+Shift+L)` },
+  { key: 'export', label: t('toolbar.export'), disabled: exporting.value },
+  { key: 'selftest', label: t('panel.selftest') },
+  { type: 'divider', key: 'd1' },
+  { key: 'palette', label: `${t('palette.title')}  (Ctrl+K)` },
+  { key: 'shortcuts', label: `${t('shortcuts.title')}  (Ctrl+/)` },
+]);
+
+function onMore(key: string) {
+  if (key === 'lint') showLint.value = true;
+  else if (key === 'export') exportPackage();
+  else if (key === 'selftest') rightTab.value = 'selftest';
+  else if (key === 'palette') showPalette.value = true;
+  else if (key === 'shortcuts') showShortcuts.value = true;
+}
+
+const commands = computed<Command[]>(() => {
+  const g = { judge: t('palette.gJudge'), sync: 'Polygon', ai: 'AI', file: t('palette.gFile'), view: t('palette.gView') };
+  const missingTutorials = ws.state.detail ? statementLanguages(ws.files.value).missingTutorial : [];
+  return [
+    { id: 'generate', label: t('toolbar.generate'), shortcut: 'Ctrl+Shift+G', group: g.judge, run: generate },
+    { id: 'invocation', label: t('toolbar.invocation'), group: g.judge, run: () => void (showInvocation.value = true) },
+    { id: 'stress', label: t('toolbar.stress'), group: g.judge, run: () => void (showStress.value = true) },
+    { id: 'run', label: t('run.run'), shortcut: 'Ctrl+Enter', group: g.judge, run: runCurrent },
+    { id: 'selftest', label: t('panel.selftest'), group: g.judge, run: () => void (rightTab.value = 'selftest') },
+    { id: 'tests', label: t('panel.tests'), group: g.view, run: () => void (rightTab.value = 'tests') },
+    { id: 'sync', label: t('sync.title'), shortcut: 'Ctrl+Shift+U', group: g.sync, run: () => void (showSync.value = true) },
+    { id: 'export', label: t('toolbar.export'), group: g.sync, run: exportPackage },
+    { id: 'ai', label: t('palette.aiChat'), group: g.ai, run: () => void (showAi.value = true) },
+    { id: 'ai-review', label: t('palette.aiReview'), group: g.ai, run: openAiReview },
+    { id: 'lint', label: t('toolbar.lint'), shortcut: 'Ctrl+Shift+L', group: g.file, run: () => void (showLint.value = true) },
+    {
+      id: 'tutorials',
+      label: t('tree.createTutorials'),
+      group: g.file,
+      disabled: !missingTutorials.length,
+      run: () => onAction({ kind: 'createTutorials', langs: missingTutorials }),
+    },
+    { id: 'open-config', label: t('palette.openConfig'), group: g.file, run: () => ws.openFile('problem.toml') },
+    { id: 'new-file', label: t('tree.newFile'), group: g.file, run: () => onAction({ kind: 'newFile', dir: '' }) },
+    { id: 'quick-open', label: t('editor.quickOpen'), shortcut: 'Ctrl+P', group: g.file, run: () => void (quickOpen.value = true) },
+    {
+      id: 'theme',
+      label: t('palette.toggleTheme'),
+      group: g.view,
+      run: () => patchSettings((c) => (c.ui.theme = c.ui.theme === 'light' ? 'dark' : 'light')),
+    },
+    {
+      id: 'locale',
+      label: t('palette.toggleLocale'),
+      group: g.view,
+      run: () => patchSettings((c) => (c.ui.locale = c.ui.locale === 'en' ? 'zh-CN' : 'en')),
+    },
+    { id: 'shortcuts', label: t('shortcuts.title'), shortcut: 'Ctrl+/', group: g.view, run: () => void (showShortcuts.value = true) },
+    { id: 'problems', label: t('nav.problems'), group: g.view, run: () => void router.push({ name: 'problems' }) },
+    { id: 'settings', label: t('nav.settings'), group: g.view, run: () => void router.push({ name: 'settings' }) },
+  ];
+});
 
 async function generate() {
   rightTab.value = 'tests';
@@ -211,6 +306,15 @@ function onKeydown(e: KeyboardEvent) {
   } else if (k === 'enter') {
     e.preventDefault();
     runCurrent();
+  } else if (k === 'k') {
+    e.preventDefault();
+    showPalette.value = true;
+  } else if (k === '/') {
+    e.preventDefault();
+    showShortcuts.value = true;
+  } else if (k === 'l' && e.shiftKey) {
+    e.preventDefault();
+    showLint.value = true;
   } else if (k === 'u' && e.shiftKey) {
     e.preventDefault();
     showSync.value = true;
@@ -284,6 +388,7 @@ onBeforeUnmount(() => {
           Ctrl+Shift+G
         </n-tooltip>
         <n-button size="small" :loading="judge.running('invocation')" @click="showInvocation = true">{{ t('toolbar.invocation') }}</n-button>
+        <n-button size="small" :loading="judge.running('stress')" @click="showStress = true">{{ t('toolbar.stress') }}</n-button>
         <n-tooltip>
           <template #trigger>
             <n-button size="small" @click="showSync = true">{{ t('toolbar.sync') }}</n-button>
@@ -293,6 +398,15 @@ onBeforeUnmount(() => {
         <n-button size="small" :type="ai.running.value ? 'primary' : 'default'" @click="showAi = true">
           AI<template v-if="ai.state.changes.length"> · {{ ai.state.changes.length }}</template>
         </n-button>
+        <n-dropdown trigger="click" :options="moreOptions" @select="onMore">
+          <n-button size="small" :loading="exporting">{{ t('toolbar.more') }} ▾</n-button>
+        </n-dropdown>
+        <n-tooltip>
+          <template #trigger>
+            <n-button size="small" quaternary @click="showPalette = true">⌘</n-button>
+          </template>
+          {{ t('palette.title') }} (Ctrl+K)
+        </n-tooltip>
       </template>
     </app-header>
 
@@ -322,6 +436,8 @@ onBeforeUnmount(() => {
               @run="runCurrent"
               @generate="generate"
               @action="onAction"
+              @lint="showLint = true"
+              @palette="showPalette = true"
             />
           </template>
           <template #2>
@@ -344,10 +460,21 @@ onBeforeUnmount(() => {
       </template>
     </n-split>
 
+    <status-bar
+      v-if="ws.state.detail"
+      :ws="ws"
+      :judge="judge"
+      :ai="ai"
+      @open="(w) => (w === 'sync' ? (showSync = true) : w === 'ai' ? (showAi = true) : (rightTab = 'tests'))"
+    />
     <quick-open v-model:show="quickOpen" :files="allFiles" @open="(p: string) => ws.openFile(p)" />
+    <command-palette v-model:show="showPalette" :commands="commands" />
+    <shortcuts-dialog v-model:show="showShortcuts" />
+    <lint-dialog v-model:show="showLint" :ws="ws" :problem-id="id" />
+    <stress-dialog v-model:show="showStress" :ws="ws" :problem-id="id" />
     <invocation-drawer v-model:show="showInvocation" :ws="ws" :judge="judge" :problem-id="id" />
     <sync-dialog v-model:show="showSync" :ws="ws" :problem-id="id" />
-    <ai-drawer v-model:show="showAi" :ai="ai" :problem-id="id" />
+    <ai-drawer ref="aiDrawer" v-model:show="showAi" :ai="ai" :problem-id="id" :ws="ws" />
     <diff-dialog v-model:show="diff.show" :path="diff.path" :disk="diff.disk" :mine="diff.mine" @keep-mine="keepMine" @use-disk="useDisk" />
 
     <n-modal v-model:show="prompt.show" preset="card" :title="prompt.title" style="width: 480px" @after-leave="prompt.resolve(null)">

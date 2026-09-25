@@ -1,7 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { parse, stringify } from 'smol-toml';
 import {
   globalConfigSchema,
@@ -26,10 +25,9 @@ export interface RawAiEndpoint {
 }
 
 export const DEFAULT_POLYGON_API = 'https://polygon.codeforces.com/api/';
+import { ASSETS_DIR } from './paths.js';
 import { atomicWrite, copyMissing, exists, HttpError } from './util/fs.js';
 
-/** Repository `assets/` directory, bundled defaults copied into the global directory. */
-export const ASSETS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../assets');
 
 export function defaultGlobalDir(): string {
   return process.env.POLYFORGE_HOME || path.join(os.homedir(), '.polyforge');

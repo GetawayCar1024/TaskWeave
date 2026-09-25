@@ -40,7 +40,9 @@
     "goSettings": "打开设置",
     "empty": "这里还没有题目",
     "import": "从 Polygon 导入",
-    "langMismatch": "题面语言 {s}，题解语言 {t}"
+    "langMismatch": "题面语言 {s}，题解语言 {t}",
+    "sortName": "按名称",
+    "sortProgress": "按完成度"
   },
   "check": {
     "statement": "题面",
@@ -182,7 +184,11 @@
     "invocation": "Invocation",
     "sync": "同步 ↑",
     "ai": "AI",
-    "comingIn": "将在 {m} 提供"
+    "comingIn": "将在 {m} 提供",
+    "stress": "对拍",
+    "lint": "题面检查",
+    "export": "导出 Polygon package",
+    "more": "更多"
   },
   "workspace": {
     "notFound": "找不到这道题"
@@ -355,7 +361,110 @@
       "run_invocation": "Invocation",
       "run_validator_tests": "Validator 自测",
       "run_checker_tests": "Checker 自测",
-      "update_plan": "更新计划"
+      "update_plan": "更新计划",
+      "report_issue": "报告问题"
+    },
+    "tabChat": "对话",
+    "tabReview": "检查",
+    "localChecks": "本地检查",
+    "noLocalIssues": "本地检查没有发现问题",
+    "reviewNeedsAi": "配置 AI 端点后可以进行 AI 检查。",
+    "startReview": "开始 AI 检查",
+    "reviewHint": "AI 只读取和判题，不修改文件",
+    "fixIt": "让 AI 修复",
+    "sev": {
+      "error": "错误",
+      "warning": "警告",
+      "info": "建议"
+    },
+    "cat": {
+      "statement": "题面",
+      "tutorial": "题解",
+      "validator": "Validator",
+      "checker": "Checker",
+      "interactor": "Interactor",
+      "solutions": "解",
+      "tests": "测试",
+      "config": "配置",
+      "other": "其他"
+    },
+    "reviewIntro": "AI 检查会通读题面、validator、checker、解和测试，自己编译、生成测试、跑 invocation 来验证，然后逐条列出问题（错误 / 警告 / 建议）。它不会修改任何文件；每个问题都可以一键交给 AI 修复。"
+  },
+  "lint": {
+    "title": "题面检查与自动修复",
+    "clean": "所有题面和题解都没有发现问题",
+    "count": "{n} 个问题，{fix} 个可自动修复",
+    "auto": "自动修复",
+    "manual": "需手动",
+    "nothingToFix": "这些问题需要手动处理",
+    "recheck": "重新检查",
+    "applyOne": "修复此文件",
+    "applyAll": "全部修复",
+    "applied": "已修复 {n} 个文件"
+  },
+  "stress": {
+    "title": "对拍",
+    "generator": "生成器",
+    "argsPlaceholder": "参数，例如 10 1000",
+    "argsHint": "参数中的 {'{'}seed{'}'} 会被替换为每轮的种子；没有 {'{'}seed{'}'} 时种子追加在参数末尾。",
+    "solution": "待测解",
+    "reference": "参照解",
+    "limits": "上限",
+    "times": "次",
+    "start": "开始对拍",
+    "noDiff": "{n} 次没有发现差异",
+    "found": "第 {n} 次发现差异",
+    "saved": "已保存为 {path}",
+    "expected": "参照输出",
+    "stopped": {
+      "time": "到达时间上限",
+      "cancelled": "已取消",
+      "iterations": "到达次数上限",
+      "found": "找到反例"
+    }
+  },
+  "export": {
+    "done": "已导出 {file}（{n} 个测试）"
+  },
+  "palette": {
+    "title": "命令面板",
+    "placeholder": "输入命令…",
+    "none": "没有匹配的命令",
+    "gJudge": "评测",
+    "gFile": "文件",
+    "gView": "界面",
+    "aiChat": "打开 AI 对话",
+    "aiReview": "AI 检查",
+    "openConfig": "打开 problem.toml",
+    "toggleTheme": "切换亮色 / 暗色",
+    "toggleLocale": "切换中文 / English"
+  },
+  "shortcuts": {
+    "title": "快捷键",
+    "palette": "命令面板",
+    "quickOpen": "快速打开文件",
+    "save": "保存（并编译）",
+    "run": "运行当前文件",
+    "generate": "生成测试",
+    "sync": "与 Polygon 同步",
+    "lint": "题面检查",
+    "help": "快捷键说明（编辑器外）"
+  },
+  "status": {
+    "unbound": "未绑定 Polygon",
+    "tests": "{n} 个测试",
+    "noTests": "未生成测试",
+    "aiChanges": "{n} 个改动待确认",
+    "cursor": "行 {line}，列 {col}",
+    "job": {
+      "generate": "生成测试",
+      "invocation": "Invocation",
+      "validator-tests": "Validator 自测",
+      "checker-tests": "Checker 自测",
+      "polygon-push": "推送",
+      "polygon-import": "导入",
+      "stress": "对拍",
+      "export": "导出"
     }
   }
 }

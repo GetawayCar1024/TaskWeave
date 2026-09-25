@@ -2,11 +2,10 @@ import { execFile, spawn } from 'node:child_process';
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { RUNNER_SRC } from '../paths.js';
 import type { RunStats, RunStatus } from '@polyforge/shared';
 import { exists, HttpError, sha1 } from '../util/fs.js';
 
-const RUNNER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../runner/runner.cpp');
 
 export interface ProcSpec {
   /** argv; argv[0] is resolved by CreateProcess (absolute path or on PATH). */

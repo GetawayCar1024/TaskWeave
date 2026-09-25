@@ -10,7 +10,7 @@ import StatementPreview from './StatementPreview.vue';
 import type { SidebarAction } from './FileSidebar.vue';
 
 const props = defineProps<{ ws: Workspace; judge: Judge; problemId: string }>();
-const emit = defineEmits<{ save: [path: string]; close: [path: string]; quickOpen: []; showDiff: [path: string]; run: []; generate: []; action: [SidebarAction] }>();
+const emit = defineEmits<{ save: [path: string]; close: [path: string]; quickOpen: []; showDiff: [path: string]; run: []; generate: []; action: [SidebarAction]; lint: []; palette: [] }>();
 
 // Statement tabs get a live preview next to the source (DESIGN §6.1).
 const statementLang = computed(() => props.ws.activeTab.value?.path.match(/^statement\/([^/]+)\/[^/]+\.tex$/)?.[1] ?? null);
@@ -45,6 +45,9 @@ onMounted(() => {
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => current && emit('save', current.path));
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, () => emit('quickOpen'));
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => emit('run'));
+  // Ctrl+K is a chord prefix in Monaco and Ctrl+Shift+L selects all occurrences; ours win here.
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyK, () => emit('palette'));
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyL, () => emit('lint'));
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyG, () => emit('generate'));
   props.ws.editorRef.value = editor;
   show(props.ws.activeTab.value);
@@ -136,9 +139,12 @@ function onTabMouse(e: MouseEvent, path: string) {
           @create-tutorial="(lang: string) => emit('action', { kind: 'createTutorials', langs: [lang] })"
         />
       </div>
-      <n-button v-if="statementLang" size="tiny" class="preview-toggle" secondary @click="showPreview = !showPreview">
-        {{ showPreview ? t('preview.hide') : t('preview.show') }}
-      </n-button>
+      <div v-if="statementLang" class="preview-toggle">
+        <n-button size="tiny" secondary @click="emit('lint')">{{ t('toolbar.lint') }}</n-button>
+        <n-button size="tiny" secondary @click="showPreview = !showPreview">
+          {{ showPreview ? t('preview.hide') : t('preview.show') }}
+        </n-button>
+      </div>
     </div>
     <div v-if="!ws.activeTab.value" class="empty">
       <n-empty :description="t('editor.noFile')">
@@ -234,6 +240,8 @@ function onTabMouse(e: MouseEvent, path: string) {
   right: 18px;
   bottom: 10px;
   z-index: 5;
+  display: flex;
+  gap: 6px;
 }
 .host {
   flex: 1;

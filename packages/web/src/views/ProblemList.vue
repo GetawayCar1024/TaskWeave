@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { NButton, NCard, NEmpty, NInput, NSpin, NTag, NResult, useMessage } from 'naive-ui';
+import { NButton, NButtonGroup, NCard, NEmpty, NInput, NProgress, NSelect, NSpin, NTag, NResult, useMessage } from 'naive-ui';
 import type { ProblemSummary } from '@polyforge/shared';
 import AppHeader from '../components/AppHeader.vue';
 import CreateProblemDialog from '../components/CreateProblemDialog.vue';
@@ -46,10 +46,20 @@ onUnmounted(() => {
   clearTimeout(timer);
 });
 
+const view = ref<'grid' | 'list'>((localStorage.getItem('polyforge-list-view') as 'grid' | 'list') || 'grid');
+const sort = ref<'name' | 'progress'>((localStorage.getItem('polyforge-list-sort') as 'name' | 'progress') || 'name');
+watch(view, (v) => localStorage.setItem('polyforge-list-view', v));
+watch(sort, (v) => localStorage.setItem('polyforge-list-sort', v));
+
+const progress = (p: ProblemSummary) => {
+  const items = checklist(p);
+  return Math.round((items.filter((c) => c.ok).length / items.length) * 100);
+};
+
 const shown = computed(() => {
   const q = filter.value.trim().toLowerCase();
-  if (!q) return problems.value;
-  return problems.value.filter((p) => p.name.includes(q) || Object.values(p.title).some((x) => x.toLowerCase().includes(q)));
+  const list = q ? problems.value.filter((p) => p.name.includes(q) || Object.values(p.title).some((x) => x.toLowerCase().includes(q))) : [...problems.value];
+  return list.sort((a, b) => (sort.value === 'progress' ? progress(a) - progress(b) : 0) || a.name.localeCompare(b.name));
 });
 
 function checklist(p: ProblemSummary) {
@@ -75,6 +85,19 @@ function open(p: ProblemSummary) {
     <app-header>
       <template #left><strong class="brand">⚒ PolyForge</strong></template>
       <n-input v-model:value="filter" size="small" clearable :placeholder="t('list.search')" style="max-width: 280px" />
+      <n-select
+        v-model:value="sort"
+        size="small"
+        style="width: 150px"
+        :options="[
+          { label: t('list.sortName'), value: 'name' },
+          { label: t('list.sortProgress'), value: 'progress' },
+        ]"
+      />
+      <n-button-group size="small">
+        <n-button :type="view === 'grid' ? 'primary' : 'default'" @click="view = 'grid'">▦</n-button>
+        <n-button :type="view === 'list' ? 'primary' : 'default'" @click="view = 'list'">☰</n-button>
+      </n-button-group>
       <template #right>
         <n-button size="small" type="primary" :disabled="roots.length === 0" @click="showCreate = true">{{ t('list.new') }}</n-button>
         <n-button size="small" :disabled="roots.length === 0" @click="showImport = true">{{ t('list.import') }}</n-button>
@@ -94,6 +117,17 @@ function open(p: ProblemSummary) {
           <n-button type="primary" @click="showCreate = true">{{ t('list.new') }}</n-button>
         </template>
       </n-empty>
+      <div v-else-if="view === 'list'" class="rows">
+        <div v-for="p in shown" :key="p.id" class="row" @click="open(p)">
+          <span class="row-title">{{ problemTitle(p.title, locale) || p.name }}</span>
+          <span class="mono sub">{{ p.id }}</span>
+          <n-progress type="line" :percentage="progress(p)" :height="6" :show-indicator="false" style="width: 120px" :status="progress(p) === 100 ? 'success' : 'default'" />
+          <span class="checks">
+            <n-tag v-for="c in checklist(p)" :key="c.key" size="tiny" :type="c.ok ? 'success' : 'default'" :bordered="false">{{ t(`check.${c.key}`) }}</n-tag>
+          </span>
+          <span class="limits">{{ p.timeLimit / 1000 }}s / {{ p.memoryLimit }}MB</span>
+        </div>
+      </div>
       <div v-else class="grid">
         <n-card v-for="p in shown" :key="p.id" size="small" hoverable class="card" @click="open(p)">
           <template #header>
@@ -107,6 +141,14 @@ function open(p: ProblemSummary) {
           <div v-if="p.status.tutorialLangs.length && p.status.tutorialLangs.join() !== p.status.statementLangs.join()" class="warn">
             {{ t('list.langMismatch', { s: p.status.statementLangs.join('/') || '—', t: p.status.tutorialLangs.join('/') }) }}
           </div>
+          <n-progress
+            type="line"
+            :percentage="progress(p)"
+            :height="4"
+            :show-indicator="false"
+            :status="progress(p) === 100 ? 'success' : 'default'"
+            style="margin-bottom: 8px"
+          />
           <div class="checks">
             <n-tag v-for="c in checklist(p)" :key="c.key" size="small" :type="c.ok ? 'success' : 'default'" :bordered="false">
               {{ c.ok ? '✓' : '·' }} {{ t(`check.${c.key}`) }}
@@ -149,6 +191,29 @@ function open(p: ProblemSummary) {
 }
 .card {
   cursor: pointer;
+}
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.row:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+.row-title {
+  font-weight: 600;
+  min-width: 160px;
+}
+.row .checks {
+  flex: 1;
 }
 .title {
   font-weight: 600;

@@ -7,7 +7,13 @@
     "dev": "pnpm -r --parallel --filter @polyforge/server --filter @polyforge/web dev",
     "build": "pnpm --filter @polyforge/web build",
     "start": "pnpm build && pnpm --filter @polyforge/server start",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "release": "pnpm build && node scripts/build-release.mjs"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
 }

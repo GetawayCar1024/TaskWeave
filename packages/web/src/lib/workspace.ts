@@ -173,7 +173,9 @@ export function useWorkspace(problemId: string) {
       throw e;
     }
     // The watcher suppresses our own writes, so refresh derived state here.
-    if (path === 'problem.toml' || !files.value.some((f) => f.path === path)) await loadDetail();
+    // Also when a file becomes empty / non-empty (tutorial and statement status depend on it).
+    const known = files.value.find((f) => f.path === path);
+    if (path === 'problem.toml' || !known || (known.size === 0) !== (content.length === 0)) await loadDetail();
     return 'ok';
   }
 

@@ -40,7 +40,9 @@
     "goSettings": "Open settings",
     "empty": "No problems here yet",
     "import": "Import from Polygon",
-    "langMismatch": "statement: {s}; tutorial: {t}"
+    "langMismatch": "statement: {s}; tutorial: {t}",
+    "sortName": "By name",
+    "sortProgress": "By progress"
   },
   "check": {
     "statement": "Statement",
@@ -182,7 +184,11 @@
     "invocation": "Invocation",
     "sync": "Sync ↑",
     "ai": "AI",
-    "comingIn": "Coming in {m}"
+    "comingIn": "Coming in {m}",
+    "stress": "Stress",
+    "lint": "Check statement",
+    "export": "Export Polygon package",
+    "more": "More"
   },
   "workspace": {
     "notFound": "Problem not found"
@@ -355,7 +361,110 @@
       "run_invocation": "Invocation",
       "run_validator_tests": "Validator tests",
       "run_checker_tests": "Checker tests",
-      "update_plan": "Update plan"
+      "update_plan": "Update plan",
+      "report_issue": "Report issue"
+    },
+    "tabChat": "Chat",
+    "tabReview": "Check",
+    "localChecks": "Local checks",
+    "noLocalIssues": "Local checks found no issues",
+    "reviewNeedsAi": "Configure an AI endpoint to run the AI check.",
+    "startReview": "Start AI check",
+    "reviewHint": "The AI only reads and judges; it does not change files",
+    "fixIt": "Let AI fix",
+    "sev": {
+      "error": "error",
+      "warning": "warning",
+      "info": "suggestion"
+    },
+    "cat": {
+      "statement": "statement",
+      "tutorial": "tutorial",
+      "validator": "validator",
+      "checker": "checker",
+      "interactor": "interactor",
+      "solutions": "solutions",
+      "tests": "tests",
+      "config": "config",
+      "other": "other"
+    },
+    "reviewIntro": "The AI check reads the statement, validator, checker, solutions and tests, verifies them by compiling, generating tests and running invocations, and lists every problem it finds (error / warning / suggestion). It never changes files; each finding can be handed to the AI to fix."
+  },
+  "lint": {
+    "title": "Statement check & auto-fix",
+    "clean": "No issues in statements and tutorials",
+    "count": "{n} issues, {fix} auto-fixable",
+    "auto": "auto-fix",
+    "manual": "manual",
+    "nothingToFix": "These issues need a manual fix",
+    "recheck": "Check again",
+    "applyOne": "Fix this file",
+    "applyAll": "Fix all",
+    "applied": "Fixed {n} file(s)"
+  },
+  "stress": {
+    "title": "Stress test",
+    "generator": "Generator",
+    "argsPlaceholder": "arguments, e.g. 10 1000",
+    "argsHint": "{'{'}seed{'}'} in the arguments is replaced by the iteration seed; without it the seed is appended.",
+    "solution": "Solution",
+    "reference": "Reference",
+    "limits": "Limits",
+    "times": "runs",
+    "start": "Start",
+    "noDiff": "No difference in {n} runs",
+    "found": "Difference found in run {n}",
+    "saved": "Saved as {path}",
+    "expected": "Reference output",
+    "stopped": {
+      "time": "time limit reached",
+      "cancelled": "cancelled",
+      "iterations": "run limit reached",
+      "found": "counterexample found"
+    }
+  },
+  "export": {
+    "done": "Exported {file} ({n} tests)"
+  },
+  "palette": {
+    "title": "Command palette",
+    "placeholder": "Type a command…",
+    "none": "No matching command",
+    "gJudge": "Judge",
+    "gFile": "File",
+    "gView": "View",
+    "aiChat": "Open AI chat",
+    "aiReview": "AI check",
+    "openConfig": "Open problem.toml",
+    "toggleTheme": "Toggle light / dark",
+    "toggleLocale": "Switch 中文 / English"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "palette": "Command palette",
+    "quickOpen": "Quick open file",
+    "save": "Save (and compile)",
+    "run": "Run current file",
+    "generate": "Generate tests",
+    "sync": "Sync with Polygon",
+    "lint": "Check statement",
+    "help": "This help (outside the editor)"
+  },
+  "status": {
+    "unbound": "Not bound to Polygon",
+    "tests": "{n} tests",
+    "noTests": "No tests generated",
+    "aiChanges": "{n} change(s) to review",
+    "cursor": "Ln {line}, Col {col}",
+    "job": {
+      "generate": "Generating tests",
+      "invocation": "Invocation",
+      "validator-tests": "Validator tests",
+      "checker-tests": "Checker tests",
+      "polygon-push": "Pushing",
+      "polygon-import": "Importing",
+      "stress": "Stress",
+      "export": "Exporting"
     }
   }
 }

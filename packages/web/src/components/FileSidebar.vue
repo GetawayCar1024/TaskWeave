@@ -157,6 +157,20 @@ watch(expanded, (v) => localStorage.setItem('polyforge-tree-expanded', JSON.stri
 
 const selected = computed(() => (props.ws.state.active ? [props.ws.state.active] : []));
 
+const BADGES: [RegExp, string, string][] = [
+  [/\.(cpp|cc|cxx|c|h|hpp)$/i, 'C++', 'b-cpp'],
+  [/\.py$/i, 'PY', 'b-py'],
+  [/\.(java|kt)$/i, 'JV', 'b-java'],
+  [/\.tex$/i, 'TEX', 'b-tex'],
+  [/\.toml$/i, 'CFG', 'b-cfg'],
+  [/\.(png|jpe?g|gif|svg)$/i, 'IMG', 'b-img'],
+  [/\.(txt|md)$/i, 'TXT', 'b-txt'],
+];
+function badge(path: string) {
+  const b = BADGES.find(([re]) => re.test(path));
+  return h('span', { class: ['badge', b ? b[2] : 'b-data'] }, b ? b[1] : 'DAT');
+}
+
 function renderLabel({ option }: { option: TreeOption }) {
   const n = option as Node;
   if (n.group) return h('span', { class: 'group' }, [`${ROLE_ICON[n.group]} `, n.label as string]);
@@ -164,7 +178,7 @@ function renderLabel({ option }: { option: TreeOption }) {
   const cls = ['file', tab?.dirty ? 'dirty' : ''].join(' ');
   if (mode.value === 'dirs' && n.dir !== undefined) return h('span', `📁 ${n.label}`);
   if (n.missingLang) return h('span', { class: 'missing' }, `＋ ${n.label}`);
-  return h('span', { class: cls, title: n.path }, n.label as string);
+  return h('span', { class: cls, title: n.path }, [badge(n.path ?? ''), n.label as string]);
 }
 
 function renderSuffix({ option }: { option: TreeOption }) {
@@ -346,6 +360,48 @@ function onMenu(key: string, option: DropdownOption) {
 .tree :deep(.file.dirty)::after {
   content: ' ●';
   opacity: 0.7;
+}
+.tree :deep(.badge) {
+  display: inline-block;
+  min-width: 28px;
+  margin-right: 6px;
+  padding: 0 3px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 14px;
+  opacity: 0.85;
+  font-family: Consolas, monospace;
+}
+.tree :deep(.b-cpp) {
+  background: rgba(80, 140, 230, 0.25);
+  color: #7fb0ff;
+}
+.tree :deep(.b-py) {
+  background: rgba(230, 200, 60, 0.22);
+  color: #e8cc60;
+}
+.tree :deep(.b-java) {
+  background: rgba(230, 120, 60, 0.22);
+  color: #f0a070;
+}
+.tree :deep(.b-tex) {
+  background: rgba(80, 200, 140, 0.22);
+  color: #63e2b7;
+}
+.tree :deep(.b-cfg) {
+  background: rgba(170, 120, 230, 0.22);
+  color: #c09cf0;
+}
+.tree :deep(.b-img) {
+  background: rgba(230, 100, 160, 0.22);
+  color: #f090c0;
+}
+.tree :deep(.b-txt),
+.tree :deep(.b-data) {
+  background: rgba(128, 128, 128, 0.22);
+  color: inherit;
 }
 .tree :deep(.missing) {
   opacity: 0.55;

@@ -1,5 +1,5 @@
 import { computed, reactive } from 'vue';
-import type { AiChange, AiEndpoint, AiSessionDetail, AiSessionSummary, AiTranscriptItem, WsEvent } from '@polyforge/shared';
+import type { AiChange, AiEndpoint, AiFinding, AiSessionDetail, AiSessionMode, AiSessionSummary, AiTranscriptItem, WsEvent } from '@polyforge/shared';
 import { api } from './api';
 
 /**
@@ -24,10 +24,49 @@ export function useAi(problemId: string) {
     state.loading = true;
     try {
       [state.endpoints, state.sessions] = await Promise.all([api.aiEndpoints().catch(() => []), api.aiSessions(problemId).catch(() => [])]);
-      if (!state.current && state.sessions[0]) await open(state.sessions[0].id);
+      const first = state.sessions.find((x) => x.mode === 'agent');
+      if (!state.current && first) await open(first.id);
     } finally {
       state.loading = false;
     }
+  }
+
+  /** Open the newest session of a mode, or none. */
+  async function openLatest(mode: AiSessionMode) {
+    const s = state.sessions.find((x) => x.mode === mode);
+    if (s) await open(s.id);
+    else {
+      state.current = null;
+      state.live = [];
+      state.changes = [];
+    }
+  }
+
+  /** AI check: a read-only review session (DESIGN §4.4, M5). */
+  async function startReview() {
+    const ep = state.current?.endpoint;
+    const d = await api.startReview(problemId, { endpoint: ep, model: state.current?.endpoint === ep ? state.current?.model : undefined });
+    state.sessions = await api.aiSessions(problemId);
+    state.current = d;
+    state.live = [];
+    state.changes = [];
+  }
+
+  /** Hand a finding to a fresh agent session. */
+  async function fix(f: AiFinding) {
+    const ep = state.current?.endpoint;
+    await create(ep, state.current?.model);
+    const lines = [
+      'Fix this issue found by the AI check.',
+      '',
+      `[${f.severity}] ${f.title}`,
+      f.detail,
+      f.file ? `File: ${f.file}${f.line ? `:${f.line}` : ''}` : '',
+      f.suggestion ? `Suggestion: ${f.suggestion}` : '',
+      '',
+      'Verify the fix with the tools.',
+    ];
+    await send(lines.filter((l, i) => l !== '' || i === 1 || i === 6).join('\n'));
   }
 
   async function open(sid: string) {
@@ -123,6 +162,9 @@ export function useAi(problemId: string) {
         if (t && t.kind === 'tool') Object.assign(t, { result: ev.result, isError: ev.isError });
         break;
       }
+      case 'finding':
+        state.current?.findingList.push(ev.finding);
+        break;
       case 'plan':
         if (state.current) state.current.plan = ev.plan;
         break;
@@ -150,7 +192,7 @@ export function useAi(problemId: string) {
     return [...base, ...state.live.filter((x) => x.kind !== 'tool' || !known.has(x.id))];
   });
 
-  return { state, running, transcript, init, open, refresh, create, send, cancel, remove, setModel, accept, reject, onWsEvent };
+  return { state, running, transcript, init, open, openLatest, refresh, create, send, cancel, remove, setModel, accept, reject, startReview, fix, onWsEvent };
 }
 
 export type Ai = ReturnType<typeof useAi>;

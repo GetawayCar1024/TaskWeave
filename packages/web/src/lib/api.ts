@@ -1,6 +1,8 @@
 import type { DefsToml } from './latex';
 import {
   TOKEN_HEADER,
+  type LocalCheck,
+  type StressRequest,
   type AiChange,
   type AiChangeContent,
   type AiEndpoint,
@@ -144,6 +146,23 @@ export const api = {
   syncContent: (id: string, key: string) => request<ItemContent>('GET', `/problems/${pid(id)}/polygon/content?key=${encodeURIComponent(key)}`),
   importPolygon: (req: ImportRequest) => request<JobInfo>('POST', '/problems/import/polygon', req),
   job: (jobId: string) => request<JobInfo>('GET', `/jobs/${encodeURIComponent(jobId)}`),
+
+  // ---- M5 ----
+  stress: (id: string, req: StressRequest) => request<JobInfo>('POST', `/problems/${pid(id)}/stress`, req),
+  exportPackage: (id: string) => request<JobInfo>('POST', `/problems/${pid(id)}/export`),
+  checks: (id: string) => request<LocalCheck[]>('GET', `/problems/${pid(id)}/checks`),
+  startReview: (id: string, req: CreateAiSessionRequest) => request<AiSessionDetail>('POST', `/problems/${pid(id)}/ai/review`, req),
+  /** Download an exported package through fetch (the token travels in a header). */
+  async downloadExport(id: string, file: string) {
+    const res = await fetch(`/api/problems/${pid(id)}/export/${encodeURIComponent(file)}`, { headers: { [TOKEN_HEADER]: token } });
+    if (!res.ok) throw new ApiError(res.status, 'download_failed', res.statusText);
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  },
 
   // ---- AI (M4) ----
   aiEndpoints: () => request<AiEndpoint[]>('GET', '/ai/endpoints'),

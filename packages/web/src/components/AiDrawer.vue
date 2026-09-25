@@ -16,18 +16,21 @@ import {
   NSelect,
   NSpace,
   NSpin,
+  NRadioButton,
+  NRadioGroup,
   NTag,
   useMessage,
 } from 'naive-ui';
-import type { AiChangeContent, AiTranscriptItem } from '@polyforge/shared';
+import type { AiChangeContent, AiFinding, AiSessionMode, AiTranscriptItem, LocalCheck } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 import type { Ai } from '../lib/ai';
 import { PRESETS, pastedStatementPrompt } from '../lib/aiPresets';
 import { renderMarkdown } from '../lib/markdown';
 import { languageForPath } from '../lib/monaco';
 import TextDiff from './TextDiff.vue';
+import type { Workspace } from '../lib/workspace';
 
-const props = defineProps<{ show: boolean; ai: Ai; problemId: string }>();
+const props = defineProps<{ show: boolean; ai: Ai; problemId: string; ws?: Workspace }>();
 const emit = defineEmits<{ 'update:show': [boolean] }>();
 const { t } = useI18n();
 const router = useRouter();
@@ -39,13 +42,57 @@ const showPaste = ref(false);
 const scroller = ref<InstanceType<typeof NScrollbar>>();
 const expanded = ref(new Set<string>());
 
+const tab = ref<AiSessionMode>('agent');
+const checks = ref<LocalCheck[] | null>(null);
+
+async function loadChecks() {
+  checks.value = await api.checks(props.problemId).catch(() => []);
+}
+
 watch(
   () => props.show,
-  (s) => s && props.ai.init().catch((e) => message.error(errorMessage(e))),
+  async (s) => {
+    if (!s) return;
+    await props.ai.init().catch((e) => message.error(errorMessage(e)));
+    if (tab.value === 'review') loadChecks();
+  },
 );
+watch(tab, async (m) => {
+  if (props.ai.state.current?.mode !== m) await props.ai.openLatest(m).catch(() => {});
+  if (m === 'review') loadChecks();
+});
+
+async function startReview() {
+  try {
+    await props.ai.startReview();
+  } catch (e) {
+    message.error(errorMessage(e));
+  }
+}
+
+async function fixFinding(f: AiFinding) {
+  try {
+    tab.value = 'agent';
+    await props.ai.fix(f);
+  } catch (e) {
+    message.error(errorMessage(e));
+  }
+}
+
+const SEVERITY_ORDER = { error: 0, warning: 1, info: 2 } as const;
+const findings = computed(() =>
+  [...(s.value.current?.mode === 'review' ? s.value.current.findingList : [])].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]),
+);
+const SEV_TYPE = { error: 'error', warning: 'warning', info: 'info' } as const;
+
+defineExpose({ openTab: (m: AiSessionMode) => (tab.value = m) });
 
 const s = computed(() => props.ai.state);
-const sessionOptions = computed(() => s.value.sessions.map((x) => ({ label: `${x.title}${x.changes ? ` · ${x.changes}` : ''}`, value: x.id })));
+const sessionOptions = computed(() =>
+  s.value.sessions
+    .filter((x) => x.mode === tab.value)
+    .map((x) => ({ label: `${x.title}${x.changes ? ` · ${x.changes}` : ''}${x.mode === 'review' ? ` · ${x.findings}` : ''}`, value: x.id })),
+);
 const endpointOptions = computed(() => s.value.endpoints.map((e) => ({ label: `${e.name} (${e.protocol})`, value: e.name })));
 const modelOptions = computed(() => {
   const ep = s.value.endpoints.find((e) => e.name === s.value.current?.endpoint);
@@ -126,6 +173,16 @@ function toggle(id: string) {
   expanded.value = next;
 }
 
+async function openAt(file: string, line?: number) {
+  if (!props.ws) return;
+  await props.ws.openFile(file).catch((e) => message.error(errorMessage(e)));
+  const ed = props.ws.editorRef.value;
+  if (ed && line) {
+    ed.revealLineInCenter(line);
+    ed.setPosition({ lineNumber: line, column: 1 });
+  }
+}
+
 // ---- change review ----
 const picked = ref(new Set<string>());
 watch(
@@ -165,7 +222,24 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
         <span>AI</span>
       </template>
       <div class="ai">
-        <div v-if="!s.loading && !s.endpoints.length" class="empty">
+        <n-radio-group v-model:value="tab" size="small" class="mode-tabs">
+          <n-radio-button value="agent">{{ t('ai.tabChat') }}</n-radio-button>
+          <n-radio-button value="review">{{ t('ai.tabReview') }}</n-radio-button>
+        </n-radio-group>
+        <div v-if="tab === 'review'" class="checks">
+          <div class="checks-head">
+            <strong>{{ t('ai.localChecks') }}</strong>
+            <n-button size="tiny" quaternary @click="loadChecks">↻</n-button>
+          </div>
+          <div v-if="checks && !checks.length" class="small good">✓ {{ t('ai.noLocalIssues') }}</div>
+          <div v-for="(c, i) in checks ?? []" :key="i" class="check">
+            <n-tag size="tiny" :type="SEV_TYPE[c.level]" :bordered="false">{{ t(`ai.sev.${c.level}`) }}</n-tag>
+            <span>{{ c.message }}</span>
+            <a v-if="c.file && ws" class="mono path" @click="openAt(c.file, c.line)">{{ c.file }}</a>
+          </div>
+        </div>
+        <div v-if="!s.loading && !s.endpoints.length && tab === 'review'" class="small dim">{{ t('ai.reviewNeedsAi') }}</div>
+        <div v-if="!s.loading && !s.endpoints.length && tab === 'agent'" class="empty">
           <n-empty :description="t('ai.noEndpoint')">
             <template #extra>
               <n-button size="small" type="primary" @click="router.push({ name: 'settings', query: { tab: 'ai' } })">{{ t('ai.configure') }}</n-button>
@@ -173,6 +247,12 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
           </n-empty>
         </div>
         <template v-else>
+          <div v-if="tab === 'review'" class="bar">
+            <n-button size="small" type="primary" :loading="ai.running.value && s.current?.mode === 'review'" :disabled="ai.running.value" @click="startReview">
+              {{ t('ai.startReview') }}
+            </n-button>
+            <span class="small dim">{{ t('ai.reviewHint') }}</span>
+          </div>
           <div class="bar">
             <n-select
               size="small"
@@ -182,7 +262,7 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
               style="flex: 1; min-width: 0"
               @update:value="(v: string) => ai.open(v)"
             />
-            <n-button size="small" @click="newSession">＋ {{ t('ai.newSession') }}</n-button>
+            <n-button v-if="tab === 'agent'" size="small" @click="newSession">＋ {{ t('ai.newSession') }}</n-button>
             <n-popconfirm v-if="s.current" @positive-click="ai.remove(s.current!.id)">
               <template #trigger><n-button size="small" quaternary>🗑</n-button></template>
               {{ t('ai.deleteSession') }}
@@ -214,8 +294,21 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
             </div>
           </div>
 
+          <div v-if="tab === 'review' && findings.length" class="findings">
+            <div v-for="f in findings" :key="f.id" class="finding" :class="f.severity">
+              <div class="finding-head">
+                <n-tag size="tiny" :type="SEV_TYPE[f.severity]" :bordered="false">{{ t(`ai.sev.${f.severity}`) }}</n-tag>
+                <strong>{{ f.title }}</strong>
+                <span class="small dim">{{ t(`ai.cat.${f.category}`) }}</span>
+                <n-button size="tiny" class="fix" :disabled="ai.running.value" @click="fixFinding(f)">{{ t('ai.fixIt') }}</n-button>
+              </div>
+              <div class="small">{{ f.detail }}</div>
+              <div v-if="f.suggestion" class="small dim">💡 {{ f.suggestion }}</div>
+              <a v-if="f.file" class="mono path small" @click="openAt(f.file, f.line)">{{ f.file }}{{ f.line ? `:${f.line}` : '' }}</a>
+            </div>
+          </div>
           <n-scrollbar ref="scroller" class="log">
-            <div v-if="!ai.transcript.value.length" class="hint">{{ t('ai.intro') }}</div>
+            <div v-if="!ai.transcript.value.length" class="hint">{{ tab === 'review' ? t('ai.reviewIntro') : t('ai.intro') }}</div>
             <template v-for="(item, i) in ai.transcript.value" :key="i">
               <div v-if="item.kind === 'user'" class="msg user">{{ item.text }}</div>
               <div v-else-if="item.kind === 'assistant'" class="msg assistant" v-html="renderMarkdown(item.text)" />
@@ -241,7 +334,7 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
             <div v-if="ai.running.value" class="working"><n-spin :size="14" /> {{ t('ai.working') }}</div>
           </n-scrollbar>
 
-          <div v-if="s.changes.length" class="changes">
+          <div v-if="tab === 'agent' && s.changes.length" class="changes">
             <div class="changes-head">
               <strong>{{ t('ai.changes', { n: s.changes.length }) }}</strong>
               <n-space size="small">
@@ -259,19 +352,19 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
             </div>
           </div>
 
-          <div class="presets">
+          <div v-if="tab === 'agent'" class="presets">
             <n-button v-for="p in PRESETS" :key="p.key" size="tiny" secondary :disabled="ai.running.value" @click="send(p.prompt)">
               {{ t(`ai.preset.${p.key}`) }}
             </n-button>
             <n-button size="tiny" secondary :type="showPaste ? 'primary' : 'default'" @click="showPaste = !showPaste">{{ t('ai.preset.paste') }}</n-button>
           </div>
-          <div v-if="showPaste" class="paste">
+          <div v-if="tab === 'agent' && showPaste" class="paste">
             <n-input v-model:value="pasted" type="textarea" :autosize="{ minRows: 4, maxRows: 12 }" :placeholder="t('ai.pastePlaceholder')" />
             <n-button size="small" type="primary" :disabled="!pasted.trim() || ai.running.value" @click="send(pastedStatementPrompt(pasted)); showPaste = false">
               {{ t('ai.buildFromPaste') }}
             </n-button>
           </div>
-          <div class="input">
+          <div v-if="tab === 'agent' || s.current?.mode === 'review'" class="input">
             <n-input v-model:value="input" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" :placeholder="t('ai.placeholder')" @keydown="onKey" />
             <n-button v-if="ai.running.value" type="warning" @click="ai.cancel()">{{ t('ai.stop') }}</n-button>
             <n-button v-else type="primary" :disabled="!input.trim()" @click="send()">{{ t('ai.send') }}</n-button>
@@ -313,6 +406,71 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.mode-tabs {
+  flex-shrink: 0;
+}
+.checks {
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 4px;
+  padding: 4px 8px;
+  max-height: 170px;
+  overflow: auto;
+  flex-shrink: 0;
+}
+.checks-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+.check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  padding: 1px 0;
+}
+.findings {
+  max-height: 38%;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.finding {
+  border-left: 3px solid rgba(128, 128, 128, 0.5);
+  padding: 4px 8px;
+  background: rgba(128, 128, 128, 0.07);
+  border-radius: 0 4px 4px 0;
+}
+.finding.error {
+  border-left-color: #e88080;
+}
+.finding.warning {
+  border-left-color: #f0a020;
+}
+.finding.info {
+  border-left-color: #70c0e8;
+}
+.finding-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+}
+.finding-head .fix {
+  margin-left: auto;
+}
+.small {
+  font-size: 12px;
+}
+.dim {
+  opacity: 0.65;
+}
+.good {
+  color: #63e2b7;
 }
 .bar {
   display: flex;

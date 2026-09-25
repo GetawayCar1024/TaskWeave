@@ -58,6 +58,7 @@ function onKey(e: KeyboardEvent) {
     index.value = Math.max(index.value - 1, 0);
     e.preventDefault();
   } else if (e.key === 'Enter') {
+    e.preventDefault();
     const f = results.value[index.value];
     if (f) choose(f);
   }

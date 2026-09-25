@@ -4,7 +4,8 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 import open from 'open';
 import { buildApp } from './app.js';
-import { ASSETS_DIR, GlobalStore, defaultGlobalDir } from './global.js';
+import { GlobalStore, defaultGlobalDir } from './global.js';
+import { WEB_DIST } from './paths.js';
 import { JobManager } from './jobs.js';
 import { Judge } from './judge/index.js';
 import { exists } from './util/fs.js';
@@ -36,7 +37,7 @@ async function main() {
   const watcher = new ProblemWatcher(registry, files, hub);
   await watcher.start();
 
-  const webDist = path.resolve(ASSETS_DIR, '../packages/web/dist');
+  const webDist = WEB_DIST;
   const hasDist = !args.dev && (await exists(path.join(webDist, 'index.html')));
   if (!args.dev && !hasDist) console.warn('[polyforge] web build not found; run `pnpm build` first.');
 

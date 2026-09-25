@@ -4,3 +4,5 @@ dist/
 *.log
 # 本地参考资料（Polygon 网页存档）
 *.mhtml
+release/
+*.tgz
