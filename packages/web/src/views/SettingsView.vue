@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import {
   NAlert,
   NButton,
@@ -15,13 +15,14 @@ import {
   NRadioGroup,
   NSpace,
   NSwitch,
+  NSelect,
   NTabPane,
   NTabs,
   NTag,
   useMessage,
   type DataTableColumns,
 } from 'naive-ui';
-import type { GlobalConfig, LanguagesConfig, SecretsResponse, ToolProbe } from '@polyforge/shared';
+import { AI_PROTOCOLS, type AiProtocol, type GlobalConfig, type LanguagesConfig, type SecretsResponse, type ToolProbe } from '@polyforge/shared';
 import AppHeader from '../components/AppHeader.vue';
 import CodeEditor from '../components/CodeEditor.vue';
 import DirPicker from '../components/DirPicker.vue';
@@ -30,6 +31,8 @@ import { settings, saveSettings } from '../lib/settings';
 
 const { t } = useI18n();
 const router = useRouter();
+const route = useRoute();
+const initialTab = typeof route.query.tab === 'string' ? route.query.tab : 'general';
 const message = useMessage();
 
 // ---- general ----
@@ -147,9 +150,102 @@ async function testPolygon() {
   }
 }
 
+// ---- AI endpoints ----
+interface EditEndpoint {
+  name: string;
+  previousName?: string;
+  protocol: AiProtocol;
+  baseUrl: string;
+  apiKey: string;
+  maskedKey: string;
+  models: string;
+  status?: string;
+}
+const endpoints = ref<EditEndpoint[]>([]);
+const aiBusy = ref<string | null>(null);
+
+async function loadEndpoints() {
+  endpoints.value = (await api.aiEndpoints()).map((e) => ({
+    name: e.name,
+    previousName: e.name,
+    protocol: e.protocol,
+    baseUrl: e.baseUrl,
+    apiKey: '',
+    maskedKey: e.hasKey ? e.apiKey : '',
+    models: e.models.join(', '),
+  }));
+}
+
+function addEndpoint(protocol: AiProtocol) {
+  endpoints.value.push({
+    name: protocol === 'anthropic' ? 'Claude' : 'OpenAI-compatible',
+    protocol,
+    baseUrl: protocol === 'anthropic' ? '' : 'https://api.openai.com/v1',
+    apiKey: '',
+    maskedKey: '',
+    models: protocol === 'anthropic' ? 'claude-opus-5, claude-sonnet-5' : '',
+  });
+}
+
+async function saveEndpoints() {
+  const list = endpoints.value.map((e) => ({
+    name: e.name,
+    previousName: e.previousName,
+    protocol: e.protocol,
+    baseUrl: e.baseUrl,
+    apiKey: e.apiKey,
+    models: e.models.split(/[\s,]+/).filter(Boolean),
+  }));
+  await api.saveAiEndpoints(list);
+  await loadEndpoints();
+}
+
+async function saveAi() {
+  try {
+    await saveEndpoints();
+    await saveSettings(JSON.parse(JSON.stringify({ ...settings.config, ai: draft.value.ai })));
+    message.success(t('common.saved'));
+  } catch (e) {
+    message.error(errorMessage(e));
+  }
+}
+
+async function testEndpoint(e: EditEndpoint) {
+  aiBusy.value = e.name;
+  try {
+    await saveEndpoints();
+    const ep = endpoints.value.find((x) => x.name === e.name)!;
+    const r = await api.testAiEndpoint(e.name, ep.models.split(/[\s,]+/).filter(Boolean)[0]);
+    ep.status = r.ok ? `✓ ${r.ms} ms · ${r.reply ?? ''}` : `✗ ${r.error}`;
+  } catch (err) {
+    e.status = `✗ ${errorMessage(err)}`;
+  } finally {
+    aiBusy.value = null;
+  }
+}
+
+async function fetchModels(e: EditEndpoint) {
+  aiBusy.value = e.name;
+  try {
+    await saveEndpoints();
+    const ep = endpoints.value.find((x) => x.name === e.name)!;
+    const models = await api.aiModels(e.name);
+    const merged = [...new Set([...ep.models.split(/[\s,]+/).filter(Boolean), ...models])];
+    ep.models = merged.join(', ');
+    ep.status = t('settings.aiModelsFetched', { n: models.length });
+  } catch (err) {
+    e.status = `✗ ${errorMessage(err)}`;
+  } finally {
+    aiBusy.value = null;
+  }
+}
+
+const endpointNames = computed(() => endpoints.value.map((e) => ({ label: e.name, value: e.name })));
+
 onMounted(() => {
   loadLanguages().catch((e) => message.error(errorMessage(e)));
   loadSecrets().catch((e) => message.error(errorMessage(e)));
+  loadEndpoints().catch((e) => message.error(errorMessage(e)));
 });
 </script>
 
@@ -163,7 +259,7 @@ onMounted(() => {
     </app-header>
 
     <main class="body">
-      <n-tabs type="line" animated>
+      <n-tabs type="line" animated :default-value="initialTab">
         <n-tab-pane name="general" :tab="t('settings.general')">
           <n-card size="small">
             <n-form label-placement="left" label-width="160">
@@ -235,6 +331,43 @@ onMounted(() => {
               </n-card>
             </div>
           </div>
+        </n-tab-pane>
+        <n-tab-pane name="ai" tab="AI">
+          <n-card size="small">
+            <p class="hint">{{ t('settings.aiHint') }}</p>
+            <div v-for="(e, i) in endpoints" :key="i" class="endpoint">
+              <div class="ep-row">
+                <n-input v-model:value="e.name" size="small" :placeholder="t('settings.aiName')" style="width: 180px" />
+                <n-select v-model:value="e.protocol" size="small" :options="AI_PROTOCOLS.map((p) => ({ label: p, value: p }))" style="width: 120px" />
+                <n-input v-model:value="e.baseUrl" size="small" class="mono" :placeholder="e.protocol === 'anthropic' ? 'https://api.anthropic.com' : 'https://…/v1'" style="flex: 1" />
+                <n-button size="small" quaternary type="error" @click="endpoints.splice(i, 1)">{{ t('common.remove') }}</n-button>
+              </div>
+              <div class="ep-row">
+                <n-input v-model:value="e.apiKey" size="small" type="password" show-password-on="click" class="mono" :placeholder="e.maskedKey ? e.maskedKey + ' (' + t('settings.keepEmpty') + ')' : 'API key'" style="width: 300px" />
+                <n-input v-model:value="e.models" size="small" class="mono" :placeholder="t('settings.aiModels')" style="flex: 1" />
+              </div>
+              <div class="ep-row">
+                <n-button size="tiny" :loading="aiBusy === e.name" :disabled="!e.name" @click="testEndpoint(e)">{{ t('settings.testConnection') }}</n-button>
+                <n-button size="tiny" :loading="aiBusy === e.name" :disabled="!e.name" @click="fetchModels(e)">{{ t('settings.aiFetchModels') }}</n-button>
+                <span class="small">{{ e.status }}</span>
+              </div>
+            </div>
+            <n-space>
+              <n-button size="small" dashed @click="addEndpoint('anthropic')">+ Anthropic</n-button>
+              <n-button size="small" dashed @click="addEndpoint('openai')">+ OpenAI {{ t('settings.aiCompatible') }}</n-button>
+            </n-space>
+            <n-form label-placement="left" label-width="160" style="margin-top: 16px">
+              <n-form-item :label="t('settings.aiDefault')">
+                <n-space>
+                  <n-select v-model:value="draft.ai.endpoint" :options="endpointNames" clearable size="small" style="width: 200px" />
+                  <n-input v-model:value="draft.ai.model" size="small" class="mono" placeholder="claude-opus-5" style="width: 220px" />
+                </n-space>
+              </n-form-item>
+            </n-form>
+            <n-space justify="end">
+              <n-button type="primary" @click="saveAi">{{ t('common.save') }}</n-button>
+            </n-space>
+          </n-card>
         </n-tab-pane>
         <n-tab-pane name="polygon" tab="Polygon">
           <n-card size="small">
@@ -319,5 +452,19 @@ onMounted(() => {
 }
 .small {
   font-size: 12px;
+}
+.endpoint {
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ep-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 </style>

@@ -85,7 +85,14 @@
     "keepEmpty": "留空则不修改",
     "testConnection": "测试连接",
     "polygonOk": "连接成功：可访问 {n} 道题（{ms} ms）",
-    "polygonHint": "在 Polygon → Settings → API Keys 创建。密钥只保存在全局目录的 secrets.toml 里，不会写进题目文件夹。"
+    "polygonHint": "在 Polygon → Settings → API Keys 创建。密钥只保存在全局目录的 secrets.toml 里，不会写进题目文件夹。",
+    "aiHint": "可以配置多个端点：Anthropic 协议（官方或兼容中转站）和 OpenAI Chat Completions 协议。密钥保存在 secrets.toml。",
+    "aiName": "名称",
+    "aiModels": "模型（逗号分隔，第一个为默认）",
+    "aiFetchModels": "拉取模型列表",
+    "aiModelsFetched": "拉取到 {n} 个模型",
+    "aiCompatible": "兼容",
+    "aiDefault": "默认端点 / 模型"
   },
   "editor": {
     "changedOnDisk": "此文件已在磁盘上被修改，而你有未保存的更改。",
@@ -279,5 +286,64 @@
     "mergeWithConflicts": "有 {n} 处重叠改动，会写入冲突标记（<<<<<<< / >>>>>>>），需在编辑器里处理",
     "mergePreview": "合并结果",
     "mergeCount": "合并 {n} 项"
+  },
+  "ai": {
+    "noEndpoint": "还没有配置 AI 端点",
+    "configure": "去设置",
+    "noSession": "选择会话",
+    "newSession": "新会话",
+    "deleteSession": "删除这个会话（包括未确认的改动）？",
+    "intro": "让 AI 修改这道题的任何文件：题面、validator、checker、generator、解、测试、problem.toml。\n它在副本里改动并自己编译、生成测试、跑 invocation 验证；改动在下方逐个文件确认后才会写入。\n可以用下面的快捷任务，或直接描述你想要的修改。",
+    "thinking": "思考过程",
+    "working": "正在工作…",
+    "changes": "{n} 个文件待确认",
+    "accept": "接受 {n} 个",
+    "acceptOne": "接受",
+    "reject": "放弃",
+    "accepted": "已写入 {n} 个文件",
+    "rejected": "已放弃 {n} 个文件",
+    "status": {
+      "added": "新增",
+      "modified": "修改",
+      "deleted": "删除"
+    },
+    "preset": {
+      "full": "整题生成",
+      "analyze": "分析题面",
+      "validator": "Validator",
+      "std": "标程",
+      "brute": "暴力",
+      "tests": "造数据",
+      "checker": "Checker",
+      "wrong": "错误解",
+      "verify": "全面验证",
+      "translate": "翻译题面",
+      "lint": "题面检查",
+      "paste": "贴题面…"
+    },
+    "pastePlaceholder": "粘贴题面（任意格式），AI 会先写成 Polygon LaTeX 题面，再生成整题",
+    "buildFromPaste": "写入题面并生成整题",
+    "placeholder": "描述要做的修改，Ctrl+Enter 发送",
+    "stop": "停止",
+    "send": "发送",
+    "original": "当前文件",
+    "proposed": "AI 修改后",
+    "tool": {
+      "list_files": "查看文件",
+      "read_file": "读取",
+      "write_file": "写入",
+      "edit_file": "修改",
+      "delete_file": "删除",
+      "list_shared": "查看共享库",
+      "read_shared": "读取共享文件",
+      "compile": "编译",
+      "run": "运行",
+      "generate_tests": "生成测试",
+      "view_test": "查看测试",
+      "run_invocation": "Invocation",
+      "run_validator_tests": "Validator 自测",
+      "run_checker_tests": "Checker 自测",
+      "update_plan": "更新计划"
+    }
   }
 }

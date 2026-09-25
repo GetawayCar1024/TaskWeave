@@ -1,6 +1,14 @@
 import type { DefsToml } from './latex';
 import {
   TOKEN_HEADER,
+  type AiChange,
+  type AiChangeContent,
+  type AiEndpoint,
+  type AiSessionDetail,
+  type AiSessionSummary,
+  type AiTestResult,
+  type CreateAiSessionRequest,
+  type SaveAiEndpoint,
   type CompileResult,
   type ImportRequest,
   type ItemContent,
@@ -136,6 +144,25 @@ export const api = {
   syncContent: (id: string, key: string) => request<ItemContent>('GET', `/problems/${pid(id)}/polygon/content?key=${encodeURIComponent(key)}`),
   importPolygon: (req: ImportRequest) => request<JobInfo>('POST', '/problems/import/polygon', req),
   job: (jobId: string) => request<JobInfo>('GET', `/jobs/${encodeURIComponent(jobId)}`),
+
+  // ---- AI (M4) ----
+  aiEndpoints: () => request<AiEndpoint[]>('GET', '/ai/endpoints'),
+  saveAiEndpoints: (list: SaveAiEndpoint[]) => request<AiEndpoint[]>('PUT', '/ai/endpoints', list),
+  testAiEndpoint: (name: string, model?: string) => request<AiTestResult>('POST', '/ai/endpoints/test', { name, model }),
+  aiModels: (name: string) => request<string[]>('POST', '/ai/endpoints/models', { name }),
+  aiSessions: (id: string) => request<AiSessionSummary[]>('GET', `/problems/${pid(id)}/ai/sessions`),
+  createAiSession: (id: string, req: CreateAiSessionRequest) => request<AiSessionDetail>('POST', `/problems/${pid(id)}/ai/sessions`, req),
+  aiSession: (id: string, sid: string) => request<AiSessionDetail>('GET', `/problems/${pid(id)}/ai/sessions/${sid}`),
+  updateAiSession: (id: string, sid: string, patch: { title?: string; endpoint?: string; model?: string }) =>
+    request<AiSessionDetail>('PATCH', `/problems/${pid(id)}/ai/sessions/${sid}`, patch),
+  deleteAiSession: (id: string, sid: string) => request<{ ok: true }>('DELETE', `/problems/${pid(id)}/ai/sessions/${sid}`),
+  sendAi: (id: string, sid: string, text: string) => request<AiSessionDetail>('POST', `/problems/${pid(id)}/ai/sessions/${sid}/messages`, { text }),
+  cancelAi: (id: string, sid: string) => request<{ ok: true }>('POST', `/problems/${pid(id)}/ai/sessions/${sid}/cancel`),
+  aiChanges: (id: string, sid: string) => request<AiChange[]>('GET', `/problems/${pid(id)}/ai/sessions/${sid}/changes`),
+  aiChangeContent: (id: string, sid: string, path: string) =>
+    request<AiChangeContent>('GET', `/problems/${pid(id)}/ai/sessions/${sid}/changes/content?path=${encodeURIComponent(path)}`),
+  acceptAi: (id: string, sid: string, paths: string[]) => request<AiChange[]>('POST', `/problems/${pid(id)}/ai/sessions/${sid}/changes/accept`, { paths }),
+  rejectAi: (id: string, sid: string, paths: string[]) => request<AiChange[]>('POST', `/problems/${pid(id)}/ai/sessions/${sid}/changes/reject`, { paths }),
 };
 
 /** URL for raw problem files in <img> tags (which cannot send the token header). */

@@ -85,7 +85,14 @@
     "keepEmpty": "leave empty to keep",
     "testConnection": "Test connection",
     "polygonOk": "Connected: {n} accessible problems ({ms} ms)",
-    "polygonHint": "Create a key in Polygon → Settings → API Keys. Keys are stored only in secrets.toml in the global directory, never in problem folders."
+    "polygonHint": "Create a key in Polygon → Settings → API Keys. Keys are stored only in secrets.toml in the global directory, never in problem folders.",
+    "aiHint": "Configure one or more endpoints: the Anthropic protocol (official API or a compatible proxy) and the OpenAI Chat Completions protocol. Keys are stored in secrets.toml.",
+    "aiName": "Name",
+    "aiModels": "Models (comma-separated, first is the default)",
+    "aiFetchModels": "Fetch models",
+    "aiModelsFetched": "Fetched {n} models",
+    "aiCompatible": "compatible",
+    "aiDefault": "Default endpoint / model"
   },
   "editor": {
     "changedOnDisk": "This file changed on disk while you have unsaved changes.",
@@ -279,5 +286,64 @@
     "mergeWithConflicts": "{n} overlapping edit(s) will be written with conflict markers (<<<<<<< / >>>>>>>) to resolve in the editor",
     "mergePreview": "merged",
     "mergeCount": "{n} to merge"
+  },
+  "ai": {
+    "noEndpoint": "No AI endpoint configured yet",
+    "configure": "Open settings",
+    "noSession": "Pick a session",
+    "newSession": "New session",
+    "deleteSession": "Delete this session (including unreviewed changes)?",
+    "intro": "Let the AI change any file of this problem: statement, validator, checker, generators, solutions, tests, problem.toml.\nIt works on a copy, compiles, generates tests and runs invocations to check its work; changes are written only after you accept them file by file below.\nUse a quick task below or describe what you want.",
+    "thinking": "Reasoning",
+    "working": "Working…",
+    "changes": "{n} file(s) to review",
+    "accept": "Accept {n}",
+    "acceptOne": "Accept",
+    "reject": "Discard",
+    "accepted": "Wrote {n} file(s)",
+    "rejected": "Discarded {n} file(s)",
+    "status": {
+      "added": "new",
+      "modified": "modified",
+      "deleted": "deleted"
+    },
+    "preset": {
+      "full": "Build whole problem",
+      "analyze": "Analyze statement",
+      "validator": "Validator",
+      "std": "Main solution",
+      "brute": "Brute force",
+      "tests": "Tests",
+      "checker": "Checker",
+      "wrong": "Wrong solutions",
+      "verify": "Verify all",
+      "translate": "Translate statement",
+      "lint": "Check statement",
+      "paste": "Paste statement…"
+    },
+    "pastePlaceholder": "Paste a statement (any format); the AI writes it as a Polygon LaTeX statement, then builds the problem",
+    "buildFromPaste": "Write statement and build",
+    "placeholder": "Describe the change, Ctrl+Enter to send",
+    "stop": "Stop",
+    "send": "Send",
+    "original": "Current file",
+    "proposed": "Proposed by AI",
+    "tool": {
+      "list_files": "List files",
+      "read_file": "Read",
+      "write_file": "Write",
+      "edit_file": "Edit",
+      "delete_file": "Delete",
+      "list_shared": "Shared library",
+      "read_shared": "Read shared file",
+      "compile": "Compile",
+      "run": "Run",
+      "generate_tests": "Generate tests",
+      "view_test": "View test",
+      "run_invocation": "Invocation",
+      "run_validator_tests": "Validator tests",
+      "run_checker_tests": "Checker tests",
+      "update_plan": "Update plan"
+    }
   }
 }

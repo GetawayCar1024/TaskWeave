@@ -11,6 +11,8 @@ import FileSidebar, { type SidebarAction } from '../components/FileSidebar.vue';
 import InfoPanel from '../components/InfoPanel.vue';
 import InvocationDrawer from '../components/InvocationDrawer.vue';
 import SyncDialog from '../components/SyncDialog.vue';
+import AiDrawer from '../components/AiDrawer.vue';
+import { useAi } from '../lib/ai';
 import QuickOpen from '../components/QuickOpen.vue';
 import RunPanel from '../components/RunPanel.vue';
 import SelfTestPanel from '../components/SelfTestPanel.vue';
@@ -30,6 +32,8 @@ const dialog = useDialog();
 
 const ws = useWorkspace(props.id);
 const judge = useJudge(props.id, ws);
+const ai = useAi(props.id);
+const showAi = ref(false);
 const summary = computed(() => ws.state.detail?.summary);
 
 // ---- right panel / judge actions ----
@@ -227,6 +231,7 @@ onBeforeRouteLeave(() => {
 const offWs = onWs((e) => {
   void ws.onWsEvent(e);
   judge.onWsEvent(e);
+  ai.onWsEvent(e);
 });
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown);
@@ -247,7 +252,6 @@ onBeforeUnmount(() => {
   ws.dispose();
 });
 
-const soon = [{ key: 'ai', milestone: 'M4' }];
 </script>
 
 <template>
@@ -275,12 +279,9 @@ const soon = [{ key: 'ai', milestone: 'M4' }];
           </template>
           Ctrl+Shift+U
         </n-tooltip>
-        <n-tooltip v-for="b in soon" :key="b.key">
-          <template #trigger>
-            <n-button size="small" disabled>{{ t(`toolbar.${b.key}`) }}</n-button>
-          </template>
-          {{ t('toolbar.comingIn', { m: b.milestone }) }}
-        </n-tooltip>
+        <n-button size="small" :type="ai.running.value ? 'primary' : 'default'" @click="showAi = true">
+          AI<template v-if="ai.state.changes.length"> · {{ ai.state.changes.length }}</template>
+        </n-button>
       </template>
     </app-header>
 
@@ -334,6 +335,7 @@ const soon = [{ key: 'ai', milestone: 'M4' }];
     <quick-open v-model:show="quickOpen" :files="allFiles" @open="(p: string) => ws.openFile(p)" />
     <invocation-drawer v-model:show="showInvocation" :ws="ws" :judge="judge" :problem-id="id" />
     <sync-dialog v-model:show="showSync" :ws="ws" :problem-id="id" />
+    <ai-drawer v-model:show="showAi" :ai="ai" :problem-id="id" />
     <diff-dialog v-model:show="diff.show" :path="diff.path" :disk="diff.disk" :mine="diff.mine" @keep-mine="keepMine" @use-disk="useDisk" />
 
     <n-modal v-model:show="prompt.show" preset="card" :title="prompt.title" style="width: 480px" @after-leave="prompt.resolve(null)">
