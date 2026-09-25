@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { CreateAiSessionRequest, SaveAiEndpoint } from '@polyforge/shared';
-import type { AgentService } from '../ai/agent.js';
+import { contestOwner, type AgentService } from '../ai/agent.js';
 import { createProvider, defaultModel } from '../ai/provider.js';
 import type { GlobalStore } from '../global.js';
 import { HttpError } from '../util/fs.js';
@@ -36,35 +36,42 @@ export function aiRoutes(app: FastifyInstance, global: GlobalStore, agent: Agent
   type P = { Params: { id: string } };
   type S = { Params: { id: string; sid: string } };
 
-  app.get<P>('/api/problems/:id/ai/sessions', async (req) => agent.list(req.params.id));
-  app.post<P & { Body: CreateAiSessionRequest }>('/api/problems/:id/ai/sessions', async (req) => agent.create(req.params.id, req.body ?? {}));
-  app.post<P & { Body: CreateAiSessionRequest }>('/api/problems/:id/ai/review', async (req) => agent.startReview(req.params.id, req.body ?? {}));
+  // The same session routes for problems and for whole contests (owner "contest:<id>").
+  const owners: [string, (id: string) => string][] = [
+    ['/api/problems/:id', (id) => id],
+    ['/api/contests/:id', contestOwner],
+  ];
+  for (const [base, own] of owners) {
+    app.get<P>(`${base}/ai/sessions`, async (req) => agent.list(own(req.params.id)));
+    app.post<P & { Body: CreateAiSessionRequest }>(`${base}/ai/sessions`, async (req) => agent.create(own(req.params.id), req.body ?? {}));
+    app.post<P & { Body: CreateAiSessionRequest }>(`${base}/ai/review`, async (req) => agent.startReview(own(req.params.id), req.body ?? {}));
 
-  app.get<S>('/api/problems/:id/ai/sessions/:sid', async (req) => agent.get(req.params.id, req.params.sid));
-  app.patch<S & { Body: { title?: string; endpoint?: string; model?: string } }>('/api/problems/:id/ai/sessions/:sid', async (req) =>
-    agent.update(req.params.id, req.params.sid, req.body ?? {}),
-  );
-  app.delete<S>('/api/problems/:id/ai/sessions/:sid', async (req) => {
-    await agent.remove(req.params.id, req.params.sid);
-    return { ok: true };
-  });
-  app.post<S & { Body: { text: string } }>('/api/problems/:id/ai/sessions/:sid/messages', async (req) =>
-    agent.send(req.params.id, req.params.sid, String(req.body?.text ?? '')),
-  );
-  app.post<S>('/api/problems/:id/ai/sessions/:sid/cancel', async (req) => {
-    agent.cancel(req.params.id, req.params.sid);
-    return { ok: true };
-  });
+    app.get<S>(`${base}/ai/sessions/:sid`, async (req) => agent.get(own(req.params.id), req.params.sid));
+    app.patch<S & { Body: { title?: string; endpoint?: string; model?: string } }>(`${base}/ai/sessions/:sid`, async (req) =>
+      agent.update(own(req.params.id), req.params.sid, req.body ?? {}),
+    );
+    app.delete<S>(`${base}/ai/sessions/:sid`, async (req) => {
+      await agent.remove(own(req.params.id), req.params.sid);
+      return { ok: true };
+    });
+    app.post<S & { Body: { text: string } }>(`${base}/ai/sessions/:sid/messages`, async (req) =>
+      agent.send(own(req.params.id), req.params.sid, String(req.body?.text ?? '')),
+    );
+    app.post<S>(`${base}/ai/sessions/:sid/cancel`, async (req) => {
+      agent.cancel(own(req.params.id), req.params.sid);
+      return { ok: true };
+    });
 
-  app.get<S>('/api/problems/:id/ai/sessions/:sid/changes', async (req) => agent.changes(req.params.id, req.params.sid));
-  app.get<S & { Querystring: { path: string } }>('/api/problems/:id/ai/sessions/:sid/changes/content', async (req) => {
-    if (!req.query.path) throw new HttpError(400, 'bad_request', 'path required');
-    return agent.changeContent(req.params.id, req.params.sid, req.query.path);
-  });
-  app.post<S & { Body: { paths: string[] } }>('/api/problems/:id/ai/sessions/:sid/changes/accept', async (req) =>
-    agent.accept(req.params.id, req.params.sid, req.body?.paths ?? []),
-  );
-  app.post<S & { Body: { paths: string[] } }>('/api/problems/:id/ai/sessions/:sid/changes/reject', async (req) =>
-    agent.reject(req.params.id, req.params.sid, req.body?.paths ?? []),
-  );
+    app.get<S>(`${base}/ai/sessions/:sid/changes`, async (req) => agent.changes(own(req.params.id), req.params.sid));
+    app.get<S & { Querystring: { path: string } }>(`${base}/ai/sessions/:sid/changes/content`, async (req) => {
+      if (!req.query.path) throw new HttpError(400, 'bad_request', 'path required');
+      return agent.changeContent(own(req.params.id), req.params.sid, req.query.path);
+    });
+    app.post<S & { Body: { paths: string[] } }>(`${base}/ai/sessions/:sid/changes/accept`, async (req) =>
+      agent.accept(own(req.params.id), req.params.sid, req.body?.paths ?? []),
+    );
+    app.post<S & { Body: { paths: string[] } }>(`${base}/ai/sessions/:sid/changes/reject`, async (req) =>
+      agent.reject(own(req.params.id), req.params.sid, req.body?.paths ?? []),
+    );
+  }
 }

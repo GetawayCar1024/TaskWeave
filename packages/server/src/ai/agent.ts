@@ -20,11 +20,12 @@ import type { RawAiEndpoint } from '../global.js';
 import type { Judge } from '../judge/index.js';
 import { atomicWrite, HttpError } from '../util/fs.js';
 import type { ProblemRef } from '../workspace/problems.js';
+import type { ContestRegistry } from '../workspace/contests.js';
 import type { WsHub } from '../ws.js';
-import { reviewKickoff, reviewSystemPrompt, systemPrompt } from './prompts.js';
-import { cleanApiError, createProvider, defaultModel, ToolInputParseError, type AgentMessage, type Block } from './provider.js';
-import { Sandbox } from './sandbox.js';
-import { clip, runTool, toolsFor, WRITE_TOOLS } from './tools.js';
+import { contestOverview, contestReviewKickoff, contestReviewSystemPrompt, contestSystemPrompt, reviewKickoff, reviewSystemPrompt, systemPrompt } from './prompts.js';
+import { cleanApiError, createProvider, defaultModel, ToolInputParseError, type AgentMessage, type Block, type ToolDef } from './provider.js';
+import { ContestSandbox, Sandbox, type ContestPart, type SandboxLike } from './sandbox.js';
+import { clip, contestToolsFor, runContestTool, runTool, toolsFor, WRITE_TOOLS, type ToolEnv } from './tools.js';
 import { localChecks } from '../judge/checks.js';
 
 /** Upper bound of model round-trips per user message. */
@@ -42,6 +43,7 @@ interface SessionData {
   /** Sessions written before review mode existed have no mode: they are agent sessions. */
   mode?: AiSessionMode;
   findings?: AiFinding[];
+  /** Owner: a problem id, or "contest:<id>" for a contest session. */
   problemId: string;
   title: string;
   createdAt: string;
@@ -58,14 +60,31 @@ interface SessionData {
 
 interface Live {
   data: SessionData;
-  sandbox: Sandbox;
+  sandbox: SandboxLike;
   state: AiRunState;
   error?: string;
   abort?: AbortController;
   running?: Promise<void>;
 }
 
-const sessionsDir = (ref: ProblemRef) => path.join(ref.dir, '.polyforge', 'ai');
+const sessionsDir = (ref: { dir: string }) => path.join(ref.dir, '.polyforge', 'ai');
+
+/** Owner key of a contest's sessions (problem ids cannot contain ":"). */
+export const contestOwner = (id: string) => `contest:${id}`;
+
+/** Tool environment parts that do not depend on the working copy. */
+type BaseEnv = Omit<ToolEnv, 'sandbox' | 'ctx'>;
+
+/** What differs between problem and contest sessions. */
+interface Scope {
+  sessionsDir: string;
+  sandbox(work: string, touched: string[]): SandboxLike;
+  prompt(mode: AiSessionMode): Promise<string>;
+  tools(mode: AiSessionMode): ToolDef[];
+  run(name: string, input: unknown, base: BaseEnv, sandbox: SandboxLike, mode: AiSessionMode): Promise<{ content: string; isError: boolean }>;
+  /** First message of an AI check. */
+  kickoff(): Promise<string>;
+}
 
 /**
  * AI agent sessions (DESIGN §4.4). Each session owns a sandbox copy of the problem;
@@ -79,8 +98,89 @@ export class AgentService {
   constructor(
     private judge: Judge,
     private hub: WsHub,
+    private contests?: ContestRegistry,
   ) {
     this.usageLog = new UsageLog(judge.global);
+  }
+
+  /** Sessions of a problem live in its folder; those of a contest in the contest folder. */
+  private async scope(owner: string): Promise<Scope> {
+    const shared = this.judge.global.sharedDir;
+    if (owner.startsWith('contest:')) {
+      if (!this.contests) throw new HttpError(404, 'contest_not_found', 'Contests are not available');
+      const contests = this.contests;
+      const cid = owner.slice('contest:'.length);
+      const cref = await contests.get(cid);
+      const parts = async (withIds: string[]): Promise<ContestPart[]> => {
+        const { config } = await contests.config(cid);
+        const listed = config.problems.map((p) => ({ id: p.problem, index: p.index }));
+        const extra = withIds.filter((id) => !listed.some((p) => p.id === id)).map((id) => ({ id, index: '-' }));
+        const out: ContestPart[] = [];
+        for (const p of [...listed, ...extra]) {
+          const ref = await this.judge.registry.get(p.id).catch(() => null);
+          if (ref) out.push({ id: ref.id, index: p.index, realDir: ref.dir });
+        }
+        return out;
+      };
+      const overview = async () => {
+        const { config } = await contests.config(cid);
+        const rows = [];
+        for (const p of config.problems) {
+          const ctx = await this.judge.ctx(p.problem).catch(() => null);
+          const langs = ctx ? await fsp.readdir(path.join(ctx.ref.dir, 'statement')).catch(() => [] as string[]) : [];
+          const title = ctx?.config.problem.title;
+          rows.push({ index: p.index, id: p.problem, title: title?.en || title?.zh || p.problem, langs: langs.filter((l) => /^[a-z]{2,8}$/.test(l) && l !== 'images').sort() });
+        }
+        return contestOverview(config.contest.title.en || config.contest.title.zh || config.contest.name, rows);
+      };
+      return {
+        sessionsDir: sessionsDir(cref),
+        sandbox: (work, touched) => new ContestSandbox(work, touched, parts),
+        prompt: async (mode) => (mode === 'review' ? contestReviewSystemPrompt(shared, await overview()) : contestSystemPrompt(shared, await overview())),
+        tools: contestToolsFor,
+        run: (name, input, base, sb, mode) =>
+          runContestTool(
+            name,
+            input,
+            {
+              sandbox: sb as ContestSandbox,
+              session: base,
+              forProblem: (part, sandbox) => ({
+                ...base,
+                sandbox,
+                ctx: async () => {
+                  const ref = await this.judge.registry.get(part.id);
+                  return this.judge.ctxFor({ id: `${part.id}@ai`, dir: sandbox.dir, root: ref.root }, path.join(ref.dir, '.polyforge', 'build'));
+                },
+              }),
+            },
+            mode,
+          ),
+        kickoff: async () => {
+          const { config } = await contests.config(cid);
+          const per = [];
+          for (const p of config.problems) {
+            const ctx = await this.judge.ctx(p.problem).catch(() => null);
+            per.push({ index: p.index, id: p.problem, checks: ctx ? await localChecks(this.judge, ctx) : [{ level: 'error', message: 'problem folder not found' }] });
+          }
+          return contestReviewKickoff(per);
+        },
+      };
+    }
+    const ref = await this.judge.registry.get(owner);
+    return {
+      sessionsDir: sessionsDir(ref),
+      sandbox: (work, touched) => new Sandbox(ref.dir, work, new Set(touched)),
+      prompt: (mode) => (mode === 'review' ? reviewSystemPrompt(shared) : systemPrompt(shared)),
+      tools: toolsFor,
+      run: (name, input, base, sb, mode) => {
+        const sandbox = sb as Sandbox;
+        const sandboxRef: ProblemRef = { id: `${owner}@ai`, dir: sandbox.dir, root: ref.root };
+        const env: ToolEnv = { ...base, sandbox, ctx: () => this.judge.ctxFor(sandboxRef, path.join(ref.dir, '.polyforge', 'build')) };
+        return runTool(name, input, env, mode);
+      },
+      kickoff: async () => reviewKickoff(await localChecks(this.judge, await this.judge.ctx(owner))),
+    };
   }
 
   /** Total usage of a session and its cost (only when every part has a price in one currency). */
@@ -131,8 +231,8 @@ export class AgentService {
   private async save(l: Live) {
     l.data.updatedAt = new Date().toISOString();
     l.data.touched = [...l.sandbox.touched];
-    const ref = await this.judge.registry.get(l.data.problemId);
-    await atomicWrite(path.join(sessionsDir(ref), l.data.id, 'session.json'), JSON.stringify(l.data));
+    const sc = await this.scope(l.data.problemId);
+    await atomicWrite(path.join(sc.sessionsDir, l.data.id, 'session.json'), JSON.stringify(l.data));
   }
 
   private async load(problemId: string, sid: string): Promise<Live> {
@@ -140,21 +240,21 @@ export class AgentService {
     const cached = this.live.get(k);
     if (cached) return cached;
     if (!/^[a-z0-9]+$/.test(sid)) throw new HttpError(400, 'bad_session', 'Invalid session id');
-    const ref = await this.judge.registry.get(problemId);
-    const dir = path.join(sessionsDir(ref), sid);
+    const sc = await this.scope(problemId);
+    const dir = path.join(sc.sessionsDir, sid);
     let data: SessionData;
     try {
       data = JSON.parse(await fsp.readFile(path.join(dir, 'session.json'), 'utf8')) as SessionData;
     } catch {
       throw new HttpError(404, 'session_not_found', `AI session not found: ${sid}`);
     }
-    const l: Live = { data, sandbox: new Sandbox(ref.dir, path.join(dir, 'work'), new Set(data.touched)), state: 'idle' };
+    const l: Live = { data, sandbox: sc.sandbox(path.join(dir, 'work'), data.touched), state: 'idle' };
     this.live.set(k, l);
     return l;
   }
 
   async create(problemId: string, req: CreateAiSessionRequest): Promise<AiSessionDetail> {
-    const ref = await this.judge.registry.get(problemId);
+    const sc = await this.scope(problemId);
     const ep = await this.judge.global.aiEndpoint(req.endpoint);
     const id = `${Date.now().toString(36)}${randomBytes(3).toString('hex')}`;
     const now = new Date().toISOString();
@@ -174,15 +274,15 @@ export class AgentService {
       touched: [],
       notices: [],
     };
-    const l: Live = { data, sandbox: new Sandbox(ref.dir, path.join(sessionsDir(ref), id, 'work'), new Set()), state: 'idle' };
+    const l: Live = { data, sandbox: sc.sandbox(path.join(sc.sessionsDir, id, 'work'), []), state: 'idle' };
     this.live.set(this.key(problemId, id), l);
     await this.save(l);
     return this.detail(l);
   }
 
   async list(problemId: string): Promise<AiSessionSummary[]> {
-    const ref = await this.judge.registry.get(problemId);
-    const ids = await fsp.readdir(sessionsDir(ref)).catch(() => [] as string[]);
+    const sc = await this.scope(problemId);
+    const ids = await fsp.readdir(sc.sessionsDir).catch(() => [] as string[]);
     const out: AiSessionSummary[] = [];
     for (const id of ids) {
       try {
@@ -259,16 +359,15 @@ export class AgentService {
     const l = await this.load(problemId, sid);
     l.abort?.abort();
     await l.running?.catch(() => {});
-    const ref = await this.judge.registry.get(problemId);
-    await fsp.rm(path.join(sessionsDir(ref), sid), { recursive: true, force: true });
+    const sc = await this.scope(problemId);
+    await fsp.rm(path.join(sc.sessionsDir, sid), { recursive: true, force: true });
     this.live.delete(this.key(problemId, sid));
   }
 
   /** AI check: a read-only review session seeded with the local check results. */
   async startReview(problemId: string, req: CreateAiSessionRequest): Promise<AiSessionDetail> {
     const d = await this.create(problemId, { ...req, mode: 'review' });
-    const checks = await localChecks(this.judge, await this.judge.ctx(problemId));
-    return this.send(problemId, d.id, reviewKickoff(checks));
+    return this.send(problemId, d.id, await (await this.scope(problemId)).kickoff());
   }
 
   cancel(problemId: string, sid: string) {
@@ -303,15 +402,11 @@ export class AgentService {
       const ep = await this.judge.global.aiEndpoint(d.endpoint);
       const provider = await createProvider(ep);
       const mode = d.mode ?? 'agent';
-      const system = mode === 'review' ? await reviewSystemPrompt(this.judge.global.sharedDir) : await systemPrompt(this.judge.global.sharedDir);
-      const tools = toolsFor(mode);
-      const ref = await this.judge.registry.get(d.problemId);
-      const sandboxRef: ProblemRef = { id: `${d.problemId}@ai`, dir: l.sandbox.dir, root: ref.root };
-      const buildRoot = path.join(ref.dir, '.polyforge', 'build');
-      const env = {
-        sandbox: l.sandbox,
+      const sc = await this.scope(d.problemId);
+      const system = await sc.prompt(mode);
+      const tools = sc.tools(mode);
+      const env: BaseEnv = {
         judge: this.judge,
-        ctx: () => this.judge.ctxFor(sandboxRef, buildRoot),
         signal,
         setPlan: (plan: AiPlanStep[]) => {
           d.plan = plan;
@@ -371,7 +466,7 @@ export class AgentService {
         let wrote = false;
         for (const tu of toolUses) {
           this.emit(l, { type: 'tool_call', id: tu.id, name: tu.name, input: tu.input });
-          const r = await runTool(tu.name, tu.input, env, mode);
+          const r = await sc.run(tu.name, tu.input, env, l.sandbox, mode);
           results.push({ type: 'tool_result', tool_use_id: tu.id, content: clip(r.content), is_error: r.isError || undefined });
           this.emit(l, { type: 'tool_result', id: tu.id, result: clip(r.content, 4000), isError: r.isError });
           if (WRITE_TOOLS.has(tu.name) && !r.isError) wrote = true;

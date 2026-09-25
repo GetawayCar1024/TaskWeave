@@ -95,6 +95,8 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 /** Encode each segment of a relative path, keeping the slashes. */
 const encPath = (p: string) => p.split('/').map(encodeURIComponent).join('/');
 const pid = (id: string) => encodeURIComponent(id);
+/** AI sessions belong to a problem (its id) or to a contest ("contest:<id>"). */
+const aiBase = (owner: string) => (owner.startsWith('contest:') ? `/contests/${pid(owner.slice('contest:'.length))}` : `/problems/${pid(owner)}`);
 /** ?testset= for anything but the default testset. */
 const tsq = (ts?: string) => (ts && ts !== 'tests' ? `?testset=${encodeURIComponent(ts)}` : '');
 
@@ -171,7 +173,7 @@ export const api = {
   stress: (id: string, req: StressRequest) => request<JobInfo>('POST', `/problems/${pid(id)}/stress`, req),
   exportPackage: (id: string) => request<JobInfo>('POST', `/problems/${pid(id)}/export`),
   checks: (id: string) => request<LocalCheck[]>('GET', `/problems/${pid(id)}/checks`),
-  startReview: (id: string, req: CreateAiSessionRequest) => request<AiSessionDetail>('POST', `/problems/${pid(id)}/ai/review`, req),
+  startReview: (id: string, req: CreateAiSessionRequest) => request<AiSessionDetail>('POST', `${aiBase(id)}/ai/review`, req),
   /** Download an exported package through fetch (the token travels in a header). */
   downloadExport: (id: string, file: string) => download(`/api/problems/${pid(id)}/export/${encodeURIComponent(file)}`, file),
 
@@ -195,19 +197,19 @@ export const api = {
   saveAiEndpoints: (list: SaveAiEndpoint[]) => request<AiEndpoint[]>('PUT', '/ai/endpoints', list),
   testAiEndpoint: (name: string, model?: string) => request<AiTestResult>('POST', '/ai/endpoints/test', { name, model }),
   aiModels: (name: string) => request<string[]>('POST', '/ai/endpoints/models', { name }),
-  aiSessions: (id: string) => request<AiSessionSummary[]>('GET', `/problems/${pid(id)}/ai/sessions`),
-  createAiSession: (id: string, req: CreateAiSessionRequest) => request<AiSessionDetail>('POST', `/problems/${pid(id)}/ai/sessions`, req),
-  aiSession: (id: string, sid: string) => request<AiSessionDetail>('GET', `/problems/${pid(id)}/ai/sessions/${sid}`),
+  aiSessions: (id: string) => request<AiSessionSummary[]>('GET', `${aiBase(id)}/ai/sessions`),
+  createAiSession: (id: string, req: CreateAiSessionRequest) => request<AiSessionDetail>('POST', `${aiBase(id)}/ai/sessions`, req),
+  aiSession: (id: string, sid: string) => request<AiSessionDetail>('GET', `${aiBase(id)}/ai/sessions/${sid}`),
   updateAiSession: (id: string, sid: string, patch: { title?: string; endpoint?: string; model?: string }) =>
-    request<AiSessionDetail>('PATCH', `/problems/${pid(id)}/ai/sessions/${sid}`, patch),
-  deleteAiSession: (id: string, sid: string) => request<{ ok: true }>('DELETE', `/problems/${pid(id)}/ai/sessions/${sid}`),
-  sendAi: (id: string, sid: string, text: string) => request<AiSessionDetail>('POST', `/problems/${pid(id)}/ai/sessions/${sid}/messages`, { text }),
-  cancelAi: (id: string, sid: string) => request<{ ok: true }>('POST', `/problems/${pid(id)}/ai/sessions/${sid}/cancel`),
-  aiChanges: (id: string, sid: string) => request<AiChange[]>('GET', `/problems/${pid(id)}/ai/sessions/${sid}/changes`),
+    request<AiSessionDetail>('PATCH', `${aiBase(id)}/ai/sessions/${sid}`, patch),
+  deleteAiSession: (id: string, sid: string) => request<{ ok: true }>('DELETE', `${aiBase(id)}/ai/sessions/${sid}`),
+  sendAi: (id: string, sid: string, text: string) => request<AiSessionDetail>('POST', `${aiBase(id)}/ai/sessions/${sid}/messages`, { text }),
+  cancelAi: (id: string, sid: string) => request<{ ok: true }>('POST', `${aiBase(id)}/ai/sessions/${sid}/cancel`),
+  aiChanges: (id: string, sid: string) => request<AiChange[]>('GET', `${aiBase(id)}/ai/sessions/${sid}/changes`),
   aiChangeContent: (id: string, sid: string, path: string) =>
-    request<AiChangeContent>('GET', `/problems/${pid(id)}/ai/sessions/${sid}/changes/content?path=${encodeURIComponent(path)}`),
-  acceptAi: (id: string, sid: string, paths: string[]) => request<AiChange[]>('POST', `/problems/${pid(id)}/ai/sessions/${sid}/changes/accept`, { paths }),
-  rejectAi: (id: string, sid: string, paths: string[]) => request<AiChange[]>('POST', `/problems/${pid(id)}/ai/sessions/${sid}/changes/reject`, { paths }),
+    request<AiChangeContent>('GET', `${aiBase(id)}/ai/sessions/${sid}/changes/content?path=${encodeURIComponent(path)}`),
+  acceptAi: (id: string, sid: string, paths: string[]) => request<AiChange[]>('POST', `${aiBase(id)}/ai/sessions/${sid}/changes/accept`, { paths }),
+  rejectAi: (id: string, sid: string, paths: string[]) => request<AiChange[]>('POST', `${aiBase(id)}/ai/sessions/${sid}/changes/reject`, { paths }),
 };
 
 /** Download a file through fetch (the token travels in a header). */

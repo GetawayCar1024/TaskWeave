@@ -375,10 +375,19 @@ onMounted(async () => {
   await Promise.all([ws.init(), judge.init()]);
   // Open the most useful file first.
   const cfg = ws.state.detail?.config;
-  const first = ['statement/zh/legend.tex', 'statement/en/legend.tex', cfg?.validator?.source, 'problem.toml'].find(
+  const asked = typeof route.query.file === 'string' ? route.query.file : undefined;
+  const first = [asked, 'statement/zh/legend.tex', 'statement/en/legend.tex', cfg?.validator?.source, 'problem.toml'].find(
     (p) => p && ws.files.value.some((f) => f.path === p),
   );
-  if (first) ws.openFile(first).catch(() => {});
+  if (first) {
+    await ws.openFile(first).catch(() => {});
+    const line = Number(route.query.line);
+    const ed = ws.editorRef.value;
+    if (first === asked && line > 0 && ed) {
+      ed.revealLineInCenter(line);
+      ed.setPosition({ lineNumber: line, column: 1 });
+    }
+  }
 });
 onBeforeUnmount(() => {
   offWs();

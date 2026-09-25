@@ -123,6 +123,37 @@ export async function reviewSystemPrompt(sharedDir: string): Promise<string> {
   return `${await systemPrompt(sharedDir)}\n\n${REVIEW}`;
 }
 
+/** A contest session: the problem instructions apply to each folder of the contest. */
+const CONTEST = `# You are working on a whole contest
+This session covers every problem of a contest. Each problem is a folder in your working copy, and every file path starts with the problem folder name, e.g. "a-plus-b/statement/en/legend.tex" (the contest letter works too: "A/statement/en/legend.tex"). Tools that have no path argument (generate_tests, run_invocation, view_test, validator / checker tests) take "problem". The instructions above describe one problem; they apply to each folder.
+
+Work on all the problems the request is about (usually all of them), one after another, and keep a plan with one step per problem. Keep the contest consistent: the same statement languages for every problem, the same notation and style, titles in problem.toml for every language.`;
+
+/** The contest's problems for the system prompt (letters change rarely, so the cache holds). */
+export function contestOverview(title: string, problems: { index: string; id: string; title: string; langs: string[] }[]): string {
+  const rows = problems.map((p) => `- ${p.index}: folder "${p.id}", title "${p.title}", statement languages: ${p.langs.join(', ') || 'none'}`);
+  return `# This contest: ${title}\n${rows.join('\n') || '- (no problems yet)'}`;
+}
+
+export async function contestSystemPrompt(sharedDir: string, overview: string): Promise<string> {
+  return `${await systemPrompt(sharedDir)}\n\n${CONTEST}\n\n${overview}`;
+}
+
+const CONTEST_REVIEW = `# Checking the whole contest
+Besides the per-problem checks, look at the contest as a set: consistent statement languages, notation, style and formatting across problems; titles set for every language; a sensible difficulty order for the letters; no two problems too similar; limits and input/output conventions consistent. Report per-problem issues with the file path (it starts with the problem folder).`;
+
+export async function contestReviewSystemPrompt(sharedDir: string, overview: string): Promise<string> {
+  return `${await contestSystemPrompt(sharedDir, overview)}\n\n${REVIEW}\n\n${CONTEST_REVIEW}`;
+}
+
+export function contestReviewKickoff(perProblem: { index: string; id: string; checks: { level: string; message: string; file?: string }[] }[]): string {
+  const blocks = perProblem.map((p) => {
+    const lines = p.checks.map((c) => `  - [${c.level}] ${c.message}${c.file ? ` (${p.id}/${c.file})` : ''}`);
+    return `- ${p.index} (${p.id}):\n${lines.length ? lines.join('\n') : '  - nothing'}`;
+  });
+  return `Check every problem of this contest and the contest as a whole; report every issue with report_issue.\n\nAutomatic local checks found:\n${blocks.join('\n') || '- no problems'}\n\nConfirm or dismiss these, then look for everything they cannot see.`;
+}
+
 export function reviewKickoff(checks: { level: string; message: string; file?: string }[]): string {
   const lines = checks.map((c) => `- [${c.level}] ${c.message}${c.file ? ` (${c.file})` : ''}`);
   return `Check this problem and report every issue with report_issue.\n\nAutomatic local checks found:\n${lines.length ? lines.join('\n') : '- nothing'}\n\nConfirm or dismiss these, then look for everything they cannot see.`;

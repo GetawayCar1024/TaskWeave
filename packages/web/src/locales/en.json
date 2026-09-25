@@ -430,7 +430,7 @@
       "tutorial": "Write tutorial"
     },
     "pastePlaceholder": "Paste a statement (any format); the AI writes it as a Polygon LaTeX statement, then builds the problem",
-    "buildFromPaste": "Write statement and build",
+    "buildFromPaste": "Put into the input",
     "placeholder": "Describe the change, Ctrl+Enter to send",
     "stop": "Stop",
     "send": "Send",
@@ -481,7 +481,20 @@
     "usage": "{n} request(s)",
     "usageTokens": "in {in} · out {out}",
     "usageNoPrice": "no price set",
-    "modelPlaceholder": "Model name"
+    "modelPlaceholder": "Model name",
+    "cpreset": {
+      "statementsIn": "Write statements",
+      "tutorialsIn": "Write tutorials",
+      "tutorials": "Complete tutorials",
+      "titles": "Complete titles",
+      "consistency": "Unify style",
+      "lint": "Lint LaTeX",
+      "verify": "Verify all",
+      "overview": "Contest overview"
+    },
+    "presetLang": "Language",
+    "contestIntro": "The AI here works on all problems of the contest at once, e.g. statements or tutorials in a language for every problem, a consistent style, verifying each problem. You accept the changes file by file.",
+    "contestReviewIntro": "The AI check goes through every problem and looks at the contest as a whole (languages, notation, difficulty order, …)."
   },
   "lint": {
     "title": "Statement check & auto-fix",

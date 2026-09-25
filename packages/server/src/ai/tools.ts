@@ -12,7 +12,7 @@ import { macroExpansions } from './macros.js';
 import { listShared } from '../sharedFiles.js';
 import { safeJoin } from '../util/fs.js';
 import type { ToolDef } from './provider.js';
-import type { Sandbox } from './sandbox.js';
+import type { ContestPart, ContestSandbox, Sandbox } from './sandbox.js';
 
 export interface ToolEnv {
   sandbox: Sandbox;
@@ -292,6 +292,78 @@ const defs = new Map(
 /** The agent edits files; the review (AI check) only reads, judges and reports. */
 export function toolsFor(mode: AiSessionMode): ToolDef[] {
   return [...defs.values()].filter((d) => (mode === 'review' ? !WRITE_TOOLS.has(d.name) : d.name !== 'report_issue'));
+}
+
+// ---- contest sessions: the same tools over several problems ----
+
+/** Per-problem tools without a path argument: in a contest they take `problem`. */
+const PROBLEM_ARG_TOOLS = new Set(['generate_tests', 'view_test', 'run_invocation', 'run_validator_tests', 'run_checker_tests']);
+/** Tools that work on the session as a whole. */
+const SESSION_TOOLS = new Set(['list_shared', 'read_shared', 'update_plan', 'report_issue']);
+
+const PROBLEM_PROP = { type: 'string', description: 'Problem folder name (or contest letter) this call is about' };
+
+/** Tool definitions for a contest session: paths start with the problem folder. */
+export function contestToolsFor(mode: AiSessionMode): ToolDef[] {
+  return toolsFor(mode).map((d) => {
+    if (d.name === 'list_files') return { ...d, description: 'List every file of every problem of the contest ("<problem>/<path>"), with size and role.' };
+    if (SESSION_TOOLS.has(d.name)) return d;
+    const schema = d.input_schema as { properties?: Record<string, unknown>; required?: string[] };
+    if (PROBLEM_ARG_TOOLS.has(d.name)) {
+      return {
+        ...d,
+        input_schema: { ...schema, properties: { problem: PROBLEM_PROP, ...(schema.properties ?? {}) }, required: ['problem', ...(schema.required ?? [])] },
+      };
+    }
+    return { ...d, description: `${d.description} The path starts with the problem folder, e.g. "a-plus-b/statement/en/legend.tex".` };
+  });
+}
+
+export interface ContestToolEnv {
+  sandbox: ContestSandbox;
+  /** Tool environment for one problem of the contest. */
+  forProblem: (part: ContestPart, sandbox: Sandbox) => ToolEnv;
+  /** For the session-wide tools (plan, findings, shared library). */
+  session: Omit<ToolEnv, 'sandbox' | 'ctx'>;
+}
+
+/** Route a contest tool call to the problem it is about (by path prefix or `problem`). */
+export async function runContestTool(name: string, input: unknown, env: ContestToolEnv, mode: AiSessionMode = 'agent'): Promise<{ content: string; isError: boolean }> {
+  if (!contestToolsFor(mode).some((d) => d.name === name)) return { content: `Unknown tool: ${name}`, isError: true };
+  const i = { ...((input ?? {}) as Record<string, unknown>) };
+  try {
+    if (SESSION_TOOLS.has(name)) return runTool(name, i, { ...env.session, sandbox: undefined as never, ctx: () => Promise.reject(new Error('no problem')) }, mode);
+    if (name === 'list_files') {
+      const out: string[] = [];
+      for (const { part, sandbox } of await env.sandbox.list()) {
+        const r = await runTool(name, {}, env.forProblem(part, sandbox), mode);
+        out.push(`# ${part.index} = ${part.id}`, ...r.content.split('\n').map((l) => (r.isError ? l : `${part.id}/${l}`)), '');
+      }
+      return { content: out.join('\n').trim() || '(no problems)', isError: false };
+    }
+    let target;
+    if (typeof i.problem === 'string') {
+      target = await env.sandbox.problem(i.problem);
+      // Paths given with the prefix anyway are fine too.
+      const strip = (p: unknown) => (typeof p === 'string' && p.startsWith(`${target!.part.id}/`) ? p.slice(target!.part.id.length + 1) : p);
+      if (i.path !== undefined) i.path = strip(i.path);
+      if (Array.isArray(i.solutions)) i.solutions = i.solutions.map(strip);
+    } else if (typeof i.path === 'string') {
+      const r = await env.sandbox.route(i.path);
+      target = r;
+      i.path = r.rest;
+    } else {
+      return { content: `${name} needs "problem" (one of: ${(await env.sandbox.list()).map((x) => x.part.id).join(', ')})`, isError: true };
+    }
+    delete i.problem;
+    const r = await runTool(name, i, env.forProblem(target.part, target.sandbox), mode);
+    // Results name paths inside the problem; give them back with the folder, as the model wrote them.
+    const rest = typeof i.path === 'string' ? i.path : '';
+    return rest ? { ...r, content: r.content.replace(rest, () => `${target.part.id}/${rest}`) } : r;
+  } catch (e) {
+    if (env.session.signal.aborted) throw e;
+    return { content: (e as Error).message, isError: true };
+  }
 }
 
 /** Validate and run a tool call; errors become `is_error` results the model can react to. */

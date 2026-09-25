@@ -25,7 +25,7 @@ import {
 import type { AiChangeContent, AiFinding, AiSessionMode, AiTranscriptItem, LocalCheck } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 import type { Ai } from '../lib/ai';
-import { PRESETS, pastedStatementPrompt } from '../lib/aiPresets';
+import { CONTEST_PRESETS, PRESETS, pastedStatementPrompt, type ContestPreset } from '../lib/aiPresets';
 import { renderMarkdown } from '../lib/markdown';
 import { languageForPath } from '../lib/monaco';
 import TextDiff from './TextDiff.vue';
@@ -34,6 +34,7 @@ import { FALLBACK_TOOL_ICON, TOOL_ICONS } from '../lib/icons';
 import { fmtMoney, fmtTokens } from '../lib/usageFormat';
 import type { Workspace } from '../lib/workspace';
 
+/** problemId: the owner of the sessions — a problem id, or "contest:<id>" for the contest AI. */
 const props = defineProps<{ show: boolean; ai: Ai; problemId: string; ws?: Workspace }>();
 const emit = defineEmits<{ 'update:show': [boolean] }>();
 const { t } = useI18n();
@@ -48,10 +49,19 @@ const expanded = ref(new Set<string>());
 
 const tab = ref<AiSessionMode>('agent');
 const checks = ref<LocalCheck[] | null>(null);
+const isContest = computed(() => props.problemId.startsWith('contest:'));
 
 async function loadChecks() {
+  // A contest check gets every problem's local checks in its first message instead.
+  if (isContest.value) return;
   checks.value = await api.checks(props.problemId).catch(() => []);
 }
+
+/** Contest presets that need a language: the one picked next to the buttons. */
+const presetLang = ref(localStorage.getItem('polyforge-ai-preset-lang') || 'en');
+watch(presetLang, (l) => localStorage.setItem('polyforge-ai-preset-lang', l));
+const LANG_OPTIONS = ['zh', 'en', 'ru', 'ja', 'ko', 'fr', 'de', 'es'].map((l) => ({ label: l, value: l }));
+const contestPrompt = (p: ContestPreset) => p.prompt.split('{lang}').join(presetLang.value.trim() || 'en');
 
 watch(
   () => props.show,
@@ -131,6 +141,14 @@ async function send(text = input.value) {
   }
 }
 
+/** A preset replaces the whole input, to be reviewed / edited and then sent. */
+const inputRef = ref<InstanceType<typeof NInput>>();
+async function usePreset(text: string) {
+  input.value = text;
+  await nextTick();
+  inputRef.value?.focus();
+}
+
 function onKey(e: KeyboardEvent) {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
@@ -156,7 +174,9 @@ async function newSession() {
 
 function toolLabel(item: Extract<AiTranscriptItem, { kind: 'tool' }>): string {
   const i = (item.input ?? {}) as Record<string, unknown>;
-  const detail = i.path ?? (i.test ? `test ${i.test}` : i.index ? `test ${i.index} ${i.part ?? ''}` : '');
+  const what = i.path ?? (i.test ? `test ${i.test}` : i.index ? `test ${i.index} ${i.part ?? ''}` : '');
+  // Contest sessions: tools without a path name the problem.
+  const detail = [i.path ? '' : i.problem, what].filter(Boolean).join(' ');
   return `${t(`ai.tool.${item.name}`, item.name)}${detail ? ` · ${detail}` : ''}`;
 }
 
@@ -169,7 +189,14 @@ function toggle(id: string) {
 }
 
 async function openAt(file: string, line?: number) {
-  if (!props.ws) return;
+  if (!props.ws) {
+    // Contest AI: paths are "<problem>/<path>"; open the file in that problem.
+    const [problem, ...rest] = file.split('/');
+    if (isContest.value && problem && rest.length) {
+      router.push({ name: 'problem', params: { id: problem }, query: { from: props.problemId, file: rest.join('/'), line: line ? String(line) : undefined } });
+    }
+    return;
+  }
   await props.ws.openFile(file).catch((e) => message.error(errorMessage(e)));
   const ed = props.ws.editorRef.value;
   if (ed && line) {
@@ -233,7 +260,7 @@ const usageTitle = computed(() => {
           <n-radio-button value="agent">{{ t('ai.tabChat') }}</n-radio-button>
           <n-radio-button value="review">{{ t('ai.tabReview') }}</n-radio-button>
         </n-radio-group>
-        <div v-if="tab === 'review'" class="checks">
+        <div v-if="tab === 'review' && !isContest" class="checks">
           <div class="checks-head">
             <strong>{{ t('ai.localChecks') }}</strong>
             <n-button size="tiny" quaternary @click="loadChecks"><rotate-cw :size="13" /></n-button>
@@ -324,7 +351,7 @@ const usageTitle = computed(() => {
             </div>
           </div>
           <n-scrollbar ref="scroller" class="log">
-            <div v-if="!ai.transcript.value.length" class="hint">{{ tab === 'review' ? t('ai.reviewIntro') : t('ai.intro') }}</div>
+            <div v-if="!ai.transcript.value.length" class="hint">{{ tab === 'review' ? t(isContest ? 'ai.contestReviewIntro' : 'ai.reviewIntro') : t(isContest ? 'ai.contestIntro' : 'ai.intro') }}</div>
             <template v-for="(item, i) in ai.transcript.value" :key="i">
               <div v-if="item.kind === 'user'" class="msg user">{{ item.text }}</div>
               <div v-else-if="item.kind === 'assistant'" class="msg assistant" v-html="renderMarkdown(item.text)" />
@@ -368,20 +395,26 @@ const usageTitle = computed(() => {
             </div>
           </div>
 
-          <div v-if="tab === 'agent'" class="presets">
-            <n-button v-for="p in PRESETS" :key="p.key" size="tiny" secondary :disabled="ai.running.value" @click="send(p.prompt)">
+          <div v-if="tab === 'agent' && isContest" class="presets">
+            <n-select v-model:value="presetLang" size="tiny" :options="LANG_OPTIONS" filterable tag :title="t('ai.presetLang')" style="width: 76px" />
+            <n-button v-for="p in CONTEST_PRESETS" :key="p.key" size="tiny" secondary @click="usePreset(contestPrompt(p))">
+              {{ t(`ai.cpreset.${p.key}`) }}<template v-if="p.needsLang"> ({{ presetLang }})</template>
+            </n-button>
+          </div>
+          <div v-if="tab === 'agent' && !isContest" class="presets">
+            <n-button v-for="p in PRESETS" :key="p.key" size="tiny" secondary @click="usePreset(p.prompt)">
               {{ t(`ai.preset.${p.key}`) }}
             </n-button>
             <n-button size="tiny" secondary :type="showPaste ? 'primary' : 'default'" @click="showPaste = !showPaste">{{ t('ai.preset.paste') }}</n-button>
           </div>
           <div v-if="tab === 'agent' && showPaste" class="paste">
             <n-input v-model:value="pasted" type="textarea" :autosize="{ minRows: 4, maxRows: 12 }" :placeholder="t('ai.pastePlaceholder')" />
-            <n-button size="small" type="primary" :disabled="!pasted.trim() || ai.running.value" @click="send(pastedStatementPrompt(pasted)); showPaste = false">
+            <n-button size="small" type="primary" :disabled="!pasted.trim()" @click="usePreset(pastedStatementPrompt(pasted)); showPaste = false">
               {{ t('ai.buildFromPaste') }}
             </n-button>
           </div>
           <div v-if="tab === 'agent' || s.current?.mode === 'review'" class="input">
-            <n-input v-model:value="input" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" :placeholder="t('ai.placeholder')" @keydown="onKey" />
+            <n-input ref="inputRef" v-model:value="input" type="textarea" :autosize="{ minRows: 2, maxRows: 8 }" :placeholder="t('ai.placeholder')" @keydown="onKey" />
             <n-button v-if="ai.running.value" type="warning" @click="ai.cancel()">{{ t('ai.stop') }}</n-button>
             <n-button v-else type="primary" :disabled="!input.trim()" @click="send()">{{ t('ai.send') }}</n-button>
           </div>

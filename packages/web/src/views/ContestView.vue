@@ -40,6 +40,8 @@ import {
 } from 'lucide-vue-next';
 import type { ContestAction, ContestBatchItem, ContestBatchResult, ContestDetail, JobInfo, ProblemSummary } from '@polyforge/shared';
 import AppHeader from '../components/AppHeader.vue';
+import AiDrawer from '../components/AiDrawer.vue';
+import { useAi } from '../lib/ai';
 import { api, errorMessage } from '../lib/api';
 import { problemTitle } from '../lib/format';
 import { waitJob } from '../lib/jobs';
@@ -68,7 +70,12 @@ async function load() {
 }
 
 let timer: ReturnType<typeof setTimeout> | undefined;
+/** The contest AI: sessions over all problems of the contest. */
+const ai = useAi(`contest:${props.id}`);
+const showAi = ref(false);
+
 const off = onWs((e) => {
+  ai.onWsEvent(e);
   if (e.type === 'job:progress' || e.type === 'ai:event' || e.type === 'build:done') return;
   clearTimeout(timer);
   timer = setTimeout(load, 300);
@@ -310,10 +317,14 @@ const columns = computed<DataTableColumns<Row>>(() => [
         <n-button size="small" :disabled="!summary" @click="router.push({ name: 'contest-print', params: { id } })">
           <template #icon><file-text /></template>{{ t('contest.statements') }}
         </n-button>
+        <n-button size="small" :disabled="!summary" :type="ai.running.value ? 'primary' : 'default'" @click="showAi = true">
+          AI<template v-if="ai.state.changes.length"> · {{ ai.state.changes.length }}</template>
+        </n-button>
         <n-button size="small" quaternary :disabled="!summary" :title="t('contest.edit')" @click="openEdit"><pencil :size="15" /></n-button>
         <n-button size="small" quaternary :title="t('contest.delete')" @click="deleteContest"><trash2 :size="15" /></n-button>
       </template>
     </app-header>
+    <ai-drawer v-model:show="showAi" :ai="ai" :problem-id="`contest:${id}`" />
 
     <main class="body">
       <n-alert v-if="loadError" type="error" :show-icon="false">{{ loadError }}</n-alert>

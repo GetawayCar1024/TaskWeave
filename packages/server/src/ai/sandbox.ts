@@ -144,3 +144,128 @@ export class Sandbox {
     return done;
   }
 }
+
+/** What the agent service needs from a working copy (one problem, or a whole contest). */
+export interface SandboxLike {
+  readonly touched: ReadonlySet<string>;
+  sync(): Promise<void>;
+  changes(): Promise<AiChange[]>;
+  content(rel: string): Promise<AiChangeContent>;
+  accept(paths: string[]): Promise<string[]>;
+  reject(paths: string[]): Promise<string[]>;
+}
+
+/** A problem of a contest session: its id (the path prefix), letter and real folder. */
+export interface ContestPart {
+  id: string;
+  index: string;
+  realDir: string;
+}
+
+/**
+ * The working copy of a contest: one problem sandbox per problem, under
+ * <work>/<problem id>/. Paths are "<problem id>/<path in the problem>".
+ */
+export class ContestSandbox implements SandboxLike {
+  private parts = new Map<string, { part: ContestPart; sandbox: Sandbox }>();
+  /** Touched paths of problems not loaded yet (split by prefix on first use). */
+  private pending: string[];
+
+  constructor(
+    readonly dir: string,
+    touched: Iterable<string>,
+    /** The contest's problems now, plus any with pending changes. */
+    private resolveParts: (withIds: string[]) => Promise<ContestPart[]>,
+  ) {
+    this.pending = [...touched];
+  }
+
+  get touched(): ReadonlySet<string> {
+    const all = new Set(this.pending);
+    for (const [id, { sandbox }] of this.parts) for (const rel of sandbox.touched) all.add(`${id}/${rel}`);
+    return all;
+  }
+
+  /** (Re)build the problem list; sandboxes of problems that stay keep their state. */
+  async refresh(): Promise<void> {
+    const ids = [...new Set([...this.parts.keys(), ...this.pending.map((p) => p.split('/')[0])])];
+    const next = new Map<string, { part: ContestPart; sandbox: Sandbox }>();
+    for (const part of await this.resolveParts(ids)) {
+      const old = this.parts.get(part.id);
+      if (old) {
+        next.set(part.id, { part, sandbox: old.sandbox });
+        continue;
+      }
+      const mine = this.pending.filter((p) => p.startsWith(`${part.id}/`)).map((p) => p.slice(part.id.length + 1));
+      this.pending = this.pending.filter((p) => !p.startsWith(`${part.id}/`));
+      next.set(part.id, { part, sandbox: new Sandbox(part.realDir, path.join(this.dir, part.id), new Set(mine)) });
+    }
+    // A problem that has pending changes but no longer resolves keeps them in `pending`.
+    this.parts = next;
+  }
+
+  private async ready() {
+    if (!this.parts.size) await this.refresh();
+  }
+
+  /** The problems, in contest order. */
+  async list(): Promise<{ part: ContestPart; sandbox: Sandbox }[]> {
+    await this.ready();
+    return [...this.parts.values()];
+  }
+
+  /** Find the problem of a path by its first segment (problem id, or the contest letter). */
+  async route(p: string): Promise<{ part: ContestPart; sandbox: Sandbox; rest: string }> {
+    await this.ready();
+    const clean = p.replace(/\\/g, '/').replace(/^\.?\//, '');
+    const [head, ...tail] = clean.split('/');
+    const hit = this.parts.get(head) ?? [...this.parts.values()].find((x) => x.part.index.toLowerCase() === head.toLowerCase());
+    if (!hit || !tail.length) throw new HttpError(400, 'bad_path', `Path must start with a problem folder (${[...this.parts.keys()].join(', ')}): ${p}`);
+    return { ...hit, rest: tail.join('/') };
+  }
+
+  async problem(name: string): Promise<{ part: ContestPart; sandbox: Sandbox }> {
+    await this.ready();
+    const hit = this.parts.get(name) ?? [...this.parts.values()].find((x) => x.part.index.toLowerCase() === name.toLowerCase());
+    if (!hit) throw new HttpError(400, 'bad_problem', `Unknown problem "${name}"; one of: ${[...this.parts.values()].map((x) => `${x.part.id} (${x.part.index})`).join(', ')}`);
+    return hit;
+  }
+
+  async sync(): Promise<void> {
+    await this.refresh();
+    for (const { sandbox } of this.parts.values()) await sandbox.sync();
+  }
+
+  async changes(): Promise<AiChange[]> {
+    const out: AiChange[] = [];
+    for (const [id, { sandbox }] of (await this.ready(), this.parts)) for (const c of await sandbox.changes()) out.push({ ...c, path: `${id}/${c.path}` });
+    return out;
+  }
+
+  async content(rel: string): Promise<AiChangeContent> {
+    const r = await this.route(rel);
+    const c = await r.sandbox.content(r.rest);
+    return { ...c, path: `${r.part.id}/${c.path}` };
+  }
+
+  private async each(paths: string[], fn: (s: Sandbox, rels: string[]) => Promise<string[]>): Promise<string[]> {
+    const by = new Map<string, { part: ContestPart; sandbox: Sandbox; rels: string[] }>();
+    for (const p of paths) {
+      const r = await this.route(p);
+      const e = by.get(r.part.id) ?? { ...r, rels: [] };
+      e.rels.push(r.rest);
+      by.set(r.part.id, e);
+    }
+    const done: string[] = [];
+    for (const e of by.values()) for (const rel of await fn(e.sandbox, e.rels)) done.push(`${e.part.id}/${rel}`);
+    return done;
+  }
+
+  accept(paths: string[]): Promise<string[]> {
+    return this.each(paths, (s, rels) => s.accept(rels));
+  }
+
+  reject(paths: string[]): Promise<string[]> {
+    return this.each(paths, (s, rels) => s.reject(rels));
+  }
+}

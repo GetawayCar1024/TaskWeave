@@ -69,3 +69,52 @@ export const PRESETS: AiPreset[] = [
 export function pastedStatementPrompt(statement: string): string {
   return `Here is the problem statement:\n\n<statement>\n${statement}\n</statement>\n\nFirst write it into statement/zh/ and statement/en/ (legend, input, output, notes; interaction if interactive) in Polygon LaTeX, set the titles and limits in problem.toml. Then: ${FULL_BUILD}`;
 }
+
+/** Contest-wide tasks; `{lang}` is replaced by the language picked next to the buttons. */
+export interface ContestPreset extends AiPreset {
+  needsLang?: boolean;
+}
+
+export const CONTEST_PRESETS: ContestPreset[] = [
+  {
+    key: 'statementsIn',
+    needsLang: true,
+    prompt:
+      'For every problem of the contest, write the statement in language "{lang}" as statement/{lang}/ (legend, input, output, notes; interaction / scoring where the problem has them), translating from the existing statement languages. Keep the Polygon LaTeX formatting, formulas and macros unchanged, and set title.{lang} in problem.toml. Skip problems that already have a complete {lang} statement, and say which ones you skipped.',
+  },
+  {
+    key: 'tutorialsIn',
+    needsLang: true,
+    prompt:
+      'For every problem of the contest, write the tutorial in language "{lang}" as statement/{lang}/tutorial.tex: translate an existing tutorial if there is one, otherwise write it from the statement and solutions/std.cpp (key idea, algorithm, complexity). Only for problems that have a {lang} statement; mention the ones without.',
+  },
+  {
+    key: 'tutorials',
+    prompt:
+      'For every problem, make sure there is a tutorial for each statement language (and none for languages without a statement): write missing ones consistent with solutions/std.cpp, keep the language versions equivalent.',
+  },
+  {
+    key: 'titles',
+    prompt: 'Make sure every problem has a title in problem.toml for each of its statement languages, translated consistently; fix missing or mismatched titles.',
+  },
+  {
+    key: 'consistency',
+    prompt:
+      'Make the statements of all problems consistent with each other: the same wording for recurring phrases (input/output descriptions, multi-test format, "It is guaranteed that …"), the same notation and macro usage, the same formatting of constraints and samples explanations. Change only what is needed.',
+  },
+  {
+    key: 'lint',
+    prompt:
+      'Review the statement and tutorial files of every problem for Polygon LaTeX problems: Markdown syntax instead of LaTeX, "<=" instead of \le, math outside $…$, unbalanced braces, spacing around formulas in Chinese text, inconsistencies between languages. Fix them.',
+  },
+  {
+    key: 'verify',
+    prompt:
+      'Verify every problem of the contest: compile the programs, generate the tests, run validator / checker tests and a full invocation. Fix what is clearly broken, and finish with one line per problem (letter, status, what needs attention).',
+  },
+  {
+    key: 'overview',
+    prompt:
+      'Give an overview of the contest without changing files: for each problem one or two sentences on the task, the intended solution and its difficulty; then whether the letter order matches the difficulty, and any problems that are too similar.',
+  },
+];

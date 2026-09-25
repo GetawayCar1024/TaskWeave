@@ -430,7 +430,7 @@
       "tutorial": "写题解"
     },
     "pastePlaceholder": "粘贴题面（任意格式），AI 会先写成 Polygon LaTeX 题面，再生成整题",
-    "buildFromPaste": "写入题面并生成整题",
+    "buildFromPaste": "填入输入框",
     "placeholder": "描述要做的修改，Ctrl+Enter 发送",
     "stop": "停止",
     "send": "发送",
@@ -481,7 +481,20 @@
     "usage": "{n} 次请求",
     "usageTokens": "输入 {in} · 输出 {out}",
     "usageNoPrice": "未设置价格",
-    "modelPlaceholder": "模型名称"
+    "modelPlaceholder": "模型名称",
+    "cpreset": {
+      "statementsIn": "写题面",
+      "tutorialsIn": "写题解",
+      "tutorials": "补全题解",
+      "titles": "补全标题",
+      "consistency": "统一风格",
+      "lint": "检查 LaTeX",
+      "verify": "全面验证",
+      "overview": "比赛概览"
+    },
+    "presetLang": "语言",
+    "contestIntro": "这里的 AI 可以同时处理比赛中的所有题目，例如为每道题写某种语言的题面或题解、统一风格、逐题验证。改动同样需要你逐个文件接受。",
+    "contestReviewIntro": "AI 检查会逐题检查，并看整场比赛是否一致（语言、记号、难度顺序等）。"
   },
   "lint": {
     "title": "题面检查与自动修复",
