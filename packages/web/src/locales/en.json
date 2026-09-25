@@ -548,8 +548,6 @@
     "exists": "Testset {name} already exists",
     "nGroups": "{n} group(s)",
     "points": "Enable points",
-    "scoring": "Scoring program",
-    "scoringNone": "None (score by group rules)",
     "script": "Script",
     "manual": "Manual tests",
     "generated": "{n} tests generated",
@@ -568,6 +566,6 @@
       "COMPLETE_GROUP": "Complete group",
       "EACH_TEST": "Each test"
     },
-    "note": "Testsets, groups and points map to Polygon; create a testset with the same name on Polygon first. The scoring program is local only: it reads the per-test results (JSON) on stdin and prints the score (optionally followed by the maximum) on the first line."
+    "note": "Testsets, groups and points map to Polygon; create a testset with the same name on Polygon before pushing."
   }
 }

@@ -93,7 +93,7 @@ export interface InvocationSolution {
   expectation?: TagCheck;
   maxTimeMs?: number;
   maxMemoryKb?: number;
-  /** Present when points are enabled or a scoring program is configured. */
+  /** Present when points are enabled. */
   score?: SolutionScore;
 }
 
@@ -111,17 +111,11 @@ export interface SolutionScore {
   total: number;
   max: number;
   groups: GroupScore[];
-  /** 'groups' = Polygon rules; 'script' = local scoring program. */
-  source: 'groups' | 'script';
-  /** Output of the scoring program beyond the score line, or its error. */
-  message?: string;
-  error?: string;
 }
 
-/** stdin of a scoring program. */
+/** Per-test results and group definitions a score is computed from. */
 export interface ScoringInput {
-  testset: string;
-  tests: { index: number; group?: string; points?: number; verdict: Verdict; checkerPoints?: number; timeMs: number; memoryKb: number }[];
+  tests: { index: number; group?: string; points?: number; verdict: Verdict; checkerPoints?: number }[];
   groups: { name: string; points?: number; policy: 'COMPLETE_GROUP' | 'EACH_TEST'; dependencies: string[]; tests: number[] }[];
 }
 

@@ -307,8 +307,8 @@ onBeforeUnmount(disposeDiff);
                   <check v-if="s.expectation.ok" :size="13" class="mark-icon" /><x v-else :size="13" class="mark-icon" />
                   <span v-if="s.expectation.missing" :title="t('inv.missing', { v: s.expectation.missing.join('/') })">!</span>
                 </span>
-                <div v-if="s.score" class="score" :class="scoreClass(s.score.total, s.score.max)" :title="s.score.error ?? s.score.message ?? ''">
-                  {{ s.score.total }}<span class="dim"> / {{ s.score.max }}</span><span v-if="s.score.error" class="bad"> !</span>
+                <div v-if="s.score" class="score" :class="scoreClass(s.score.total, s.score.max)">
+                  {{ s.score.total }}<span class="dim"> / {{ s.score.max }}</span>
                 </div>
               </th>
             </tr>
@@ -347,8 +347,6 @@ onBeforeUnmount(disposeDiff);
               <td class="sticky small"><strong>{{ t('inv.total') }}</strong></td>
               <td v-for="(s, si) in inv.solutions" :key="si" class="small foot">
                 <strong v-if="s.score" :class="scoreClass(s.score.total, s.score.max)">{{ s.score.total }}</strong>
-                <div v-if="s.score?.message" class="dim score-msg" :title="s.score.message">{{ s.score.message }}</div>
-                <div v-if="s.score?.error" class="bad score-msg" :title="s.score.error">{{ s.score.error }}</div>
               </td>
             </tr>
             <tr>
@@ -462,12 +460,6 @@ onBeforeUnmount(disposeDiff);
 .score {
   font-size: 12px;
   font-weight: 600;
-}
-.score-msg {
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .gtag {
   margin-left: 4px;

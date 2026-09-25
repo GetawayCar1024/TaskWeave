@@ -77,12 +77,6 @@ export const problemTomlSchema = z.object({
     .default({}),
   /** Further testsets, e.g. [testsets.pretests]. */
   testsets: z.record(z.string().regex(TESTSET_NAME_RE), testsetSchema).default({}),
-  /**
-   * Local scoring program (optional, not synced to Polygon): reads the per-test results
-   * of one solution as JSON on stdin and prints the score. Without it, scores follow
-   * Polygon's group rules.
-   */
-  scoring: z.object({ source: z.string().optional(), lang: z.string().optional() }).loose().optional(),
 }).loose();
 
 export type ProblemToml = z.infer<typeof problemTomlSchema>;
@@ -193,8 +187,6 @@ export interface PatchProblemRequest {
   testsets?: Record<string, TestsetPatch | null>;
   /** tests.points: points enabled for the whole problem. */
   points?: boolean;
-  /** Local scoring program; null removes it. */
-  scoring?: string | null;
 }
 
 export interface TestsetPatch {

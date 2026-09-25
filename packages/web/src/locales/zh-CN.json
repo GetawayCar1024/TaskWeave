@@ -548,8 +548,6 @@
     "exists": "测试集 {name} 已存在",
     "nGroups": "{n} 个子任务",
     "points": "启用分值",
-    "scoring": "记分脚本",
-    "scoringNone": "不使用（按子任务规则计分）",
     "script": "生成脚本",
     "manual": "手写测试",
     "generated": "已生成 {n} 个测试",
@@ -568,6 +566,6 @@
       "COMPLETE_GROUP": "全部通过得分",
       "EACH_TEST": "按测试点得分"
     },
-    "note": "测试集、子任务和分值与 Polygon 对应；Polygon 上需先手动建好同名测试集。记分脚本只在本地使用：从标准输入读入每个测试点的结果（JSON），第一行输出得分（可附满分）。"
+    "note": "测试集、子任务和分值与 Polygon 对应；推送前需在 Polygon 上先建好同名测试集。"
   }
 }

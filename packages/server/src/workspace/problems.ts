@@ -276,10 +276,6 @@ export class ProblemRegistry {
       if (req.points) doc.tests.points = true;
       else delete doc.tests.points;
     }
-    if (req.scoring !== undefined) {
-      if (req.scoring === null || !req.scoring.trim()) delete doc.scoring;
-      else doc.scoring = { ...(doc.scoring ?? {}), source: req.scoring.trim() };
-    }
     for (const [name, p] of Object.entries(req.testsets ?? {})) {
       if (!TESTSET_NAME_RE.test(name)) throw new HttpError(400, 'invalid_testset', `Invalid testset name: ${name}`);
       const isDefault = name === DEFAULT_TESTSET;

@@ -6,7 +6,7 @@ import { atomicWrite, exists, HttpError } from '../util/fs.js';
 import type { Program } from './compiler.js';
 import { runChecker, runSolution, withTmp } from './execute.js';
 import type { Judge, ProblemCtx } from './index.js';
-import { scoreSolution, scoringEnabled, scoringInput } from './scoring.js';
+import { groupScore, scoringEnabled, scoringInput } from './scoring.js';
 import { answerPath, generateTests, inputPath, requireTestset } from './tests.js';
 
 const MAX_SAVED_OUTPUT = 16 * 1024 * 1024;
@@ -187,7 +187,7 @@ export async function runInvocation(
     if (inv.status === 'done' && scoringEnabled(ctx)) {
       for (const [i, s] of inv.solutions.entries()) {
         if (s.compile?.ok === false) continue;
-        s.score = await scoreSolution(judge, ctx, scoringInput(ctx, ts, inv.tests, inv.cells[i] ?? []));
+        s.score = groupScore(scoringInput(ctx, ts, inv.tests, inv.cells[i] ?? []));
       }
     }
     await save();

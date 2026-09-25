@@ -79,7 +79,7 @@ export async function localChecks(_judge: Judge, ctx: ProblemCtx): Promise<Local
   const m = await readManifest(ctx);
   if (m) for (const e of m.errors.slice(0, 10)) out.push({ level: 'error', category: 'tests', message: `Last test generation: ${e}` });
 
-  // ---- testsets, groups (subtasks) and scoring ----
+  // ---- testsets and groups (subtasks) ----
   for (const ts of testsetsOf(config)) {
     const where = ts.name === DEFAULT_TESTSET ? '' : ` (${ts.name})`;
     if (ts.name !== DEFAULT_TESTSET) {
@@ -109,9 +109,6 @@ export async function localChecks(_judge: Judge, ctx: ProblemCtx): Promise<Local
       const sum = ts.group.reduce((a, g) => a + (g.points ?? 0), 0);
       if (sum !== 100) out.push({ level: 'info', category: 'tests', file: 'problem.toml', message: `Group points add up to ${sum}, not 100` });
     }
-  }
-  if (config.scoring?.source && !(await has(config.scoring.source))) {
-    out.push({ level: 'error', category: 'tests', file: 'problem.toml', message: `Scoring program not found: ${config.scoring.source}` });
   }
   return out;
 }

@@ -3,12 +3,12 @@ import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NInput, NInputNumber, NModal, NSelect, NSpace, NSwitch, NTag, useMessage } from 'naive-ui';
 import { Plus, Trash2, X } from 'lucide-vue-next';
-import { DEFAULT_TESTSET, GROUP_POLICIES, TESTSET_NAME_RE, isSourceFile, parseIndexList, testsetsOf, type TestGroup, type TestsetPatch } from '@polyforge/shared';
+import { DEFAULT_TESTSET, GROUP_POLICIES, TESTSET_NAME_RE, parseIndexList, testsetsOf, type TestGroup, type TestsetPatch } from '@polyforge/shared';
 import { errorMessage } from '../lib/api';
 import type { Judge } from '../lib/judge';
 import type { Workspace } from '../lib/workspace';
 
-/** Testsets (Polygon), their groups / subtasks with points, and the scoring program. */
+/** Testsets (Polygon) and their groups / subtasks with points. */
 const props = defineProps<{ show: boolean; ws: Workspace; judge: Judge; initial?: string }>();
 const emit = defineEmits<{ 'update:show': [boolean] }>();
 const { t } = useI18n();
@@ -31,7 +31,7 @@ interface EditTestset {
 }
 
 const cfg = computed(() => props.ws.state.detail?.config ?? null);
-const form = reactive({ points: false, scoring: null as string | null, sets: [] as EditTestset[], deleted: [] as string[] });
+const form = reactive({ points: false, sets: [] as EditTestset[], deleted: [] as string[] });
 const current = ref(DEFAULT_TESTSET);
 const newName = ref('');
 const saving = ref(false);
@@ -40,7 +40,6 @@ function reset() {
   const c = cfg.value;
   if (!c) return;
   form.points = !!c.tests.points;
-  form.scoring = c.scoring?.source ?? null;
   form.deleted = [];
   form.sets = testsetsOf(c).map((ts) => ({
     name: ts.name,
@@ -55,7 +54,6 @@ function reset() {
 watch(() => props.show, (s) => s && reset());
 
 const set = computed(() => form.sets.find((s) => s.name === current.value) ?? form.sets[0]);
-const sources = computed(() => props.ws.files.value.filter((f) => isSourceFile(f.path)).map((f) => ({ label: f.path, value: f.path })));
 const scripts = computed(() => props.ws.files.value.filter((f) => f.path.endsWith('.txt') && f.path.startsWith('tests/')).map((f) => f.path));
 const manifest = computed(() => props.judge.state.manifests[current.value] ?? (current.value === DEFAULT_TESTSET ? props.judge.state.manifest : null));
 const testCount = computed(() => manifest.value?.tests.length ?? 0);
@@ -116,7 +114,7 @@ async function save() {
       };
     }
     for (const d of form.deleted) testsets[d] = null;
-    await props.ws.patch({ points: form.points, scoring: form.scoring, testsets });
+    await props.ws.patch({ points: form.points, testsets });
     message.success(t('common.saved'));
     emit('update:show', false);
   } catch (e) {
@@ -152,8 +150,6 @@ const policyOptions = computed(() => GROUP_POLICIES.map((p) => ({ label: t(`test
         </div>
         <div class="problem-wide">
           <label class="opt"><n-switch v-model:value="form.points" size="small" /> {{ t('testsets.points') }}</label>
-          <div class="label">{{ t('testsets.scoring') }}</div>
-          <n-select v-model:value="form.scoring" size="small" clearable filterable :options="sources" :placeholder="t('testsets.scoringNone')" />
         </div>
       </aside>
 

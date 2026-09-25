@@ -92,7 +92,7 @@ pnpm release      # 打包成独立的 npm 包到 release/（无运行时依赖�
 - **命令面板**（`Ctrl+K`）、快捷键一览（`Ctrl+/`）、底部状态栏（连接状态、Polygon 绑定、测试数、编译状态、语言、换行符）；题目列表有完成度进度条、排序、卡片 / 列表视图。
 - 界面图标统一用 [lucide](https://lucide.dev) 的 SVG 图标。
 
-## 测试集、子任务与计分
+## 测试集与子任务
 
 与 Polygon 的概念一致：
 
@@ -118,15 +118,11 @@ dependencies = ["1"]        # 子任务 1 未全部通过时本组不得分
 
 [testsets.pretests]         # 其他测试集：手写测试默认在 tests/pretests/
 script = "tests/script-pretests.txt"
-
-[scoring]                   # 可选：本地记分脚本
-source = "scoring.py"
 ```
 
 - 测试面板可切换测试集，“子任务”按钮（层叠图标）打开编辑器：增删测试集、编辑子任务（名称、测试点、分值、计分方式、依赖），会提示没有归入子任务或重复归入的测试点；validator 按 Polygon 的方式收到 `--testset` 和 `--group`。
 - 批量评测按 Polygon 的方式选择：勾选解法，选测试集，再勾选测试点（按子任务分块，可整块勾选；全选 / 全不选 / 样例 / 反选；Shift 点击选一段；也可以输入 `1-5, 8`）。启用分值后，结果表头显示每个解法的得分，底部列出每个子任务的得分和总分；只跑了部分测试点时只统计跑过的子任务。
 - 计分规则：测试点通过得该点分值（checker 用 `quitp` 给了分数时以它为准）；`COMPLETE_GROUP` 全部通过才得全组分，`EACH_TEST` 累加；依赖的子任务没有全部通过时得 0 分。分值推送到 Polygon 时换算到每个测试点（`COMPLETE_GROUP` 的分数放在组内最后一个测试点上）。
-- 记分脚本（本地功能，不会同步到 Polygon、也不进 package）：任意语言，标准输入是 JSON `{ testset, tests: [{ index, group, points, verdict, checkerPoints, timeMs, memoryKb }], groups: [{ name, points, policy, dependencies, tests }] }`，第一行输出得分（可以跟一个满分，如 `75 100`），其余行作为说明显示。
 - 导出的 package 为每个测试集写一个 `<testset>`（文件在 `<测试集名>/01` …），带分组、分值和依赖。
 - 同步：其他测试集（脚本、手写测试、分组、分值）作为一个条目推送 / 拉取。Polygon API 不能新建测试集，也不能列出已有的测试集：推送前要在 Polygon 的 Tests 页面建好同名测试集；拉取只取本地已有的测试集，从 Polygon 导入新题时只导入 `tests`。
 

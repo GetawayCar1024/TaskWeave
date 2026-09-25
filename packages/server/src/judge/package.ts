@@ -168,7 +168,6 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
       <tests>${testsXml.join('')}</tests>${groupsXml}
     </testset>`);
   }
-  if (config.scoring?.source) warnings.push('the local scoring program is not part of the package');
 
   // ---- statements & tutorials (per language; tutorials follow the statement languages) ----
   const statements: string[] = [];

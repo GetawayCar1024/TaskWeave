@@ -212,7 +212,7 @@ const TOOLS = [
         );
         if (s.score) {
           const groups = s.score.groups.map((g) => `${g.name}=${g.score}/${g.max}${g.blockedBy ? ` (blocked by ${g.blockedBy.join(',')})` : ''}`).join(' ');
-          out.push(`  score ${s.score.total}/${s.score.max}${groups ? ` [${groups}]` : ''}${s.score.error ? ` — scoring error: ${s.score.error}` : ''}`);
+          out.push(`  score ${s.score.total}/${s.score.max}${groups ? ` [${groups}]` : ''}`);
         }
         if (e?.missing) out.push(`  never got ${e.missing.join('/')} — the tests may be too weak to catch this solution`);
         for (const ti of (e?.unexpected ?? []).slice(0, 5)) {
