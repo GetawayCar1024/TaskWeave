@@ -271,7 +271,6 @@ onBeforeUnmount(() => {
           :index="r.s.index"
           :title="r.s.title"
           :limits="r.s"
-          all-streams
           :sections="r.sections"
           :samples="r.s.samples"
         />

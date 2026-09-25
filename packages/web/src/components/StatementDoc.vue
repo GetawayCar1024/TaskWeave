@@ -17,8 +17,6 @@ const props = defineProps<{
   note?: string;
   /** Tutorial mode: append "— Tutorial" to the title (off when the document title already says it). */
   tutorialSuffix?: boolean;
-  /** Show stdin / stdout too (exports); otherwise only file names are shown. */
-  allStreams?: boolean;
 }>();
 
 const HEADINGS: Record<string, Partial<Record<StatementSection | 'examples', string>>> = {
@@ -27,9 +25,6 @@ const HEADINGS: Record<string, Partial<Record<StatementSection | 'examples', str
 };
 const heading = (k: StatementSection | 'examples') => (HEADINGS[props.lang] ?? HEADINGS.en)[k] ?? k;
 const zh = () => props.lang === 'zh';
-/** "standard input" / "standard output" in the statement language, or the file name. */
-const stream = (v: string | undefined, std: 'stdin' | 'stdout') =>
-  !v || v === std ? (zh() ? (std === 'stdin' ? '标准输入' : '标准输出') : std === 'stdin' ? 'standard input' : 'standard output') : v;
 
 /** Hovering a test case line highlights that case in the input and the output box. */
 function hover(e: MouseEvent, on: boolean) {
@@ -56,8 +51,9 @@ function hover(e: MouseEvent, on: boolean) {
         <div v-if="limits" class="limits">
           {{ zh() ? '时间限制' : 'time limit per test' }}: {{ limits.timeLimit / 1000 }} {{ zh() ? '秒' : limits.timeLimit === 1000 ? 'second' : 'seconds' }}<br />
           {{ zh() ? '空间限制' : 'memory limit per test' }}: {{ limits.memoryLimit }} {{ zh() ? 'MB' : 'megabytes' }}
-          <template v-if="limits.input !== undefined && (allStreams || limits.input !== 'stdin')"><br />{{ zh() ? '输入' : 'input' }}: {{ stream(limits.input, 'stdin') }}</template>
-          <template v-if="limits.output !== undefined && (allStreams || limits.output !== 'stdout')"><br />{{ zh() ? '输出' : 'output' }}: {{ stream(limits.output, 'stdout') }}</template>
+          <!-- Only file names: stdin / stdout are not mentioned (preview and exports alike). -->
+          <template v-if="limits.input && limits.input !== 'stdin'"><br />{{ zh() ? '输入' : 'input' }}: {{ limits.input }}</template>
+          <template v-if="limits.output && limits.output !== 'stdout'"><br />{{ zh() ? '输出' : 'output' }}: {{ limits.output }}</template>
         </div>
       </div>
       <div v-if="sections.legend" class="section" v-html="sections.legend" />
