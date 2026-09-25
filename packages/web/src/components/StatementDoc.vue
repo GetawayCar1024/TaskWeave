@@ -39,7 +39,7 @@ const zh = () => props.lang === 'zh';
       <div class="header">
         <div class="title"><template v-if="index">{{ index }}. </template>{{ title }}</div>
         <div v-if="limits" class="limits">
-          {{ zh() ? '时间限制' : 'time limit per test' }}: {{ limits.timeLimit / 1000 }} {{ zh() ? '秒' : 'seconds' }}<br />
+          {{ zh() ? '时间限制' : 'time limit per test' }}: {{ limits.timeLimit / 1000 }} {{ zh() ? '秒' : limits.timeLimit === 1000 ? 'second' : 'seconds' }}<br />
           {{ zh() ? '空间限制' : 'memory limit per test' }}: {{ limits.memoryLimit }} {{ zh() ? 'MB' : 'megabytes' }}
         </div>
       </div>
@@ -63,41 +63,56 @@ const zh = () => props.lang === 'zh';
 </template>
 
 <style scoped>
-/* Typography follows Codeforces problem statements (Verdana body, Helvetica section
-   titles, Consolas for code and samples, TeX-style math). */
+/* Values from Polygon's problem-statement.css (Codeforces statements). Colours are
+   translucent so the preview also works on the dark theme; the print sheet is white. */
 .statement-doc {
-  font-family: Verdana, Arial, 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
+  font-family: Verdana, 'Microsoft YaHei', 'PingFang SC', serif;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.5em;
+  --pf-sample-bg: rgba(128, 128, 128, 0.12);
+  --pf-rule: rgb(136, 136, 136);
 }
 .header {
+  margin-bottom: 1em;
   text-align: center;
-  margin-bottom: 1.5em;
 }
 .title {
   font-size: 150%;
+  font-family: Arial, 'Microsoft YaHei', serif;
   margin-bottom: 0.25em;
 }
 .limits {
-  font-size: 90%;
-  opacity: 0.85;
+  margin: 0 auto;
 }
 .section-title {
-  font-family: 'Helvetica Neue', Helvetica, Arial, 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  font-family: Arial, 'Microsoft YaHei', serif;
   font-size: 115%;
   font-weight: bold;
-  margin: 1.25em 0 0.5em;
+}
+.section {
+  margin-bottom: 1em;
 }
 .section :deep(.p) {
   margin: 0 0 1em;
 }
-.statement-doc :deep(code),
-.statement-doc :deep(.tt),
-.statement-doc :deep(pre) {
+.section :deep(.p:last-child) {
+  margin-bottom: 0;
+}
+.statement-doc :deep(ul),
+.statement-doc :deep(ol) {
+  margin: 0 0 1em;
+  padding: 0;
+}
+.statement-doc :deep(li) {
+  line-height: 1.5em;
+  margin-left: 3em;
+}
+.statement-doc :deep(code) {
+  font-size: 110%;
   font-family: Consolas, 'Lucida Console', 'Andale Mono', 'Bitstream Vera Sans Mono', 'Courier New', Courier, monospace;
 }
-.statement-doc :deep(.katex) {
-  font-size: 1.1em;
+.statement-doc :deep(pre) {
+  font-family: Consolas, 'Lucida Console', 'Andale Mono', 'Bitstream Vera Sans Mono', 'Courier New', Courier, monospace;
 }
 .statement-doc :deep(.tex-unknown) {
   background: rgba(240, 200, 40, 0.35);
@@ -114,68 +129,79 @@ const zh = () => props.lang === 'zh';
   overflow-x: auto;
 }
 .statement-doc :deep(table.tabular) {
+  margin: 1em 0;
   border-collapse: collapse;
-  margin: 0.5em auto;
+  border-spacing: 0;
 }
 .statement-doc :deep(table.tabular td) {
-  padding: 2px 8px;
+  padding: 0.15em 0.7em;
 }
 .statement-doc :deep(table.tabular.bordered td) {
-  border: 1px solid rgba(128, 128, 128, 0.6);
+  border: 1px solid;
 }
 .statement-doc :deep(.stmt-img) {
-  max-width: 100%;
+  max-width: 95%;
 }
 .statement-doc :deep(pre.verbatim) {
-  background: rgba(128, 128, 128, 0.12);
-  padding: 6px 8px;
-  border-radius: 4px;
-  overflow-x: auto;
+  font-size: 110%;
+  white-space: pre-wrap;
+  padding: 0.5em;
+  background: var(--pf-sample-bg);
 }
 .statement-doc :deep(.sc) {
-  font-variant: small-caps;
+  text-transform: uppercase;
 }
 .statement-doc :deep(.sf) {
-  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: Arial, serif;
 }
 .statement-doc :deep(.footnotes) {
-  font-size: 0.85em;
-  border-top: 1px solid rgba(128, 128, 128, 0.4);
-  padding-top: 6px;
-  margin-top: 16px;
+  font-size: 85%;
+  position: relative;
+  margin: 1em 0;
+  padding-left: 1.5em;
 }
+.statement-doc :deep(.footnotes)::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -2px;
+  width: 25%;
+  border-top: 1px solid var(--pf-rule);
+}
+/* epigraph{text}{source}: the right third, source right-aligned under a rule. */
 .statement-doc :deep(.epigraph) {
-  margin: 0 0 1.5em auto;
-  width: 60%;
-  font-style: italic;
+  margin-left: 67%;
+  width: 33%;
+  margin-bottom: 1em;
 }
-.statement-doc :deep(.epigraph .who) {
+.statement-doc :deep(.epigraph-source) {
+  border-top: 1px solid var(--pf-rule);
   text-align: right;
-  font-style: normal;
 }
-/* Samples: input above output, each in its own box with a title bar (as on Codeforces). */
+/* Samples: input and output boxes joined, lowercase bold titles. */
 .statement-doc :deep(.sample) {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6em;
   margin-bottom: 1em;
   break-inside: avoid;
 }
 .statement-doc :deep(.sample-part) {
-  border: 1px solid rgba(128, 128, 128, 0.6);
+  border: 1px solid var(--pf-rule);
+}
+.statement-doc :deep(.sample-part + .sample-part) {
+  position: relative;
+  top: -1px;
 }
 .statement-doc :deep(.sample-title) {
-  font-family: 'Helvetica Neue', Helvetica, Arial, 'Microsoft YaHei', sans-serif;
-  font-size: 0.9em;
+  font-family: Arial, 'Microsoft YaHei', serif;
+  padding: 0.25em;
+  border-bottom: 1px solid var(--pf-rule);
+  text-transform: lowercase;
   font-weight: bold;
-  padding: 0.2em 0.5em;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.6);
 }
 .statement-doc :deep(.sample pre) {
-  margin: 0;
-  padding: 0.25em 0.5em;
-  font-size: 0.9em;
   line-height: 1.25em;
+  padding: 0.25em;
+  margin: 0;
+  background: var(--pf-sample-bg);
   overflow-x: auto;
 }
 </style>

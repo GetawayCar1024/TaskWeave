@@ -439,7 +439,8 @@ class Parser {
       case 'epigraph': {
         const text = this.readGroupRaw() ?? '';
         const who = this.readGroupRaw() ?? '';
-        return `<div class="epigraph"><div>${this.sub(text)}</div><div class="who">— ${this.sub(who)}</div></div>`;
+        // As Polygon renders it: text, then the source under a rule, in the right third.
+        return `<div class="epigraph"><div class="epigraph-text">${this.sub(text)}</div><div class="epigraph-source">${this.sub(who)}</div></div>`;
       }
       case 'exmp':
       case 'exmpfile': {

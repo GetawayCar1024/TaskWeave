@@ -153,6 +153,9 @@ const contestTitle = computed(() => detail.value?.summary.title[lang.value] || d
   padding: 40px 56px;
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.35);
 }
+.sheet :deep(.statement-doc) {
+  --pf-sample-bg: rgb(239, 239, 239);
+}
 .contest-title {
   text-align: center;
   font-family: Verdana, Arial, 'Microsoft YaHei', 'PingFang SC', sans-serif;
