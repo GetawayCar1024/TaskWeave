@@ -1,3 +1,5 @@
+import { i18n } from '../i18n';
+import { lintMessage } from './serverText';
 import { lintStatement } from '@polyforge/shared';
 import { getDefs } from './defs';
 import { buildMacros, macroPreview, type MacroTable } from './latex';
@@ -72,7 +74,7 @@ export function attachStatementLint(model: monaco.editor.ITextModel, lang: strin
       'polyforge-lint',
       issues.map((i) => ({
         severity: i.fixable ? monaco.MarkerSeverity.Info : monaco.MarkerSeverity.Warning,
-        message: i.message + (i.fixable ? ' (auto-fixable)' : ''),
+        message: lintMessage(i) + (i.fixable ? (i18n.global.locale.value.startsWith('zh') ? '（可自动修复）' : ' (auto-fixable)') : ''),
         startLineNumber: i.line,
         startColumn: i.col,
         endLineNumber: i.line,

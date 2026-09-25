@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NForm, NFormItem, NInput, NInputNumber, NModal, NProgress, NSelect, NSpace, useMessage } from 'naive-ui';
 import { PROBLEM_NAME_RE, type ContestSummary, type JobInfo, type ProblemSummary } from '@polyforge/shared';
@@ -106,10 +107,10 @@ async function submit() {
     </n-form>
     <div v-if="job && job.status === 'running'" class="progress">
       <n-progress type="line" :percentage="job.progress.total ? Math.round((job.progress.done / job.progress.total) * 100) : 0" :height="4" :show-indicator="false" />
-      <span class="small dim">{{ job.progress.message }}</span>
+      <span class="small dim">{{ serverText(job.progress.message) }}</span>
     </div>
     <n-alert v-if="warnings.length" type="warning" :show-icon="false">
-      <div v-for="w in warnings" :key="w" class="small">{{ w }}</div>
+      <div v-for="w in warnings" :key="w" class="small">{{ serverText(w) }}</div>
     </n-alert>
     <template #footer>
       <n-space justify="end">

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
 import {
   NAlert,
@@ -166,7 +167,7 @@ function scoreClass(score: number, max: number) {
 
 function cellTitle(c: InvocationCell | null): string {
   if (!c) return '';
-  return [`${c.verdict}  ${c.timeMs} ms  ${fmtMem(c.memoryKb)}`, c.message ?? ''].filter(Boolean).join('\n');
+  return [`${c.verdict}  ${c.timeMs} ms  ${fmtMem(c.memoryKb)}`, serverText(c.message)].filter(Boolean).join('\n');
 }
 
 function cellClass(si: number, ti: number): string[] {
@@ -289,9 +290,9 @@ onBeforeUnmount(disposeDiff);
 
       <div v-if="running && job" class="progress">
         <n-progress type="line" :percentage="job.progress.total ? Math.round((job.progress.done / job.progress.total) * 100) : 0" :height="4" :show-indicator="false" />
-        <span class="dim small">{{ job.progress.message }} {{ job.progress.total ? `${job.progress.done}/${job.progress.total}` : '' }}</span>
+        <span class="dim small">{{ serverText(job.progress.message) }} {{ job.progress.total ? `${job.progress.done}/${job.progress.total}` : '' }}</span>
       </div>
-      <n-alert v-if="inv?.error" type="error" :show-icon="false" class="alert"><pre class="log">{{ inv.error }}</pre></n-alert>
+      <n-alert v-if="inv?.error" type="error" :show-icon="false" class="alert"><pre class="log">{{ serverText(inv.error) }}</pre></n-alert>
 
       <div v-if="!inv" class="dim small empty">{{ t('inv.none') }}</div>
       <n-scrollbar v-else x-scrollable style="max-height: calc(62vh - 330px)">
@@ -375,7 +376,7 @@ onBeforeUnmount(disposeDiff);
         <span>{{ detail.cell.timeMs }} ms · {{ fmtMem(detail.cell.memoryKb) }}</span>
         <span v-if="detail.cell.exitCode" class="dim">{{ t('run.exitCode', { code: detail.cell.exitCode }) }}</span>
       </n-space>
-      <div v-if="detail.cell.message" class="msg mono">{{ detail.cell.message }}</div>
+      <div v-if="detail.cell.message" class="msg mono">{{ serverText(detail.cell.message) }}</div>
       <div class="three">
         <div>
           <div class="label">{{ t('inv.input') }}<span v-if="detail.files.input?.truncated" class="dim"> ({{ t('run.truncated') }})</span></div>

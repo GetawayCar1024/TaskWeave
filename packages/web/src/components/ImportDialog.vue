@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NForm, NFormItem, NInput, NInputNumber, NModal, NScrollbar, NSelect, NSpace, NSpin, useMessage } from 'naive-ui';
 import { PROBLEM_NAME_RE, type PolygonProblem, type ProblemSummary } from '@polyforge/shared';
@@ -55,7 +56,7 @@ async function submit() {
   progress.value = '';
   try {
     const job = await api.importPolygon({ polygonId: polygonId.value, name: name.value || undefined, root: root.value || undefined });
-    const done = await waitJob(job, (j) => (progress.value = j.progress.message ?? ''));
+    const done = await waitJob(job, (j) => (progress.value = serverText(j.progress.message)));
     if (done.status !== 'done') throw new Error(done.error ?? done.status);
     emit('update:show', false);
     emit('imported', done.result as ProblemSummary);

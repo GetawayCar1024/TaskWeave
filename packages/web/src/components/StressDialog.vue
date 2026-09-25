@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NForm, NFormItem, NInput, NInputNumber, NModal, NProgress, NSelect, NSpace, NTag, useMessage } from 'naive-ui';
 import type { JobInfo, StressResult } from '@polyforge/shared';
@@ -88,7 +89,7 @@ async function cancel() {
 
     <div v-if="running && job" class="progress">
       <n-progress type="line" :percentage="job.progress.total ? Math.round((job.progress.done / job.progress.total) * 100) : 0" :height="6" :show-indicator="false" />
-      <span class="hint">{{ job.progress.done }} / {{ job.progress.total }} · {{ job.progress.message }}</span>
+      <span class="hint">{{ job.progress.done }} / {{ job.progress.total }} · {{ serverText(job.progress.message) }}</span>
     </div>
     <n-alert v-if="error" type="error" :show-icon="false" class="alert"><pre class="log">{{ error }}</pre></n-alert>
     <template v-if="result">

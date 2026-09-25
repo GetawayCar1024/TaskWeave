@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
 import { onBeforeRouteLeave, useRouter } from 'vue-router';
 import { NButton, NDropdown, NInput, NModal, NResult, NScrollbar, NSpace, NSpin, NSplit, NTabPane, NTabs, NTooltip, useDialog, useMessage } from 'naive-ui';
@@ -64,7 +65,7 @@ async function exportPackage() {
     const r = done.result as PackageResult;
     await api.downloadExport(props.id, r.file);
     message.success(t('export.done', { file: r.file, n: r.tests }));
-    if (r.warnings.length) message.warning(r.warnings.slice(0, 5).join('\n'), { duration: 8000 });
+    if (r.warnings.length) message.warning(r.warnings.slice(0, 5).map(serverText).join('\n'), { duration: 8000 });
   } catch (e) {
     message.error(errorMessage(e));
   } finally {

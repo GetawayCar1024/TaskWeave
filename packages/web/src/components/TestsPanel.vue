@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, h, ref, watch } from 'vue';
+import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NDataTable, NProgress, NScrollbar, NSelect, NSpace, NTabPane, NTabs, NTag, useMessage, type DataTableColumns } from 'naive-ui';
 import { testsetsOf, type TestFileResponse, type TestInfo } from '@polyforge/shared';
@@ -67,7 +68,7 @@ const columns = computed<DataTableColumns<TestInfo>>(() => [
     key: 'status',
     width: 30,
     render: (r) => {
-      if (r.error) return h(X, { size: 14, class: 'bad', title: r.error });
+      if (r.error) return h(X, { size: 14, class: 'bad', title: serverText(r.error) });
       if (r.valid === false) return h(X, { size: 14, class: 'bad', title: r.validatorMessage });
       if (r.answerSize === undefined) return h('span', { class: 'dim', title: t('tests.noAnswer') }, '?');
       return h(Check, { size: 14, class: 'good' });
@@ -130,13 +131,13 @@ watch(
         :show-indicator="false"
         :height="4"
       />
-      <span class="dim small">{{ job.progress.message }}</span>
+      <span class="dim small">{{ serverText(job.progress.message) }}</span>
     </div>
     <n-alert v-if="job?.status === 'failed'" type="error" :show-icon="false" class="alert">
-      <pre class="log">{{ job.error }}</pre>
+      <pre class="log">{{ serverText(job.error) }}</pre>
     </n-alert>
     <n-alert v-if="manifest && manifest.errors.length" type="warning" :show-icon="false" class="alert">
-      <div v-for="(e, i) in manifest.errors.slice(0, 20)" :key="i" class="small err-line">{{ e }}</div>
+      <div v-for="(e, i) in manifest.errors.slice(0, 20)" :key="i" class="small err-line">{{ serverText(e) }}</div>
       <div v-if="manifest.errors.length > 20" class="small dim">… {{ manifest.errors.length - 20 }}</div>
     </n-alert>
 
@@ -159,7 +160,7 @@ watch(
         <n-button v-if="testset === 'tests'" size="tiny" @click="emit('runOnTest', current.index)">{{ t('tests.runHere') }}</n-button>
       </n-space>
       <div v-if="current.validatorMessage" class="bad small">{{ current.validatorMessage }}</div>
-      <div v-if="current.error" class="bad small">{{ current.error }}</div>
+      <div v-if="current.error" class="bad small">{{ serverText(current.error) }}</div>
       <n-tabs v-model:value="tab" size="small" type="segment">
         <n-tab-pane v-for="k in ['in', 'ans', 'overview'] as const" :key="k" :name="k" :tab="t(`tests.file.${k}`)">
           <n-scrollbar style="max-height: 240px">

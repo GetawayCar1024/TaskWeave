@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NSpace, NTag, useMessage } from 'naive-ui';
 import { errorMessage } from '../lib/api';
@@ -35,7 +36,7 @@ async function go(fn: () => Promise<void>) {
       <div class="hint">{{ t('selftest.validatorHint') }}</div>
       <template v-if="vr">
         <n-alert v-if="vr.compile && !vr.compile.ok" type="error" :show-icon="false"><pre class="log mono">{{ vr.compile.log }}</pre></n-alert>
-        <n-alert v-if="vr.error" type="warning" :show-icon="false" class="small">{{ vr.error }}</n-alert>
+        <n-alert v-if="vr.error" type="warning" :show-icon="false" class="small">{{ serverText(vr.error) }}</n-alert>
         <div v-if="vr.results.length" class="summary" :class="passed(vr.results) === vr.results.length ? 'good' : 'bad'">
           {{ passed(vr.results) }} / {{ vr.results.length }}
         </div>
@@ -57,7 +58,7 @@ async function go(fn: () => Promise<void>) {
       <div class="hint">{{ t('selftest.checkerHint') }}</div>
       <template v-if="cr">
         <n-alert v-if="cr.compile && !cr.compile.ok" type="error" :show-icon="false"><pre class="log mono">{{ cr.compile.log }}</pre></n-alert>
-        <n-alert v-if="cr.error" type="warning" :show-icon="false" class="small">{{ cr.error }}</n-alert>
+        <n-alert v-if="cr.error" type="warning" :show-icon="false" class="small">{{ serverText(cr.error) }}</n-alert>
         <div v-if="cr.results.length" class="summary" :class="passed(cr.results) === cr.results.length ? 'good' : 'bad'">
           {{ passed(cr.results) }} / {{ cr.results.length }}
         </div>

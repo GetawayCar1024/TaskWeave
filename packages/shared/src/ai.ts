@@ -1,3 +1,4 @@
+import type { CheckCode, CheckParams } from './checks.js';
 export const AI_PROTOCOLS = ['anthropic', 'openai'] as const;
 export type AiProtocol = (typeof AI_PROTOCOLS)[number];
 
@@ -121,7 +122,10 @@ export interface AiFinding {
 export interface LocalCheck {
   level: 'error' | 'warning' | 'info';
   category: AiFinding['category'];
+  /** English text (for the AI); the UI translates `code` with `params`. */
   message: string;
+  code?: CheckCode;
+  params?: CheckParams;
   file?: string;
   line?: number;
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, h, reactive, watch } from 'vue';
+import { stdCheckerDescription } from '../lib/stdCheckers';
 import { useI18n } from 'vue-i18n';
 import {
   NButton,
@@ -26,7 +27,7 @@ import { Check, X } from 'lucide-vue-next';
 import { SHARED_TAB, type Workspace } from '../lib/workspace';
 
 const props = defineProps<{ ws: Workspace; judge: Judge }>();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const message = useMessage();
 
 const cfg = computed(() => props.ws.state.detail?.config ?? null);
@@ -89,7 +90,7 @@ const checkerOptions = computed<SelectOption[]>(() => [
     type: 'group',
     label: t('info.stdCheckers'),
     key: 'std',
-    children: (props.ws.state.shared?.checkers ?? []).map((c) => ({ label: `${c.ref} — ${c.description ?? ''}`, value: c.ref! })),
+    children: (props.ws.state.shared?.checkers ?? []).map((c) => ({ label: `${c.ref} — ${stdCheckerDescription(c.ref!, c.description, locale.value)}`, value: c.ref! })),
   },
   { type: 'group', label: t('info.localFiles'), key: 'local', children: localSources.value.map((p) => ({ label: p, value: p })) },
 ]);

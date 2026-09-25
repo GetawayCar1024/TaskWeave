@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { LocalCheck } from './ai.js';
 import type { ProblemSummary } from './problem.js';
 
 /**
@@ -76,6 +77,8 @@ export interface ContestBatchItem {
   /** One-line result, e.g. "24 tests", "3 errors, 1 warning", "pushed 5 items". */
   message: string;
   details?: string[];
+  /** checks: the local checks themselves, so the UI can show them in its language. */
+  checks?: LocalCheck[];
 }
 
 export interface ContestBatchResult {

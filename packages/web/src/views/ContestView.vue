@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, h, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { checkMessage, serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import {
@@ -180,21 +181,28 @@ type Row = ContestDetail['problems'][number] & { pos: number };
 const rows = computed<Row[]>(() => (detail.value?.problems ?? []).map((p, pos) => ({ ...p, pos })));
 const expanded = ref<string[]>([]);
 
+/** Result details in the UI language: local checks by code, other lines by pattern. */
+function detailLines(r: ContestBatchItem | undefined): { text: string; bad: boolean }[] {
+  if (!r) return [];
+  if (r.checks) return r.checks.map((c) => ({ text: `${t(`checkLevel.${c.level}`)}：${checkMessage(c)}${c.file ? `（${c.file}）` : ''}`, bad: c.level === 'error' }));
+  return (r.details ?? []).map((d) => ({ text: serverText(d), bad: d.startsWith('error') }));
+}
+
 function resultCell(r: ContestBatchItem | undefined) {
   if (!r) return null;
   const icon = h(r.ok ? Check : r.details?.length ? CircleAlert : X, { size: 14, class: r.ok ? (r.details?.length ? 'warn' : 'good') : 'bad' });
-  return h('span', { class: 'result' }, [icon, h('span', { class: 'result-text', title: r.message }, r.message)]);
+  return h('span', { class: 'result' }, [icon, h('span', { class: 'result-text', title: serverText(r.message) }, serverText(r.message))]);
 }
 
 const columns = computed<DataTableColumns<Row>>(() => [
   {
     type: 'expand',
-    expandable: (r) => !!resultByIndex.value.get(r.index)?.details?.length,
+    expandable: (r) => detailLines(resultByIndex.value.get(r.index)).length > 0,
     renderExpand: (r) =>
       h(
         'div',
         { class: 'details' },
-        (resultByIndex.value.get(r.index)?.details ?? []).map((d) => h('div', { class: d.startsWith('error') ? 'bad' : '' }, d)),
+        detailLines(resultByIndex.value.get(r.index)).map((d) => h('div', { class: d.bad ? 'bad' : '' }, d.text)),
       ),
   },
   { title: '#', key: 'index', width: 44, render: (r) => h('strong', r.index) },
@@ -292,7 +300,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
           </n-space>
           <div v-if="running && job" class="progress">
             <n-progress type="line" :percentage="job.progress.total ? Math.round((job.progress.done / job.progress.total) * 100) : 0" :height="4" :show-indicator="false" />
-            <span class="sub">{{ job.progress.message }}</span>
+            <span class="sub">{{ serverText(job.progress.message) }}</span>
           </div>
         </div>
 

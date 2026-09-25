@@ -104,6 +104,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
           const warnings = checks.filter((c) => c.level === 'warning').length;
           item.ok = errors === 0;
           item.message = errors || warnings ? [errors && plural(errors, 'error'), warnings && plural(warnings, 'warning')].filter(Boolean).join(', ') : 'no issues';
+          item.checks = checks.filter((c) => c.level !== 'info');
           item.details = checks.filter((c) => c.level !== 'info').map((c) => `${c.level}: ${c.message}${c.file ? ` (${c.file})` : ''}`);
           break;
         }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { lintMessage } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
 import { NButton, NEmpty, NModal, NScrollbar, NSpace, NSpin, NTag, useMessage } from 'naive-ui';
 import { lintStatement, type LintResult } from '@polyforge/shared';
@@ -91,7 +92,7 @@ async function apply(list: FileLint[]) {
           <div v-for="(i, k) in current.result.issues" :key="k" class="issue">
             <span class="mono dim">{{ i.line }}:{{ i.col }}</span>
             <n-tag size="tiny" :type="i.fixable ? 'info' : 'warning'" :bordered="false">{{ i.fixable ? t('lint.auto') : t('lint.manual') }}</n-tag>
-            <span>{{ i.message }}</span>
+            <span>{{ lintMessage(i) }}</span>
           </div>
         </n-scrollbar>
         <div class="diff">

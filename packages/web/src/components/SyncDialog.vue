@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
 import {
   NAlert,
@@ -127,7 +128,7 @@ async function doPull() {
   try {
     const r = await api.pull(props.problemId, [...take.value], [...merge.value]);
     message.success(t('sync.pulled', { n: r.applied.length + r.merged.length }));
-    if (r.warnings.length) message.warning(r.warnings.join('\n'));
+    if (r.warnings.length) message.warning(r.warnings.map(serverText).join('\n'));
     await props.ws.loadDetail();
     // Reload open tabs whose files changed underneath them.
     for (const tabItem of props.ws.state.tabs) if (!tabItem.dirty) await props.ws.reloadFromDisk(tabItem.path);
@@ -224,7 +225,7 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
       <n-tab-pane name="push" :tab="t('sync.push')">
         <div v-if="loading && !preview" class="center"><n-spin /></div>
         <template v-else-if="preview">
-          <n-alert v-for="(w, i) in preview.warnings" :key="i" type="warning" :show-icon="false" class="alert small">{{ w }}</n-alert>
+          <n-alert v-for="(w, i) in preview.warnings" :key="i" type="warning" :show-icon="false" class="alert small">{{ serverText(w) }}</n-alert>
           <div class="body">
             <div class="list">
               <n-space align="center" justify="space-between" class="list-head">
@@ -244,7 +245,7 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
                     @update:checked="(v: boolean) => (selected = toggle(selected, it.key, v))"
                   />
                   <n-tag size="tiny" :type="PUSH_TYPE[it.status]" :bordered="false">{{ t(`sync.push_${it.status}`) }}</n-tag>
-                  <span class="label" :title="it.key">{{ it.label }}</span>
+                  <span class="label" :title="it.key">{{ serverText(it.label) }}</span>
                 </div>
               </n-scrollbar>
             </div>
@@ -268,10 +269,10 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
           </div>
           <div v-if="pushJob?.status === 'running'" class="progress">
             <n-progress type="line" :percentage="pushPercent" :height="4" :show-indicator="false" />
-            <span class="small dim">{{ pushJob.progress.message }}</span>
+            <span class="small dim">{{ serverText(pushJob.progress.message) }}</span>
           </div>
           <n-alert v-if="pushResult?.warnings.length" type="warning" :show-icon="false" class="alert small">
-            <div v-for="(w, i) in pushResult.warnings" :key="i">{{ w }}</div>
+            <div v-for="(w, i) in pushResult.warnings" :key="i">{{ serverText(w) }}</div>
           </n-alert>
         </template>
       </n-tab-pane>
@@ -279,7 +280,7 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
       <n-tab-pane name="pull" :tab="t('sync.pull')" :disabled="!bound">
         <div v-if="loading && !pullPreview" class="center"><n-spin /></div>
         <template v-else-if="pullPreview">
-          <n-alert v-for="(w, i) in pullPreview.warnings" :key="i" type="warning" :show-icon="false" class="alert small">{{ w }}</n-alert>
+          <n-alert v-for="(w, i) in pullPreview.warnings" :key="i" type="warning" :show-icon="false" class="alert small">{{ serverText(w) }}</n-alert>
           <div class="body">
             <div class="list">
               <n-space align="center" justify="space-between" class="list-head">
@@ -294,7 +295,7 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
                 <div v-for="it in pullItems" :key="it.key" class="row" :class="{ active: active === it.key, conflict: it.status === 'conflict' }" @click="openItem(it.key)">
                   <n-checkbox :checked="take.has(it.key)" :disabled="it.status === 'same'" @click.stop @update:checked="(v: boolean) => setTake(it.key, v)" />
                   <n-tag size="tiny" :type="PULL_TYPE[it.status]" :bordered="false">{{ t(`sync.pull_${it.status.replace('-', '_')}`) }}</n-tag>
-                  <span class="label" :title="it.key">{{ it.label }}</span>
+                  <span class="label" :title="it.key">{{ serverText(it.label) }}</span>
                   <n-button
                     v-if="it.mergeable"
                     size="tiny"

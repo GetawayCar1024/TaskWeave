@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
+import { checkMessage } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import {
@@ -219,7 +220,7 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
           <div v-if="checks && !checks.length" class="small good row-icon"><check :size="13" /> {{ t('ai.noLocalIssues') }}</div>
           <div v-for="(c, i) in checks ?? []" :key="i" class="check">
             <n-tag size="tiny" :type="SEV_TYPE[c.level]" :bordered="false">{{ t(`ai.sev.${c.level}`) }}</n-tag>
-            <span>{{ c.message }}</span>
+            <span>{{ checkMessage(c) }}</span>
             <a v-if="c.file && ws" class="mono path" @click="openAt(c.file, c.line)">{{ c.file }}</a>
           </div>
         </div>
