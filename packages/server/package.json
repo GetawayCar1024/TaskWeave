@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node --watch --import tsx src/index.ts --dev",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "mock-polygon": "tsx scripts/mock-polygon.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.4",

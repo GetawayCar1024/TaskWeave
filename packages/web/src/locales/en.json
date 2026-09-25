@@ -38,7 +38,8 @@
     "noRoots": "No problem root directory yet",
     "noRootsHint": "Add a folder in Settings. Every subfolder containing problem.toml is a problem.",
     "goSettings": "Open settings",
-    "empty": "No problems here yet"
+    "empty": "No problems here yet",
+    "import": "Import from Polygon"
   },
   "check": {
     "statement": "Statement",
@@ -80,7 +81,11 @@
     "notFound": "Not found",
     "works": "Works",
     "failed": "Failed",
-    "found": "Found"
+    "found": "Found",
+    "keepEmpty": "leave empty to keep",
+    "testConnection": "Test connection",
+    "polygonOk": "Connected: {n} accessible problems ({ms} ms)",
+    "polygonHint": "Create a key in Polygon → Settings → API Keys. Keys are stored only in secrets.toml in the global directory, never in problem folders."
   },
   "editor": {
     "changedOnDisk": "This file changed on disk while you have unsaved changes.",
@@ -222,5 +227,52 @@
     "unknown": "{n} unknown command(s)",
     "hide": "Hide preview",
     "show": "Show preview"
+  },
+  "import": {
+    "title": "Import from Polygon",
+    "search": "Search name, id or owner…",
+    "none": "No matching problems",
+    "id": "Polygon ID",
+    "name": "Local name",
+    "namePlaceholder": "Defaults to the Polygon short name",
+    "run": "Import"
+  },
+  "sync": {
+    "title": "Sync with Polygon",
+    "lastSync": "last sync",
+    "unbound": "Not bound to Polygon: pushing creates a problem named \"{name}\", or bind an existing id:",
+    "bindPlaceholder": "Polygon ID",
+    "bind": "Bind",
+    "push": "Push ↑",
+    "pull": "Pull ↓",
+    "selected": "{n} selected",
+    "showUnchanged": "Show unchanged",
+    "nothing": "Nothing to push",
+    "local": "Local",
+    "pickItem": "Click an item to see the diff",
+    "binary": "Binary file, no diff",
+    "commit": "Commit",
+    "commitMessage": "Commit message",
+    "buildPackage": "Build package",
+    "pushN": "Push {n} items",
+    "createAndPush": "Create problem and push {n} items",
+    "pushed": "Pushed {n} items",
+    "pulled": "Pulled {n} items",
+    "refetch": "Refetch",
+    "showSame": "Show identical",
+    "inSync": "Local and Polygon are in sync",
+    "takeCount": "{n} items will be overwritten by Polygon",
+    "apply": "Apply",
+    "pullHint": "Checked items are overwritten with the Polygon version. Conflicts (changed on both sides) keep the local version by default.",
+    "push_new": "new",
+    "push_modified": "modified",
+    "push_deleted": "deleted",
+    "push_unchanged": "unchanged",
+    "pull_same": "same",
+    "pull_remote": "changed on Polygon",
+    "pull_local": "changed locally",
+    "pull_conflict": "conflict",
+    "pull_remote_only": "Polygon only",
+    "pull_local_only": "local only"
   }
 }

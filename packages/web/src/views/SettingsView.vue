@@ -9,6 +9,7 @@ import {
   NDataTable,
   NForm,
   NFormItem,
+  NInput,
   NInputNumber,
   NRadioButton,
   NRadioGroup,
@@ -20,7 +21,7 @@ import {
   useMessage,
   type DataTableColumns,
 } from 'naive-ui';
-import type { GlobalConfig, LanguagesConfig, ToolProbe } from '@polyforge/shared';
+import type { GlobalConfig, LanguagesConfig, SecretsResponse, ToolProbe } from '@polyforge/shared';
 import AppHeader from '../components/AppHeader.vue';
 import CodeEditor from '../components/CodeEditor.vue';
 import DirPicker from '../components/DirPicker.vue';
@@ -109,7 +110,47 @@ const probeColumns = computed<DataTableColumns<ToolProbe>>(() => [
   },
 ]);
 
-onMounted(() => loadLanguages().catch((e) => message.error(errorMessage(e))));
+// ---- Polygon ----
+const secrets = ref<SecretsResponse | null>(null);
+const polyKey = ref('');
+const polySecret = ref('');
+const polyUrl = ref('');
+const testing = ref(false);
+const testResult = ref('');
+
+async function loadSecrets() {
+  secrets.value = await api.secrets();
+  polyUrl.value = secrets.value.polygon.apiUrl;
+}
+
+async function savePolygon() {
+  try {
+    secrets.value = await api.saveSecrets({ polygon: { key: polyKey.value, secret: polySecret.value, apiUrl: polyUrl.value } });
+    polyKey.value = '';
+    polySecret.value = '';
+    message.success(t('common.saved'));
+  } catch (e) {
+    message.error(errorMessage(e));
+  }
+}
+
+async function testPolygon() {
+  testing.value = true;
+  testResult.value = '';
+  try {
+    const r = await api.polygonTest();
+    testResult.value = '✓ ' + t('settings.polygonOk', { n: r.problems, ms: r.ms });
+  } catch (e) {
+    testResult.value = '✗ ' + errorMessage(e);
+  } finally {
+    testing.value = false;
+  }
+}
+
+onMounted(() => {
+  loadLanguages().catch((e) => message.error(errorMessage(e)));
+  loadSecrets().catch((e) => message.error(errorMessage(e)));
+});
 </script>
 
 <template>
@@ -195,6 +236,29 @@ onMounted(() => loadLanguages().catch((e) => message.error(errorMessage(e))));
             </div>
           </div>
         </n-tab-pane>
+        <n-tab-pane name="polygon" tab="Polygon">
+          <n-card size="small">
+            <n-form label-placement="left" label-width="160">
+              <n-form-item label="API key">
+                <n-input v-model:value="polyKey" :placeholder="secrets?.polygon.hasKey ? secrets.polygon.key + ' (' + t('settings.keepEmpty') + ')' : ''" class="mono" />
+              </n-form-item>
+              <n-form-item label="API secret">
+                <n-input v-model:value="polySecret" type="password" show-password-on="click" :placeholder="secrets?.polygon.hasSecret ? '•••••••• (' + t('settings.keepEmpty') + ')' : ''" class="mono" />
+              </n-form-item>
+              <n-form-item label="API URL">
+                <n-input v-model:value="polyUrl" class="mono" />
+              </n-form-item>
+            </n-form>
+            <p class="hint">{{ t('settings.polygonHint') }}</p>
+            <n-space justify="space-between" align="center">
+              <span class="small">{{ testResult }}</span>
+              <n-space>
+                <n-button :loading="testing" :disabled="!secrets?.polygon.hasKey" @click="testPolygon">{{ t('settings.testConnection') }}</n-button>
+                <n-button type="primary" @click="savePolygon">{{ t('common.save') }}</n-button>
+              </n-space>
+            </n-space>
+          </n-card>
+        </n-tab-pane>
       </n-tabs>
     </main>
 
@@ -252,5 +316,8 @@ onMounted(() => loadLanguages().catch((e) => message.error(errorMessage(e))));
   font-size: 12px;
   opacity: 0.7;
   margin: 0 0 8px;
+}
+.small {
+  font-size: 12px;
 }
 </style>

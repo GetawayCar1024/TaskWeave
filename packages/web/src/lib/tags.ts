@@ -11,9 +11,11 @@ export function tagType(tag: SolutionTag): TagType {
       return 'info';
     case 'TL':
     case 'ML':
+    case 'TM':
       return 'warning';
     case 'RJ':
     case 'FL':
+    case 'NR':
       return 'default';
     default:
       return 'error';

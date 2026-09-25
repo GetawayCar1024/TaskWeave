@@ -1,12 +1,12 @@
 import { z } from 'zod';
 
-export const SOLUTION_TAGS = ['MA', 'OK', 'WA', 'TL', 'TL-OR-OK', 'ML', 'RE', 'PE', 'RJ', 'FL'] as const;
+export const SOLUTION_TAGS = ['MA', 'OK', 'WA', 'TL', 'TL-OR-OK', 'TM', 'ML', 'RE', 'PE', 'RJ', 'NR', 'FL'] as const;
 export type SolutionTag = (typeof SOLUTION_TAGS)[number];
 
 export const STATEMENT_LANGS = ['zh', 'en'] as const;
 export type StatementLang = (typeof STATEMENT_LANGS)[number];
 
-export const STATEMENT_SECTIONS = ['legend', 'input', 'output', 'interaction', 'notes', 'tutorial'] as const;
+export const STATEMENT_SECTIONS = ['legend', 'input', 'output', 'interaction', 'scoring', 'notes', 'tutorial'] as const;
 export type StatementSection = (typeof STATEMENT_SECTIONS)[number];
 
 /** Prefix for references to files in the global `shared/` directory, e.g. `std:ncmp`. */
@@ -132,4 +132,6 @@ export interface PatchProblemRequest {
   generator?: { source: string; enabled: boolean };
   /** tests.samples, e.g. "1-2"; empty string removes it. */
   samples?: string;
+  /** Bind to a Polygon problem id; null unbinds. */
+  polygonId?: number | null;
 }

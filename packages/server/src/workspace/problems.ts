@@ -252,6 +252,11 @@ export class ProblemRegistry {
       else list.push({ source: req.solution.source, tag: req.solution.tag });
       doc.solutions = list;
     }
+    if (req.polygonId !== undefined) {
+      doc.polygon ??= {};
+      if (req.polygonId === null) delete doc.polygon.id;
+      else doc.polygon.id = req.polygonId;
+    }
     if (req.samples !== undefined) {
       doc.tests ??= {};
       if (req.samples.trim()) doc.tests.samples = req.samples.trim();

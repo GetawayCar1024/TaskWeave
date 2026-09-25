@@ -1,6 +1,6 @@
 # PolyForge
 
-本地优先的 Polygon 造题平台。设计见 [DESIGN.md](DESIGN.md)。当前完成 **M1 本地核心** 和 **M2 评测**。
+本地优先的 Polygon 造题平台。设计见 [DESIGN.md](DESIGN.md)。当前完成 **M1 本地核心**、**M2 评测** 和 **M3 Polygon 同步**。
 
 ## 运行
 
@@ -51,12 +51,31 @@ pnpm typecheck
 | 换行 | 测试统一存为 LF（与 Polygon 一致）；C++ 模板带 `-DFOR_LINUX`，让 testlib 在 Windows 上也按 LF 校验 |
 | 缓存 | 编译产物、生成的测试、invocation 结果都在题目的 `.polyforge/`，可随时删除 |
 
+> testlib：内置的是原版 0.9.44（未修改）。用 GCC 15 编译时，0.9.44 的 `vtos()` 带 `__attribute__((const))`，会导致 checker 消息里的数字显示成 `0`（结论不受影响）。需要的话把 `~/.polyforge/shared/testlib.h` 换成上游 0.9.45 即可，编译缓存会自动失效。
+
+## M3 包含
+
+- **设置 → Polygon**：填 API key / secret（只存在全局目录的 `secrets.toml`，接口返回时打码），“测试连接”。
+- **同步对话框**（工具栏“同步 ↑”或 `Ctrl+Shift+U`）：
+  - **推送**：列出变更集（新增 / 修改 / 已删除），点条目看与 Polygon 当前版本的 diff，勾选后推送；可选 commit（附说明）和构建 package。未绑定时会用短名新建 Polygon 题目，也可以填已有 ID 绑定。推送逐项记录进度，中途失败后再推只会发剩下的。Polygon 远端 revision 与上次同步不一致时会提示先拉取。
+  - **拉取**：三方比较（本地 / Polygon / 上次同步），分为“Polygon 已改”“本地已改”“冲突”“仅一方有”；默认只取 Polygon 单方改动，冲突逐项看 diff 自己选。
+- **从 Polygon 导入**（题目列表）：浏览可访问的题目或填 ID，下载为本地题目并记录同步状态。
+- 同步内容：题目信息、validator / checker / interactor、generators、资源文件、解和 tag、各语言题面（`zh` ↔ `chinese`、`en` ↔ `english`）与图片、script、手写测试、样例标记、分组与分值、validator / checker 自测。
+- 同步状态在 `.polyforge/sync.json`（删掉等于“从未同步”，下次推送会全部重发）。
+
+注意：
+
+- Polygon API 没有删除接口：本地删掉的文件只会提示，需到 Polygon 上手动删除（题面段落和样例标记可以清空）。
+- tag 对应：`TL-OR-OK` ↔ `TO`；Polygon 没有 `FL`，推送时按 `RJ` 发送。
+- 方法和参数按 [polygon-py](https://github.com/citxx/polygon-py)（与官方 API 文档一致）核对过，签名与其算法逐字节一致。自带的 mock（`pnpm --filter @polyforge/server mock-polygon`，在 `secrets.toml` 里设 `[polygon] api_url = "http://127.0.0.1:4700/api/"`）会校验签名，推送、拉取、导入都在它上面测过。**还没有在真实 Polygon 账号上跑过**，第一次建议用一道测试题试。
+
 ## 结构
 
 ```
 packages/shared   类型、problem.toml schema（zod）、文件角色识别、tag 规则
 packages/server   Fastify + WebSocket；global.ts（全局目录）、workspace/（题目、文件、watcher）、
-                  judge/（runner、编译、script、测试生成、invocation、自测）、runner/runner.cpp
+                  judge/（runner、编译、script、测试生成、invocation、自测）、runner/runner.cpp、
+                  polygon/（API 客户端、同步条目、推送 / 拉取 / 导入）、scripts/mock-polygon.ts
 packages/web      Vue 3 + Naive UI + Monaco + vue-i18n + KaTeX
 assets/           首次启动拷贝到全局目录的默认文件
 ```

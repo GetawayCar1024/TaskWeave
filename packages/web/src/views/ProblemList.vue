@@ -6,6 +6,7 @@ import { NButton, NCard, NEmpty, NInput, NSpin, NTag, NResult, useMessage } from
 import type { ProblemSummary } from '@polyforge/shared';
 import AppHeader from '../components/AppHeader.vue';
 import CreateProblemDialog from '../components/CreateProblemDialog.vue';
+import ImportDialog from '../components/ImportDialog.vue';
 import { api, errorMessage } from '../lib/api';
 import { onWs } from '../lib/ws';
 import { problemTitle } from '../lib/format';
@@ -19,6 +20,7 @@ const roots = ref<string[]>([]);
 const loading = ref(true);
 const filter = ref('');
 const showCreate = ref(false);
+const showImport = ref(false);
 
 async function load() {
   try {
@@ -74,6 +76,7 @@ function open(p: ProblemSummary) {
       <n-input v-model:value="filter" size="small" clearable :placeholder="t('list.search')" style="max-width: 280px" />
       <template #right>
         <n-button size="small" type="primary" :disabled="roots.length === 0" @click="showCreate = true">{{ t('list.new') }}</n-button>
+        <n-button size="small" :disabled="roots.length === 0" @click="showImport = true">{{ t('list.import') }}</n-button>
         <n-button size="small" @click="router.push({ name: 'settings' })">{{ t('nav.settings') }}</n-button>
       </template>
     </app-header>
@@ -112,6 +115,7 @@ function open(p: ProblemSummary) {
     </main>
 
     <create-problem-dialog v-model:show="showCreate" :roots="roots" @created="open" />
+    <import-dialog v-model:show="showImport" :roots="roots" @imported="open" />
   </div>
 </template>
 

@@ -10,6 +10,7 @@ import EditorPane from '../components/EditorPane.vue';
 import FileSidebar, { type SidebarAction } from '../components/FileSidebar.vue';
 import InfoPanel from '../components/InfoPanel.vue';
 import InvocationDrawer from '../components/InvocationDrawer.vue';
+import SyncDialog from '../components/SyncDialog.vue';
 import QuickOpen from '../components/QuickOpen.vue';
 import RunPanel from '../components/RunPanel.vue';
 import SelfTestPanel from '../components/SelfTestPanel.vue';
@@ -35,6 +36,7 @@ const summary = computed(() => ws.state.detail?.summary);
 const rightTab = ref<'info' | 'tests' | 'run' | 'selftest'>('info');
 const runPanel = ref<InstanceType<typeof RunPanel>>();
 const showInvocation = ref(false);
+const showSync = ref(false);
 
 async function generate() {
   rightTab.value = 'tests';
@@ -194,6 +196,9 @@ function onKeydown(e: KeyboardEvent) {
   } else if (k === 'enter') {
     e.preventDefault();
     runCurrent();
+  } else if (k === 'u' && e.shiftKey) {
+    e.preventDefault();
+    showSync.value = true;
   } else if (k === 'g' && e.shiftKey) {
     e.preventDefault();
     generate();
@@ -242,10 +247,7 @@ onBeforeUnmount(() => {
   ws.dispose();
 });
 
-const soon = [
-  { key: 'sync', milestone: 'M3' },
-  { key: 'ai', milestone: 'M4' },
-];
+const soon = [{ key: 'ai', milestone: 'M4' }];
 </script>
 
 <template>
@@ -267,6 +269,12 @@ const soon = [
           Ctrl+Shift+G
         </n-tooltip>
         <n-button size="small" :loading="judge.running('invocation')" @click="showInvocation = true">{{ t('toolbar.invocation') }}</n-button>
+        <n-tooltip>
+          <template #trigger>
+            <n-button size="small" @click="showSync = true">{{ t('toolbar.sync') }}</n-button>
+          </template>
+          Ctrl+Shift+U
+        </n-tooltip>
         <n-tooltip v-for="b in soon" :key="b.key">
           <template #trigger>
             <n-button size="small" disabled>{{ t(`toolbar.${b.key}`) }}</n-button>
@@ -325,6 +333,7 @@ const soon = [
 
     <quick-open v-model:show="quickOpen" :files="allFiles" @open="(p: string) => ws.openFile(p)" />
     <invocation-drawer v-model:show="showInvocation" :ws="ws" :judge="judge" :problem-id="id" />
+    <sync-dialog v-model:show="showSync" :ws="ws" :problem-id="id" />
     <diff-dialog v-model:show="diff.show" :path="diff.path" :disk="diff.disk" :mine="diff.mine" @keep-mine="keepMine" @use-disk="useDisk" />
 
     <n-modal v-model:show="prompt.show" preset="card" :title="prompt.title" style="width: 480px" @after-leave="prompt.resolve(null)">

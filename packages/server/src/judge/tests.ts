@@ -20,7 +20,7 @@ interface Manifest extends TestsManifest {
   tests: Entry[];
 }
 
-interface Planned {
+export interface Planned {
   index: number;
   origin: 'manual' | 'script';
   source: string;
@@ -58,6 +58,9 @@ const natural = (a: string, b: string) => a.localeCompare(b, undefined, { numeri
 async function hashFile(file: string): Promise<string> {
   return sha1(await fsp.readFile(file));
 }
+
+/** Test index assignment, shared with Polygon sync (manual test indices). */
+export const planTests = (ctx: ProblemCtx, errors: string[]) => plan(ctx, errors);
 
 /** Decide which test gets which index (DESIGN §4.2, Polygon semantics for `$`). */
 async function plan(ctx: ProblemCtx, errors: string[]): Promise<Planned[]> {

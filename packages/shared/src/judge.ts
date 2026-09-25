@@ -153,7 +153,7 @@ export interface QuickRunResponse {
   stdoutTruncated?: boolean;
 }
 
-export type JobKind = 'generate' | 'invocation' | 'validator-tests' | 'checker-tests';
+export type JobKind = 'generate' | 'invocation' | 'validator-tests' | 'checker-tests' | 'polygon-push' | 'polygon-import';
 
 export interface JobInfo {
   id: string;
@@ -191,6 +191,8 @@ export const TAG_RULES: Record<SolutionTag, TagRule> = {
   PE: { allowed: ['OK', 'PE'], required: ['PE'] },
   TL: { allowed: ['OK', 'TL'], required: ['TL'] },
   'TL-OR-OK': { allowed: ['OK', 'TL'] },
+  TM: { allowed: ['OK', 'TL', 'ML'], required: ['TL', 'ML'] },
+  NR: { allowed: ['OK', 'WA', 'PE', 'TL', 'ML', 'RE', 'OL', 'FAIL'] },
   ML: { allowed: ['OK', 'ML'], required: ['ML'] },
   RE: { allowed: ['OK', 'RE'], required: ['RE'] },
   RJ: { allowed: ['OK', 'WA', 'PE', 'TL', 'ML', 'RE', 'OL', 'FAIL'], required: ['WA', 'PE', 'TL', 'ML', 'RE', 'OL', 'FAIL'] },

@@ -1,0 +1,391 @@
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import {
+  NAlert,
+  NButton,
+  NCheckbox,
+  NInput,
+  NInputNumber,
+  NModal,
+  NProgress,
+  NScrollbar,
+  NSpace,
+  NSpin,
+  NSwitch,
+  NTabPane,
+  NTabs,
+  NTag,
+  useMessage,
+} from 'naive-ui';
+import type { ItemContent, JobInfo, PullItem, PullPreview, PushItem, PushPreview } from '@polyforge/shared';
+import { api, errorMessage } from '../lib/api';
+import { waitJob } from '../lib/jobs';
+import type { Workspace } from '../lib/workspace';
+import TextDiff from './TextDiff.vue';
+
+const props = defineProps<{ show: boolean; ws: Workspace; problemId: string }>();
+const emit = defineEmits<{ 'update:show': [boolean] }>();
+const { t } = useI18n();
+const message = useMessage();
+
+const tab = ref<'push' | 'pull'>('push');
+const loading = ref(false);
+const error = ref('');
+
+// ---- push ----
+const preview = ref<PushPreview | null>(null);
+const selected = ref(new Set<string>());
+const showUnchanged = ref(false);
+const commit = ref(true);
+const commitMessage = ref('');
+const buildPackage = ref(false);
+const pushJob = ref<JobInfo | null>(null);
+const pushResult = ref<{ pushed: string[]; warnings: string[] } | null>(null);
+const bindId = ref<number | null>(null);
+
+async function loadPush() {
+  loading.value = true;
+  error.value = '';
+  try {
+    preview.value = await api.pushPreview(props.problemId);
+    selected.value = new Set(preview.value.items.filter((i) => i.status === 'new' || i.status === 'modified' || (i.status === 'deleted' && ['statement', 'sample'].includes(i.kind))).map((i) => i.key));
+  } catch (e) {
+    error.value = errorMessage(e);
+  } finally {
+    loading.value = false;
+  }
+}
+
+const pushItems = computed(() => (preview.value?.items ?? []).filter((i) => showUnchanged.value || i.status !== 'unchanged'));
+
+function toggle(set: Set<string>, key: string, on: boolean) {
+  const next = new Set(set);
+  if (on) next.add(key);
+  else next.delete(key);
+  return next;
+}
+
+async function doPush() {
+  if (!preview.value) return;
+  pushResult.value = null;
+  try {
+    const job = await api.push(props.problemId, { keys: [...selected.value], commit: commit.value, message: commitMessage.value, buildPackage: buildPackage.value });
+    pushJob.value = job;
+    const done = await waitJob(job, (j) => (pushJob.value = j));
+    pushJob.value = done;
+    if (done.status === 'done') {
+      pushResult.value = done.result as { pushed: string[]; warnings: string[] };
+      message.success(t('sync.pushed', { n: pushResult.value.pushed.length }));
+    } else {
+      error.value = done.error ?? done.status;
+    }
+    await props.ws.loadDetail();
+    await loadPush();
+  } catch (e) {
+    error.value = errorMessage(e);
+  }
+}
+
+async function bind() {
+  if (!bindId.value) return;
+  try {
+    await props.ws.patch({ polygonId: bindId.value });
+    await loadPush();
+  } catch (e) {
+    message.error(errorMessage(e));
+  }
+}
+
+// ---- pull ----
+const pullPreview = ref<PullPreview | null>(null);
+const take = ref(new Set<string>());
+const showSame = ref(false);
+const pulling = ref(false);
+
+async function loadPull() {
+  loading.value = true;
+  error.value = '';
+  try {
+    pullPreview.value = await api.pullPreview(props.problemId);
+    take.value = new Set(pullPreview.value.items.filter((i) => i.takeRemote).map((i) => i.key));
+  } catch (e) {
+    error.value = errorMessage(e);
+  } finally {
+    loading.value = false;
+  }
+}
+
+const pullItems = computed(() => (pullPreview.value?.items ?? []).filter((i) => showSame.value || i.status !== 'same'));
+
+async function doPull() {
+  pulling.value = true;
+  try {
+    const r = await api.pull(props.problemId, [...take.value]);
+    message.success(t('sync.pulled', { n: r.applied.length }));
+    if (r.warnings.length) message.warning(r.warnings.join('\n'));
+    await props.ws.loadDetail();
+    // Reload open tabs whose files changed underneath them.
+    for (const tabItem of props.ws.state.tabs) if (!tabItem.dirty) await props.ws.reloadFromDisk(tabItem.path);
+    await loadPull();
+  } catch (e) {
+    error.value = errorMessage(e);
+  } finally {
+    pulling.value = false;
+  }
+}
+
+// ---- diff of one item ----
+const active = ref<string | null>(null);
+const content = ref<ItemContent | null>(null);
+const contentLoading = ref(false);
+
+async function openItem(key: string) {
+  active.value = key;
+  content.value = null;
+  contentLoading.value = true;
+  try {
+    content.value = await api.syncContent(props.problemId, key);
+  } catch (e) {
+    message.error(errorMessage(e));
+  } finally {
+    contentLoading.value = false;
+  }
+}
+
+watch(
+  () => props.show,
+  (s) => {
+    if (!s) return;
+    active.value = null;
+    content.value = null;
+    pushResult.value = null;
+    error.value = '';
+    tab.value = 'push';
+    loadPush();
+  },
+);
+watch(tab, (v) => {
+  active.value = null;
+  content.value = null;
+  if (v === 'pull' && !pullPreview.value) loadPull();
+});
+
+const PUSH_TYPE: Record<PushItem['status'], 'info' | 'warning' | 'error' | 'default'> = { new: 'info', modified: 'warning', deleted: 'error', unchanged: 'default' };
+const PULL_TYPE: Record<PullItem['status'], 'info' | 'warning' | 'error' | 'default' | 'success'> = {
+  same: 'default',
+  remote: 'info',
+  local: 'success',
+  conflict: 'error',
+  'remote-only': 'info',
+  'local-only': 'warning',
+};
+
+const bound = computed(() => preview.value?.polygonId !== undefined);
+const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((pushJob.value.progress.done / pushJob.value.progress.total) * 100) : 0));
+</script>
+
+<template>
+  <n-modal :show="show" preset="card" :title="t('sync.title')" style="width: min(1200px, 96vw)" @update:show="emit('update:show', $event)">
+    <div class="head">
+      <template v-if="preview">
+        <span v-if="bound">
+          Polygon #{{ preview.polygonId }}
+          <span v-if="preview.remoteRevision !== undefined" class="dim"> · rev {{ preview.remoteRevision }}</span>
+          <span v-if="preview.lastSync" class="dim"> · {{ t('sync.lastSync') }} {{ new Date(preview.lastSync).toLocaleString() }}</span>
+        </span>
+        <n-space v-else align="center" size="small">
+          <span>{{ t('sync.unbound', { name: preview.name }) }}</span>
+          <n-input-number v-model:value="bindId" size="small" :placeholder="t('sync.bindPlaceholder')" :show-button="false" style="width: 150px" />
+          <n-button size="small" :disabled="!bindId" @click="bind">{{ t('sync.bind') }}</n-button>
+        </n-space>
+      </template>
+    </div>
+
+    <n-alert v-if="error" type="error" :show-icon="false" class="alert">{{ error }}</n-alert>
+
+    <n-tabs v-model:value="tab" type="line" size="small">
+      <n-tab-pane name="push" :tab="t('sync.push')">
+        <div v-if="loading && !preview" class="center"><n-spin /></div>
+        <template v-else-if="preview">
+          <n-alert v-for="(w, i) in preview.warnings" :key="i" type="warning" :show-icon="false" class="alert small">{{ w }}</n-alert>
+          <div class="body">
+            <div class="list">
+              <n-space align="center" justify="space-between" class="list-head">
+                <span class="small">{{ t('sync.selected', { n: selected.size }) }}</span>
+                <n-space align="center" size="small">
+                  <span class="small dim">{{ t('sync.showUnchanged') }}</span>
+                  <n-switch v-model:value="showUnchanged" size="small" />
+                </n-space>
+              </n-space>
+              <n-scrollbar style="max-height: 52vh">
+                <div v-if="!pushItems.length" class="dim small empty">{{ t('sync.nothing') }}</div>
+                <div v-for="it in pushItems" :key="it.key" class="row" :class="{ active: active === it.key }" @click="openItem(it.key)">
+                  <n-checkbox
+                    :checked="selected.has(it.key)"
+                    :disabled="it.status === 'deleted' && !['statement', 'sample'].includes(it.kind)"
+                    @click.stop
+                    @update:checked="(v: boolean) => (selected = toggle(selected, it.key, v))"
+                  />
+                  <n-tag size="tiny" :type="PUSH_TYPE[it.status]" :bordered="false">{{ t(`sync.push_${it.status}`) }}</n-tag>
+                  <span class="label" :title="it.key">{{ it.label }}</span>
+                </div>
+              </n-scrollbar>
+            </div>
+            <div class="diff-pane">
+              <div class="labels"><span>Polygon</span><span>{{ t('sync.local') }}</span></div>
+              <div v-if="contentLoading" class="center"><n-spin /></div>
+              <div v-else-if="!content" class="dim small center">{{ t('sync.pickItem') }}</div>
+              <div v-else-if="content.binary" class="dim small center">{{ t('sync.binary') }}</div>
+              <text-diff v-else :original="content.remote ?? ''" :modified="content.local ?? ''" class="diff" />
+            </div>
+          </div>
+          <div class="foot">
+            <n-space align="center">
+              <n-checkbox v-model:checked="commit">{{ t('sync.commit') }}</n-checkbox>
+              <n-input v-model:value="commitMessage" size="small" :disabled="!commit" :placeholder="t('sync.commitMessage')" style="width: 280px" />
+              <n-checkbox v-model:checked="buildPackage">{{ t('sync.buildPackage') }}</n-checkbox>
+            </n-space>
+            <n-button type="primary" :loading="pushJob?.status === 'running'" :disabled="!selected.size" @click="doPush">
+              {{ bound ? t('sync.pushN', { n: selected.size }) : t('sync.createAndPush', { n: selected.size }) }}
+            </n-button>
+          </div>
+          <div v-if="pushJob?.status === 'running'" class="progress">
+            <n-progress type="line" :percentage="pushPercent" :height="4" :show-indicator="false" />
+            <span class="small dim">{{ pushJob.progress.message }}</span>
+          </div>
+          <n-alert v-if="pushResult?.warnings.length" type="warning" :show-icon="false" class="alert small">
+            <div v-for="(w, i) in pushResult.warnings" :key="i">{{ w }}</div>
+          </n-alert>
+        </template>
+      </n-tab-pane>
+
+      <n-tab-pane name="pull" :tab="t('sync.pull')" :disabled="!bound">
+        <div v-if="loading && !pullPreview" class="center"><n-spin /></div>
+        <template v-else-if="pullPreview">
+          <n-alert v-for="(w, i) in pullPreview.warnings" :key="i" type="warning" :show-icon="false" class="alert small">{{ w }}</n-alert>
+          <div class="body">
+            <div class="list">
+              <n-space align="center" justify="space-between" class="list-head">
+                <n-button size="tiny" :loading="loading" @click="loadPull">{{ t('sync.refetch') }}</n-button>
+                <n-space align="center" size="small">
+                  <span class="small dim">{{ t('sync.showSame') }}</span>
+                  <n-switch v-model:value="showSame" size="small" />
+                </n-space>
+              </n-space>
+              <n-scrollbar style="max-height: 52vh">
+                <div v-if="!pullItems.length" class="dim small empty">{{ t('sync.inSync') }}</div>
+                <div v-for="it in pullItems" :key="it.key" class="row" :class="{ active: active === it.key, conflict: it.status === 'conflict' }" @click="openItem(it.key)">
+                  <n-checkbox :checked="take.has(it.key)" :disabled="it.status === 'same'" @click.stop @update:checked="(v: boolean) => (take = toggle(take, it.key, v))" />
+                  <n-tag size="tiny" :type="PULL_TYPE[it.status]" :bordered="false">{{ t(`sync.pull_${it.status.replace('-', '_')}`) }}</n-tag>
+                  <span class="label" :title="it.key">{{ it.label }}</span>
+                </div>
+              </n-scrollbar>
+              <div class="hint small dim">{{ t('sync.pullHint') }}</div>
+            </div>
+            <div class="diff-pane">
+              <div class="labels"><span>{{ t('sync.local') }}</span><span>Polygon</span></div>
+              <div v-if="contentLoading" class="center"><n-spin /></div>
+              <div v-else-if="!content" class="dim small center">{{ t('sync.pickItem') }}</div>
+              <div v-else-if="content.binary" class="dim small center">{{ t('sync.binary') }}</div>
+              <text-diff v-else :original="content.local ?? ''" :modified="content.remote ?? ''" class="diff" />
+            </div>
+          </div>
+          <div class="foot">
+            <span class="small dim">{{ t('sync.takeCount', { n: take.size }) }}</span>
+            <n-button type="primary" :loading="pulling" :disabled="!take.size" @click="doPull">{{ t('sync.apply') }}</n-button>
+          </div>
+        </template>
+      </n-tab-pane>
+    </n-tabs>
+  </n-modal>
+</template>
+
+<style scoped>
+.head {
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.alert {
+  margin-bottom: 6px;
+  padding: 4px 8px;
+}
+.body {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 10px;
+  min-height: 52vh;
+}
+.list-head {
+  margin-bottom: 4px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.row:hover {
+  background: rgba(128, 128, 128, 0.12);
+}
+.row.active {
+  background: rgba(99, 226, 183, 0.15);
+}
+.row.conflict .label {
+  color: #e88080;
+}
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diff-pane {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 4px;
+  min-height: 52vh;
+}
+.labels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  font-size: 12px;
+  opacity: 0.7;
+  padding: 2px 8px;
+}
+.diff {
+  flex: 1;
+}
+.foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 10px;
+}
+.progress {
+  margin-top: 6px;
+}
+.center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 24px;
+}
+.empty {
+  padding: 16px;
+  text-align: center;
+}
+.hint {
+  margin-top: 6px;
+}
+.small {
+  font-size: 12px;
+}
+.dim {
+  opacity: 0.65;
+}
+</style>

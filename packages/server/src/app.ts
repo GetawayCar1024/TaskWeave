@@ -16,6 +16,9 @@ import type { GlobalStore } from './global.js';
 import type { JobManager } from './jobs.js';
 import type { Judge } from './judge/index.js';
 import { judgeRoutes } from './routes/judge.js';
+import { polygonRoutes } from './routes/polygon.js';
+import { PolygonError } from './polygon/client.js';
+import { PolygonSync } from './polygon/sync.js';
 import { samePath } from './global.js';
 import { listShared, stdRefToPath } from './sharedFiles.js';
 import { detectTools, listDirs } from './tools.js';
@@ -86,6 +89,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof HttpError) return reply.code(err.statusCode).send({ error: err.code, message: err.message });
+    if (err instanceof PolygonError) return reply.code(502).send({ error: 'polygon_error', message: err.message });
     const e = err as Error & { statusCode?: number; code?: string };
     if (e.statusCode && e.statusCode < 500) return reply.code(e.statusCode).send({ error: e.code ?? 'bad_request', message: e.message });
     console.error('[polyforge]', err);
@@ -191,6 +195,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   judgeRoutes(app, deps.judge, deps.jobs);
+  polygonRoutes(app, deps.judge, new PolygonSync(deps.judge), deps.jobs, hub);
 
   app.post<{ Params: { id: string }; Body: MoveFileRequest }>('/api/problems/:id/move', async (req) => {
     const ref = await registry.get(req.params.id);

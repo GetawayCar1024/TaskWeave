@@ -1,0 +1,328 @@
+import { promises as fsp } from 'node:fs';
+import path from 'node:path';
+import { parse, stringify } from 'smol-toml';
+import {
+  PROBLEM_NAME_RE,
+  type ImportRequest,
+  type ItemContent,
+  type PolygonProblem,
+  type ProblemSummary,
+  type PullItem,
+  type PullPreview,
+  type PullRequest,
+  type PushItem,
+  type PushPreview,
+  type PushRequest,
+} from '@polyforge/shared';
+import type { JobCtx } from '../jobs.js';
+import type { Judge, ProblemCtx } from '../judge/index.js';
+import { atomicWrite, exists, HttpError } from '../util/fs.js';
+import { PROBLEM_FILE } from '../workspace/problems.js';
+import { PolygonClient } from './client.js';
+import {
+  applyItem,
+  DELETABLE_KINDS,
+  itemDisplay,
+  itemHash,
+  localItems,
+  pushItem,
+  PUSH_ORDER,
+  remoteItems,
+  removeLocal,
+  type Item,
+} from './items.js';
+
+/** `.polyforge/sync.json`: hashes of every item as of the last push/pull (DESIGN §3.2). */
+interface SyncState {
+  polygonId?: number;
+  revision?: number;
+  lastSync?: string;
+  items: Record<string, string>;
+}
+
+const syncPath = (ctx: ProblemCtx) => path.join(ctx.work, 'sync.json');
+
+async function readSync(ctx: ProblemCtx): Promise<SyncState> {
+  try {
+    const s = JSON.parse(await fsp.readFile(syncPath(ctx), 'utf8')) as SyncState;
+    // State recorded for another Polygon problem is meaningless for this binding.
+    if (ctx.config.polygon.id !== undefined && s.polygonId !== undefined && s.polygonId !== ctx.config.polygon.id) return { items: {} };
+    return { ...s, items: s.items ?? {} };
+  } catch {
+    return { items: {} };
+  }
+}
+
+async function writeSync(ctx: ProblemCtx, s: SyncState) {
+  await atomicWrite(syncPath(ctx), JSON.stringify(s, null, 1));
+}
+
+const byOrder = (a: { kind: string; key: string }, b: { kind: string; key: string }) =>
+  PUSH_ORDER.indexOf(a.kind as never) - PUSH_ORDER.indexOf(b.kind as never) || a.key.localeCompare(b.key, undefined, { numeric: true });
+
+const strip = ({ text: _t, bytes: _b, meta: _m, extra: _e, ...rest }: Item) => rest;
+
+export class PolygonSync {
+  /** Last fetched remote items per problem, for diffs and pull. */
+  private remoteCache = new Map<string, { polygonId: number; items: Item[] }>();
+
+  constructor(private judge: Judge) {}
+
+  async client(): Promise<PolygonClient> {
+    const c = await this.judge.global.polygonCredentials();
+    return new PolygonClient(c);
+  }
+
+  async problemInfo(client: PolygonClient, id: number): Promise<PolygonProblem | undefined> {
+    const list = await client.call<PolygonProblem[]>('problems.list', { id });
+    return list.find((p) => p.id === id);
+  }
+
+  async listProblems(): Promise<PolygonProblem[]> {
+    return (await this.client()).call<PolygonProblem[]>('problems.list', {});
+  }
+
+  async testConnection(): Promise<{ ok: true; problems: number; ms: number }> {
+    const t0 = Date.now();
+    const list = await this.listProblems();
+    return { ok: true, problems: list.length, ms: Date.now() - t0 };
+  }
+
+  // ---- push ----
+
+  async pushPreview(ctx: ProblemCtx): Promise<PushPreview> {
+    const { items, warnings } = await localItems(this.judge, ctx);
+    const sync = await readSync(ctx);
+    const seen = new Set<string>();
+    const out: PushItem[] = items.map((it) => {
+      seen.add(it.key);
+      const base = sync.items[it.key];
+      return { ...strip(it), status: base === undefined ? 'new' : base === itemHash(it) ? 'unchanged' : 'modified' };
+    });
+    for (const key of Object.keys(sync.items)) {
+      if (seen.has(key)) continue;
+      const kind = key.split(':')[0] as PushItem['kind'];
+      out.push({ key, kind, label: key, status: 'deleted' });
+      if (!DELETABLE_KINDS.has(kind)) warnings.push(`${key} was removed locally; Polygon has no delete API, remove it there by hand if needed`);
+    }
+    out.sort(byOrder);
+    const preview: PushPreview = {
+      polygonId: ctx.config.polygon.id,
+      name: ctx.config.problem.name,
+      items: out,
+      warnings,
+      lastSync: sync.lastSync,
+      syncedRevision: sync.revision,
+    };
+    if (ctx.config.polygon.id !== undefined) {
+      try {
+        const info = await this.problemInfo(await this.client(), ctx.config.polygon.id);
+        preview.remoteRevision = info?.revision;
+        if (sync.revision !== undefined && info?.revision !== undefined && info.revision !== sync.revision) {
+          warnings.unshift(`Polygon revision is ${info.revision} but the last sync saw ${sync.revision}: the problem was changed on Polygon. Pull first to avoid overwriting.`);
+        }
+      } catch (e) {
+        warnings.unshift(`Could not reach Polygon: ${(e as Error).message}`);
+      }
+    }
+    return preview;
+  }
+
+  async push(ctx: ProblemCtx, req: PushRequest, job: JobCtx): Promise<{ pushed: string[]; warnings: string[]; revision?: number; polygonId: number }> {
+    const client = await this.client();
+    const warnings: string[] = [];
+    let polygonId = ctx.config.polygon.id;
+    const sync = await readSync(ctx);
+
+    if (polygonId === undefined) {
+      job.progress(0, 0, 'problem.create');
+      const created = await client.call<PolygonProblem>('problem.create', { name: ctx.config.problem.name });
+      polygonId = created.id;
+      await this.judge.registry.patch(ctx.ref.id, { polygonId });
+      sync.items = {};
+    }
+    sync.polygonId = polygonId;
+
+    this.remoteCache.delete(ctx.ref.id);
+    const { items } = await localItems(this.judge, ctx);
+    const want = new Set(req.keys);
+    const todo = items.filter((it) => want.has(it.key)).sort(byOrder);
+    const deleted = [...want].filter((k) => !items.some((it) => it.key === k) && DELETABLE_KINDS.has(k.split(':')[0] as never));
+    const total = todo.length + deleted.length + (req.commit ? 1 : 0) + (req.buildPackage ? 1 : 0);
+    let done = 0;
+    const pushed: string[] = [];
+    const pc = { client, problemId: polygonId, warn: (m: string) => warnings.push(m) };
+    try {
+      for (const it of todo) {
+        job.signal.throwIfAborted();
+        job.progress(done, total, it.label);
+        await pushItem(pc, it);
+        sync.items[it.key] = itemHash(it);
+        pushed.push(it.key);
+        done++;
+      }
+      for (const key of deleted) {
+        job.signal.throwIfAborted();
+        const [kind, ...rest] = key.split(':');
+        const stub: Item =
+          kind === 'statement'
+            ? { key, kind: 'statement', label: key, extra: { lang: rest[0], section: rest[1] } }
+            : { key, kind: 'sample', label: key, extra: { index: Number(rest[0]) } };
+        job.progress(done, total, `clear ${key}`);
+        await pushItem(pc, stub, true);
+        delete sync.items[key];
+        pushed.push(key);
+        done++;
+      }
+    } finally {
+      // Keep what made it, so a retry only sends the rest.
+      sync.lastSync = new Date().toISOString();
+      await writeSync(ctx, sync);
+    }
+    if (req.commit) {
+      job.progress(done++, total, 'problem.commitChanges');
+      await client.call('problem.commitChanges', { problemId: polygonId, minorChanges: false, message: req.message?.trim() || 'PolyForge sync' });
+    }
+    if (req.buildPackage) {
+      job.progress(done++, total, 'problem.buildPackage');
+      await client.call('problem.buildPackage', { problemId: polygonId, full: false, verify: true }).catch((e: Error) => warnings.push(`buildPackage: ${e.message}`));
+    }
+    const info = await this.problemInfo(client, polygonId).catch(() => undefined);
+    sync.revision = info?.revision;
+    await writeSync(ctx, sync);
+    return { pushed, warnings, revision: sync.revision, polygonId };
+  }
+
+  // ---- pull ----
+
+  async pullPreview(ctx: ProblemCtx): Promise<PullPreview> {
+    const polygonId = ctx.config.polygon.id;
+    if (polygonId === undefined) throw new HttpError(400, 'not_bound', 'This problem is not bound to a Polygon problem');
+    const remote = await remoteItems(await this.client(), polygonId);
+    this.remoteCache.set(ctx.ref.id, { polygonId, items: remote });
+    const { items: local, warnings } = await localItems(this.judge, ctx);
+    const sync = await readSync(ctx);
+    const L = new Map(local.map((i) => [i.key, i]));
+    const R = new Map(remote.map((i) => [i.key, i]));
+    const out: PullItem[] = [];
+    for (const key of new Set([...L.keys(), ...R.keys()])) {
+      const l = L.get(key);
+      const r = R.get(key);
+      const lh = l && itemHash(l);
+      const rh = r && itemHash(r);
+      const base = sync.items[key];
+      const it = strip((l ?? r)!);
+      if (l && r) {
+        if (lh === rh) out.push({ ...it, status: 'same', takeRemote: false });
+        else if (base === lh) out.push({ ...it, status: 'remote', takeRemote: true });
+        else if (base === rh) out.push({ ...it, status: 'local', takeRemote: false });
+        else out.push({ ...it, status: 'conflict', takeRemote: false });
+      } else if (r) {
+        out.push({ ...it, status: 'remote-only', takeRemote: true });
+      } else {
+        // Present locally only: deleted on Polygon if it was synced before, else new locally.
+        out.push({ ...it, status: 'local-only', takeRemote: false });
+      }
+    }
+    out.sort(byOrder);
+    return { polygonId, items: out, warnings };
+  }
+
+  async itemContent(ctx: ProblemCtx, key: string): Promise<ItemContent> {
+    const { items } = await localItems(this.judge, ctx);
+    const l = items.find((i) => i.key === key);
+    const id = ctx.config.polygon.id;
+    let cached = this.remoteCache.get(ctx.ref.id);
+    // The push dialog asks for diffs without a prior pull: fetch Polygon's state once.
+    if (id !== undefined && cached?.polygonId !== id) {
+      cached = { polygonId: id, items: await remoteItems(await this.client(), id) };
+      this.remoteCache.set(ctx.ref.id, cached);
+    }
+    const r = cached?.items.find((i) => i.key === key);
+    return { key, local: l ? itemDisplay(l) : null, remote: r ? itemDisplay(r) : null, binary: (l ?? r)?.binary };
+  }
+
+  /** Apply the chosen remote items locally; everything seen on Polygon becomes the new base. */
+  async pull(ctx: ProblemCtx, req: PullRequest): Promise<{ applied: string[]; warnings: string[] }> {
+    const cached = this.remoteCache.get(ctx.ref.id);
+    if (!cached || cached.polygonId !== ctx.config.polygon.id) throw new HttpError(409, 'stale_preview', 'Fetch the Polygon state first');
+    const { items: local } = await localItems(this.judge, ctx);
+    const L = new Map(local.map((i) => [i.key, i]));
+    const R = new Map(cached.items.map((i) => [i.key, i]));
+    const take = new Set(req.take);
+    const sync = await readSync(ctx);
+    const problemFile = path.join(ctx.ref.dir, PROBLEM_FILE);
+    const doc = parse(await fsp.readFile(problemFile, 'utf8')) as Record<string, any>;
+    const remoteConfig = R.get('config')?.meta;
+    const ac = { dir: ctx.ref.dir, doc, remoteConfig, written: new Set<string>() };
+    const applied: string[] = [];
+    // Sources before config, so role paths resolve to files that exist.
+    const keys = [...take].sort((a, b) => byOrder({ kind: a.split(':')[0], key: a }, { kind: b.split(':')[0], key: b }));
+    for (const key of keys) {
+      const r = R.get(key);
+      const l = L.get(key);
+      if (r) await applyItem({ ...ac, local: l }, r);
+      else if (l) await removeLocal({ ...ac, local: l }, l);
+      else continue;
+      applied.push(key);
+    }
+    await atomicWrite(problemFile, stringify(doc) + '\n');
+    for (const [key, r] of R) sync.items[key] = itemHash(r);
+    for (const key of Object.keys(sync.items)) if (!R.has(key)) delete sync.items[key];
+    sync.polygonId = cached.polygonId;
+    sync.lastSync = new Date().toISOString();
+    try {
+      sync.revision = (await this.problemInfo(await this.client(), cached.polygonId))?.revision;
+    } catch {
+      /* keep the old revision */
+    }
+    await writeSync(ctx, sync);
+
+    // Items whose local form differs from Polygon's after writing reveal a lossy mapping.
+    const fresh = await this.judge.ctx(ctx.ref.id);
+    const after = new Map((await localItems(this.judge, fresh)).items.map((i) => [i.key, i]));
+    const warnings: string[] = [];
+    for (const key of applied) {
+      const r = R.get(key);
+      const a = after.get(key);
+      if (r && a && itemHash(a) !== itemHash(r)) warnings.push(`${key}: the local copy does not round-trip exactly`);
+    }
+    return { applied, warnings };
+  }
+
+  // ---- import ----
+
+  async importProblem(req: ImportRequest, job: JobCtx): Promise<ProblemSummary> {
+    const client = await this.client();
+    job.progress(0, 3, 'problems.list');
+    const info = await this.problemInfo(client, req.polygonId);
+    if (!info) throw new HttpError(404, 'polygon_not_found', `Polygon problem ${req.polygonId} not found or not accessible`);
+    const name = (req.name?.trim() || info.name).toLowerCase();
+    if (!PROBLEM_NAME_RE.test(name)) throw new HttpError(400, 'invalid_name', `Invalid local name: ${name}`);
+    const roots = this.judge.registry.roots;
+    const root = req.root ?? roots[0];
+    if (!root) throw new HttpError(400, 'no_root', 'No problem root directory configured');
+    const dir = path.join(root, name);
+    if (await exists(dir)) throw new HttpError(409, 'exists', `Folder already exists: ${dir}`);
+
+    await fsp.mkdir(dir, { recursive: true });
+    await atomicWrite(path.join(dir, PROBLEM_FILE), stringify({ problem: { name }, polygon: { id: req.polygonId } }) + '\n');
+    try {
+      await this.judge.registry.scan();
+      const ref = (await this.judge.registry.list()).find((p) => path.resolve(p.dir) === path.resolve(dir));
+      if (!ref) throw new Error('imported problem not found after scan');
+      job.progress(1, 3, 'downloading from Polygon');
+      const ctx = await this.judge.ctx(ref.id);
+      const preview = await this.pullPreview(ctx);
+      job.progress(2, 3, 'writing files');
+      const res = await this.pull(ctx, { take: preview.items.filter((i) => i.status !== 'local-only').map((i) => i.key) });
+      if (res.warnings.length) console.warn('[polyforge] import:', res.warnings.join('; '));
+      job.progress(3, 3, 'done');
+      return (await this.judge.registry.list()).find((p) => p.id === ref.id)!;
+    } catch (e) {
+      await fsp.rm(dir, { recursive: true, force: true });
+      await this.judge.registry.scan();
+      throw e;
+    }
+  }
+}

@@ -38,7 +38,8 @@
     "noRoots": "还没有题目根目录",
     "noRootsHint": "在设置中添加一个文件夹，其中每个含 problem.toml 的子文件夹就是一道题。",
     "goSettings": "打开设置",
-    "empty": "这里还没有题目"
+    "empty": "这里还没有题目",
+    "import": "从 Polygon 导入"
   },
   "check": {
     "statement": "题面",
@@ -80,7 +81,11 @@
     "notFound": "未找到",
     "works": "可用",
     "failed": "失败",
-    "found": "已找到"
+    "found": "已找到",
+    "keepEmpty": "留空则不修改",
+    "testConnection": "测试连接",
+    "polygonOk": "连接成功：可访问 {n} 道题（{ms} ms）",
+    "polygonHint": "在 Polygon → Settings → API Keys 创建。密钥只保存在全局目录的 secrets.toml 里，不会写进题目文件夹。"
   },
   "editor": {
     "changedOnDisk": "此文件已在磁盘上被修改，而你有未保存的更改。",
@@ -222,5 +227,52 @@
     "unknown": "{n} 个无法识别的命令",
     "hide": "隐藏预览",
     "show": "显示预览"
+  },
+  "import": {
+    "title": "从 Polygon 导入",
+    "search": "搜索名称、ID 或作者…",
+    "none": "没有匹配的题目",
+    "id": "Polygon ID",
+    "name": "本地名称",
+    "namePlaceholder": "默认同 Polygon 短名",
+    "run": "导入"
+  },
+  "sync": {
+    "title": "与 Polygon 同步",
+    "lastSync": "上次同步",
+    "unbound": "尚未绑定 Polygon：推送时会新建题目 “{name}”，或绑定已有 ID：",
+    "bindPlaceholder": "Polygon ID",
+    "bind": "绑定",
+    "push": "推送 ↑",
+    "pull": "拉取 ↓",
+    "selected": "已选 {n} 项",
+    "showUnchanged": "显示未变化",
+    "nothing": "没有需要推送的改动",
+    "local": "本地",
+    "pickItem": "点击左侧条目查看差异",
+    "binary": "二进制文件，不显示差异",
+    "commit": "提交（commit）",
+    "commitMessage": "提交说明",
+    "buildPackage": "构建 package",
+    "pushN": "推送 {n} 项",
+    "createAndPush": "新建题目并推送 {n} 项",
+    "pushed": "已推送 {n} 项",
+    "pulled": "已拉取 {n} 项",
+    "refetch": "重新获取",
+    "showSame": "显示相同项",
+    "inSync": "本地与 Polygon 一致",
+    "takeCount": "将用 Polygon 版本覆盖 {n} 项",
+    "apply": "应用",
+    "pullHint": "勾选的条目会用 Polygon 上的版本覆盖本地。冲突（两边都改过）默认保留本地。",
+    "push_new": "新增",
+    "push_modified": "修改",
+    "push_deleted": "已删除",
+    "push_unchanged": "未变",
+    "pull_same": "相同",
+    "pull_remote": "Polygon 已改",
+    "pull_local": "本地已改",
+    "pull_conflict": "冲突",
+    "pull_remote_only": "仅 Polygon",
+    "pull_local_only": "仅本地"
   }
 }

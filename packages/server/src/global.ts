@@ -9,7 +9,11 @@ import {
   type GlobalConfig,
   type LanguagesConfig,
   type LanguagesResponse,
+  type SaveSecretsRequest,
+  type SecretsResponse,
 } from '@polyforge/shared';
+
+export const DEFAULT_POLYGON_API = 'https://polygon.codeforces.com/api/';
 import { atomicWrite, copyMissing, exists, HttpError } from './util/fs.js';
 
 /** Repository `assets/` directory, bundled defaults copied into the global directory. */
@@ -86,6 +90,45 @@ export class GlobalStore {
     await atomicWrite(this.configPath, '# PolyForge 全局配置\n\n' + stringify(parsed.data) + '\n');
     this.config = parsed.data;
     return this.config;
+  }
+
+  private get secretsPath() {
+    return path.join(this.dir, 'secrets.toml');
+  }
+
+  /** Raw secrets.toml (DESIGN §8: keys live only here, never in problem folders). */
+  async readSecrets(): Promise<Record<string, any>> {
+    try {
+      return parse(await fsp.readFile(this.secretsPath, 'utf8')) as Record<string, any>;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return {};
+      throw new HttpError(500, 'bad_secrets', `secrets.toml: ${(e as Error).message}`);
+    }
+  }
+
+  async polygonCredentials(): Promise<{ key: string; secret: string; apiUrl: string }> {
+    const p = (await this.readSecrets()).polygon ?? {};
+    return { key: String(p.key ?? ''), secret: String(p.secret ?? ''), apiUrl: String(p.api_url || DEFAULT_POLYGON_API) };
+  }
+
+  async maskedSecrets(): Promise<SecretsResponse> {
+    const c = await this.polygonCredentials();
+    const mask = (s: string) => (s.length <= 8 ? (s ? '••••' : '') : `${s.slice(0, 4)}…${s.slice(-2)}`);
+    return { polygon: { key: mask(c.key), hasKey: !!c.key, hasSecret: !!c.secret, apiUrl: c.apiUrl } };
+  }
+
+  async saveSecrets(req: SaveSecretsRequest): Promise<SecretsResponse> {
+    const doc = await this.readSecrets();
+    doc.polygon ??= {};
+    const p = req.polygon ?? {};
+    if (p.key?.trim()) doc.polygon.key = p.key.trim();
+    if (p.secret?.trim()) doc.polygon.secret = p.secret.trim();
+    if (p.apiUrl !== undefined) {
+      if (p.apiUrl.trim() && p.apiUrl.trim() !== DEFAULT_POLYGON_API) doc.polygon.api_url = p.apiUrl.trim();
+      else delete doc.polygon.api_url;
+    }
+    await atomicWrite(this.secretsPath, '# 密钥文件：Polygon key/secret 与 AI 端点。不要放进题目目录。\n\n' + stringify(doc) + '\n');
+    return this.maskedSecrets();
   }
 
   async readLanguages(): Promise<LanguagesResponse> {

@@ -22,10 +22,10 @@
 #define _TESTLIB_H_
 
 /*
- * Copyright (c) 2005-2025
+ * Copyright (c) 2005-2024
  */
 
-#define VERSION "0.9.45"
+#define VERSION "0.9.44"
 
 /*
  * Mike Mirzayanov
@@ -63,7 +63,6 @@
  */
 
 const char *latestFeatures[] = {
-        "Remove incorrect const attributes",
         "Added ConstantBoundsLog, VariablesLog to validator testOverviewLogFile",
         "Use setAppesModeEncoding to change xml encoding from windows-1251 to other",
         "rnd.any/wany use distance/advance instead of -/+: now they support sets/multisets",
@@ -405,6 +404,9 @@ static bool __testlib_prelimIsNaN(double r) {
 #endif
 }
 
+#ifdef __GNUC__
+__attribute__((const))
+#endif
 static std::string removeDoubleTrailingZeroes(std::string value) {
     while (!value.empty() && value[value.length() - 1] == '0' && value.find('.') != std::string::npos)
         value = value.substr(0, value.length() - 1);
@@ -414,6 +416,9 @@ static std::string removeDoubleTrailingZeroes(std::string value) {
         return value;
 }
 
+#ifdef __GNUC__
+__attribute__((const))
+#endif
 inline std::string upperCase(std::string s) {
     for (size_t i = 0; i < s.length(); i++)
         if ('a' <= s[i] && s[i] <= 'z')
@@ -421,6 +426,9 @@ inline std::string upperCase(std::string s) {
     return s;
 }
 
+#ifdef __GNUC__
+__attribute__((const))
+#endif
 inline std::string lowerCase(std::string s) {
     for (size_t i = 0; i < s.length(); i++)
         if ('A' <= s[i] && s[i] <= 'Z')
@@ -428,6 +436,9 @@ inline std::string lowerCase(std::string s) {
     return s;
 }
 
+#ifdef __GNUC__
+__attribute__((const))
+#endif
 static std::string __testlib_part(const std::string &s);
 
 static bool __testlib_isNaN(double r) {
@@ -546,6 +557,9 @@ static void __testlib_set_binary(std::FILE *file) {
 
 #if __cplusplus > 199711L || defined(_MSC_VER)
 template<typename T>
+#ifdef __GNUC__
+__attribute__((const))
+#endif
 static std::string vtos(const T &t, std::true_type) {
     if (t == 0)
         return "0";
@@ -3058,7 +3072,7 @@ NORETURN void InStream::quit(TResult result, const char *msg) {
     message = trim(message);
 
     if (__testlib_hasTestCase) {
-        if (result != _ok && result != _points)
+        if (result != _ok)
             message = __testlib_appendMessage(message, "test case " + vtos(__testlib_testCase));
         else {
             if (__testlib_testCase == 1)
@@ -3424,6 +3438,9 @@ void InStream::readTokenTo(std::string &result) {
     readWordTo(result);
 }
 
+#ifdef __GNUC__
+__attribute__((const))
+#endif
 static std::string __testlib_part(const std::string &s) {
     std::string t;
     for (size_t i = 0; i < s.length(); i++)
@@ -5031,10 +5048,16 @@ void startTest(int test) {
         __testlib_fail("Unable to write file '" + testFileName + "'");
 }
 
+#ifdef __GNUC__
+__attribute__((const))
+#endif
 inline std::string compress(const std::string &s) {
     return __testlib_part(s);
 }
 
+#ifdef __GNUC__
+__attribute__((const))
+#endif
 inline std::string englishEnding(int x) {
     x %= 100;
     if (x / 10 == 1)
@@ -5049,6 +5072,9 @@ inline std::string englishEnding(int x) {
 }
 
 template<typename _ForwardIterator, typename _Separator>
+#ifdef __GNUC__
+__attribute__((const))
+#endif
 std::string join(_ForwardIterator first, _ForwardIterator last, _Separator separator) {
     std::stringstream ss;
     bool repeated = false;
@@ -5063,16 +5089,25 @@ std::string join(_ForwardIterator first, _ForwardIterator last, _Separator separ
 }
 
 template<typename _ForwardIterator>
+#ifdef __GNUC__
+__attribute__((const))
+#endif
 std::string join(_ForwardIterator first, _ForwardIterator last) {
     return join(first, last, ' ');
 }
 
 template<typename _Collection, typename _Separator>
+#ifdef __GNUC__
+__attribute__((const))
+#endif
 std::string join(const _Collection &collection, _Separator separator) {
     return join(collection.begin(), collection.end(), separator);
 }
 
 template<typename _Collection>
+#ifdef __GNUC__
+__attribute__((const))
+#endif
 std::string join(const _Collection &collection) {
     return join(collection, ' ');
 }
@@ -5081,6 +5116,9 @@ std::string join(const _Collection &collection) {
  * Splits string s by character separator returning exactly k+1 items,
  * where k is the number of separator occurrences.
  */
+#ifdef __GNUC__
+__attribute__((const))
+#endif
 std::vector<std::string> split(const std::string &s, char separator) {
     std::vector<std::string> result;
     std::string item;
@@ -5098,6 +5136,9 @@ std::vector<std::string> split(const std::string &s, char separator) {
  * Splits string s by character separators returning exactly k+1 items,
  * where k is the number of separator occurrences.
  */
+#ifdef __GNUC__
+__attribute__((const))
+#endif
 std::vector<std::string> split(const std::string &s, const std::string &separators) {
     if (separators.empty())
         return std::vector<std::string>(1, s);
@@ -5121,6 +5162,9 @@ std::vector<std::string> split(const std::string &s, const std::string &separato
 /**
  * Splits string s by character separator returning non-empty items.
  */
+#ifdef __GNUC__
+__attribute__((const))
+#endif
 std::vector<std::string> tokenize(const std::string &s, char separator) {
     std::vector<std::string> result;
     std::string item;
@@ -5139,6 +5183,9 @@ std::vector<std::string> tokenize(const std::string &s, char separator) {
 /**
  * Splits string s by character separators returning non-empty items.
  */
+#ifdef __GNUC__
+__attribute__((const))
+#endif
 std::vector<std::string> tokenize(const std::string &s, const std::string &separators) {
     if (separators.empty())
         return std::vector<std::string>(1, s);

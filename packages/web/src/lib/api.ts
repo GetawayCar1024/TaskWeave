@@ -2,6 +2,14 @@ import type { DefsToml } from './latex';
 import {
   TOKEN_HEADER,
   type CompileResult,
+  type ImportRequest,
+  type ItemContent,
+  type PolygonProblem,
+  type PullPreview,
+  type PushPreview,
+  type PushRequest,
+  type SaveSecretsRequest,
+  type SecretsResponse,
   type Invocation,
   type InvocationSummary,
   type JobInfo,
@@ -114,6 +122,19 @@ export const api = {
   jobs: (problemId: string) => request<JobInfo[]>('GET', `/jobs?problem=${encodeURIComponent(problemId)}`),
   cancelJob: (jobId: string) => request<JobInfo>('POST', `/jobs/${encodeURIComponent(jobId)}/cancel`),
   defs: () => request<DefsToml>('GET', '/shared/defs'),
+
+  // ---- Polygon (M3) ----
+  secrets: () => request<SecretsResponse>('GET', '/secrets'),
+  saveSecrets: (req: SaveSecretsRequest) => request<SecretsResponse>('PUT', '/secrets', req),
+  polygonTest: () => request<{ ok: true; problems: number; ms: number }>('POST', '/polygon/test'),
+  polygonProblems: () => request<PolygonProblem[]>('GET', '/polygon/problems'),
+  pushPreview: (id: string) => request<PushPreview>('POST', `/problems/${pid(id)}/polygon/diff`),
+  push: (id: string, req: PushRequest) => request<JobInfo>('POST', `/problems/${pid(id)}/polygon/push`, req),
+  pullPreview: (id: string) => request<PullPreview>('POST', `/problems/${pid(id)}/polygon/pull-preview`),
+  pull: (id: string, take: string[]) => request<{ applied: string[]; warnings: string[] }>('POST', `/problems/${pid(id)}/polygon/pull`, { take }),
+  syncContent: (id: string, key: string) => request<ItemContent>('GET', `/problems/${pid(id)}/polygon/content?key=${encodeURIComponent(key)}`),
+  importPolygon: (req: ImportRequest) => request<JobInfo>('POST', '/problems/import/polygon', req),
+  job: (jobId: string) => request<JobInfo>('GET', `/jobs/${encodeURIComponent(jobId)}`),
 };
 
 /** URL for raw problem files in <img> tags (which cannot send the token header). */
