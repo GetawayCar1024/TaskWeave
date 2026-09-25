@@ -83,6 +83,15 @@ async function loadFiles() {
   files.value = Object.fromEntries(kinds.map((k, i) => [k, res[i]]));
 }
 watch([selected, () => manifest.value?.generatedAt], loadFiles);
+// Keep a test selected so the detail area is never blank: the first one by default.
+watch(
+  () => manifest.value?.tests,
+  (tests) => {
+    if (!tests?.length) return (selected.value = null);
+    if (!tests.some((x) => x.index === selected.value)) selected.value = tests[0].index;
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -141,6 +150,7 @@ watch([selected, () => manifest.value?.generatedAt], loadFiles);
         </n-tab-pane>
       </n-tabs>
     </div>
+    <div v-else-if="manifest" class="dim small empty">{{ t('tests.pickOne') }}</div>
   </div>
 </template>
 

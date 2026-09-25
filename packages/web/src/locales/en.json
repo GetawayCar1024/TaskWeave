@@ -220,7 +220,8 @@
       "overview": "Validator overview"
     },
     "manual": "manual",
-    "generated": "generated"
+    "generated": "generated",
+    "pickOne": "Click a test above to view it"
   },
   "run": {
     "custom": "Custom input",
@@ -255,7 +256,11 @@
     "noOutput": "not saved (over 16 MB)",
     "pass": "pass",
     "fail": "mismatch",
-    "max": "max"
+    "max": "max",
+    "testsAll": "All tests",
+    "testsSamples": "Samples",
+    "testsCustom": "Pick",
+    "testCount": "{n} test(s)"
   },
   "preview": {
     "unknown": "{n} unknown command(s)",

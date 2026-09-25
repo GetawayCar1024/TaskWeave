@@ -220,7 +220,8 @@
       "overview": "校验器概览"
     },
     "manual": "手写",
-    "generated": "生成"
+    "generated": "生成",
+    "pickOne": "点击上方的测试查看内容"
   },
   "run": {
     "custom": "自定义输入",
@@ -255,7 +256,11 @@
     "noOutput": "未保存（超过 16 MB）",
     "pass": "通过",
     "fail": "不符",
-    "max": "最大"
+    "max": "最大",
+    "testsAll": "全部测试",
+    "testsSamples": "样例",
+    "testsCustom": "指定",
+    "testCount": "{n} 个测试"
   },
   "preview": {
     "unknown": "{n} 个无法识别的命令",

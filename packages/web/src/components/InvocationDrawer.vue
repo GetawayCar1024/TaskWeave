@@ -8,15 +8,18 @@ import {
   NCheckboxGroup,
   NDrawer,
   NDrawerContent,
+  NInput,
   NModal,
   NProgress,
+  NRadioButton,
+  NRadioGroup,
   NScrollbar,
   NSelect,
   NSpace,
   NTag,
   useMessage,
 } from 'naive-ui';
-import type { Invocation, InvocationCell, InvocationSummary, TestFileResponse } from '@polyforge/shared';
+import { parseIndexList, type Invocation, type InvocationCell, type InvocationSummary, type TestFileResponse } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 import type { Judge } from '../lib/judge';
 import { monaco } from '../lib/monaco';
@@ -73,9 +76,24 @@ watch(
   },
 );
 
+// Which tests to run: all, the samples, or an index list like "1-5, 8".
+const testMode = ref<'all' | 'samples' | 'custom'>('all');
+const testSpec = ref('');
+const manifestTests = computed(() => props.judge.state.manifest?.tests ?? []);
+const chosenTests = computed<number[] | undefined>(() => {
+  if (testMode.value === 'all') return undefined;
+  // Before the first generation there is no manifest: trust the input / problem.toml.
+  const known = new Set(manifestTests.value.map((x) => x.index));
+  const inManifest = (i: number) => !known.size || known.has(i);
+  const samples = known.size ? manifestTests.value.filter((x) => x.sample).map((x) => x.index) : parseIndexList(props.ws.state.detail?.config?.tests.samples ?? '');
+  const list = testMode.value === 'samples' ? samples : parseIndexList(testSpec.value).filter(inManifest);
+  return [...new Set(list)].sort((a, b) => a - b);
+});
+const testCount = computed(() => chosenTests.value?.length ?? manifestTests.value.length);
+
 async function start() {
   try {
-    await props.judge.startInvocation(picked.value);
+    await props.judge.startInvocation(picked.value, chosenTests.value);
     await loadInvocation();
   } catch (e) {
     message.error(errorMessage(e));
@@ -165,7 +183,14 @@ onBeforeUnmount(disposeDiff);
           </n-space>
         </n-checkbox-group>
         <n-space size="small" align="center">
-          <n-button size="small" type="primary" :disabled="!picked.length" :loading="running" @click="start">{{ t('inv.start') }}</n-button>
+          <n-radio-group v-model:value="testMode" size="small">
+            <n-radio-button value="all">{{ t('inv.testsAll') }}</n-radio-button>
+            <n-radio-button value="samples">{{ t('inv.testsSamples') }}</n-radio-button>
+            <n-radio-button value="custom">{{ t('inv.testsCustom') }}</n-radio-button>
+          </n-radio-group>
+          <n-input v-if="testMode === 'custom'" v-model:value="testSpec" size="small" class="mono" placeholder="1-5, 8" style="width: 120px" />
+          <span v-if="manifestTests.length" class="dim small">{{ t('inv.testCount', { n: testCount }) }}</span>
+          <n-button size="small" type="primary" :disabled="!picked.length || chosenTests?.length === 0" :loading="running" @click="start">{{ t('inv.start') }}</n-button>
           <n-button v-if="running" size="small" @click="judge.cancel('invocation')">{{ t('common.cancel') }}</n-button>
           <n-select
             size="small"
