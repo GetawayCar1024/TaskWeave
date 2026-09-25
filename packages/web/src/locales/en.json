@@ -477,7 +477,8 @@
     "reviewIntro": "Read-only check; lists every issue.",
     "usage": "{n} request(s)",
     "usageTokens": "in {in} · out {out}",
-    "usageNoPrice": "no price set"
+    "usageNoPrice": "no price set",
+    "modelPlaceholder": "Model name"
   },
   "lint": {
     "title": "Statement check & auto-fix",
@@ -609,11 +610,7 @@
     "deleteTitle": "Delete contest {name}?",
     "deleted": "Contest deleted",
     "export": "Export",
-    "toc": "Contents page",
-    "tocIndex": "#",
-    "tocTitle": "Problem",
-    "tocTime": "Time limit",
-    "tocMemory": "Memory limit"
+    "toc": "Contents page"
   },
   "testsets": {
     "title": "Testsets and groups",

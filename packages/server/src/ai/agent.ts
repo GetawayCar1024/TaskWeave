@@ -168,7 +168,7 @@ export class AgentService {
       createdAt: now,
       updatedAt: now,
       endpoint: ep.name,
-      model: req.model || this.judge.global.config.ai?.model || defaultModel(ep),
+      model: req.model || (ep.name === this.judge.global.config.ai?.endpoint && this.judge.global.config.ai?.model) || defaultModel(ep),
       messages: [],
       plan: [],
       touched: [],

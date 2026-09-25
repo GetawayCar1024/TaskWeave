@@ -99,9 +99,9 @@ const sessionOptions = computed(() =>
 );
 const endpointOptions = computed(() => s.value.endpoints.map((e) => ({ label: `${e.name} (${e.protocol})`, value: e.name })));
 const modelOptions = computed(() => {
-  const ep = s.value.endpoints.find((e) => e.name === s.value.current?.endpoint);
+  const ep = s.value.endpoints.find((e) => e.name === s.value.pick.endpoint);
   const list = [...(ep?.models ?? [])];
-  const cur = s.value.current?.model;
+  const cur = s.value.pick.model;
   if (cur && !list.includes(cur)) list.unshift(cur);
   return list.map((m) => ({ label: m, value: m }));
 });
@@ -138,9 +138,17 @@ function onKey(e: KeyboardEvent) {
   }
 }
 
+async function setModel(endpoint: string, model: string) {
+  try {
+    await props.ai.setModel(endpoint, model);
+  } catch (e) {
+    message.error(errorMessage(e));
+  }
+}
+
 async function newSession() {
   try {
-    await props.ai.create(s.value.current?.endpoint, s.value.current?.model);
+    await props.ai.create();
   } catch (e) {
     message.error(errorMessage(e));
   }
@@ -266,22 +274,26 @@ const usageTitle = computed(() => {
               {{ t('ai.deleteSession') }}
             </n-popconfirm>
           </div>
-          <div v-if="s.current" class="bar">
+          <!-- Always shown: picks the model of the open session and of new sessions / checks. -->
+          <div class="bar">
             <n-select
               size="small"
-              :value="s.current.endpoint"
+              :value="s.pick.endpoint || null"
               :options="endpointOptions"
+              :disabled="ai.running.value"
               style="width: 45%"
-              @update:value="(v: string) => ai.setModel(v, s.endpoints.find((e) => e.name === v)?.models[0] ?? s.current!.model)"
+              @update:value="(v: string) => setModel(v, s.endpoints.find((e) => e.name === v)?.models[0] ?? '')"
             />
             <n-select
               size="small"
-              :value="s.current.model"
+              :value="s.pick.model || null"
               :options="modelOptions"
+              :placeholder="t('ai.modelPlaceholder')"
+              :disabled="ai.running.value"
               filterable
               tag
               style="flex: 1"
-              @update:value="(v: string) => ai.setModel(s.current!.endpoint, v)"
+              @update:value="(v: string) => setModel(s.pick.endpoint, v)"
             />
           </div>
           <div v-if="s.current?.usage?.requests" class="usage-line" :title="usageTitle">

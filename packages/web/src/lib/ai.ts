@@ -15,7 +15,14 @@ export function useAi(problemId: string) {
     live: [] as AiTranscriptItem[],
     changes: [] as AiChange[],
     loading: false,
+    /** Endpoint / model for the next new session or AI check; follows the open session. */
+    pick: { endpoint: '', model: '' },
   });
+
+  /** Mirror the open session's endpoint / model into the picker. */
+  function follow(d: AiSessionDetail | null) {
+    if (d) state.pick = { endpoint: d.endpoint, model: d.model };
+  }
 
   const running = computed(() => state.current?.state === 'running');
   let turnEnded = false;
@@ -23,7 +30,14 @@ export function useAi(problemId: string) {
   async function init() {
     state.loading = true;
     try {
-      [state.endpoints, state.sessions] = await Promise.all([api.aiEndpoints().catch(() => []), api.aiSessions(problemId).catch(() => [])]);
+      const [eps, list, settings] = await Promise.all([api.aiEndpoints().catch(() => []), api.aiSessions(problemId).catch(() => []), api.settings().catch(() => null)]);
+      [state.endpoints, state.sessions] = [eps, list];
+      // Before any session: the default endpoint / model from the settings.
+      if (!state.pick.endpoint && eps.length) {
+        const def = settings?.config.ai;
+        const ep = eps.find((e) => e.name === def?.endpoint) ?? eps[0];
+        state.pick = { endpoint: ep.name, model: (ep.name === def?.endpoint && def?.model) || ep.models[0] || '' };
+      }
       const first = state.sessions.find((x) => x.mode === 'agent');
       if (!state.current && first) await open(first.id);
     } finally {
@@ -44,8 +58,7 @@ export function useAi(problemId: string) {
 
   /** AI check: a read-only review session (DESIGN §4.4, M5). */
   async function startReview() {
-    const ep = state.current?.endpoint;
-    const d = await api.startReview(problemId, { endpoint: ep, model: state.current?.endpoint === ep ? state.current?.model : undefined });
+    const d = await api.startReview(problemId, pickReq());
     state.sessions = await api.aiSessions(problemId);
     state.current = d;
     state.live = [];
@@ -54,8 +67,7 @@ export function useAi(problemId: string) {
 
   /** Hand a finding to a fresh agent session. */
   async function fix(f: AiFinding) {
-    const ep = state.current?.endpoint;
-    await create(ep, state.current?.model);
+    await create();
     const lines = [
       'Fix this issue found by the AI check.',
       '',
@@ -71,6 +83,7 @@ export function useAi(problemId: string) {
 
   async function open(sid: string) {
     state.current = await api.aiSession(problemId, sid);
+    follow(state.current);
     state.live = [];
     state.changes = await api.aiChanges(problemId, sid).catch(() => []);
   }
@@ -81,13 +94,17 @@ export function useAi(problemId: string) {
     const [d, ch, list] = await Promise.all([api.aiSession(problemId, sid), api.aiChanges(problemId, sid), api.aiSessions(problemId)]);
     if (state.current?.id !== sid) return;
     state.current = d;
+    follow(d);
     state.changes = ch;
     state.sessions = list;
     if (d.state !== 'running') state.live = [];
   }
 
-  async function create(endpoint?: string, model?: string) {
-    const d = await api.createAiSession(problemId, { endpoint, model });
+  const pickReq = () => ({ endpoint: state.pick.endpoint || undefined, model: state.pick.model || undefined });
+
+  /** A new agent session with the picked endpoint / model. */
+  async function create() {
+    const d = await api.createAiSession(problemId, pickReq());
     state.sessions = await api.aiSessions(problemId);
     state.current = d;
     state.live = [];
@@ -123,8 +140,10 @@ export function useAi(problemId: string) {
     }
   }
 
+  /** Pick the endpoint / model: for the open session (when idle) and for new ones. */
   async function setModel(endpoint: string, model: string) {
-    if (!state.current) return;
+    state.pick = { endpoint, model };
+    if (!state.current || running.value) return;
     state.current = await api.updateAiSession(problemId, state.current.id, { endpoint, model });
   }
 

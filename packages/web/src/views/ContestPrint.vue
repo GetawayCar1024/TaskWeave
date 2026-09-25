@@ -172,6 +172,8 @@ function toggle(e, on) {
 
 const contestTitle = computed(() => detail.value?.summary.title[lang.value] || detail.value?.summary.title.en || detail.value?.summary.name || '');
 const docTitle = computed(() => (doc.value === 'tutorials' ? `${contestTitle.value} — ${lang.value === 'zh' ? '题解' : 'Tutorial'}` : contestTitle.value));
+/** Contents table headers, in the language of the document (not of the UI). */
+const tocHead = computed(() => (lang.value === 'zh' ? ['题号', '题目', '时间限制', '空间限制'] : ['#', 'Problem', 'Time limit', 'Memory limit']));
 const shown = computed(() => rendered.value.filter((r) => (doc.value === 'tutorials' ? r.hasTutorial : r.hasStatement)));
 // The browser suggests the page title as the PDF file name.
 watch(
@@ -232,11 +234,11 @@ onBeforeUnmount(() => {
         <table>
           <thead>
             <tr>
-              <th class="idx">{{ t('contest.tocIndex') }}</th>
-              <th>{{ t('contest.tocTitle') }}</th>
+              <th class="idx">{{ tocHead[0] }}</th>
+              <th>{{ tocHead[1] }}</th>
               <template v-if="doc === 'statements'">
-                <th class="num">{{ t('contest.tocTime') }}</th>
-                <th class="num">{{ t('contest.tocMemory') }}</th>
+                <th class="num">{{ tocHead[2] }}</th>
+                <th class="num">{{ tocHead[3] }}</th>
               </template>
             </tr>
           </thead>

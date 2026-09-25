@@ -477,7 +477,8 @@
     "reviewIntro": "只读检查，逐条列出问题。",
     "usage": "{n} 次请求",
     "usageTokens": "输入 {in} · 输出 {out}",
-    "usageNoPrice": "未设置价格"
+    "usageNoPrice": "未设置价格",
+    "modelPlaceholder": "模型名称"
   },
   "lint": {
     "title": "题面检查与自动修复",
@@ -609,11 +610,7 @@
     "deleteTitle": "删除比赛 {name}？",
     "deleted": "比赛已删除",
     "export": "导出",
-    "toc": "目录页",
-    "tocIndex": "题号",
-    "tocTitle": "题目",
-    "tocTime": "时间限制",
-    "tocMemory": "空间限制"
+    "toc": "目录页"
   },
   "testsets": {
     "title": "测试集与子任务",
