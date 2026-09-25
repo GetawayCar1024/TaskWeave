@@ -22,7 +22,10 @@ const MARKER_OWNER = 'polyforge-compile';
 export function useJudge(problemId: string, ws: Workspace) {
   const state = reactive({
     jobs: {} as Partial<Record<JobKind, JobInfo>>,
+    /** Manifest of the "tests" testset (statements, samples, most panels). */
     manifest: null as TestsManifest | null,
+    /** Manifests of every testset loaded so far, by name. */
+    manifests: {} as Record<string, TestsManifest | null>,
     compile: {} as Record<string, CompileResult>,
     compiling: {} as Record<string, boolean>,
     validatorReport: null as SelfTestReport<ValidatorTestResult> | null,
@@ -32,9 +35,13 @@ export function useJudge(problemId: string, ws: Workspace) {
     invocationVersion: 0,
   });
 
-  async function loadManifest() {
-    state.manifest = await api.tests(problemId).catch(() => null);
+  async function loadManifest(testset = 'tests') {
+    const m = await api.tests(problemId, testset).catch(() => null);
+    state.manifests[testset] = m;
+    if (testset === 'tests') state.manifest = m;
   }
+
+  const reloadManifests = () => Promise.all([...new Set(['tests', ...Object.keys(state.manifests)])].map((ts) => loadManifest(ts)));
 
   async function init() {
     await loadManifest();
@@ -89,12 +96,12 @@ export function useJudge(problemId: string, ws: Workspace) {
     }
   }
 
-  async function generate() {
-    trackJob(await api.generateTests(problemId));
+  async function generate(testset = 'tests') {
+    trackJob(await api.generateTests(problemId, testset));
   }
 
-  async function startInvocation(sources: string[], tests?: number[]) {
-    const r = await api.startInvocation(problemId, sources, tests);
+  async function startInvocation(sources: string[], tests?: number[], testset?: string) {
+    const r = await api.startInvocation(problemId, sources, tests, testset);
     trackJob(r.job);
     state.invocationId = r.invocationId;
     state.invocationVersion++;
@@ -124,7 +131,8 @@ export function useJudge(problemId: string, ws: Workspace) {
       trackJob(e.job);
       if (e.job.kind === 'invocation') state.invocationVersion++;
       if (e.type === 'job:done') {
-        if (e.job.kind === 'generate' || e.job.kind === 'invocation') loadManifest();
+        if (e.job.kind === 'generate' && (e.job.result as TestsManifest | undefined)?.testset) loadManifest((e.job.result as TestsManifest).testset);
+        else if (e.job.kind === 'generate' || e.job.kind === 'invocation') reloadManifests();
         if (e.job.kind === 'validator-tests' && e.job.result) state.validatorReport = e.job.result as SelfTestReport<ValidatorTestResult>;
         if (e.job.kind === 'checker-tests' && e.job.result) state.checkerReport = e.job.result as SelfTestReport<CheckerTestResult>;
       }

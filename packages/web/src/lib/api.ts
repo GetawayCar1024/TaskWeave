@@ -94,6 +94,8 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 /** Encode each segment of a relative path, keeping the slashes. */
 const encPath = (p: string) => p.split('/').map(encodeURIComponent).join('/');
 const pid = (id: string) => encodeURIComponent(id);
+/** ?testset= for anything but the default testset. */
+const tsq = (ts?: string) => (ts && ts !== 'tests' ? `?testset=${encodeURIComponent(ts)}` : '');
 
 export const api = {
   settings: () => request<SettingsResponse>('GET', '/settings'),
@@ -123,13 +125,13 @@ export const api = {
 
   // ---- judge (M2) ----
   build: (id: string, sources?: string[]) => request<CompileResult[]>('POST', `/problems/${pid(id)}/build`, { sources }),
-  generateTests: (id: string) => request<JobInfo>('POST', `/problems/${pid(id)}/tests/generate`),
-  tests: (id: string) => request<TestsManifest | null>('GET', `/problems/${pid(id)}/tests`),
-  testFile: (id: string, n: number, kind: 'in' | 'ans' | 'overview') =>
-    request<TestFileResponse>('GET', `/problems/${pid(id)}/tests/${n}/${kind}`),
+  generateTests: (id: string, testset?: string) => request<JobInfo>('POST', `/problems/${pid(id)}/tests/generate${tsq(testset)}`),
+  tests: (id: string, testset?: string) => request<TestsManifest | null>('GET', `/problems/${pid(id)}/tests${tsq(testset)}`),
+  testFile: (id: string, n: number, kind: 'in' | 'ans' | 'overview', testset?: string) =>
+    request<TestFileResponse>('GET', `/problems/${pid(id)}/tests/${n}/${kind}${tsq(testset)}`),
   run: (id: string, req: QuickRunRequest) => request<QuickRunResponse>('POST', `/problems/${pid(id)}/run`, req),
-  startInvocation: (id: string, sources: string[], tests?: number[]) =>
-    request<{ job: JobInfo; invocationId: string }>('POST', `/problems/${pid(id)}/invocations`, { sources, tests }),
+  startInvocation: (id: string, sources: string[], tests?: number[], testset?: string) =>
+    request<{ job: JobInfo; invocationId: string }>('POST', `/problems/${pid(id)}/invocations`, { sources, tests, testset }),
   invocations: (id: string) => request<InvocationSummary[]>('GET', `/problems/${pid(id)}/invocations`),
   invocation: (id: string, inv: string) => request<Invocation>('GET', `/problems/${pid(id)}/invocations/${encodeURIComponent(inv)}`),
   invocationOutput: (id: string, inv: string, sol: number, test: number) =>

@@ -167,9 +167,9 @@ const TOOLS = [
   tool({
     name: 'generate_tests',
     description: 'Generate all tests: manual tests + tests/script.txt, run the validator on each, and produce answers with the main (MA) solution. Returns per-test status and errors.',
-    schema: z.object({}),
-    async run(_i, env) {
-      const m = await generateTests(env.judge, await env.ctx(), job(env));
+    schema: z.object({ testset: z.string().optional().describe('Testset name (default "tests"; others are [testsets.NAME] in problem.toml)') }),
+    async run(i, env) {
+      const m = await generateTests(env.judge, await env.ctx(), job(env), i.testset);
       const lines = m.tests.map(
         (t) =>
           `#${t.index} ${t.origin === 'manual' ? t.source : `[${t.source}]`} in=${t.inputSize ?? '-'}B ans=${t.answerSize ?? '-'}B ${t.valid === false ? `INVALID: ${t.validatorMessage}` : t.valid ? 'valid' : 'no validator'}${t.error ? ` ERROR: ${t.error}` : ''}`,
@@ -180,10 +180,10 @@ const TOOLS = [
   tool({
     name: 'view_test',
     description: 'Show the beginning of a generated test input, its answer, or the validator overview for it.',
-    schema: z.object({ index: z.number().int().min(1), part: z.enum(['input', 'answer', 'overview']), max_chars: z.number().int().min(100).max(50_000).optional() }),
+    schema: z.object({ index: z.number().int().min(1), part: z.enum(['input', 'answer', 'overview']), max_chars: z.number().int().min(100).max(50_000).optional(), testset: z.string().optional().describe('Testset name (default "tests"; others are [testsets.NAME] in problem.toml)') }),
     async run(i, env) {
       const ctx = await env.ctx();
-      const file = { input: inputPath, answer: answerPath, overview: overviewPath }[i.part](ctx, i.index);
+      const file = { input: inputPath, answer: answerPath, overview: overviewPath }[i.part](ctx, i.index, i.testset);
       const text = await fsp.readFile(file, 'utf8').catch(() => null);
       if (text === null) throw new Error(`test ${i.index} ${i.part} not found (run generate_tests first)`);
       return clip(text, i.max_chars ?? 4000);
@@ -193,14 +193,14 @@ const TOOLS = [
     name: 'run_invocation',
     description:
       'Run solutions on all generated tests (regenerating tests if needed) and check each against its tag (MA/OK must pass everything, WA must get WA somewhere, TL must TL somewhere, …). Returns a per-solution summary.',
-    schema: z.object({ solutions: z.array(z.string()).optional(), tests: z.array(z.number().int()).optional() }),
+    schema: z.object({ solutions: z.array(z.string()).optional(), tests: z.array(z.number().int()).optional(), testset: z.string().optional().describe('Testset name (default "tests"; others are [testsets.NAME] in problem.toml)') }),
     async run(i, env) {
       const ctx = await env.ctx();
       const sources = i.solutions?.length ? i.solutions : ctx.config.solutions.map((s) => s.source);
       if (!sources.length) throw new Error('no solutions listed in problem.toml');
-      const id = await runInvocation(env.judge, ctx, sources, i.tests, job(env), () => {});
+      const id = await runInvocation(env.judge, ctx, sources, i.tests, job(env), () => {}, i.testset);
       const inv = await readInvocation(ctx, id);
-      const out: string[] = [`${inv.tests.length} tests, TL ${inv.timeLimit} ms`];
+      const out: string[] = [`${inv.testset ?? 'tests'}: ${inv.tests.length} tests, TL ${inv.timeLimit} ms`];
       inv.solutions.forEach((s, si) => {
         const cells = inv.cells[si] ?? [];
         if (s.compile && !s.compile.ok) return out.push(`${s.source} [${s.tag}] COMPILATION FAILED\n${clip(s.compile.log, 1500)}`);
@@ -210,6 +210,10 @@ const TOOLS = [
         out.push(
           `${s.source} [${s.tag ?? 'no tag'}] ${e?.ok ? 'matches tag' : 'DOES NOT MATCH TAG'}; ${Object.entries(counts).map(([v, n]) => `${v}×${n}`).join(' ')}; max ${s.maxTimeMs ?? '-'} ms / ${Math.round((s.maxMemoryKb ?? 0) / 1024)} MB`,
         );
+        if (s.score) {
+          const groups = s.score.groups.map((g) => `${g.name}=${g.score}/${g.max}${g.blockedBy ? ` (blocked by ${g.blockedBy.join(',')})` : ''}`).join(' ');
+          out.push(`  score ${s.score.total}/${s.score.max}${groups ? ` [${groups}]` : ''}${s.score.error ? ` — scoring error: ${s.score.error}` : ''}`);
+        }
         if (e?.missing) out.push(`  never got ${e.missing.join('/')} — the tests may be too weak to catch this solution`);
         for (const ti of (e?.unexpected ?? []).slice(0, 5)) {
           const c = cells[ti];

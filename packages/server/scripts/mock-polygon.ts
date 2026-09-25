@@ -24,6 +24,13 @@ interface Test {
   useInStatements?: boolean;
 }
 
+interface Testset {
+  script: string;
+  tests: Record<number, Test>;
+  groupsEnabled: boolean;
+  groups: Record<string, { name: string; pointsPolicy: string; feedbackPolicy: string; dependencies: string[] }>;
+}
+
 interface Prob {
   id: number;
   name: string;
@@ -45,6 +52,8 @@ interface Prob {
   pointsEnabled: boolean;
   groups: Record<string, { name: string; pointsPolicy: string; feedbackPolicy: string; dependencies: string[] }>;
   validatorTests: Record<number, { index: number; input: string; expectedVerdict: string }>;
+  /** Testsets other than "tests" (create with GET /__testset?problem=ID&name=NAME). */
+  extraTestsets: Record<string, Testset>;
   checkerTests: Record<number, { index: number; input: string; output: string; answer: string; expectedVerdict: string }>;
 }
 
@@ -79,6 +88,7 @@ function newProblem(name: string): Prob {
     groups: {},
     validatorTests: {},
     checkerTests: {},
+    extraTestsets: {},
   };
   problems.set(p.id, p);
   return p;
@@ -95,6 +105,14 @@ function handle(method: string, a: Record<string, string>, files: Record<string,
     return p;
   };
   const touch = (p: Prob) => (p.modified = true);
+  /** The testset named by the testset parameter ("tests" is the problem itself). */
+  const set = (p: Prob): Testset => {
+    const name = a.testset ?? 'tests';
+    if (name === 'tests') return p;
+    const t = p.extraTestsets[name];
+    if (!t) throw new Fail(`testset: Testset "${name}" not found`);
+    return t;
+  };
   const content = (k: string) => files[k] ?? (a[k] !== undefined ? Buffer.from(a[k]) : undefined);
   const brief = (p: Prob) => ({ id: p.id, name: p.name, owner: p.owner, accessType: 'OWNER', revision: p.revision, modified: p.modified, deleted: false });
 
@@ -200,26 +218,26 @@ function handle(method: string, a: Record<string, string>, files: Record<string,
       return null;
     }
     case 'problem.script':
-      return { raw: Buffer.from(get().script) };
+      return { raw: Buffer.from(set(get()).script) };
     case 'problem.saveScript': {
       const p = get();
-      p.script = a.source ?? '';
+      set(p).script = a.source ?? '';
       touch(p);
       return null;
     }
     case 'problem.tests':
-      return Object.values(get().tests)
+      return Object.values(set(get()).tests)
         .sort((x, y) => x.index - y.index)
         .map((t) => ({ index: t.index, manual: t.manual, input: t.manual ? t.input : undefined, group: t.group ?? '', points: t.points ?? 0, useInStatements: !!t.useInStatements, description: '' }));
     case 'problem.testInput': {
-      const t = get().tests[Number(a.testIndex)];
+      const t = set(get()).tests[Number(a.testIndex)];
       if (!t) throw new Fail('testIndex: not found');
       return { raw: Buffer.from(t.input ?? '') };
     }
     case 'problem.saveTest': {
       const p = get();
       const i = Number(a.testIndex);
-      const t = (p.tests[i] ??= { index: i, manual: a.testInput !== undefined });
+      const t = (set(p).tests[i] ??= { index: i, manual: a.testInput !== undefined });
       if (a.testInput !== undefined) Object.assign(t, { manual: true, input: a.testInput });
       if (a.testGroup !== undefined) t.group = a.testGroup;
       if (a.testPoints !== undefined) {
@@ -232,7 +250,7 @@ function handle(method: string, a: Record<string, string>, files: Record<string,
     }
     case 'problem.enableGroups': {
       const p = get();
-      p.groupsEnabled = bool(a.enable);
+      set(p).groupsEnabled = bool(a.enable);
       touch(p);
       return null;
     }
@@ -244,21 +262,21 @@ function handle(method: string, a: Record<string, string>, files: Record<string,
     }
     case 'problem.viewTestGroup': {
       const p = get();
-      if (!p.groupsEnabled) throw new Fail('testset: Groups are not enabled');
-      return Object.values(p.groups).filter((g) => !a.group || g.name === a.group);
+      if (!set(p).groupsEnabled) throw new Fail('testset: Groups are not enabled');
+      return Object.values(set(p).groups).filter((g) => !a.group || g.name === a.group);
     }
     case 'problem.saveTestGroup': {
       const p = get();
-      if (!p.groupsEnabled) throw new Fail('testset: Groups are not enabled');
-      p.groups[a.group] = { name: a.group, pointsPolicy: a.pointsPolicy ?? 'COMPLETE_GROUP', feedbackPolicy: a.feedbackPolicy ?? 'COMPLETE', dependencies: a.dependencies ? a.dependencies.split(',') : [] };
+      if (!set(p).groupsEnabled) throw new Fail('testset: Groups are not enabled');
+      set(p).groups[a.group] = { name: a.group, pointsPolicy: a.pointsPolicy ?? 'COMPLETE_GROUP', feedbackPolicy: a.feedbackPolicy ?? 'COMPLETE', dependencies: a.dependencies ? a.dependencies.split(',') : [] };
       touch(p);
       return null;
     }
     case 'problem.setTestGroup': {
       const p = get();
-      if (!p.groupsEnabled) throw new Fail('testset: Groups are not enabled');
+      if (!set(p).groupsEnabled) throw new Fail('testset: Groups are not enabled');
       const idx = a.testIndices ? a.testIndices.split(',').map(Number) : [Number(a.testIndex)];
-      for (const i of idx) (p.tests[i] ??= { index: i, manual: false }).group = a.testGroup;
+      for (const i of idx) (set(p).tests[i] ??= { index: i, manual: false }).group = a.testGroup;
       touch(p);
       return null;
     }
@@ -308,6 +326,13 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/__dump') {
     const replacer = (_k: string, v: any) => (v && v.type === 'Buffer' && Array.isArray(v.data) ? Buffer.from(v.data).toString('utf8') : v);
     return send(200, JSON.stringify([...problems.values()], replacer, 1));
+  }
+  if (url.pathname === '/__testset') {
+    const p = problems.get(Number(url.searchParams.get('problem')));
+    const name = url.searchParams.get('name') ?? '';
+    if (!p || !name || name === 'tests') return send(400, JSON.stringify({ error: 'bad problem or name' }));
+    p.extraTestsets[name] ??= { script: '', tests: {}, groupsEnabled: false, groups: {} };
+    return send(200, JSON.stringify({ ok: true }));
   }
   // GET /__contest?id=5&problems=A:100000,B:100001 defines a contest for contest.problems.
   if (url.pathname === '/__contest') {

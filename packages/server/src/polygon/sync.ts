@@ -4,6 +4,7 @@ import path from 'node:path';
 import { parse, stringify } from 'smol-toml';
 import {
   PROBLEM_NAME_RE,
+  testsetsOf,
   type ImportRequest,
   type ItemContent,
   type PolygonProblem,
@@ -31,6 +32,7 @@ import {
   PUSH_ORDER,
   remoteItems,
   removeLocal,
+  TESTSET,
   type Item,
 } from './items.js';
 
@@ -87,6 +89,8 @@ async function dropBase(ctx: ProblemCtx, key: string) {
 
 /** The merge of local and remote against the recorded base, if one is possible. */
 function mergeItems(l: Item, r: Item, base: BaseSnapshot): Item | null {
+  // Testsets are structured data: take one side instead of merging lines.
+  if (l.kind === 'testset') return null;
   if (l.text === undefined || r.text === undefined) return null;
   const m = merge3(l.text, base.text, r.text);
   return { ...l, text: m.text, meta: mergeMeta(l.meta, base.meta, r.meta), extra: { ...l.extra, mergeConflicts: m.conflicts } };
@@ -94,6 +98,8 @@ function mergeItems(l: Item, r: Item, base: BaseSnapshot): Item | null {
 
 const byOrder = (a: { kind: string; key: string }, b: { kind: string; key: string }) =>
   PUSH_ORDER.indexOf(a.kind as never) - PUSH_ORDER.indexOf(b.kind as never) || a.key.localeCompare(b.key, undefined, { numeric: true });
+
+const extraTestsets = (ctx: ProblemCtx) => testsetsOf(ctx.config).map((t) => t.name).filter((n) => n !== TESTSET);
 
 const strip = ({ text: _t, bytes: _b, meta: _m, extra: _e, ...rest }: Item) => rest;
 
@@ -235,7 +241,7 @@ export class PolygonSync {
   async pullPreview(ctx: ProblemCtx): Promise<PullPreview> {
     const polygonId = ctx.config.polygon.id;
     if (polygonId === undefined) throw new HttpError(400, 'not_bound', 'This problem is not bound to a Polygon problem');
-    const remote = await remoteItems(await this.client(), polygonId);
+    const remote = await remoteItems(await this.client(), polygonId, extraTestsets(ctx));
     this.remoteCache.set(ctx.ref.id, { polygonId, items: remote });
     const { items: local, warnings } = await localItems(this.judge, ctx);
     const sync = await readSync(ctx);
@@ -276,7 +282,7 @@ export class PolygonSync {
     let cached = this.remoteCache.get(ctx.ref.id);
     // The push dialog asks for diffs without a prior pull: fetch Polygon's state once.
     if (id !== undefined && cached?.polygonId !== id) {
-      cached = { polygonId: id, items: await remoteItems(await this.client(), id) };
+      cached = { polygonId: id, items: await remoteItems(await this.client(), id, extraTestsets(ctx)) };
       this.remoteCache.set(ctx.ref.id, cached);
     }
     const r = cached?.items.find((i) => i.key === key);

@@ -7,7 +7,11 @@ import {
   STD_PREFIX,
   TAG_FROM_POLYGON,
   TAG_TO_POLYGON,
+  groupLayout as sharedGroupLayout,
   parseIndexList,
+  testsetOf,
+  testsetsOf,
+  type TestsetConfig,
   type ProblemToml,
   type SolutionTag,
   type SyncItem,
@@ -74,6 +78,7 @@ export const PUSH_ORDER: SyncItemKind[] = [
   'groups',
   'validatorTest',
   'checkerTest',
+  'testset',
 ];
 
 // ---------------------------------------------------------------------------
@@ -112,27 +117,42 @@ async function listFiles(dir: string): Promise<string[]> {
 
 const hasToken = (s: string, t: string) => new RegExp(`(^|[/._-])${t}([/._-]|$)`, 'i').test(s);
 
-/** Group of each test index, and per-test points derived from group totals. */
+/** Everything of a testset other than "tests", synced as one item. */
+export interface TestsetContent {
+  script: string;
+  /** Manual tests by index. */
+  tests: Record<string, string>;
+  groupsEnabled: boolean;
+  groups: { name: string; pointsPolicy: string; dependencies: string[]; points?: number; tests: string }[];
+  /** Per-test points (points enabled). */
+  points?: Record<string, number>;
+}
+
+function testsetGroups(ts: TestsetConfig, pointsEnabled: boolean): Pick<TestsetContent, 'groupsEnabled' | 'groups' | 'points'> {
+  const layout = sharedGroupLayout(ts, pointsEnabled);
+  return {
+    groupsEnabled: ts.groups,
+    groups: ts.groups
+      ? ts.group.map((g) => ({
+          name: g.name,
+          pointsPolicy: g.policy ?? 'COMPLETE_GROUP',
+          dependencies: [...(g.dependencies ?? [])].sort(),
+          ...(pointsEnabled ? { points: g.points ?? 0 } : {}),
+          tests: compressRanges(parseIndexList(g.tests ?? '')),
+        }))
+      : [],
+    ...(Object.keys(layout.points).length ? { points: layout.points } : {}),
+  };
+}
+
+/** Stable, readable text for hashing and the diff view. */
+export function testsetText(c: TestsetContent): string {
+  return JSON.stringify(sortKeys(c), null, 2);
+}
+
+/** Group of each test index, and per-test points derived from group totals (testset "tests"). */
 export function groupLayout(config: ProblemToml) {
-  const mapping: Record<string, string> = {};
-  const points: Record<string, number> = {};
-  if (!config.tests.groups) return { mapping, points };
-  for (const g of config.tests.group ?? []) {
-    const idx = parseIndexList(g.tests ?? '').sort((a, b) => a - b);
-    idx.forEach((i) => (mapping[i] = g.name));
-    if (config.tests.points && g.points && idx.length) {
-      // COMPLETE_GROUP: the whole score sits on the last test; EACH_TEST: split evenly.
-      if ((g.policy ?? 'COMPLETE_GROUP') === 'COMPLETE_GROUP') {
-        idx.forEach((i) => (points[i] = 0));
-        points[idx[idx.length - 1]] = g.points;
-      } else {
-        const each = Math.floor(g.points / idx.length);
-        idx.forEach((i) => (points[i] = each));
-        points[idx[idx.length - 1]] += g.points - each * idx.length;
-      }
-    }
-  }
-  return { mapping, points };
+  return sharedGroupLayout(testsetOf(config)!, !!config.tests.points);
 }
 
 // ---------------------------------------------------------------------------
@@ -303,6 +323,22 @@ export async function localItems(judge: Judge, ctx: ProblemCtx): Promise<LocalIt
     }
   }
 
+  // ---- further testsets: one item each (script, manual tests, groups) ----
+  for (const ts of testsetsOf(config).filter((t) => t.name !== TESTSET)) {
+    const errs: string[] = [];
+    const tests: Record<string, string> = {};
+    for (const p of await planTests(ctx, errs, ts.name)) {
+      if (p.origin === 'manual' && p.manualPath) tests[p.index] = await readText(path.relative(dir, p.manualPath).split(path.sep).join('/'));
+    }
+    warnings.push(...errs.map((e) => `${ts.name}: ${e}`));
+    const content: TestsetContent = {
+      script: ts.script ? await readText(ts.script).catch(() => '') : '',
+      tests,
+      ...testsetGroups(ts, !!config.tests.points),
+    };
+    items.push({ key: `testset:${ts.name}`, kind: 'testset', label: `testset ${ts.name}`, path: 'problem.toml', text: testsetText(content), extra: { testset: ts.name, content } });
+  }
+
   // ---- validator / checker self-tests ----
   const vt = (await listFiles(path.join(dir, 'validator-tests'))).filter((f) => hasToken(f, 'valid') || hasToken(f, 'invalid'));
   for (const [i, f] of vt.entries()) {
@@ -346,7 +382,8 @@ function splitCheckerTestText(t: string) {
 // ---------------------------------------------------------------------------
 // Remote side
 
-export async function remoteItems(client: PolygonClient, problemId: number): Promise<Item[]> {
+/** Polygon has no call that lists testsets: the extra ones known locally are fetched by name. */
+export async function remoteItems(client: PolygonClient, problemId: number, extraTestsets: string[] = []): Promise<Item[]> {
   const pid = { problemId };
   const items: Item[] = [];
   const info = await client.call('problem.info', pid);
@@ -445,6 +482,40 @@ export async function remoteItems(client: PolygonClient, problemId: number): Pro
       extra: { index: c.index },
     });
   }
+  for (const name of extraTestsets) {
+    const [script, tests, groupDefs] = await Promise.all([
+      opt(client.text('problem.script', { ...pid, testset: name }), ''),
+      opt(client.call<any[]>('problem.tests', { ...pid, testset: name, noInputs: false }), []),
+      opt(client.call<any[]>('problem.viewTestGroup', { ...pid, testset: name }), []),
+    ]);
+    if (!script.trim() && !tests.length && !groupDefs.length) continue;
+    const manual: Record<string, string> = {};
+    for (const t of tests) {
+      if (!t.manual) continue;
+      const input = typeof t.input === 'string' ? t.input : await client.text('problem.testInput', { ...pid, testset: name, testIndex: t.index });
+      manual[t.index] = input.replace(/\r\n/g, '\n');
+    }
+    const byGroup = new Map<string, number[]>();
+    for (const t of tests) if (t.group) byGroup.set(String(t.group), [...(byGroup.get(String(t.group)) ?? []), t.index]);
+    const anyPoints = tests.some((t) => Number(t.points ?? 0) > 0);
+    const content: TestsetContent = {
+      script: script.replace(/\r\n/g, '\n'),
+      tests: manual,
+      groupsEnabled: groupDefs.length > 0,
+      groups: groupDefs.map((g) => {
+        const idx = byGroup.get(String(g.name)) ?? [];
+        return {
+          name: String(g.name),
+          pointsPolicy: g.pointsPolicy ?? 'COMPLETE_GROUP',
+          dependencies: [...(g.dependencies ?? [])].map(String).sort(),
+          ...(anyPoints ? { points: idx.reduce((a, i) => a + Number(tests.find((t) => t.index === i)?.points ?? 0), 0) } : {}),
+          tests: compressRanges(idx),
+        };
+      }),
+      ...(anyPoints ? { points: Object.fromEntries(tests.filter((t) => t.group).map((t) => [t.index, Number(t.points ?? 0)])) } : {}),
+    };
+    items.push({ key: 'testset:' + name, kind: 'testset', label: 'testset ' + name, text: testsetText(content), extra: { testset: name, content } });
+  }
   return items;
 }
 
@@ -522,6 +593,25 @@ export async function pushItem(pc: PushContext, it: Item, deleted = false): Prom
     case 'checkerTest': {
       const parts = splitCheckerTestText(it.text ?? '');
       await client.call('problem.saveCheckerTest', { ...pid, testIndex: e.index, testInput: parts.input, testOutput: parts.output, testAnswer: parts.answer, testVerdict: (it.meta as any).verdict });
+      return;
+    }
+    case 'testset': {
+      // The testset itself has to exist on Polygon (Tests → testset list); the API cannot create it.
+      const testset: string = e.testset;
+      const c = e.content as TestsetContent;
+      await client.call('problem.saveScript', { ...pid, testset, source: c.script }).catch((err: Error) => {
+        throw new Error(`${err.message} — create the testset "${testset}" on Polygon first (Tests page → testsets), then push again`);
+      });
+      for (const [i, text] of Object.entries(c.tests)) await client.call('problem.saveTest', { ...pid, testset, testIndex: Number(i), testInput: text });
+      await client.call('problem.enableGroups', { ...pid, testset, enable: c.groupsEnabled });
+      for (const g of c.groups) {
+        await client.call('problem.saveTestGroup', { ...pid, testset, group: g.name, pointsPolicy: g.pointsPolicy, dependencies: g.dependencies.join(',') || undefined });
+        const idx = parseIndexList(g.tests);
+        if (idx.length) await client.call('problem.setTestGroup', { ...pid, testset, testGroup: g.name, testIndices: idx.join(',') });
+      }
+      for (const [i, pts] of Object.entries(c.points ?? {})) {
+        await client.call('problem.saveTest', { ...pid, testset, testIndex: Number(i), testPoints: pts }).catch((err: Error) => pc.warn(`${testset}: points of test ${i}: ${err.message}`));
+      }
       return;
     }
   }
@@ -694,6 +784,32 @@ export async function applyItem(ac: ApplyContext, it: Item): Promise<void> {
       await writeRel(ac, `${base}.in`, parts.input);
       await writeRel(ac, `${base}.out`, parts.output);
       await writeRel(ac, `${base}.ans`, parts.answer);
+      return;
+    }
+    case 'testset': {
+      const name: string = e.testset;
+      const c = e.content as TestsetContent;
+      doc.testsets ??= {};
+      const t: Record<string, any> = (doc.testsets[name] ??= {});
+      // Manual tests live in tests/<name>/ by default, so the script goes next to it.
+      const manual: string = t.manual ?? `tests/${name}`;
+      if (c.script.trim()) {
+        t.script ??= `tests/script-${name}.txt`;
+        await writeRel(ac, t.script, c.script);
+      }
+      for (const [i, text] of Object.entries(c.tests)) await writeRel(ac, `${manual}/${pad(Number(i))}.in`, text);
+      if (c.groupsEnabled) t.groups = true;
+      else delete t.groups;
+      const existing: any[] = Array.isArray(t.group) ? t.group : [];
+      t.group = c.groups.map((g) => ({
+        ...(existing.find((x) => x.name === g.name) ?? {}),
+        name: g.name,
+        policy: g.pointsPolicy,
+        ...(g.dependencies.length ? { dependencies: g.dependencies } : {}),
+        ...(g.points !== undefined ? { points: g.points } : {}),
+        ...(g.tests ? { tests: g.tests } : {}),
+      }));
+      if (!t.group.length) delete t.group;
       return;
     }
   }

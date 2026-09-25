@@ -1,6 +1,7 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { parseIndexList, type TestInfo, type TestsManifest } from '@polyforge/shared';
+import { DEFAULT_TESTSET, groupLayout, parseIndexList, testsetOf, type TestInfo, type TestsManifest, type TestsetConfig } from '@polyforge/shared';
+import { HttpError } from '../util/fs.js';
 import type { JobCtx } from '../jobs.js';
 import { atomicWrite, exists, safeJoin, sha1 } from '../util/fs.js';
 import type { Program } from './compiler.js';
@@ -31,15 +32,23 @@ export interface Planned {
   multiPos?: number;
 }
 
-export const testsDir = (ctx: ProblemCtx) => path.join(ctx.work, 'tests');
-export const inputPath = (ctx: ProblemCtx, i: number) => path.join(testsDir(ctx), `${i}.in`);
-export const answerPath = (ctx: ProblemCtx, i: number) => path.join(testsDir(ctx), `${i}.ans`);
-export const overviewPath = (ctx: ProblemCtx, i: number) => path.join(testsDir(ctx), `${i}.overview.txt`);
-const manifestPath = (ctx: ProblemCtx) => path.join(testsDir(ctx), 'manifest.json');
+/** Generated files of a testset: "tests" keeps its historic folder, others go to testsets/<name>. */
+export const testsDir = (ctx: ProblemCtx, ts = DEFAULT_TESTSET) => (ts === DEFAULT_TESTSET ? path.join(ctx.work, 'tests') : path.join(ctx.work, 'testsets', ts));
+export const inputPath = (ctx: ProblemCtx, i: number, ts?: string) => path.join(testsDir(ctx, ts), `${i}.in`);
+export const answerPath = (ctx: ProblemCtx, i: number, ts?: string) => path.join(testsDir(ctx, ts), `${i}.ans`);
+export const overviewPath = (ctx: ProblemCtx, i: number, ts?: string) => path.join(testsDir(ctx, ts), `${i}.overview.txt`);
+const manifestPath = (ctx: ProblemCtx, ts?: string) => path.join(testsDir(ctx, ts), 'manifest.json');
 
-export async function readManifest(ctx: ProblemCtx): Promise<Manifest | null> {
+/** The testset config, or 404 for an unknown name. */
+export function requireTestset(ctx: ProblemCtx, name = DEFAULT_TESTSET): TestsetConfig {
+  const ts = testsetOf(ctx.config, name);
+  if (!ts) throw new HttpError(404, 'testset_not_found', `Unknown testset: ${name}`);
+  return ts;
+}
+
+export async function readManifest(ctx: ProblemCtx, ts?: string): Promise<Manifest | null> {
   try {
-    return JSON.parse(await fsp.readFile(manifestPath(ctx), 'utf8')) as Manifest;
+    return JSON.parse(await fsp.readFile(manifestPath(ctx, ts), 'utf8')) as Manifest;
   } catch {
     return null;
   }
@@ -60,10 +69,10 @@ async function hashFile(file: string): Promise<string> {
 }
 
 /** Test index assignment, shared with Polygon sync (manual test indices). */
-export const planTests = (ctx: ProblemCtx, errors: string[]) => plan(ctx, errors);
+export const planTests = (ctx: ProblemCtx, errors: string[], ts = DEFAULT_TESTSET) => plan(ctx, errors, requireTestset(ctx, ts));
 
 /** Decide which test gets which index (DESIGN §4.2, Polygon semantics for `$`). */
-async function plan(ctx: ProblemCtx, errors: string[]): Promise<Planned[]> {
+async function plan(ctx: ProblemCtx, errors: string[], ts: TestsetConfig): Promise<Planned[]> {
   const slots = new Map<number, Planned>();
   const auto: Planned[] = [];
   const put = (p: Planned) => {
@@ -72,20 +81,21 @@ async function plan(ctx: ProblemCtx, errors: string[]): Promise<Planned[]> {
     else slots.set(p.index, p);
   };
 
-  const manualDir = path.join(ctx.ref.dir, 'tests', 'manual');
+  const manualRel = ts.manual.replace(/\/+$/, '');
+  const manualDir = safeJoin(ctx.ref.dir, manualRel);
   const manual = (await fsp.readdir(manualDir, { withFileTypes: true }).catch(() => []))
     .filter((e) => e.isFile() && !e.name.startsWith('.') && !/\.(ans|out)$/i.test(e.name))
     .map((e) => e.name)
     .sort(natural);
   for (const name of manual) {
     const base = name.replace(/\.[^.]*$/, '');
-    const p: Planned = { index: 0, origin: 'manual', source: `tests/manual/${name}`, manualPath: path.join(manualDir, name) };
+    const p: Planned = { index: 0, origin: 'manual', source: `${manualRel}/${name}`, manualPath: path.join(manualDir, name) };
     if (/^\d+$/.test(base) && Number(base) > 0) put({ ...p, index: Number(base) });
     else auto.push(p);
   }
 
   let cmds: ScriptCommand[] = [];
-  const script = ctx.config.tests.script;
+  const script = ts.script;
   if (script) {
     try {
       const text = await fsp.readFile(safeJoin(ctx.ref.dir, script), 'utf8');
@@ -114,25 +124,26 @@ async function plan(ctx: ProblemCtx, errors: string[]): Promise<Planned[]> {
   return planned;
 }
 
-function groupOf(ctx: ProblemCtx): (i: number) => string | undefined {
-  const map = new Map<number, string>();
-  for (const g of ctx.config.tests.group ?? []) for (const i of parseIndexList(g.tests ?? '')) map.set(i, g.name);
-  return (i) => map.get(i);
-}
 
 /**
  * Generate all tests: inputs (manual files / generators), validation, and answers from
  * the main solution. Every stage is cached by the hashes it depends on, so re-running
  * after a small change only redoes what changed.
  */
-export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx): Promise<TestsManifest> {
+export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, testset = DEFAULT_TESTSET): Promise<TestsManifest> {
   const errors: string[] = [];
-  const dir = testsDir(ctx);
+  const ts = requireTestset(ctx, testset);
+  const dir = testsDir(ctx, ts.name);
   await fsp.mkdir(dir, { recursive: true });
-  const prev = new Map((await readManifest(ctx))?.tests.map((t) => [t.index, t]) ?? []);
-  const planned = await plan(ctx, errors);
-  const group = groupOf(ctx);
-  const samples = new Set(parseIndexList(ctx.config.tests.samples ?? ''));
+  const prev = new Map((await readManifest(ctx, ts.name))?.tests.map((t) => [t.index, t]) ?? []);
+  const planned = await plan(ctx, errors, ts);
+  const layout = groupLayout(ts, !!ctx.config.tests.points);
+  const group = (i: number) => layout.mapping[i];
+  // Statements use the samples of "tests" only (as on Polygon).
+  const samples = new Set(ts.name === DEFAULT_TESTSET ? parseIndexList(ts.samples ?? '') : []);
+  const inputPath = (c: ProblemCtx, i: number) => inputPathOf(c, i, ts.name);
+  const answerPath = (c: ProblemCtx, i: number) => answerPathOf(c, i, ts.name);
+  const overviewPath = (c: ProblemCtx, i: number) => overviewPathOf(c, i, ts.name);
 
   // ---- compile everything up front ----
   job.progress(0, planned.length * 3, 'compiling');
@@ -170,6 +181,7 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx):
       source: p.source,
       line: p.line,
       group: group(p.index),
+      points: layout.points[p.index],
       sample: samples.has(p.index) || undefined,
     });
   }
@@ -284,14 +296,14 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx):
     const inFile = inputPath(ctx, p.index);
 
     if (validator) {
-      const key = sha1(JSON.stringify([e.inputHash, validator.hash, e.group ?? '']));
+      const key = sha1(JSON.stringify([e.inputHash, validator.hash, e.group ?? '', ts.name]));
       const ov = overviewPath(ctx, p.index);
       if (old?.validKey === key && old.valid !== undefined) {
         Object.assign(e, { validKey: key, valid: old.valid, validatorMessage: old.validatorMessage, hasOverview: old.hasOverview });
       } else {
         await withTmp(ctx.ref.dir, async (tmp) => {
           const err = path.join(tmp, 'err.txt');
-          const args = ['--testOverviewLogFileName', ov, '--testset', 'tests', ...(e.group ? ['--group', e.group] : [])];
+          const args = ['--testOverviewLogFileName', ov, '--testset', ts.name, ...(e.group ? ['--group', e.group] : [])];
           await fsp.rm(ov, { force: true });
           const r = await runHelper(judge.runner, validator, args, { cwd: tmp, stdin: inFile, stderr: err }, job.signal);
           e.validKey = key;
@@ -344,12 +356,17 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx):
     if (t.error) errors.push(`Test ${t.index}: ${t.error}`);
   }
   const manifest: Manifest = {
+    testset: ts.name,
     generatedAt: new Date().toISOString(),
     ok: errors.length === 0,
     tests,
     errors,
     hasOverview: tests.some((t) => t.hasOverview),
   };
-  await atomicWrite(manifestPath(ctx), JSON.stringify(manifest, null, 1));
+  await atomicWrite(manifestPath(ctx, ts.name), JSON.stringify(manifest, null, 1));
   return publicManifest(manifest);
 }
+
+const inputPathOf = inputPath;
+const answerPathOf = answerPath;
+const overviewPathOf = overviewPath;

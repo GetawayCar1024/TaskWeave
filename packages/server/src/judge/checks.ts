@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { lintStatement, parseIndexList, statementLanguages, STD_PREFIX, type LocalCheck } from '@polyforge/shared';
+import { DEFAULT_TESTSET, lintStatement, parseIndexList, statementLanguages, STD_PREFIX, testsetsOf, type LocalCheck } from '@polyforge/shared';
 import { exists, safeJoin } from '../util/fs.js';
 import type { Judge, ProblemCtx } from './index.js';
 import { readManifest } from './tests.js';
@@ -78,5 +78,40 @@ export async function localChecks(_judge: Judge, ctx: ProblemCtx): Promise<Local
   if (!vt.length) out.push({ level: 'info', category: 'validator', message: 'No validator tests' });
   const m = await readManifest(ctx);
   if (m) for (const e of m.errors.slice(0, 10)) out.push({ level: 'error', category: 'tests', message: `Last test generation: ${e}` });
+
+  // ---- testsets, groups (subtasks) and scoring ----
+  for (const ts of testsetsOf(config)) {
+    const where = ts.name === DEFAULT_TESTSET ? '' : ` (${ts.name})`;
+    if (ts.name !== DEFAULT_TESTSET) {
+      const own = (await fsp.readdir(safeJoin(ref.dir, ts.manual)).catch(() => [] as string[])).length;
+      if (!own && !(ts.script && (await has(ts.script)))) out.push({ level: 'warning', category: 'tests', file: 'problem.toml', message: `Testset ${ts.name} has no tests` });
+    }
+    if (!ts.groups) continue;
+    if (!ts.group.length) {
+      out.push({ level: 'warning', category: 'tests', file: 'problem.toml', message: `Groups are enabled${where} but none is defined` });
+      continue;
+    }
+    const tm = await readManifest(ctx, ts.name);
+    if (tm) {
+      const all = new Set(tm.tests.map((t) => t.index));
+      const loose = tm.tests.filter((t) => !t.group).map((t) => t.index);
+      if (loose.length) out.push({ level: 'warning', category: 'tests', file: 'problem.toml', message: `Tests outside every group${where}: ${loose.slice(0, 20).join(', ')}` });
+      for (const g of ts.group) {
+        const idx = parseIndexList(g.tests ?? '');
+        if (!idx.length) out.push({ level: 'warning', category: 'tests', file: 'problem.toml', message: `Group ${g.name}${where} has no tests` });
+        const missing = idx.filter((i) => !all.has(i));
+        if (missing.length) out.push({ level: 'error', category: 'tests', file: 'problem.toml', message: `Group ${g.name}${where} refers to missing tests ${missing.slice(0, 10).join(', ')}` });
+      }
+    }
+    if (config.tests.points && ts.name === DEFAULT_TESTSET) {
+      const noPoints = ts.group.filter((g) => g.points === undefined).map((g) => g.name);
+      if (noPoints.length) out.push({ level: 'warning', category: 'tests', file: 'problem.toml', message: `Groups without points: ${noPoints.join(', ')}` });
+      const sum = ts.group.reduce((a, g) => a + (g.points ?? 0), 0);
+      if (sum !== 100) out.push({ level: 'info', category: 'tests', file: 'problem.toml', message: `Group points add up to ${sum}, not 100` });
+    }
+  }
+  if (config.scoring?.source && !(await has(config.scoring.source))) {
+    out.push({ level: 'error', category: 'tests', file: 'problem.toml', message: `Scoring program not found: ${config.scoring.source}` });
+  }
   return out;
 }

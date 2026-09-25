@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { LANG_TO_POLYGON, STATEMENT_SECTIONS, STD_PREFIX, parseIndexList, type SolutionTag } from '@polyforge/shared';
+import { DEFAULT_TESTSET, LANG_TO_POLYGON, STATEMENT_SECTIONS, STD_PREFIX, parseIndexList, testsetsOf, type SolutionTag, type TestsManifest } from '@polyforge/shared';
 import type { JobCtx } from '../jobs.js';
 import { stdRefToPath } from '../sharedFiles.js';
 import { atomicWrite, exists, safeJoin } from '../util/fs.js';
@@ -46,9 +46,15 @@ export const exportDir = (ctx: ProblemCtx) => path.join(ctx.work, 'export');
 export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, into?: { zip: ZipWriter; prefix: string }): Promise<PackageResult> {
   const warnings: string[] = [];
   const { config, ref } = ctx;
-  job.progress(0, 3, 'generating tests');
-  const manifest = await generateTests(judge, ctx, { signal: job.signal, progress: (d, t) => job.progress(0, 3, `generating tests ${d}/${t}`) });
-  if (!manifest.ok) warnings.push(...manifest.errors.map((e) => `tests: ${e}`));
+  const sets = testsetsOf(config);
+  const manifests = new Map<string, TestsManifest>();
+  for (const ts of sets) {
+    job.progress(0, 3, `generating ${ts.name}`);
+    const m = await generateTests(judge, ctx, { signal: job.signal, progress: (d, t) => job.progress(0, 3, `generating ${ts.name} ${d}/${t}`) }, ts.name);
+    if (!m.ok) warnings.push(...m.errors.map((e) => `${ts.name}: ${e}`));
+    manifests.set(ts.name, m);
+  }
+  const manifest = manifests.get(DEFAULT_TESTSET)!;
   job.progress(1, 3, 'packing');
 
   const zip = into ? { add: (name: string, data: Buffer | string) => into.zip.add(into.prefix + name, data) } : new ZipWriter();
@@ -110,46 +116,59 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
   }
   assets.push(`<solutions>${sols.join('')}</solutions>`);
 
-  // ---- tests ----
-  const count = manifest.tests.length;
-  const width = count < 100 ? 2 : count < 1000 ? 3 : 4;
-  const pad = (i: number) => String(i).padStart(width, '0');
-  const scriptText = config.tests.script ? await read(config.tests.script).then((b) => b.toString('utf8')).catch(() => '') : '';
-  const cmds = new Map<string, string>();
-  try {
-    for (const c of parseScript(scriptText)) cmds.set(c.text, [c.generator, ...c.args].join(' '));
-  } catch {
-    /* invalid script: tests are exported without commands */
-  }
-  if (scriptText) zip.add('scripts/gen.txt', scriptText);
+  // ---- tests: one <testset> per testset, files under <testset>/NN (Polygon layout) ----
   const samples = new Set(parseIndexList(config.tests.samples ?? ''));
-  const groupOf = new Map<number, string>();
-  for (const g of config.tests.group ?? []) for (const i of parseIndexList(g.tests ?? '')) groupOf.set(i, g.name);
-  const testsXml: string[] = [];
-  for (const t of manifest.tests) {
-    const inFile = inputPath(ctx, t.index);
-    const ansFile = answerPath(ctx, t.index);
-    if (await exists(inFile)) zip.add(`tests/${pad(t.index)}`, await fsp.readFile(inFile));
-    if (await exists(ansFile)) zip.add(`tests/${pad(t.index)}.a`, await fsp.readFile(ansFile));
-    else warnings.push(`test ${t.index} has no answer`);
-    const attrs = [
-      t.origin === 'script' && cmds.get(t.source) ? `cmd="${x(cmds.get(t.source)!)}"` : '',
-      `method="${t.origin === 'manual' ? 'manual' : 'generated'}"`,
-      samples.has(t.index) ? 'sample="true"' : '',
-      config.tests.groups && groupOf.has(t.index) ? `group="${x(groupOf.get(t.index)!)}"` : '',
-    ].filter(Boolean);
-    testsXml.push(`<test ${attrs.join(' ')}/>`);
+  const testsetXml: string[] = [];
+  const count = manifest.tests.length;
+  for (const ts of sets) {
+    const m = manifests.get(ts.name)!;
+    const n = m.tests.length;
+    const width = n < 100 ? 2 : n < 1000 ? 3 : 4;
+    const pad = (i: number) => String(i).padStart(width, '0');
+    const scriptText = ts.script ? await read(ts.script).then((b) => b.toString('utf8')).catch(() => '') : '';
+    const cmds = new Map<string, string>();
+    try {
+      for (const c of parseScript(scriptText)) cmds.set(c.text, [c.generator, ...c.args].join(' '));
+    } catch {
+      /* invalid script: tests are exported without commands */
+    }
+    if (scriptText) zip.add(ts.name === DEFAULT_TESTSET ? 'scripts/gen.txt' : `scripts/gen-${ts.name}.txt`, scriptText);
+    const testsXml: string[] = [];
+    for (const t of m.tests) {
+      const inFile = inputPath(ctx, t.index, ts.name);
+      const ansFile = answerPath(ctx, t.index, ts.name);
+      if (await exists(inFile)) zip.add(`${ts.name}/${pad(t.index)}`, await fsp.readFile(inFile));
+      if (await exists(ansFile)) zip.add(`${ts.name}/${pad(t.index)}.a`, await fsp.readFile(ansFile));
+      else warnings.push(`${ts.name}: test ${t.index} has no answer`);
+      const attrs = [
+        t.origin === 'script' && cmds.get(t.source) ? `cmd="${x(cmds.get(t.source)!)}"` : '',
+        `method="${t.origin === 'manual' ? 'manual' : 'generated'}"`,
+        ts.name === DEFAULT_TESTSET && samples.has(t.index) ? 'sample="true"' : '',
+        ts.groups && t.group ? `group="${x(t.group)}"` : '',
+        config.tests.points && t.points !== undefined ? `points="${t.points}"` : '',
+      ].filter(Boolean);
+      testsXml.push(`<test ${attrs.join(' ')}/>`);
+    }
+    const groupsXml = ts.groups
+      ? `<groups>${ts.group
+          .map(
+            (g) =>
+              `<group name="${x(g.name)}"${g.points !== undefined ? ` points="${g.points}"` : ''} points-policy="${g.policy === 'EACH_TEST' ? 'each-test' : 'complete-group'}">${
+                g.dependencies?.length ? `<dependencies>${g.dependencies.map((d) => `<dependency group="${x(d)}"/>`).join('')}</dependencies>` : ''
+              }</group>`,
+          )
+          .join('')}</groups>`
+      : '';
+    testsetXml.push(`    <testset name="${x(ts.name)}">
+      <time-limit>${config.problem.time_limit}</time-limit>
+      <memory-limit>${config.problem.memory_limit * 1024 * 1024}</memory-limit>
+      <test-count>${n}</test-count>
+      <input-path-pattern>${x(ts.name)}/%0${width}d</input-path-pattern>
+      <answer-path-pattern>${x(ts.name)}/%0${width}d.a</answer-path-pattern>
+      <tests>${testsXml.join('')}</tests>${groupsXml}
+    </testset>`);
   }
-  const groupsXml = config.tests.groups
-    ? `<groups>${(config.tests.group ?? [])
-        .map(
-          (g) =>
-            `<group name="${x(g.name)}"${g.points !== undefined ? ` points="${g.points}"` : ''} points-policy="${g.policy === 'EACH_TEST' ? 'each-test' : 'complete-group'}">${(g.dependencies ?? [])
-              .map((d) => `<dependencies><dependency group="${x(d)}"/></dependencies>`)
-              .join('')}</group>`,
-        )
-        .join('')}</groups>`
-    : '';
+  if (config.scoring?.source) warnings.push('the local scoring program is not part of the package');
 
   // ---- statements & tutorials (per language; tutorials follow the statement languages) ----
   const statements: string[] = [];
@@ -219,14 +238,7 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
   <statements>${statements.join('')}</statements>
   <tutorials>${tutorials.join('')}</tutorials>
   <judging input-file="${x(io(config.problem.input, 'stdin'))}" output-file="${x(io(config.problem.output, 'stdout'))}"${config.problem.interactive ? ' run-count="1"' : ''}>
-    <testset name="tests">
-      <time-limit>${config.problem.time_limit}</time-limit>
-      <memory-limit>${config.problem.memory_limit * 1024 * 1024}</memory-limit>
-      <test-count>${count}</test-count>
-      <input-path-pattern>tests/%0${width}d</input-path-pattern>
-      <answer-path-pattern>tests/%0${width}d.a</answer-path-pattern>
-      <tests>${testsXml.join('')}</tests>${groupsXml}
-    </testset>
+${testsetXml.join('\n')}
   </judging>
   <files>
     <resources>${resources.join('')}</resources>

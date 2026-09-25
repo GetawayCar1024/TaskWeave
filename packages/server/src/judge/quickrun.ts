@@ -18,7 +18,7 @@ export async function quickRun(judge: Judge, ctx: ProblemCtx, req: QuickRunReque
   return withTmp(ctx.ref.dir, async (tmp) => {
     let inFile: string;
     if (req.test !== undefined) {
-      inFile = inputPath(ctx, req.test);
+      inFile = inputPath(ctx, req.test, req.testset);
       if (!(await exists(inFile))) throw new HttpError(404, 'test_not_found', `Test ${req.test} has not been generated`);
     } else {
       inFile = path.join(tmp, 'input.txt');
@@ -37,7 +37,7 @@ export async function quickRun(judge: Judge, ctx: ProblemCtx, req: QuickRunReque
       stderr: (await readHead(stderrFile, OUTPUT_PREVIEW)).replace(/\r\n/g, '\n'),
     };
     if (r.message && r.verdict !== 'OK') res.checker = { verdict: r.verdict, message: r.message };
-    const ans = req.test !== undefined ? answerPath(ctx, req.test) : null;
+    const ans = req.test !== undefined ? answerPath(ctx, req.test, req.testset) : null;
     if (r.verdict === 'OK' && ans && (await exists(ans)) && ctx.config.checker) {
       const checker = await judge.require(ctx, ctx.config.checker.source, 'Checker');
       res.checker = await runChecker(judge.runner, checker, { input: inFile, output: r.outputFile, answer: ans }, tmp);

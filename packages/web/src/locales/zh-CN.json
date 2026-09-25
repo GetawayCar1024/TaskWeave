@@ -221,7 +221,10 @@
     },
     "manual": "手写",
     "generated": "生成",
-    "pickOne": "点击上方的测试查看内容"
+    "pickOne": "点击上方的测试查看内容",
+    "group": "子任务",
+    "points": "分值",
+    "subtasks": "子任务"
   },
   "run": {
     "custom": "自定义输入",
@@ -257,10 +260,18 @@
     "pass": "通过",
     "fail": "不符",
     "max": "最大",
-    "testsAll": "全部测试",
-    "testsSamples": "样例",
-    "testsCustom": "指定",
-    "testCount": "{n} 个测试"
+    "solutions": "解法",
+    "tests": "测试点",
+    "selectedCount": "已选 {n} / {total}",
+    "selAll": "全选",
+    "selNone": "全不选",
+    "selSamples": "样例",
+    "selInvert": "反选",
+    "noTestsYet": "还没有生成这个测试集的测试，运行时会先生成。",
+    "group": "子任务 {g}",
+    "startN": "运行（{n} 个测试点）",
+    "blocked": "依赖的子任务 {g} 未全部通过",
+    "total": "总分"
   },
   "preview": {
     "unknown": "{n} 个无法识别的命令",
@@ -529,5 +540,34 @@
     "noStatementIn": "{list} 没有 {lang} 题面",
     "noTutorialIn": "{list} 没有 {lang} 题解",
     "noProblems": "比赛里还没有题目"
+  },
+  "testsets": {
+    "title": "测试集与子任务",
+    "delete": "删除测试集",
+    "badName": "测试集名称只能包含小写字母、数字和连字符，并以字母开头",
+    "exists": "测试集 {name} 已存在",
+    "nGroups": "{n} 个子任务",
+    "points": "启用分值",
+    "scoring": "记分脚本",
+    "scoringNone": "不使用（按子任务规则计分）",
+    "script": "生成脚本",
+    "manual": "手写测试",
+    "generated": "已生成 {n} 个测试",
+    "notGenerated": "尚未生成",
+    "groups": "启用子任务（分组）",
+    "pointsSum": "合计 {n} 分",
+    "groupName": "名称",
+    "groupTests": "测试点",
+    "groupPoints": "分值",
+    "groupPolicy": "计分方式",
+    "groupDeps": "依赖",
+    "addGroup": "添加子任务",
+    "loose": "不属于任何子任务的测试点：{list}",
+    "twice": "属于多个子任务的测试点：{list}",
+    "policy": {
+      "COMPLETE_GROUP": "全部通过得分",
+      "EACH_TEST": "按测试点得分"
+    },
+    "note": "测试集、子任务和分值与 Polygon 对应；Polygon 上需先手动建好同名测试集。记分脚本只在本地使用：从标准输入读入每个测试点的结果（JSON），第一行输出得分（可附满分）。"
   }
 }

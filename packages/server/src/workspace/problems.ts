@@ -2,7 +2,11 @@ import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { parse, stringify } from 'smol-toml';
 import {
+  DEFAULT_TESTSET,
   PROBLEM_NAME_RE,
+  TESTSET_NAME_RE,
+  parseIndexList,
+  type TestGroup,
   STD_PREFIX,
   statementLanguages,
   problemTomlSchema,
@@ -267,6 +271,39 @@ export class ProblemRegistry {
       if (!req.generator.enabled && i >= 0) list.splice(i, 1);
       doc.generators = list;
     }
+    if (req.points !== undefined) {
+      doc.tests ??= {};
+      if (req.points) doc.tests.points = true;
+      else delete doc.tests.points;
+    }
+    if (req.scoring !== undefined) {
+      if (req.scoring === null || !req.scoring.trim()) delete doc.scoring;
+      else doc.scoring = { ...(doc.scoring ?? {}), source: req.scoring.trim() };
+    }
+    for (const [name, p] of Object.entries(req.testsets ?? {})) {
+      if (!TESTSET_NAME_RE.test(name)) throw new HttpError(400, 'invalid_testset', `Invalid testset name: ${name}`);
+      const isDefault = name === DEFAULT_TESTSET;
+      if (p === null) {
+        if (isDefault) throw new HttpError(400, 'invalid_testset', 'The "tests" testset cannot be deleted');
+        if (doc.testsets) delete doc.testsets[name];
+        continue;
+      }
+      const target: Record<string, any> = isDefault ? (doc.tests ??= {}) : ((doc.testsets ??= {})[name] ??= {});
+      if (p.script !== undefined) {
+        if (p.script === null || !p.script.trim()) delete target.script;
+        else target.script = p.script.trim();
+      }
+      if (p.groups !== undefined) {
+        if (p.groups) target.groups = true;
+        else delete target.groups;
+      }
+      if (p.group !== undefined) {
+        const groups = checkGroups(name, p.group);
+        if (groups.length) target.group = groups;
+        else delete target.group;
+      }
+    }
+    if (doc.testsets && !Object.keys(doc.testsets).length) delete doc.testsets;
     const check = problemTomlSchema.safeParse(doc);
     if (!check.success) throw new HttpError(400, 'invalid_patch', check.error.message);
     await atomicWrite(path.join(ref.dir, PROBLEM_FILE), stringify(doc) + '\n');
@@ -299,4 +336,48 @@ async function countFiles(dir: string): Promise<number> {
   } catch {
     return 0;
   }
+}
+
+/** Validate a testset's groups (subtasks) and drop empty fields before writing TOML. */
+function checkGroups(testset: string, list: TestGroup[]): TestGroup[] {
+  const names = new Set<string>();
+  const covered = new Map<number, string>();
+  const out = list.map((g) => {
+    const name = String(g.name ?? '').trim();
+    if (!name) throw new HttpError(400, 'invalid_group', `${testset}: a group has no name`);
+    if (names.has(name)) throw new HttpError(400, 'invalid_group', `${testset}: duplicate group ${name}`);
+    names.add(name);
+    const tests = String(g.tests ?? '').trim();
+    if (tests && !/^\s*\d+(\s*-\s*\d+)?(\s*,\s*\d+(\s*-\s*\d+)?)*\s*$/.test(tests)) {
+      throw new HttpError(400, 'invalid_group', `${testset}: group ${name}: tests must look like "1-5, 8"`);
+    }
+    for (const i of parseIndexList(tests)) {
+      if (covered.has(i)) throw new HttpError(400, 'invalid_group', `${testset}: test ${i} is in groups ${covered.get(i)} and ${name}`);
+      covered.set(i, name);
+    }
+    const r: TestGroup = { name };
+    if (tests) r.tests = tests;
+    if (g.points !== undefined && g.points !== null && !Number.isNaN(Number(g.points))) r.points = Number(g.points);
+    if (g.policy) r.policy = g.policy;
+    if (g.dependencies?.length) r.dependencies = g.dependencies.map(String);
+    return r;
+  });
+  for (const g of out) {
+    for (const d of g.dependencies ?? []) {
+      if (d === g.name) throw new HttpError(400, 'invalid_group', `${testset}: group ${g.name} depends on itself`);
+      if (!names.has(d)) throw new HttpError(400, 'invalid_group', `${testset}: group ${g.name} depends on unknown group ${d}`);
+    }
+  }
+  // Dependencies must not form a cycle.
+  const deps = new Map(out.map((g) => [g.name, g.dependencies ?? []]));
+  const state = new Map<string, 1 | 2>();
+  const visit = (n: string, stack: string[]) => {
+    if (state.get(n) === 2) return;
+    if (state.get(n) === 1) throw new HttpError(400, 'invalid_group', `${testset}: dependency cycle ${[...stack, n].join(' → ')}`);
+    state.set(n, 1);
+    for (const d of deps.get(n) ?? []) visit(d, [...stack, n]);
+    state.set(n, 2);
+  };
+  for (const g of out) visit(g.name, []);
+  return out;
 }

@@ -1,4 +1,4 @@
-import type { SolutionTag } from './problem.js';
+import type { SolutionTag, TestsetConfig } from './problem.js';
 
 /** Raw status reported by the runner for one process. */
 export type RunStatus = 'OK' | 'RE' | 'TL' | 'ML' | 'OL' | 'IE';
@@ -45,6 +45,8 @@ export interface TestInfo {
   /** 1-based line of the command in script.txt. */
   line?: number;
   group?: string;
+  /** Points of the test when points are enabled (derived from its group). */
+  points?: number;
   sample?: boolean;
   inputSize?: number;
   answerSize?: number;
@@ -56,6 +58,8 @@ export interface TestInfo {
 }
 
 export interface TestsManifest {
+  /** Testset name ("tests" unless the problem has more testsets). */
+  testset?: string;
   generatedAt: string;
   ok: boolean;
   tests: TestInfo[];
@@ -89,6 +93,36 @@ export interface InvocationSolution {
   expectation?: TagCheck;
   maxTimeMs?: number;
   maxMemoryKb?: number;
+  /** Present when points are enabled or a scoring program is configured. */
+  score?: SolutionScore;
+}
+
+export interface GroupScore {
+  name: string;
+  score: number;
+  max: number;
+  /** Every test of the group passed. */
+  passed: boolean;
+  /** Not scored because a dependency did not pass. */
+  blockedBy?: string[];
+}
+
+export interface SolutionScore {
+  total: number;
+  max: number;
+  groups: GroupScore[];
+  /** 'groups' = Polygon rules; 'script' = local scoring program. */
+  source: 'groups' | 'script';
+  /** Output of the scoring program beyond the score line, or its error. */
+  message?: string;
+  error?: string;
+}
+
+/** stdin of a scoring program. */
+export interface ScoringInput {
+  testset: string;
+  tests: { index: number; group?: string; points?: number; verdict: Verdict; checkerPoints?: number; timeMs: number; memoryKb: number }[];
+  groups: { name: string; points?: number; policy: 'COMPLETE_GROUP' | 'EACH_TEST'; dependencies: string[]; tests: number[] }[];
 }
 
 export interface Invocation {
@@ -96,6 +130,7 @@ export interface Invocation {
   createdAt: string;
   status: 'running' | 'done' | 'failed' | 'cancelled';
   error?: string;
+  testset?: string;
   timeLimit: number;
   memoryLimit: number;
   tests: number[];
@@ -110,6 +145,7 @@ export interface InvocationSummary {
   status: Invocation['status'];
   solutions: number;
   tests: number;
+  testset?: string;
   ok: boolean;
 }
 
@@ -141,6 +177,8 @@ export interface QuickRunRequest {
   input?: string;
   /** Run on a generated test and check the answer with the checker. */
   test?: number;
+  /** Testset of `test` (default "tests"). */
+  testset?: string;
 }
 
 export interface QuickRunResponse {
@@ -272,4 +310,29 @@ export interface StressResult {
     output: string;
     savedAs?: string;
   };
+}
+
+/**
+ * Group of each test and per-test points derived from the group totals (as pushed to
+ * Polygon): COMPLETE_GROUP puts the whole score on the last test, EACH_TEST splits it.
+ */
+export function groupLayout(ts: TestsetConfig, pointsEnabled: boolean): { mapping: Record<string, string>; points: Record<string, number> } {
+  const mapping: Record<string, string> = {};
+  const points: Record<string, number> = {};
+  if (!ts.groups) return { mapping, points };
+  for (const g of ts.group) {
+    const idx = parseIndexList(g.tests ?? '').sort((a, b) => a - b);
+    idx.forEach((i) => (mapping[i] = g.name));
+    if (pointsEnabled && g.points && idx.length) {
+      if ((g.policy ?? 'COMPLETE_GROUP') === 'COMPLETE_GROUP') {
+        idx.forEach((i) => (points[i] = 0));
+        points[idx[idx.length - 1]] = g.points;
+      } else {
+        const each = Math.floor(g.points / idx.length);
+        idx.forEach((i) => (points[i] = each));
+        points[idx[idx.length - 1]] += g.points - each * idx.length;
+      }
+    }
+  }
+  return { mapping, points };
 }

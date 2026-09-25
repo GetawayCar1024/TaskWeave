@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, h, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { NAlert, NButton, NDataTable, NProgress, NScrollbar, NSpace, NTabPane, NTabs, NTag, useMessage, type DataTableColumns } from 'naive-ui';
-import type { TestFileResponse, TestInfo } from '@polyforge/shared';
+import { NAlert, NButton, NDataTable, NProgress, NScrollbar, NSelect, NSpace, NTabPane, NTabs, NTag, useMessage, type DataTableColumns } from 'naive-ui';
+import { testsetsOf, type TestFileResponse, type TestInfo } from '@polyforge/shared';
+import TestsetDialog from './TestsetDialog.vue';
 import { api, errorMessage } from '../lib/api';
 import { formatSize } from '../lib/format';
-import { Check, Cog, Pencil, X } from 'lucide-vue-next';
+import { Check, Cog, Layers, Pencil, X } from 'lucide-vue-next';
 import type { Judge } from '../lib/judge';
 import type { Workspace } from '../lib/workspace';
 
@@ -16,19 +17,26 @@ const message = useMessage();
 
 const job = computed(() => props.judge.state.jobs.generate);
 const running = computed(() => job.value?.status === 'running');
-const manifest = computed(() => props.judge.state.manifest);
+// Testset shown in the panel; "tests" unless the problem has more.
+const testset = ref('tests');
+const testsets = computed(() => (props.ws.state.detail?.config ? testsetsOf(props.ws.state.detail.config).map((x) => x.name) : ['tests']));
+watch(testsets, (list) => !list.includes(testset.value) && (testset.value = 'tests'));
+watch(testset, (ts) => ts !== 'tests' && props.judge.loadManifest(ts), { immediate: true });
+const manifest = computed(() => (testset.value === 'tests' ? props.judge.state.manifest : props.judge.state.manifests[testset.value] ?? null));
+const pointsOn = computed(() => !!props.ws.state.detail?.config?.tests.points);
+const showTestsets = ref(false);
 const selected = ref<number | null>(null);
 
 async function generate() {
   try {
-    await props.judge.generate();
+    await props.judge.generate(testset.value);
   } catch (e) {
     message.error(errorMessage(e));
   }
 }
 
 const columns = computed<DataTableColumns<TestInfo>>(() => [
-  { title: '#', key: 'index', width: 44 },
+  { title: '#', key: 'index', width: 36 },
   {
     title: t('tests.source'),
     key: 'source',
@@ -42,14 +50,18 @@ const columns = computed<DataTableColumns<TestInfo>>(() => [
   {
     title: '',
     key: 'flags',
-    width: 64,
+    width: 84,
     render: (r) =>
       h('span', { class: 'flags' }, [
         r.sample ? h(NTag, { size: 'tiny', type: 'info', bordered: false }, () => t('tests.sample')) : null,
-        r.group ? h(NTag, { size: 'tiny', bordered: false }, () => `G${r.group}`) : null,
+        r.group
+          ? h(NTag, { size: 'tiny', bordered: false, title: pointsOn.value && r.points !== undefined ? `${t('tests.group')} ${r.group} · ${t('tests.points')} ${r.points}` : `${t('tests.group')} ${r.group}` }, () =>
+              pointsOn.value && r.points !== undefined ? `${r.group} · ${r.points}` : r.group,
+            )
+          : null,
       ]),
   },
-  { title: t('tests.size'), key: 'inputSize', width: 70, render: (r) => (r.inputSize !== undefined ? formatSize(r.inputSize) : '—') },
+  { title: t('tests.size'), key: 'inputSize', width: 62, render: (r) => (r.inputSize !== undefined ? formatSize(r.inputSize) : '—') },
   {
     title: '',
     key: 'status',
@@ -78,7 +90,7 @@ async function loadFiles() {
   const n = selected.value;
   if (n === null) return;
   const kinds: ('in' | 'ans' | 'overview')[] = ['in', 'ans', 'overview'];
-  const res = await Promise.all(kinds.map((k) => api.testFile(props.problemId, n, k).catch(() => null)));
+  const res = await Promise.all(kinds.map((k) => api.testFile(props.problemId, n, k, testset.value).catch(() => null)));
   if (selected.value !== n) return;
   files.value = Object.fromEntries(kinds.map((k, i) => [k, res[i]]));
 }
@@ -100,6 +112,14 @@ watch(
       <n-space size="small">
         <n-button size="small" type="primary" :loading="running" @click="generate">{{ t('toolbar.generate') }}</n-button>
         <n-button v-if="running" size="small" @click="judge.cancel('generate')">{{ t('common.cancel') }}</n-button>
+        <n-select
+          v-if="testsets.length > 1"
+          v-model:value="testset"
+          size="small"
+          :options="testsets.map((x) => ({ label: x, value: x }))"
+          style="width: 110px"
+        />
+        <n-button size="small" quaternary :title="t('testsets.title')" @click="showTestsets = true"><layers :size="15" /></n-button>
       </n-space>
       <span v-if="manifest" class="dim small">{{ t('tests.count', { n: manifest.tests.length }) }} · {{ new Date(manifest.generatedAt).toLocaleTimeString() }}</span>
     </n-space>
@@ -136,7 +156,7 @@ watch(
     <div v-if="current" class="detail">
       <n-space align="center" justify="space-between" class="detail-head">
         <strong>{{ t('tests.test') }} #{{ current.index }}</strong>
-        <n-button size="tiny" @click="emit('runOnTest', current.index)">{{ t('tests.runHere') }}</n-button>
+        <n-button v-if="testset === 'tests'" size="tiny" @click="emit('runOnTest', current.index)">{{ t('tests.runHere') }}</n-button>
       </n-space>
       <div v-if="current.validatorMessage" class="bad small">{{ current.validatorMessage }}</div>
       <div v-if="current.error" class="bad small">{{ current.error }}</div>
@@ -151,6 +171,7 @@ watch(
       </n-tabs>
     </div>
     <div v-else-if="manifest" class="dim small empty">{{ t('tests.pickOne') }}</div>
+    <testset-dialog v-model:show="showTestsets" :ws="ws" :judge="judge" :initial="testset" />
   </div>
 </template>
 

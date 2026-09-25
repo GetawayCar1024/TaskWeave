@@ -221,7 +221,10 @@
     },
     "manual": "manual",
     "generated": "generated",
-    "pickOne": "Click a test above to view it"
+    "pickOne": "Click a test above to view it",
+    "group": "Group",
+    "points": "Points",
+    "subtasks": "Groups"
   },
   "run": {
     "custom": "Custom input",
@@ -257,10 +260,18 @@
     "pass": "pass",
     "fail": "mismatch",
     "max": "max",
-    "testsAll": "All tests",
-    "testsSamples": "Samples",
-    "testsCustom": "Pick",
-    "testCount": "{n} test(s)"
+    "solutions": "Solutions",
+    "tests": "Tests",
+    "selectedCount": "{n} / {total} selected",
+    "selAll": "All",
+    "selNone": "None",
+    "selSamples": "Samples",
+    "selInvert": "Invert",
+    "noTestsYet": "Tests of this testset have not been generated yet; running generates them first.",
+    "group": "Group {g}",
+    "startN": "Run ({n} tests)",
+    "blocked": "Dependency {g} did not pass completely",
+    "total": "Total"
   },
   "preview": {
     "unknown": "{n} unknown command(s)",
@@ -529,5 +540,34 @@
     "noStatementIn": "{list}: no {lang} statement",
     "noTutorialIn": "{list}: no {lang} tutorial",
     "noProblems": "This contest has no problems yet"
+  },
+  "testsets": {
+    "title": "Testsets and groups",
+    "delete": "Delete testset",
+    "badName": "Testset names use lowercase letters, digits and dashes, starting with a letter",
+    "exists": "Testset {name} already exists",
+    "nGroups": "{n} group(s)",
+    "points": "Enable points",
+    "scoring": "Scoring program",
+    "scoringNone": "None (score by group rules)",
+    "script": "Script",
+    "manual": "Manual tests",
+    "generated": "{n} tests generated",
+    "notGenerated": "not generated yet",
+    "groups": "Enable groups (subtasks)",
+    "pointsSum": "{n} points in total",
+    "groupName": "Name",
+    "groupTests": "Tests",
+    "groupPoints": "Points",
+    "groupPolicy": "Policy",
+    "groupDeps": "Depends on",
+    "addGroup": "Add group",
+    "loose": "Tests outside every group: {list}",
+    "twice": "Tests in several groups: {list}",
+    "policy": {
+      "COMPLETE_GROUP": "Complete group",
+      "EACH_TEST": "Each test"
+    },
+    "note": "Testsets, groups and points map to Polygon; create a testset with the same name on Polygon first. The scoring program is local only: it reads the per-test results (JSON) on stdin and prints the score (optionally followed by the maximum) on the first line."
   }
 }

@@ -1,12 +1,13 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { checkTag, type Invocation, type InvocationCell, type InvocationSummary } from '@polyforge/shared';
+import { DEFAULT_TESTSET, checkTag, type Invocation, type InvocationCell, type InvocationSummary } from '@polyforge/shared';
 import type { JobCtx } from '../jobs.js';
 import { atomicWrite, exists, HttpError } from '../util/fs.js';
 import type { Program } from './compiler.js';
 import { runChecker, runSolution, withTmp } from './execute.js';
 import type { Judge, ProblemCtx } from './index.js';
-import { answerPath, generateTests, inputPath } from './tests.js';
+import { scoreSolution, scoringEnabled, scoringInput } from './scoring.js';
+import { answerPath, generateTests, inputPath, requireTestset } from './tests.js';
 
 const MAX_SAVED_OUTPUT = 16 * 1024 * 1024;
 
@@ -42,6 +43,7 @@ export async function listInvocations(ctx: ProblemCtx): Promise<InvocationSummar
         status: inv.status,
         solutions: inv.solutions.length,
         tests: inv.tests.length,
+        testset: inv.testset,
         ok: inv.solutions.every((s) => s.expectation?.ok !== false && s.compile?.ok !== false),
       });
     } catch {
@@ -62,7 +64,9 @@ export async function runInvocation(
   onlyTests: number[] | undefined,
   job: JobCtx,
   onStart: (id: string) => void,
+  testset = DEFAULT_TESTSET,
 ): Promise<string> {
+  const ts = requireTestset(ctx, testset);
   if (sources.length === 0) throw new HttpError(400, 'no_solutions', 'Select at least one solution');
   const id = newId();
   const inv: Invocation = {
@@ -71,6 +75,7 @@ export async function runInvocation(
     status: 'running',
     timeLimit: ctx.limits.timeLimitMs,
     memoryLimit: ctx.limits.memoryLimitMb,
+    testset: ts.name,
     tests: [],
     solutions: sources.map((source) => ({ source, tag: ctx.config.solutions.find((s) => s.source === source)?.tag })),
     cells: [],
@@ -89,7 +94,7 @@ export async function runInvocation(
 
   try {
     job.progress(0, 0, 'generating tests');
-    const manifest = await generateTests(judge, ctx, { signal: job.signal, progress: (d, t) => job.progress(0, 0, `generating tests ${d}/${t}`) });
+    const manifest = await generateTests(judge, ctx, { signal: job.signal, progress: (d, t) => job.progress(0, 0, `generating tests ${d}/${t}`) }, ts.name);
     const wanted = onlyTests ? new Set(onlyTests) : null;
     const tests = manifest.tests.filter((t) => !wanted || wanted.has(t.index));
     inv.tests = tests.map((t) => t.index);
@@ -126,8 +131,8 @@ export async function runInvocation(
         if (!prog) return setCell({ verdict: 'SKIP', timeMs: 0, memoryKb: 0, message: 'compilation error' });
         tasks.push(
           (async () => {
-            const inFile = inputPath(ctx, t.index);
-            const ansFile = answerPath(ctx, t.index);
+            const inFile = inputPath(ctx, t.index, ts.name);
+            const ansFile = answerPath(ctx, t.index, ts.name);
             if (t.error || t.valid === false || !(await exists(inFile)) || !(await exists(ansFile))) {
               setCell({ verdict: 'SKIP', timeMs: 0, memoryKb: 0, message: t.error ?? (t.valid === false ? 'invalid test' : 'no answer') });
               return;
@@ -179,6 +184,12 @@ export async function runInvocation(
       s.maxTimeMs = ran.length ? Math.max(...ran.map((c) => c.timeMs)) : undefined;
       s.maxMemoryKb = ran.length ? Math.max(...ran.map((c) => c.memoryKb)) : undefined;
     });
+    if (inv.status === 'done' && scoringEnabled(ctx)) {
+      for (const [i, s] of inv.solutions.entries()) {
+        if (s.compile?.ok === false) continue;
+        s.score = await scoreSolution(judge, ctx, scoringInput(ctx, ts, inv.tests, inv.cells[i] ?? []));
+      }
+    }
     await save();
   }
   return id;

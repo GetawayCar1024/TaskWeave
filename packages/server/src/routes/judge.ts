@@ -10,7 +10,7 @@ import { runStress } from '../judge/stress.js';
 import { exportDir, exportPackage } from '../judge/package.js';
 import { localChecks } from '../judge/checks.js';
 import { runCheckerTests, runValidatorTests } from '../judge/selftest.js';
-import { answerPath, generateTests, inputPath, overviewPath, publicManifest, readManifest } from '../judge/tests.js';
+import { answerPath, generateTests, inputPath, overviewPath, publicManifest, readManifest, requireTestset } from '../judge/tests.js';
 import { HttpError } from '../util/fs.js';
 
 const PREVIEW = 64 * 1024;
@@ -51,26 +51,29 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     return results;
   });
 
-  app.post<P>('/api/problems/:id/tests/generate', async (req) => {
+  type TS = { Querystring: { testset?: string } };
+
+  app.post<P & TS>('/api/problems/:id/tests/generate', async (req) => {
     const ctx = await judge.ctx(req.params.id);
+    const ts = requireTestset(ctx, req.query.testset).name;
     const running = jobs.running(ctx.ref.id, 'generate');
     if (running) return running;
-    return jobs.start('generate', ctx.ref.id, (job) => generateTests(judge, ctx, job));
+    return jobs.start('generate', ctx.ref.id, (job) => generateTests(judge, ctx, job, ts));
   });
 
-  app.get<P>('/api/problems/:id/tests', async (req) => {
+  app.get<P & TS>('/api/problems/:id/tests', async (req) => {
     const ctx = await judge.ctx(req.params.id);
-    const m = await readManifest(ctx);
+    const m = await readManifest(ctx, requireTestset(ctx, req.query.testset).name);
     return m ? publicManifest(m) : null;
   });
 
-  app.get<{ Params: { id: string; n: string; kind: string } }>('/api/problems/:id/tests/:n/:kind', async (req) => {
+  app.get<{ Params: { id: string; n: string; kind: string } } & TS>('/api/problems/:id/tests/:n/:kind', async (req) => {
     const ctx = await judge.ctx(req.params.id);
     const n = Number(req.params.n);
     if (!Number.isInteger(n) || n < 1) throw new HttpError(400, 'bad_test', 'Invalid test index');
     const file = { in: inputPath, ans: answerPath, overview: overviewPath }[req.params.kind];
     if (!file) throw new HttpError(400, 'bad_kind', 'kind must be in, ans or overview');
-    return preview(file(ctx, n));
+    return preview(file(ctx, n, requireTestset(ctx, req.query.testset).name));
   });
 
   app.post<P & { Body: QuickRunRequest }>('/api/problems/:id/run', async (req) => {
@@ -79,9 +82,10 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     return quickRun(judge, ctx, req.body);
   });
 
-  app.post<P & { Body: { sources: string[]; tests?: number[] } }>('/api/problems/:id/invocations', async (req) => {
+  app.post<P & { Body: { sources: string[]; tests?: number[]; testset?: string } }>('/api/problems/:id/invocations', async (req) => {
     const ctx = await judge.ctx(req.params.id);
     const sources = req.body?.sources ?? [];
+    const testset = requireTestset(ctx, req.body?.testset).name;
     let invId = '';
     let resolveStart!: () => void;
     const started = new Promise<void>((r) => (resolveStart = r));
@@ -89,7 +93,7 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
       runInvocation(judge, ctx, sources, req.body?.tests, j, (id) => {
         invId = id;
         resolveStart();
-      }).finally(resolveStart),
+      }, testset).finally(resolveStart),
     );
     await started;
     return { job, invocationId: invId };

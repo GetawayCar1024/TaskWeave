@@ -3,6 +3,7 @@ import path from 'node:path';
 import {
   LANG_TO_POLYGON,
   STATEMENT_SECTIONS,
+  testsetsOf,
   type ContestBatchItem,
   type ContestBatchRequest,
   type ContestBatchResult,
@@ -63,10 +64,18 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
     try {
       switch (req.action) {
         case 'generate': {
-          const m = await generateTests(judge, ctx, sub);
-          item.ok = m.ok && m.tests.length > 0;
-          item.message = plural(m.tests.length, 'test') + (m.errors.length ? `, ${plural(m.errors.length, 'error')}` : '');
-          item.details = m.errors.slice(0, 20);
+          const sets = testsetsOf(ctx.config);
+          const label = (ts: string, s: string) => (sets.length > 1 ? `${ts}: ${s}` : s);
+          const parts: string[] = [];
+          item.ok = true;
+          item.details = [];
+          for (const ts of sets) {
+            const m = await generateTests(judge, ctx, sub, ts.name);
+            item.ok &&= m.ok && m.tests.length > 0;
+            parts.push(label(ts.name, plural(m.tests.length, 'test') + (m.errors.length ? `, ${plural(m.errors.length, 'error')}` : '')));
+            item.details.push(...m.errors.slice(0, 20).map((e) => label(ts.name, e)));
+          }
+          item.message = parts.join('; ');
           break;
         }
         case 'invocation': {

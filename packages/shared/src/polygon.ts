@@ -47,7 +47,8 @@ export type SyncItemKind =
   | 'test'
   | 'sample'
   | 'validatorTest'
-  | 'checkerTest';
+  | 'checkerTest'
+  | 'testset';
 
 /** Push view: local state vs. what was last synced. */
 export type PushStatus = 'new' | 'modified' | 'unchanged' | 'deleted';
