@@ -180,7 +180,7 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
 
   const entries = new Map<number, Entry>();
   for (const p of planned) {
-    const sp = p.origin === 'manual' && samples.has(p.index) ? statementPaths(p.source) : undefined;
+    const sp = samples.has(p.index) ? sampleStatementPaths(p) : undefined;
     const has = async (rel?: string) => (rel && (await exists(safeJoin(ctx.ref.dir, rel))) ? rel : undefined);
     entries.set(p.index, {
       statementInput: await has(sp?.input),
@@ -397,6 +397,20 @@ export function statementPaths(manualSource: string): { input: string; output: s
   return { input: `${stem}.statement.in`, output: `${stem}.statement.out` };
 }
 
+/**
+ * Statement input / output of a sample made by the script: keyed by the test index,
+ * tests/_statement/NN.in / NN.out ("_" keeps the folder apart from testset folders).
+ */
+export function scriptStatementPaths(index: number): { input: string; output: string } {
+  const nn = String(index).padStart(2, '0');
+  return { input: `tests/_statement/${nn}.in`, output: `tests/_statement/${nn}.out` };
+}
+
+/** Where a sample's statement input / output live, for either kind of test. */
+export function sampleStatementPaths(t: { origin: string; source: string; index: number }): { input: string; output: string } {
+  return t.origin === 'manual' ? statementPaths(t.source) : scriptStatementPaths(t.index);
+}
+
 export async function addManualTest(
   ctx: ProblemCtx,
   input: string,
@@ -518,6 +532,10 @@ export async function removeTest(
     lines.splice(at, 1);
     await atomicWrite(file, lines.join('\n'));
     const removed = planned.filter((x) => x.cmd === p.cmd).map((x) => x.index);
+    // Their statement input / output (keyed by index) go with them.
+    if (ts.name === DEFAULT_TESTSET) {
+      for (const i of removed) for (const rel of Object.values(scriptStatementPaths(i))) await fsp.rm(safeJoin(ctx.ref.dir, rel), { force: true });
+    }
     result = { kind: 'script', removed };
   }
   if (ts.name === DEFAULT_TESTSET) {

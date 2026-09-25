@@ -62,12 +62,13 @@ async function addTest() {
 
 /**
  * What a sample shows in the statement: tests/manual/NN.statement.in / .statement.out
- * next to the input. Created from the test's input / answer and opened in the editor.
+ * next to a manual test, tests/_statement/NN.in / NN.out for a test made by the script
+ * (any problem, not only interactive ones). Created from the test's input / answer.
  */
 async function editStatementFile(t: TestInfo, which: 'in' | 'out') {
-  const stem = t.source.replace(/\.[^./]*$/, '');
   const existing = which === 'in' ? t.statementInput : t.statementOutput;
-  const rel = existing ?? `${stem}.statement.${which}`;
+  const nn = String(t.index).padStart(2, '0');
+  const rel = existing ?? (t.origin === 'manual' ? `${t.source.replace(/\.[^./]*$/, '')}.statement.${which}` : `tests/_statement/${nn}.${which}`);
   try {
     if (!existing) {
       const from = interactive.value && which === 'out' ? null : await api.testFile(props.problemId, t.index, which === 'in' ? 'in' : 'ans').catch(() => null);
@@ -262,7 +263,7 @@ watch(
             <n-switch size="small" :value="!!current.sample" :disabled="running" @update:value="(v: boolean) => setSample(current!.index, v)" />
             {{ t('tests.sample') }}
           </label>
-          <template v-if="testset === 'tests' && current.sample && current.origin === 'manual'">
+          <template v-if="testset === 'tests' && current.sample">
             <n-button size="tiny" :type="current.statementInput ? 'info' : 'default'" :title="current.statementInput ?? ''" @click="editStatementFile(current, 'in')">{{ t('tests.statementInputBtn') }}</n-button>
             <n-button size="tiny" :type="current.statementOutput ? 'info' : 'default'" :title="current.statementOutput ?? ''" @click="editStatementFile(current, 'out')">{{ t('tests.statementOutputBtn') }}</n-button>
           </template>

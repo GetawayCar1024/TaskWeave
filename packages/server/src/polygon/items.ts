@@ -20,7 +20,7 @@ import {
 } from '@polyforge/shared';
 import { pickLanguage } from '../judge/compiler.js';
 import type { Judge, ProblemCtx } from '../judge/index.js';
-import { planTests, statementPaths } from '../judge/tests.js';
+import { planTests, scriptStatementPaths, statementPaths } from '../judge/tests.js';
 import { exists, isDir, sha1 } from '../util/fs.js';
 import type { PolygonClient } from './client.js';
 
@@ -306,11 +306,12 @@ export async function localItems(judge: Judge, ctx: ProblemCtx): Promise<LocalIt
         label: `manual test ${p.index} (${rel.replace(/^tests\/manual\//, '')})`,
         path: rel,
         text: await readText(rel),
-        meta: { sample: samples.has(p.index), ...(await statementMeta(dir, rel)) },
+        meta: { sample: samples.has(p.index), ...(await statementMeta(dir, statementPaths(rel))) },
         extra: { index: p.index },
       });
     } else if (samples.has(p.index)) {
-      items.push({ key: `sample:${p.index}`, kind: 'sample', label: `test ${p.index} is a sample`, path: 'problem.toml', meta: { sample: true }, extra: { index: p.index } });
+      const meta = { sample: true, ...(await statementMeta(dir, scriptStatementPaths(p.index))) };
+      items.push({ key: `sample:${p.index}`, kind: 'sample', label: `test ${p.index} is a sample`, path: 'problem.toml', meta, extra: { index: p.index } });
     }
   }
 
@@ -460,7 +461,10 @@ export async function remoteItems(client: PolygonClient, problemId: number, extr
       if (typeof t.outputForStatement === 'string' && t.outputForStatement.trim()) stmt.statementOutput = normStmt(t.outputForStatement);
       items.push({ key: `test:${t.index}`, kind: 'test', label: `manual test ${t.index}`, text: input.replace(/\r\n/g, '\n'), meta: { sample: !!t.useInStatements, ...stmt }, extra: { index: t.index } });
     } else if (t.useInStatements) {
-      items.push({ key: `sample:${t.index}`, kind: 'sample', label: `test ${t.index} is a sample`, path: 'problem.toml', meta: { sample: true }, extra: { index: t.index } });
+      const stmt: Record<string, string> = {};
+      if (typeof t.inputForStatement === 'string' && t.inputForStatement.trim()) stmt.statementInput = normStmt(t.inputForStatement);
+      if (typeof t.outputForStatement === 'string' && t.outputForStatement.trim()) stmt.statementOutput = normStmt(t.outputForStatement);
+      items.push({ key: `sample:${t.index}`, kind: 'sample', label: `test ${t.index} is a sample`, path: 'problem.toml', meta: { sample: true, ...stmt }, extra: { index: t.index } });
     }
   }
   for (const v of vtests) {
@@ -585,14 +589,24 @@ export async function pushItem(pc: PushContext, it: Item, deleted = false): Prom
           testIndex: e.index,
           testInput: it.text ?? '',
           testUseInStatements: !!m.sample,
-          // Statement input / output (interactive samples); Polygon cannot verify those.
+          // Statement input / output shown instead of the test (any problem); not verified by Polygon.
           ...(custom ? { testInputForStatements: m.statementInput, testOutputForStatements: m.statementOutput, verifyInputOutputForStatements: false } : {}),
         });
       }
       return;
-    case 'sample':
-      await client.call('problem.saveTest', { ...pid, testset: TESTSET, testIndex: e.index, testUseInStatements: !deleted });
+    case 'sample': {
+      // A generated test: only the statement flags change (saveTest edits an existing test).
+      const m = (it.meta ?? {}) as { statementInput?: string; statementOutput?: string };
+      const custom = !deleted && (m.statementInput !== undefined || m.statementOutput !== undefined);
+      await client.call('problem.saveTest', {
+        ...pid,
+        testset: TESTSET,
+        testIndex: e.index,
+        testUseInStatements: !deleted,
+        ...(custom ? { testInputForStatements: m.statementInput ?? '', testOutputForStatements: m.statementOutput ?? '', verifyInputOutputForStatements: false } : {}),
+      });
       return;
+    }
     case 'validatorTest':
       await client.call('problem.saveValidatorTest', { ...pid, testIndex: e.index, testInput: it.text ?? '', testVerdict: (it.meta as any).verdict });
       return;
@@ -780,6 +794,15 @@ export async function applyItem(ac: ApplyContext, it: Item): Promise<void> {
       const s = samplesSet(doc);
       s.add(e.index);
       saveSamples(doc, s);
+      const m = (it.meta ?? {}) as { statementInput?: string; statementOutput?: string };
+      const sp = scriptStatementPaths(e.index);
+      for (const [text, file] of [
+        [m.statementInput, sp.input],
+        [m.statementOutput, sp.output],
+      ] as const) {
+        if (text !== undefined) await writeRel(ac, file, text);
+        else await fsp.rm(path.join(ac.dir, file), { force: true });
+      }
       return;
     }
     case 'validatorTest': {
@@ -841,6 +864,7 @@ export async function removeLocal(ac: ApplyContext, it: Item): Promise<void> {
       s.delete(it.extra?.index);
       saveSamples(doc, s);
       if (it.kind === 'test' && it.path) await fsp.rm(path.join(ac.dir, it.path), { force: true });
+      if (it.kind === 'sample') for (const rel of Object.values(scriptStatementPaths(it.extra?.index))) await fsp.rm(path.join(ac.dir, rel), { force: true });
       return;
     }
     case 'solution':
@@ -873,9 +897,8 @@ function normStmt(v: string): string {
   return t ? `${t}\n` : '';
 }
 
-/** A manual test's NN.statement.in / NN.statement.out as sync metadata. */
-async function statementMeta(dir: string, rel: string): Promise<Record<string, string>> {
-  const sp = statementPaths(rel);
+/** A sample's statement input / output files as sync metadata. */
+async function statementMeta(dir: string, sp: { input: string; output: string }): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   for (const [key, file] of [
     ['statementInput', sp.input],
