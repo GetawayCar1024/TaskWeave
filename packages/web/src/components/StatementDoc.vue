@@ -15,7 +15,21 @@ const props = defineProps<{
   mode?: 'statement' | 'tutorial';
   /** Small line under the title (tutorial mode). */
   note?: string;
+  /**
+   * Paper layout for printing / PDF, as Polygon's LaTeX (olymp.sty) statements:
+   * "Problem A. Title", a block of files and limits, serif text, samples as a
+   * standard input | standard output table.
+   */
+  paper?: boolean;
+  io?: { input: string; output: string };
 }>();
+
+const ioName = (v: string | undefined, std: 'stdin' | 'stdout') =>
+  !v || v === std ? (zh() ? (std === 'stdin' ? '标准输入' : '标准输出') : std === 'stdin' ? 'standard input' : 'standard output') : v;
+const seconds = (ms: number) => {
+  const v = ms / 1000;
+  return zh() ? `${v} 秒` : `${v} second${v === 1 ? '' : 's'}`;
+};
 
 const HEADINGS: Record<string, Partial<Record<StatementSection | 'examples', string>>> = {
   zh: { input: '输入格式', output: '输出格式', interaction: '交互', scoring: '评分', notes: '说明', tutorial: '题解', examples: '样例' },
@@ -26,7 +40,7 @@ const zh = () => props.lang === 'zh';
 </script>
 
 <template>
-  <div class="statement-doc">
+  <div class="statement-doc" :class="{ paper }">
     <template v-if="mode === 'tutorial'">
       <div class="header">
         <div class="title"><template v-if="index">{{ index }}. </template>{{ title }} — {{ heading('tutorial') }}</div>
@@ -34,6 +48,41 @@ const zh = () => props.lang === 'zh';
       </div>
       <div v-if="sections.tutorial" class="section" v-html="sections.tutorial" />
       <slot v-else name="empty" />
+    </template>
+    <template v-else-if="paper">
+      <div class="paper-header">
+        <div class="paper-title">{{ zh() ? '题目' : 'Problem' }} <template v-if="index">{{ index }}. </template>{{ title }}</div>
+        <table v-if="limits" class="paper-limits">
+          <tr><td>{{ zh() ? '输入文件：' : 'Input file:' }}</td><td>{{ ioName(io?.input, 'stdin') }}</td></tr>
+          <tr><td>{{ zh() ? '输出文件：' : 'Output file:' }}</td><td>{{ ioName(io?.output, 'stdout') }}</td></tr>
+          <tr><td>{{ zh() ? '时间限制：' : 'Time limit:' }}</td><td>{{ seconds(limits.timeLimit) }}</td></tr>
+          <tr><td>{{ zh() ? '空间限制：' : 'Memory limit:' }}</td><td>{{ limits.memoryLimit }} {{ zh() ? 'MB' : 'megabytes' }}</td></tr>
+        </table>
+      </div>
+      <div v-if="sections.legend" class="section" v-html="sections.legend" />
+      <template v-for="s in ['input', 'output', 'interaction', 'scoring'] as const" :key="s">
+        <template v-if="sections[s]">
+          <div class="section-title">{{ heading(s) }}</div>
+          <div class="section" v-html="sections[s]" />
+        </template>
+      </template>
+      <template v-if="samples.length">
+        <div class="section-title">{{ zh() ? '样例' : samples.length === 1 ? 'Example' : 'Examples' }}</div>
+        <table class="paper-samples">
+          <tr>
+            <th>{{ ioName(io?.input, 'stdin') }}</th>
+            <th>{{ ioName(io?.output, 'stdout') }}</th>
+          </tr>
+          <tr v-for="(x, i) in samples" :key="i">
+            <td><pre>{{ x.input }}</pre></td>
+            <td><pre>{{ x.output }}</pre></td>
+          </tr>
+        </table>
+      </template>
+      <template v-if="sections.notes">
+        <div class="section-title">{{ heading('notes') }}</div>
+        <div class="section" v-html="sections.notes" />
+      </template>
     </template>
     <template v-else>
       <div class="header">
@@ -203,5 +252,78 @@ const zh = () => props.lang === 'zh';
   margin: 0;
   background: var(--pf-sample-bg);
   overflow-x: auto;
+}
+
+/* ---- paper (print / PDF), after Polygon's olymp.sty ---- */
+.statement-doc.paper {
+  font-family: 'Times New Roman', 'CMU Serif', 'Songti SC', 'SimSun', serif;
+  font-size: 11pt;
+  line-height: 1.4;
+  text-align: justify;
+}
+.paper .title {
+  font-size: 17pt;
+  font-weight: bold;
+  font-family: inherit;
+}
+.paper :deep(.katex) {
+  font-size: 1.05em;
+}
+.paper-header {
+  margin-bottom: 1em;
+  break-after: avoid;
+}
+.paper-title {
+  font-size: 17pt;
+  font-weight: bold;
+  margin-bottom: 0.4em;
+}
+.paper-limits {
+  border-collapse: collapse;
+}
+.paper-limits td {
+  padding: 0 1.2em 0 0;
+}
+.paper .section-title {
+  font-family: inherit;
+  font-size: 12pt;
+  margin: 0.9em 0 0.3em;
+  break-after: avoid;
+}
+.paper .section :deep(.p) {
+  margin: 0 0 0.6em;
+}
+.paper :deep(code),
+.paper-samples pre {
+  font-family: 'Courier New', Courier, monospace;
+}
+.paper-samples {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  break-inside: avoid;
+  margin-bottom: 0.6em;
+}
+.paper-samples th,
+.paper-samples td {
+  border: 1px solid currentColor;
+  text-align: left;
+  vertical-align: top;
+  padding: 2px 6px;
+}
+.paper-samples th {
+  font-weight: bold;
+}
+.paper-samples pre {
+  margin: 0;
+  font-size: 10pt;
+  line-height: 1.25;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.paper :deep(.math-display),
+.paper :deep(table.tabular),
+.paper :deep(.stmt-img) {
+  break-inside: avoid;
 }
 </style>
