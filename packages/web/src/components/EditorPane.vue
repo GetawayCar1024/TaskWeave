@@ -7,6 +7,7 @@ import { monaco } from '../lib/monaco';
 import { settings } from '../lib/settings';
 import { SHARED_TAB, type Tab, type Workspace } from '../lib/workspace';
 import StatementPreview from './StatementPreview.vue';
+import { Lock, X } from 'lucide-vue-next';
 import type { SidebarAction } from './FileSidebar.vue';
 
 const props = defineProps<{ ws: Workspace; judge: Judge; problemId: string }>();
@@ -100,9 +101,9 @@ function onTabMouse(e: MouseEvent, path: string) {
         @mousedown="onTabMouse($event, tab.path)"
       >
         <span class="name" :class="{ gone: tab.disk === 'deleted' }">{{ label(tab.path) }}</span>
-        <span v-if="tab.readOnly" class="ro">🔒</span>
+        <lock v-if="tab.readOnly" :size="11" class="ro" />
         <span class="close" :class="{ dirty: tab.dirty }" @click.stop="emit('close', tab.path)">
-          <span class="dot">●</span><span class="x">×</span>
+          <span class="dot" /><x class="x" :size="12" />
         </span>
       </div>
     </div>
@@ -189,12 +190,21 @@ function onTabMouse(e: MouseEvent, path: string) {
   text-decoration: line-through;
 }
 .ro {
-  font-size: 10px;
+  opacity: 0.6;
 }
 .close {
   width: 16px;
-  text-align: center;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 3px;
+}
+.close .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
 }
 .close:hover {
   background: rgba(128, 128, 128, 0.3);
@@ -203,7 +213,7 @@ function onTabMouse(e: MouseEvent, path: string) {
   display: none;
 }
 .close.dirty .dot {
-  display: inline;
+  display: inline-block;
 }
 .close.dirty .x {
   display: none;
@@ -212,7 +222,7 @@ function onTabMouse(e: MouseEvent, path: string) {
   display: none;
 }
 .close.dirty:hover .x {
-  display: inline;
+  display: inline-block;
 }
 .banner {
   border-radius: 0;

@@ -5,7 +5,7 @@
  *   pnpm --filter @polyforge/server mock-polygon [--port 4700] [--key K] [--secret S]
  *
  * Point PolyForge at it with secrets.toml: [polygon] api_url = "http://127.0.0.1:4700/api/".
- * GET /__dump returns the whole state as JSON.
+ * GET /__dump returns the whole state as JSON; GET /__contest defines a contest.
  */
 import http from 'node:http';
 import { parseArgs } from 'node:util';
@@ -49,6 +49,8 @@ interface Prob {
 }
 
 const problems = new Map<number, Prob>();
+/** contestId -> index -> problem id (set up through GET /__contest). */
+const contests = new Map<number, Record<string, number>>();
 let nextId = 100000;
 let calls = 0;
 
@@ -284,6 +286,11 @@ function handle(method: string, a: Record<string, string>, files: Record<string,
       p.modified = false;
       return null;
     }
+    case 'contest.problems': {
+      const c = contests.get(Number(a.contestId));
+      if (!c) throw new Fail('contestId: Contest not found');
+      return Object.fromEntries(Object.entries(c).map(([idx, id]) => [idx, { ...brief(problems.get(id)!), index: idx }]));
+    }
     case 'problem.buildPackage':
       get();
       return null;
@@ -301,6 +308,17 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/__dump') {
     const replacer = (_k: string, v: any) => (v && v.type === 'Buffer' && Array.isArray(v.data) ? Buffer.from(v.data).toString('utf8') : v);
     return send(200, JSON.stringify([...problems.values()], replacer, 1));
+  }
+  // GET /__contest?id=5&problems=A:100000,B:100001 defines a contest for contest.problems.
+  if (url.pathname === '/__contest') {
+    const map: Record<string, number> = {};
+    for (const part of (url.searchParams.get('problems') ?? '').split(',').filter(Boolean)) {
+      const [idx, id] = part.split(':');
+      if (!problems.has(Number(id))) return send(400, JSON.stringify({ error: 'unknown problem ' + id }));
+      map[idx] = Number(id);
+    }
+    contests.set(Number(url.searchParams.get('id')), map);
+    return send(200, JSON.stringify({ ok: true }));
   }
   const m = url.pathname.match(/^\/api\/([\w.]+)$/);
   if (!m) return send(404, 'not found', 'text/plain');

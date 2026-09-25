@@ -22,6 +22,7 @@ import { errorMessage } from '../lib/api';
 import { formatSize } from '../lib/format';
 import type { Judge } from '../lib/judge';
 import { tagType } from '../lib/tags';
+import { Check, X } from 'lucide-vue-next';
 import { SHARED_TAB, type Workspace } from '../lib/workspace';
 
 const props = defineProps<{ ws: Workspace; judge: Judge }>();
@@ -217,7 +218,7 @@ const activeInfo = computed(() => {
       <n-card v-if="compile" size="small" :title="t('info.compile')">
         <template #header-extra>
           <span v-if="judge.state.compiling[compile.source]" class="dim small">{{ t('info.compiling') }}</span>
-          <span v-else :class="compile.ok ? 'good' : 'bad'" class="small">{{ compile.ok ? '✓ ' + t('info.compileOk') : '✗ ' + t('info.compileFailed') }}</span>
+          <span v-else :class="compile.ok ? 'good' : 'bad'" class="small status"><check v-if="compile.ok" :size="13" /><x v-else :size="13" />{{ compile.ok ? t('info.compileOk') : t('info.compileFailed') }}</span>
         </template>
         <div class="dim small">{{ compile.durationMs }} ms{{ compile.cached ? ' · ' + t('run.cached') : '' }}</div>
         <pre v-if="compile.log" class="log mono">{{ compile.log }}</pre>
@@ -262,6 +263,11 @@ const activeInfo = computed(() => {
 }
 .good {
   color: #63e2b7;
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
 .bad {
   color: #e88080;

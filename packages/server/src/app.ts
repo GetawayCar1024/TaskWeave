@@ -18,6 +18,8 @@ import type { Judge } from './judge/index.js';
 import { judgeRoutes } from './routes/judge.js';
 import { polygonRoutes } from './routes/polygon.js';
 import { aiRoutes } from './routes/ai.js';
+import { contestRoutes } from './routes/contests.js';
+import { ContestRegistry } from './workspace/contests.js';
 import { AgentService } from './ai/agent.js';
 import { PolygonError } from './polygon/client.js';
 import { PolygonSync } from './polygon/sync.js';
@@ -33,6 +35,7 @@ import type { WsHub } from './ws.js';
 export interface AppDeps {
   global: GlobalStore;
   registry: ProblemRegistry;
+  contests: ContestRegistry;
   files: FileService;
   watcher: ProblemWatcher;
   hub: WsHub;
@@ -185,7 +188,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   judgeRoutes(app, deps.judge, deps.jobs);
-  polygonRoutes(app, deps.judge, new PolygonSync(deps.judge), deps.jobs, hub);
+  const sync = new PolygonSync(deps.judge);
+  polygonRoutes(app, deps.judge, sync, deps.jobs, hub);
+  contestRoutes(app, { judge: deps.judge, contests: deps.contests, sync }, deps.jobs, hub);
   aiRoutes(app, global, new AgentService(deps.judge, hub));
 
   app.post<{ Params: { id: string }; Body: MoveFileRequest }>('/api/problems/:id/move', async (req) => {

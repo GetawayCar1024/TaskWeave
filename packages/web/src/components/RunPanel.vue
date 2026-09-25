@@ -78,8 +78,7 @@ defineExpose({ run, runOnTest });
     />
     <n-select v-else v-model:value="test" size="small" :options="testOptions" filterable />
     <n-space align="center">
-      <n-button size="small" type="primary" :loading="busy" :disabled="!source" @click="run">{{ t('run.run') }}</n-button>
-      <span class="dim small">Ctrl+Enter</span>
+      <n-button size="small" type="primary" :loading="busy" :disabled="!source" title="Ctrl+Enter" @click="run">{{ t('run.run') }}</n-button>
     </n-space>
 
     <template v-if="result">

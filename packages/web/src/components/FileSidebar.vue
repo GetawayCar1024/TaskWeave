@@ -15,6 +15,8 @@ import {
 } from '@polyforge/shared';
 import { SHARED_TAB, type Workspace } from '../lib/workspace';
 import { tagType } from '../lib/tags';
+import { FilePlus, Folder, FolderPlus, Plus } from 'lucide-vue-next';
+import { ROLE_ICONS } from '../lib/icons';
 
 export type SidebarAction =
   | { kind: 'newFile'; dir: string }
@@ -33,21 +35,6 @@ const { t } = useI18n();
 const mode = ref<'roles' | 'dirs'>((localStorage.getItem('polyforge-tree-mode') as 'roles' | 'dirs') || 'roles');
 watch(mode, (m) => localStorage.setItem('polyforge-tree-mode', m));
 
-const ROLE_ICON: Record<FileRole, string> = {
-  config: '⚙️',
-  statement: '📄',
-  tutorial: '📘',
-  validator: '✅',
-  checker: '⚖️',
-  interactor: '🔁',
-  generator: '🧩',
-  solution: '💡',
-  test: '🧪',
-  'validator-test': '🧫',
-  'checker-test': '🧫',
-  resource: '📦',
-  other: '📁',
-};
 
 /** Where "new file" in a role group puts the file by default. */
 const ROLE_DIR: Record<FileRole, string> = {
@@ -173,11 +160,11 @@ function badge(path: string) {
 
 function renderLabel({ option }: { option: TreeOption }) {
   const n = option as Node;
-  if (n.group) return h('span', { class: 'group' }, [`${ROLE_ICON[n.group]} `, n.label as string]);
+  if (n.group) return h('span', { class: 'group' }, [h(ROLE_ICONS[n.group], { size: 14, class: 'gi' }), n.label as string]);
   const tab = n.path ? props.ws.state.tabs.find((x) => x.path === n.path) : undefined;
   const cls = ['file', tab?.dirty ? 'dirty' : ''].join(' ');
-  if (mode.value === 'dirs' && n.dir !== undefined) return h('span', `📁 ${n.label}`);
-  if (n.missingLang) return h('span', { class: 'missing' }, `＋ ${n.label}`);
+  if (mode.value === 'dirs' && n.dir !== undefined) return h('span', { class: 'group-dir' }, [h(Folder, { size: 14, class: 'gi' }), n.label as string]);
+  if (n.missingLang) return h('span', { class: 'missing' }, [h(Plus, { size: 12, class: 'gi' }), n.label as string]);
   return h('span', { class: cls, title: n.path }, [badge(n.path ?? ''), n.label as string]);
 }
 
@@ -293,13 +280,13 @@ function onMenu(key: string, option: DropdownOption) {
       <span class="spacer" />
       <n-tooltip>
         <template #trigger>
-          <n-button size="tiny" quaternary @click="emit('action', { kind: 'newFile', dir: '' })">＋📄</n-button>
+          <n-button size="tiny" quaternary @click="emit('action', { kind: 'newFile', dir: '' })"><file-plus :size="15" /></n-button>
         </template>
         {{ t('tree.newFile') }}
       </n-tooltip>
       <n-tooltip>
         <template #trigger>
-          <n-button size="tiny" quaternary @click="emit('action', { kind: 'newDir', dir: '' })">＋📁</n-button>
+          <n-button size="tiny" quaternary @click="emit('action', { kind: 'newDir', dir: '' })"><folder-plus :size="15" /></n-button>
         </template>
         {{ t('tree.newDir') }}
       </n-tooltip>
@@ -356,6 +343,17 @@ function onMenu(key: string, option: DropdownOption) {
 }
 .tree :deep(.group) {
   font-weight: 600;
+}
+.tree :deep(.group),
+.tree :deep(.group-dir),
+.tree :deep(.missing) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tree :deep(.gi) {
+  opacity: 0.75;
+  flex-shrink: 0;
 }
 .tree :deep(.file.dirty)::after {
   content: ' ●';

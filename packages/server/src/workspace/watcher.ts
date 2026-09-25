@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
 import type { WsHub } from '../ws.js';
+import { CONTEST_FILE } from '@polyforge/shared';
 import { TMP_MARKER } from '../util/fs.js';
 import { HIDDEN_DIRS, type FileService } from './files.js';
 import { PROBLEM_FILE, type ProblemRegistry } from './problems.js';
@@ -49,6 +50,9 @@ export class ProblemWatcher {
     const isRootChild = this.registry.roots.some((r) => path.resolve(path.dirname(abs)) === path.resolve(r));
     if (isRootChild && (kind === 'addDir' || kind === 'unlinkDir')) return this.scheduleRescan();
 
+    if (path.basename(abs) === CONTEST_FILE && isRootChild === false && this.registry.roots.some((r) => path.resolve(path.dirname(path.dirname(abs))) === path.resolve(r))) {
+      return this.scheduleRescan();
+    }
     let loc = this.registry.locate(abs);
     // A problem.toml appearing in a new folder creates a new problem.
     if (path.basename(abs) === PROBLEM_FILE && (kind === 'add' || kind === 'unlink')) {
@@ -75,6 +79,7 @@ export class ProblemWatcher {
       this.rescanTimer = null;
       await this.registry.scan();
       this.hub.broadcast({ type: 'problems:changed' });
+      this.hub.broadcast({ type: 'contests:changed' });
     }, 150);
   }
 }

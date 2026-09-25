@@ -153,7 +153,7 @@ export interface QuickRunResponse {
   stdoutTruncated?: boolean;
 }
 
-export type JobKind = 'generate' | 'invocation' | 'validator-tests' | 'checker-tests' | 'polygon-push' | 'polygon-import' | 'stress' | 'export';
+export type JobKind = 'generate' | 'invocation' | 'validator-tests' | 'checker-tests' | 'polygon-push' | 'polygon-import' | 'stress' | 'export' | 'contest' | 'contest-import';
 
 export interface JobInfo {
   id: string;

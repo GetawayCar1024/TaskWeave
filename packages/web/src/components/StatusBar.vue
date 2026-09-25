@@ -5,6 +5,7 @@ import { NProgress, NTooltip } from 'naive-ui';
 import type { Ai } from '../lib/ai';
 import type { Judge } from '../lib/judge';
 import { wsConnected } from '../lib/ws';
+import { Check, X } from 'lucide-vue-next';
 import type { Workspace } from '../lib/workspace';
 
 /** Bottom status bar: connection, Polygon binding, tests, running jobs, AI, cursor. */
@@ -49,7 +50,7 @@ const activeLang = computed(() => {
     <span class="item link" @click="emit('open', 'tests')">
       <template v-if="manifest">
         {{ t('status.tests', { n: manifest.tests.length }) }}
-        <span :class="manifest.ok ? 'good' : 'bad'">{{ manifest.ok ? '✓' : `✗ ${manifest.errors.length}` }}</span>
+        <check v-if="manifest.ok" :size="12" class="good" /><span v-else class="bad icon-text"><x :size="12" />{{ manifest.errors.length }}</span>
       </template>
       <template v-else>{{ t('status.noTests') }}</template>
     </span>
@@ -116,6 +117,11 @@ const activeLang = computed(() => {
 }
 .good {
   color: #63e2b7;
+}
+.icon-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 .bad {
   color: #e88080;

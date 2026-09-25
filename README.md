@@ -1,6 +1,6 @@
 # PolyForge
 
-本地优先的 Polygon 造题平台。设计见 [DESIGN.md](DESIGN.md)。当前完成 **M1 本地核心**、**M2 评测**、**M3 Polygon 同步** 和 **M4 AI**。
+本地优先的 Polygon 造题平台。设计见 [DESIGN.md](DESIGN.md)。已完成 **M1 本地核心**、**M2 评测**、**M3 Polygon 同步**、**M4 AI**、**M5 打磨**，以及比赛管理。
 
 ## 运行
 
@@ -9,6 +9,7 @@ pnpm install
 pnpm start        # 构建前端并启动，自动打开浏览器（http://127.0.0.1:4523/?token=...）
 pnpm dev          # 开发模式：API 在 4523（node --watch），Vite 在 5173；打开终端里打印的链接
 pnpm typecheck
+pnpm release      # 打包成独立的 npm 包到 release/（无运行时依赖）：npx ./release，或在 release/ 里 npm pack 后 npx polyforge-<版本>.tgz
 ```
 
 服务端参数：`--port <n>`、`--home <dir>`（全局目录，默认 `~/.polyforge`，也可用环境变量 `POLYFORGE_HOME`）、`--no-open`。
@@ -56,7 +57,7 @@ pnpm typecheck
 ## M3 包含
 
 - **设置 → Polygon**：填 API key / secret（只存在全局目录的 `secrets.toml`，接口返回时打码），“测试连接”。
-- **同步对话框**（工具栏“同步 ↑”或 `Ctrl+Shift+U`）：
+- **同步对话框**（工具栏“同步”或 `Ctrl+Shift+U`）：
   - **推送**：列出变更集（新增 / 修改 / 已删除），点条目看与 Polygon 当前版本的 diff，勾选后推送；可选 commit（附说明）和构建 package。未绑定时会用短名新建 Polygon 题目，也可以填已有 ID 绑定。推送逐项记录进度，中途失败后再推只会发剩下的。Polygon 远端 revision 与上次同步不一致时会提示先拉取。
   - **拉取**：三方比较（本地 / Polygon / 上次同步），分为“Polygon 已改”“本地已改”“冲突”“仅一方有”；默认只取 Polygon 单方改动。
   - **合并**：两边都改过的文本条目（代码、题面段落、script、测试……）可以按行三方合并，改动不重叠时默认勾选“合并”，可先看合并结果的 diff；重叠的部分写成 `<<<<<<< local` / `=======` / `>>>>>>> Polygon` 冲突标记，在编辑器里处理后再推送。合并所需的共同祖先保存在 `.polyforge/sync-base/`。从未同步过的本地题目绑定 Polygon 后拉取，没有共同祖先，差异项只能二选一。
@@ -81,12 +82,44 @@ pnpm typecheck
 
 测试：`scripts/mock-llm.ts` 是按脚本回复的 Anthropic / OpenAI 双协议 mock，会检查 thinking 块是否原样回传、工具结果是否正确返回；`scripts/test-agent.ts` 用它对两种协议跑完整流程（14 次工具调用、4 个文件的改动、接受 / 放弃）。**还没有接真实模型跑过**，真实模型的造题质量需要你用自己的 key 试。
 
+## M5 包含
+
+- **对拍**（工具栏“对拍”）：generator（参数里的 `{seed}` 换成每轮种子）→ 待测解 vs 标程，发现差异时给出输入、两边输出和种子，可一键存为手写测试。
+- **题面检查与自动修复**（`Ctrl+Shift+L`）：检查 Markdown 残留（`**粗体**`、`` `代码` ``、`#` 标题、列表）、ASCII 运算符（`<=` → `\le`）、直引号、省略号、数学里的 `10^18` / `1e5` / `*`、中文排版（中英文间距、全角标点）、未闭合的 `$` 和括号；可修复项在 diff 里确认后一键写入。`.tex` 文件在编辑器里同时显示波浪线。
+- **题解**：`statement/<语言>/tutorial.tex`，与题面一样多语言、实时预览。题解语言应与题面语言一一对应：文件树、题目卡片、本地检查和导出都会提示缺失或多余的语言，文件树里可以一键补齐。
+- **导出 package**（“更多 → 导出”）：Polygon 格式的 zip（`problem.xml`、各语言 `problem.tex` / `tutorial.tex` 与分段题面、样例、全部测试和答案、程序、script、分组）。
+- **AI 检查**（AI 面板“检查”页，需要配置 AI 端点，手动开始）：先列出本地检查结果（缺少的部分、语言不对应、题面格式、测试生成错误），再由 AI 只读地通读题目、自己编译判题，逐条列出问题；每个问题可以一键交给 AI 修复。
+- **命令面板**（`Ctrl+K`）、快捷键一览（`Ctrl+/`）、底部状态栏（连接状态、Polygon 绑定、测试数、编译状态、语言、换行符）；题目列表有完成度进度条、排序、卡片 / 列表视图。
+- 界面图标统一用 [lucide](https://lucide.dev) 的 SVG 图标。
+
+## 比赛
+
+比赛是题目根目录下含 `contest.toml` 的文件夹，只引用题目（按题目 ID，即文件夹名），题目仍在各自的文件夹里，一道题可以属于多场比赛：
+
+```toml
+[contest]
+name = "round-1"
+title = { zh = "第一轮", en = "Round 1" }
+
+[polygon]
+id = 12345            # 可选：对应的 Polygon 比赛
+
+[[problems]]
+index = "A"
+problem = "a-plus-b"
+```
+
+- 题目列表的“比赛”页：新建比赛（选题后按顺序编号 A、B、C…），或“从 Polygon 导入”一场比赛（`contest.problems`；本地已绑定同一 Polygon 题目的直接复用，其余逐题导入）。
+- 比赛页：题目表（编号、标题、限制、完成度、Polygon 绑定），可添加、移除、调整顺序（编号随顺序重排）。
+- 批量操作，逐题执行，每题单独给出结果和详情：生成测试、运行 invocation（全部非 NR 的解，检查是否符合 tag）、本地检查、导出比赛包（`contest.xml` + `problems/<短名>/` 下的完整 package）、推送到 Polygon（推送所有改动并 commit；Polygon 上被改过的题会跳过并提示先拉取）。
+- 题面汇总：某一语言的全部题面（可附带题解），按纸张排版，每题分页，用浏览器打印或存为 PDF；缺少该语言题面或题解的题会标出来。
+
 ## 结构
 
 ```
 packages/shared   类型、problem.toml schema（zod）、文件角色识别、tag 规则
-packages/server   Fastify + WebSocket；global.ts（全局目录）、workspace/（题目、文件、watcher）、
-                  judge/（runner、编译、script、测试生成、invocation、自测）、runner/runner.cpp、
+packages/server   Fastify + WebSocket；global.ts（全局目录）、workspace/（题目、比赛、文件、watcher）、
+                  judge/（runner、编译、script、测试生成、invocation、自测、对拍、导出、本地检查、比赛批量操作）、runner/runner.cpp、
                   polygon/（API 客户端、同步条目、推送 / 拉取 / 导入、三方合并）、
                   ai/（provider、agent、sandbox、工具、系统提示）、
                   scripts/（mock-polygon、mock-llm 与端到端测试）

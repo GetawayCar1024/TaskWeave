@@ -40,9 +40,10 @@ export const exportDir = (ctx: ProblemCtx) => path.join(ctx.work, 'export');
 /**
  * Export a Polygon-style package (DESIGN §9 M5): problem.xml, sources, statements
  * (sections and an assembled problem.tex per language, tutorials), and all tests with
- * answers. Tests are generated first.
+ * answers. Tests are generated first. With `into`, entries go into an outer zip under
+ * a prefix (contest packages) instead of a file of their own.
  */
-export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx): Promise<PackageResult> {
+export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, into?: { zip: ZipWriter; prefix: string }): Promise<PackageResult> {
   const warnings: string[] = [];
   const { config, ref } = ctx;
   job.progress(0, 3, 'generating tests');
@@ -50,7 +51,7 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx):
   if (!manifest.ok) warnings.push(...manifest.errors.map((e) => `tests: ${e}`));
   job.progress(1, 3, 'packing');
 
-  const zip = new ZipWriter();
+  const zip = into ? { add: (name: string, data: Buffer | string) => into.zip.add(into.prefix + name, data) } : new ZipWriter();
   const languages = (await judge.global.readLanguages()).languages;
   const typeOf = (rel: string) => {
     try {
@@ -236,11 +237,12 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx):
 </problem>
 `;
   zip.add('problem.xml', xml);
+  if (into) return { file: '', size: 0, tests: count, warnings };
 
   job.progress(2, 3, 'writing');
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
   const file = `${config.problem.name}-${stamp}.zip`;
-  const data = zip.finish();
+  const data = (zip as ZipWriter).finish();
   await atomicWrite(path.join(exportDir(ctx), file), data);
   job.progress(3, 3, 'done');
   return { file, size: data.length, tests: count, warnings };

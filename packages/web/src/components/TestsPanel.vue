@@ -5,6 +5,7 @@ import { NAlert, NButton, NDataTable, NProgress, NScrollbar, NSpace, NTabPane, N
 import type { TestFileResponse, TestInfo } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 import { formatSize } from '../lib/format';
+import { Check, Cog, Pencil, X } from 'lucide-vue-next';
 import type { Judge } from '../lib/judge';
 import type { Workspace } from '../lib/workspace';
 
@@ -32,7 +33,11 @@ const columns = computed<DataTableColumns<TestInfo>>(() => [
     title: t('tests.source'),
     key: 'source',
     ellipsis: { tooltip: true },
-    render: (r) => h('span', { class: 'mono' }, [r.origin === 'manual' ? '✎ ' : '⚙ ', r.origin === 'manual' ? r.source.replace(/^tests\/manual\//, '') : r.source]),
+    render: (r) =>
+      h('span', { class: 'mono origin', title: r.origin === 'manual' ? t('tests.manual') : t('tests.generated') }, [
+        h(r.origin === 'manual' ? Pencil : Cog, { size: 12, class: 'origin-icon' }),
+        r.origin === 'manual' ? r.source.replace(/^tests\/manual\//, '') : r.source,
+      ]),
   },
   {
     title: '',
@@ -50,10 +55,10 @@ const columns = computed<DataTableColumns<TestInfo>>(() => [
     key: 'status',
     width: 30,
     render: (r) => {
-      if (r.error) return h('span', { class: 'bad', title: r.error }, '✗');
-      if (r.valid === false) return h('span', { class: 'bad', title: r.validatorMessage }, '✗');
+      if (r.error) return h(X, { size: 14, class: 'bad', title: r.error });
+      if (r.valid === false) return h(X, { size: 14, class: 'bad', title: r.validatorMessage });
       if (r.answerSize === undefined) return h('span', { class: 'dim', title: t('tests.noAnswer') }, '?');
-      return h('span', { class: 'good' }, '✓');
+      return h(Check, { size: 14, class: 'good' });
     },
   },
 ]);
@@ -185,6 +190,15 @@ watch([selected, () => manifest.value?.generatedAt], loadFiles);
 .empty {
   padding: 16px 0;
   text-align: center;
+}
+:deep(.origin) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+:deep(.origin-icon) {
+  opacity: 0.6;
+  flex-shrink: 0;
 }
 :deep(.good) {
   color: #63e2b7;

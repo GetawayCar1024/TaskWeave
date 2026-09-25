@@ -18,6 +18,7 @@ import ShortcutsDialog from '../components/ShortcutsDialog.vue';
 import StatusBar from '../components/StatusBar.vue';
 import StressDialog from '../components/StressDialog.vue';
 import { waitJob } from '../lib/jobs';
+import { ArrowLeft, ChevronDown, Command as CommandIcon } from 'lucide-vue-next';
 import { patchSettings } from '../lib/settings';
 import type { PackageResult } from '../lib/types';
 import { useAi } from '../lib/ai';
@@ -373,7 +374,7 @@ onBeforeUnmount(() => {
   <div class="page">
     <app-header>
       <template #left>
-        <n-button size="small" quaternary @click="router.push({ name: 'problems' })">◀ {{ t('nav.problems') }}</n-button>
+        <n-button size="small" quaternary @click="router.push({ name: 'problems' })"><template #icon><arrow-left /></template>{{ t('nav.problems') }}</n-button>
       </template>
       <template v-if="summary">
         <strong class="title">{{ problemTitle(summary.title, locale) || summary.name }}</strong>
@@ -399,11 +400,11 @@ onBeforeUnmount(() => {
           AI<template v-if="ai.state.changes.length"> · {{ ai.state.changes.length }}</template>
         </n-button>
         <n-dropdown trigger="click" :options="moreOptions" @select="onMore">
-          <n-button size="small" :loading="exporting">{{ t('toolbar.more') }} ▾</n-button>
+          <n-button size="small" :loading="exporting" icon-placement="right"><template #icon><chevron-down /></template>{{ t('toolbar.more') }}</n-button>
         </n-dropdown>
         <n-tooltip>
           <template #trigger>
-            <n-button size="small" quaternary @click="showPalette = true">⌘</n-button>
+            <n-button size="small" quaternary @click="showPalette = true"><command-icon :size="15" /></n-button>
           </template>
           {{ t('palette.title') }} (Ctrl+K)
         </n-tooltip>

@@ -21,6 +21,7 @@ import { api, errorMessage } from '../lib/api';
 import type { Judge } from '../lib/judge';
 import { monaco } from '../lib/monaco';
 import { tagType } from '../lib/tags';
+import { Check, X } from 'lucide-vue-next';
 import { fmtMem, verdictBg } from '../lib/verdict';
 import type { Workspace } from '../lib/workspace';
 
@@ -83,7 +84,7 @@ async function start() {
 
 const historyOptions = computed(() =>
   history.value.map((h) => ({
-    label: `${new Date(h.createdAt).toLocaleString()} · ${h.solutions}×${h.tests} ${h.status === 'running' ? '…' : h.ok ? '✓' : '✗'}`,
+    label: `${new Date(h.createdAt).toLocaleString()} · ${h.solutions}×${h.tests} ${h.status === 'running' ? '…' : h.ok ? t('inv.pass') : t('inv.fail')}`,
     value: h.id,
   })),
 );
@@ -194,7 +195,7 @@ onBeforeUnmount(disposeDiff);
                 <n-tag v-if="s.tag" size="tiny" :type="tagType(s.tag)" :bordered="false">{{ s.tag }}</n-tag>
                 <span v-if="s.compile && !s.compile.ok" class="bad small"> CE</span>
                 <span v-else-if="s.expectation" :class="s.expectation.ok ? 'good' : 'bad'" class="small">
-                  {{ s.expectation.ok ? ' ✓' : ' ✗' }}
+                  <check v-if="s.expectation.ok" :size="13" class="mark-icon" /><x v-else :size="13" class="mark-icon" />
                   <span v-if="s.expectation.missing" :title="t('inv.missing', { v: s.expectation.missing.join('/') })">!</span>
                 </span>
               </th>
@@ -376,6 +377,10 @@ onBeforeUnmount(disposeDiff);
 }
 .good {
   color: #63e2b7;
+}
+.mark-icon {
+  vertical-align: -2px;
+  margin-left: 2px;
 }
 .bad {
   color: #e88080;

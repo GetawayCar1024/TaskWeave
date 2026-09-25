@@ -129,6 +129,7 @@ export type WsEvent =
       hash?: string;
     }
   | { type: 'problems:changed' }
+  | { type: 'contests:changed' }
   | { type: 'problem:changed'; problemId: string }
   | { type: 'settings:changed' }
   | { type: 'job:progress'; job: JobInfo }

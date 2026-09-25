@@ -5,6 +5,7 @@ import { NAlert, NButton, NSpace, NTag, useMessage } from 'naive-ui';
 import { errorMessage } from '../lib/api';
 import type { Judge } from '../lib/judge';
 import { verdictType } from '../lib/verdict';
+import { Check, X } from 'lucide-vue-next';
 import type { Workspace } from '../lib/workspace';
 
 const props = defineProps<{ ws: Workspace; judge: Judge }>();
@@ -39,10 +40,10 @@ async function go(fn: () => Promise<void>) {
           {{ passed(vr.results) }} / {{ vr.results.length }}
         </div>
         <div v-for="r in vr.results" :key="r.file" class="row">
-          <span :class="r.ok ? 'good' : 'bad'">{{ r.ok ? '✓' : '✗' }}</span>
+          <check v-if="r.ok" :size="13" class="good" /><x v-else :size="13" class="bad" />
           <a class="mono link" @click="ws.openFile(r.file)">{{ r.file.replace('validator-tests/', '') }}</a>
           <n-tag size="tiny" :bordered="false">{{ r.expected }}</n-tag>
-          <span v-if="!r.ok" class="small">→ {{ r.actual }}</span>
+          <span v-if="!r.ok" class="small">{{ t('selftest.got', { v: r.actual }) }}</span>
           <div v-if="r.message" class="msg" :title="r.message">{{ r.message }}</div>
         </div>
       </template>
@@ -61,7 +62,7 @@ async function go(fn: () => Promise<void>) {
           {{ passed(cr.results) }} / {{ cr.results.length }}
         </div>
         <div v-for="r in cr.results" :key="r.name" class="row">
-          <span :class="r.ok ? 'good' : 'bad'">{{ r.ok ? '✓' : '✗' }}</span>
+          <check v-if="r.ok" :size="13" class="good" /><x v-else :size="13" class="bad" />
           <a class="mono link" @click="ws.openFile(`checker-tests/${r.name}.out`)">{{ r.name }}</a>
           <n-tag size="tiny" :bordered="false">{{ r.expected }}</n-tag>
           <n-tag v-if="!r.ok" size="tiny" :type="verdictType(r.actual)" :bordered="false">{{ r.actual }}</n-tag>

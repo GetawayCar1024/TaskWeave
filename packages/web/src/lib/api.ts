@@ -1,6 +1,13 @@
 import type { DefsToml } from './latex';
 import {
   TOKEN_HEADER,
+  type ContestBatchRequest,
+  type ContestDetail,
+  type ContestImportRequest,
+  type ContestStatement,
+  type ContestSummary,
+  type CreateContestRequest,
+  type UpdateContestRequest,
   type LocalCheck,
   type StressRequest,
   type AiChange,
@@ -153,16 +160,18 @@ export const api = {
   checks: (id: string) => request<LocalCheck[]>('GET', `/problems/${pid(id)}/checks`),
   startReview: (id: string, req: CreateAiSessionRequest) => request<AiSessionDetail>('POST', `/problems/${pid(id)}/ai/review`, req),
   /** Download an exported package through fetch (the token travels in a header). */
-  async downloadExport(id: string, file: string) {
-    const res = await fetch(`/api/problems/${pid(id)}/export/${encodeURIComponent(file)}`, { headers: { [TOKEN_HEADER]: token } });
-    if (!res.ok) throw new ApiError(res.status, 'download_failed', res.statusText);
-    const url = URL.createObjectURL(await res.blob());
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = file;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  },
+  downloadExport: (id: string, file: string) => download(`/api/problems/${pid(id)}/export/${encodeURIComponent(file)}`, file),
+
+  // ---- contests ----
+  contests: () => request<ContestSummary[]>('GET', '/contests'),
+  createContest: (req: CreateContestRequest) => request<ContestSummary>('POST', '/contests', req),
+  contest: (id: string) => request<ContestDetail>('GET', `/contests/${pid(id)}`),
+  updateContest: (id: string, req: UpdateContestRequest) => request<ContestDetail>('PUT', `/contests/${pid(id)}`, req),
+  deleteContest: (id: string) => request<{ ok: true }>('DELETE', `/contests/${pid(id)}`),
+  contestStatements: (id: string, lang: string) => request<ContestStatement[]>('GET', `/contests/${pid(id)}/statements?lang=${encodeURIComponent(lang)}`),
+  contestBatch: (id: string, req: ContestBatchRequest) => request<JobInfo>('POST', `/contests/${pid(id)}/batch`, req),
+  importContest: (req: ContestImportRequest) => request<JobInfo>('POST', '/contests/import/polygon', req),
+  downloadContestExport: (id: string, file: string) => download(`/api/contests/${pid(id)}/export/${encodeURIComponent(file)}`, file),
 
   // ---- AI (M4) ----
   aiEndpoints: () => request<AiEndpoint[]>('GET', '/ai/endpoints'),
@@ -183,6 +192,18 @@ export const api = {
   acceptAi: (id: string, sid: string, paths: string[]) => request<AiChange[]>('POST', `/problems/${pid(id)}/ai/sessions/${sid}/changes/accept`, { paths }),
   rejectAi: (id: string, sid: string, paths: string[]) => request<AiChange[]>('POST', `/problems/${pid(id)}/ai/sessions/${sid}/changes/reject`, { paths }),
 };
+
+/** Download a file through fetch (the token travels in a header). */
+async function download(url: string, file: string) {
+  const res = await fetch(url, { headers: { [TOKEN_HEADER]: token } });
+  if (!res.ok) throw new ApiError(res.status, 'download_failed', res.statusText);
+  const href = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = file;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(href), 10_000);
+}
 
 /** URL for raw problem files in <img> tags (which cannot send the token header). */
 export function rawUrl(id: string, path: string): string {

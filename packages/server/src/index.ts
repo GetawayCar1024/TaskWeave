@@ -11,6 +11,7 @@ import { Judge } from './judge/index.js';
 import { exists } from './util/fs.js';
 import { FileService, SelfWrites } from './workspace/files.js';
 import { ProblemRegistry } from './workspace/problems.js';
+import { ContestRegistry } from './workspace/contests.js';
 import { ProblemWatcher } from './workspace/watcher.js';
 import { WsHub } from './ws.js';
 
@@ -46,7 +47,7 @@ async function main() {
   // Build the runner in the background so the first run does not wait for g++.
   judge.runner.ensure().catch((e) => console.warn(`[polyforge] runner unavailable: ${e.message}`));
 
-  const app = await buildApp({ global, registry, files, watcher, hub, judge, jobs, token, webDist: hasDist ? webDist : undefined });
+  const app = await buildApp({ global, registry, contests: new ContestRegistry(registry), files, watcher, hub, judge, jobs, token, webDist: hasDist ? webDist : undefined });
 
   // Dev uses a fixed port so the Vite proxy can find it.
   const port = await listenOnFreePort(app, args.port ? Number(args.port) : DEFAULT_PORT, !args.port && !args.dev);

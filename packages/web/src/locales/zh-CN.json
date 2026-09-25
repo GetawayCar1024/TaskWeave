@@ -8,7 +8,9 @@
   },
   "nav": {
     "settings": "设置",
-    "problems": "题目列表"
+    "problems": "题目列表",
+    "contests": "比赛列表",
+    "contest": "比赛"
   },
   "common": {
     "cancel": "取消",
@@ -16,7 +18,8 @@
     "save": "保存",
     "saved": "已保存",
     "remove": "移除",
-    "ok": "确定"
+    "ok": "确定",
+    "close": "关闭"
   },
   "create": {
     "title": "新建题目",
@@ -36,13 +39,17 @@
     "search": "搜索题目…",
     "new": "新建题目",
     "noRoots": "还没有题目根目录",
-    "noRootsHint": "在设置中添加一个文件夹，其中每个含 problem.toml 的子文件夹就是一道题。",
+    "noRootsHint": "在设置中添加题目文件夹。",
     "goSettings": "打开设置",
     "empty": "这里还没有题目",
     "import": "从 Polygon 导入",
     "langMismatch": "题面语言 {s}，题解语言 {t}",
     "sortName": "按名称",
-    "sortProgress": "按完成度"
+    "sortProgress": "按完成度",
+    "problems": "题目",
+    "contests": "比赛",
+    "searchContests": "搜索比赛…",
+    "inContest": "所属比赛"
   },
   "check": {
     "statement": "题面",
@@ -57,7 +64,7 @@
     "title": "选择文件夹",
     "go": "前往",
     "empty": "没有子文件夹",
-    "hint": "可以直接输入路径；不存在的文件夹会自动创建。",
+    "hint": "不存在的文件夹会自动创建",
     "choose": "选择此文件夹"
   },
   "settings": {
@@ -77,7 +84,6 @@
     "configured": "已配置的语言",
     "detect": "工具链检测",
     "detectRun": "检测",
-    "detectHint": "在 PATH 中查找 g++ / clang++ / python / java，并用 testlib.h 试编译一个 Hello World。",
     "tool": "工具",
     "toolPath": "路径",
     "toolVersion": "版本",
@@ -89,8 +95,7 @@
     "keepEmpty": "留空则不修改",
     "testConnection": "测试连接",
     "polygonOk": "连接成功：可访问 {n} 道题（{ms} ms）",
-    "polygonHint": "在 Polygon → Settings → API Keys 创建。密钥只保存在全局目录的 secrets.toml 里，不会写进题目文件夹。",
-    "aiHint": "可以配置多个端点：Anthropic 协议（官方或兼容中转站）和 OpenAI Chat Completions 协议。密钥保存在 secrets.toml。",
+    "polygonHint": "密钥只保存在全局 secrets.toml 中。",
     "aiName": "名称",
     "aiModels": "模型（逗号分隔，第一个为默认）",
     "aiFetchModels": "拉取模型列表",
@@ -105,7 +110,7 @@
     "deletedOnDisk": "此文件已在磁盘上被删除。保存会重新创建它。",
     "binary": "二进制文件，无法编辑。",
     "truncated": "文件过大，仅显示开头部分（只读）。",
-    "sharedReadOnly": "这是全局共享文件（只读）。右键左侧条目可“复制到本题”后修改。",
+    "sharedReadOnly": "全局共享文件（只读）",
     "noFile": "没有打开的文件",
     "quickOpen": "快速打开",
     "quickOpenHint": "输入文件名…",
@@ -182,7 +187,7 @@
   "toolbar": {
     "generate": "生成测试",
     "invocation": "Invocation",
-    "sync": "同步 ↑",
+    "sync": "同步",
     "ai": "AI",
     "comingIn": "将在 {m} 提供",
     "stress": "对拍",
@@ -205,7 +210,7 @@
     "size": "大小",
     "noAnswer": "没有答案",
     "count": "{n} 个测试",
-    "none": "还没有生成测试。点击“生成测试”或按 Ctrl+Shift+G。",
+    "none": "还没有生成测试",
     "test": "测试",
     "runHere": "在此测试上运行",
     "noFile": "（无）",
@@ -213,7 +218,9 @@
       "in": "输入",
       "ans": "答案",
       "overview": "Validator 概览"
-    }
+    },
+    "manual": "手写",
+    "generated": "生成"
   },
   "run": {
     "custom": "自定义输入",
@@ -229,19 +236,22 @@
     "validator": "Validator 自测",
     "checker": "Checker 自测",
     "run": "运行",
-    "validatorHint": "validator-tests/ 下的文件，名字里带 valid / invalid 表示期望结果，例如 01.valid.in、02.invalid.in。",
-    "checkerHint": "checker-tests/ 下的 NAME.in + NAME.out（+ NAME.ans），期望结论写在 NAME.verdict 或名字里（ok / wa / pe / fail）。"
+    "validatorHint": "*.valid.in / *.invalid.in",
+    "checkerHint": "NAME.in + NAME.out (+ .ans)，期望结论写在 NAME.verdict 或文件名中",
+    "got": "实际 {v}"
   },
   "inv": {
     "start": "运行",
     "history": "历史记录",
-    "none": "还没有 invocation。勾选解后点击“运行”。",
+    "none": "还没有 invocation",
     "missing": "没有出现期望的结论：{v}",
-    "legend": "红框：结论与 tag 不符；黄框：标程超过时限的一半（TL = {tl} ms）。单元格数字为 CPU 时间（ms），点击查看输入 / 输出 / 答案。",
+    "legend": "红框：与 tag 不符 · 黄框：超过 TL/2 · 数字为 CPU ms",
     "input": "输入",
     "output": "输出",
     "answer": "答案",
-    "noOutput": "未保存（超过 16 MB）"
+    "noOutput": "未保存（超过 16 MB）",
+    "pass": "通过",
+    "fail": "不符"
   },
   "preview": {
     "unknown": "{n} 个无法识别的命令",
@@ -267,8 +277,8 @@
     "unbound": "尚未绑定 Polygon：推送时会新建题目 “{name}”，或绑定已有 ID：",
     "bindPlaceholder": "Polygon ID",
     "bind": "绑定",
-    "push": "推送 ↑",
-    "pull": "拉取 ↓",
+    "push": "推送",
+    "pull": "拉取",
     "selected": "已选 {n} 项",
     "showUnchanged": "显示未变化",
     "nothing": "没有需要推送的改动",
@@ -287,7 +297,7 @@
     "inSync": "本地与 Polygon 一致",
     "takeCount": "将用 Polygon 版本覆盖 {n} 项",
     "apply": "应用",
-    "pullHint": "勾选的条目会用 Polygon 上的版本覆盖本地。冲突（两边都改过）默认保留本地。",
+    "pullHint": "勾选项会被 Polygon 版本覆盖；冲突项默认保留本地。",
     "push_new": "新增",
     "push_modified": "修改",
     "push_deleted": "已删除",
@@ -310,7 +320,7 @@
     "noSession": "选择会话",
     "newSession": "新会话",
     "deleteSession": "删除这个会话（包括未确认的改动）？",
-    "intro": "让 AI 修改这道题的任何文件：题面、validator、checker、generator、解、测试、problem.toml。\n它在副本里改动并自己编译、生成测试、跑 invocation 验证；改动在下方逐个文件确认后才会写入。\n可以用下面的快捷任务，或直接描述你想要的修改。",
+    "intro": "AI 可以修改本题的任意文件。它在副本中改动并自行验证，改动需逐个文件确认后写入。",
     "thinking": "思考过程",
     "working": "正在工作…",
     "changes": "{n} 个文件待确认",
@@ -370,7 +380,6 @@
     "noLocalIssues": "本地检查没有发现问题",
     "reviewNeedsAi": "配置 AI 端点后可以进行 AI 检查。",
     "startReview": "开始 AI 检查",
-    "reviewHint": "AI 只读取和判题，不修改文件",
     "fixIt": "让 AI 修复",
     "sev": {
       "error": "错误",
@@ -388,7 +397,7 @@
       "config": "配置",
       "other": "其他"
     },
-    "reviewIntro": "AI 检查会通读题面、validator、checker、解和测试，自己编译、生成测试、跑 invocation 来验证，然后逐条列出问题（错误 / 警告 / 建议）。它不会修改任何文件；每个问题都可以一键交给 AI 修复。"
+    "reviewIntro": "只读检查题面、validator、checker、解和测试，并逐条列出问题。"
   },
   "lint": {
     "title": "题面检查与自动修复",
@@ -406,7 +415,7 @@
     "title": "对拍",
     "generator": "生成器",
     "argsPlaceholder": "参数，例如 10 1000",
-    "argsHint": "参数中的 {'{'}seed{'}'} 会被替换为每轮的种子；没有 {'{'}seed{'}'} 时种子追加在参数末尾。",
+    "argsHint": "{'{'}seed{'}'} 会被替换为种子，否则追加在末尾",
     "solution": "待测解",
     "reference": "参照解",
     "limits": "上限",
@@ -466,5 +475,50 @@
       "stress": "对拍",
       "export": "导出"
     }
+  },
+  "contest": {
+    "new": "新建比赛",
+    "none": "还没有比赛",
+    "importTitle": "从 Polygon 导入比赛",
+    "import": "导入",
+    "importWarnings": "{n} 道题导入失败",
+    "polygonId": "Polygon 比赛 ID",
+    "problems": "题目",
+    "problem": "题目",
+    "missing": "找不到这道题",
+    "limits": "限制",
+    "progress": "完成度",
+    "todo": "待完成",
+    "result": "结果",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "add": "添加",
+    "addPlaceholder": "添加题目…",
+    "statements": "题面汇总",
+    "edit": "比赛设置",
+    "delete": "删除比赛",
+    "deleteConfirm": "删除 contest.toml？题目本身不受影响。",
+    "pushConfirm": "把 {n} 道题的本地改动推送到 Polygon 并提交。未绑定的题会在 Polygon 上新建。",
+    "batchBad": "{n} 道题未通过",
+    "action": {
+      "generate": "生成测试",
+      "invocation": "运行 Invocation",
+      "checks": "本地检查",
+      "export": "导出比赛包",
+      "polygon-push": "推送到 Polygon"
+    },
+    "done": {
+      "generate": "所有题目的测试已生成",
+      "invocation": "所有解的结果都符合 tag",
+      "checks": "没有发现错误",
+      "export": "比赛包已导出",
+      "polygon-push": "已推送到 Polygon"
+    },
+    "withTutorials": "附带题解",
+    "pageBreaks": "每题分页",
+    "print": "打印 / 导出 PDF",
+    "noStatementIn": "{list} 没有 {lang} 题面",
+    "noTutorialIn": "{list} 没有 {lang} 题解",
+    "noProblems": "比赛里还没有题目"
   }
 }

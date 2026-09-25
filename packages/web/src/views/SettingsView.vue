@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, h, onMounted, ref } from 'vue';
+import { ArrowLeft, Check, X } from 'lucide-vue-next';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import {
@@ -106,8 +107,8 @@ const probeColumns = computed<DataTableColumns<ToolProbe>>(() => [
     width: 140,
     render: (r) => {
       if (!r.found) return t('settings.notFound');
-      if (r.helloWorld === 'ok') return '✓ ' + t('settings.works');
-      if (r.helloWorld === 'failed') return '✗ ' + (r.error?.split('\n')[0] ?? t('settings.failed'));
+      if (r.helloWorld === 'ok') return h('span', { class: 'good status' }, [h(Check, { size: 13 }), t('settings.works')]);
+      if (r.helloWorld === 'failed') return h('span', { class: 'bad status', title: r.error }, [h(X, { size: 13 }), r.error?.split('\n')[0] ?? t('settings.failed')]);
       return t('settings.found');
     },
   },
@@ -119,7 +120,7 @@ const polyKey = ref('');
 const polySecret = ref('');
 const polyUrl = ref('');
 const testing = ref(false);
-const testResult = ref('');
+const testResult = ref<{ ok: boolean; text: string } | null>(null);
 
 async function loadSecrets() {
   secrets.value = await api.secrets();
@@ -139,12 +140,12 @@ async function savePolygon() {
 
 async function testPolygon() {
   testing.value = true;
-  testResult.value = '';
+  testResult.value = null;
   try {
     const r = await api.polygonTest();
-    testResult.value = '✓ ' + t('settings.polygonOk', { n: r.problems, ms: r.ms });
+    testResult.value = { ok: true, text: t('settings.polygonOk', { n: r.problems, ms: r.ms }) };
   } catch (e) {
-    testResult.value = '✗ ' + errorMessage(e);
+    testResult.value = { ok: false, text: errorMessage(e) };
   } finally {
     testing.value = false;
   }
@@ -159,7 +160,7 @@ interface EditEndpoint {
   apiKey: string;
   maskedKey: string;
   models: string;
-  status?: string;
+  status?: { ok: boolean; text: string };
 }
 const endpoints = ref<EditEndpoint[]>([]);
 const aiBusy = ref<string | null>(null);
@@ -216,9 +217,9 @@ async function testEndpoint(e: EditEndpoint) {
     await saveEndpoints();
     const ep = endpoints.value.find((x) => x.name === e.name)!;
     const r = await api.testAiEndpoint(e.name, ep.models.split(/[\s,]+/).filter(Boolean)[0]);
-    ep.status = r.ok ? `✓ ${r.ms} ms · ${r.reply ?? ''}` : `✗ ${r.error}`;
+    ep.status = r.ok ? { ok: true, text: `${r.ms} ms · ${r.reply ?? ''}` } : { ok: false, text: r.error ?? '' };
   } catch (err) {
-    e.status = `✗ ${errorMessage(err)}`;
+    e.status = { ok: false, text: errorMessage(err) };
   } finally {
     aiBusy.value = null;
   }
@@ -232,9 +233,9 @@ async function fetchModels(e: EditEndpoint) {
     const models = await api.aiModels(e.name);
     const merged = [...new Set([...ep.models.split(/[\s,]+/).filter(Boolean), ...models])];
     ep.models = merged.join(', ');
-    ep.status = t('settings.aiModelsFetched', { n: models.length });
+    ep.status = { ok: true, text: t('settings.aiModelsFetched', { n: models.length }) };
   } catch (err) {
-    e.status = `✗ ${errorMessage(err)}`;
+    e.status = { ok: false, text: errorMessage(err) };
   } finally {
     aiBusy.value = null;
   }
@@ -253,7 +254,7 @@ onMounted(() => {
   <div class="page">
     <app-header>
       <template #left>
-        <n-button size="small" quaternary @click="router.push({ name: 'problems' })">◀ {{ t('nav.problems') }}</n-button>
+        <n-button size="small" quaternary @click="router.push({ name: 'problems' })"><template #icon><arrow-left /></template>{{ t('nav.problems') }}</n-button>
       </template>
       <strong>{{ t('nav.settings') }}</strong>
     </app-header>
@@ -319,14 +320,13 @@ onMounted(() => {
                   <n-tag size="small" :bordered="false">{{ id }}</n-tag>
                   <span>{{ l.name }}</span>
                   <span class="mono ext">{{ l.extensions.join(' ') }}</span>
-                  <span v-if="l.polygon" class="mono ext">→ {{ l.polygon }}</span>
+                  <span v-if="l.polygon" class="mono ext">Polygon: {{ l.polygon }}</span>
                 </div>
               </n-card>
               <n-card size="small" :title="t('settings.detect')">
                 <template #header-extra>
                   <n-button size="small" :loading="detecting" @click="detect">{{ t('settings.detectRun') }}</n-button>
                 </template>
-                <p class="hint">{{ t('settings.detectHint') }}</p>
                 <n-data-table v-if="probes.length" size="small" :columns="probeColumns" :data="probes" :bordered="false" />
               </n-card>
             </div>
@@ -334,7 +334,6 @@ onMounted(() => {
         </n-tab-pane>
         <n-tab-pane name="ai" tab="AI">
           <n-card size="small">
-            <p class="hint">{{ t('settings.aiHint') }}</p>
             <div v-for="(e, i) in endpoints" :key="i" class="endpoint">
               <div class="ep-row">
                 <n-input v-model:value="e.name" size="small" :placeholder="t('settings.aiName')" style="width: 180px" />
@@ -349,7 +348,7 @@ onMounted(() => {
               <div class="ep-row">
                 <n-button size="tiny" :loading="aiBusy === e.name" :disabled="!e.name" @click="testEndpoint(e)">{{ t('settings.testConnection') }}</n-button>
                 <n-button size="tiny" :loading="aiBusy === e.name" :disabled="!e.name" @click="fetchModels(e)">{{ t('settings.aiFetchModels') }}</n-button>
-                <span class="small">{{ e.status }}</span>
+                <span v-if="e.status" class="small status" :class="e.status.ok ? 'good' : 'bad'"><check v-if="e.status.ok" :size="13" /><x v-else :size="13" />{{ e.status.text }}</span>
               </div>
             </div>
             <n-space>
@@ -384,7 +383,7 @@ onMounted(() => {
             </n-form>
             <p class="hint">{{ t('settings.polygonHint') }}</p>
             <n-space justify="space-between" align="center">
-              <span class="small">{{ testResult }}</span>
+              <span v-if="testResult" class="small status" :class="testResult.ok ? 'good' : 'bad'"><check v-if="testResult.ok" :size="13" /><x v-else :size="13" />{{ testResult.text }}</span><span v-else />
               <n-space>
                 <n-button :loading="testing" :disabled="!secrets?.polygon.hasKey" @click="testPolygon">{{ t('settings.testConnection') }}</n-button>
                 <n-button type="primary" @click="savePolygon">{{ t('common.save') }}</n-button>
@@ -452,6 +451,17 @@ onMounted(() => {
 }
 .small {
   font-size: 12px;
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.good {
+  color: #63e2b7;
+}
+.bad {
+  color: #e88080;
 }
 .endpoint {
   border: 1px solid rgba(128, 128, 128, 0.25);

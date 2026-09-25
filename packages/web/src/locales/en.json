@@ -8,7 +8,9 @@
   },
   "nav": {
     "settings": "Settings",
-    "problems": "Problems"
+    "problems": "Problems",
+    "contests": "Contests",
+    "contest": "Contest"
   },
   "common": {
     "cancel": "Cancel",
@@ -16,7 +18,8 @@
     "save": "Save",
     "saved": "Saved",
     "remove": "Remove",
-    "ok": "OK"
+    "ok": "OK",
+    "close": "Close"
   },
   "create": {
     "title": "New problem",
@@ -36,13 +39,17 @@
     "search": "Search problems…",
     "new": "New problem",
     "noRoots": "No problem root directory yet",
-    "noRootsHint": "Add a folder in Settings. Every subfolder containing problem.toml is a problem.",
+    "noRootsHint": "Add a problem folder in Settings.",
     "goSettings": "Open settings",
     "empty": "No problems here yet",
     "import": "Import from Polygon",
     "langMismatch": "statement: {s}; tutorial: {t}",
     "sortName": "By name",
-    "sortProgress": "By progress"
+    "sortProgress": "By progress",
+    "problems": "Problems",
+    "contests": "Contests",
+    "searchContests": "Search contests…",
+    "inContest": "Contests"
   },
   "check": {
     "statement": "Statement",
@@ -57,7 +64,7 @@
     "title": "Choose folder",
     "go": "Go",
     "empty": "No subfolders",
-    "hint": "You can type a path; missing folders are created.",
+    "hint": "Missing folders are created",
     "choose": "Choose this folder"
   },
   "settings": {
@@ -77,7 +84,6 @@
     "configured": "Configured languages",
     "detect": "Toolchain detection",
     "detectRun": "Detect",
-    "detectHint": "Looks for g++ / clang++ / python / java on PATH and compiles a hello world with testlib.h.",
     "tool": "Tool",
     "toolPath": "Path",
     "toolVersion": "Version",
@@ -89,8 +95,7 @@
     "keepEmpty": "leave empty to keep",
     "testConnection": "Test connection",
     "polygonOk": "Connected: {n} accessible problems ({ms} ms)",
-    "polygonHint": "Create a key in Polygon → Settings → API Keys. Keys are stored only in secrets.toml in the global directory, never in problem folders.",
-    "aiHint": "Configure one or more endpoints: the Anthropic protocol (official API or a compatible proxy) and the OpenAI Chat Completions protocol. Keys are stored in secrets.toml.",
+    "polygonHint": "Keys are stored only in the global secrets.toml.",
     "aiName": "Name",
     "aiModels": "Models (comma-separated, first is the default)",
     "aiFetchModels": "Fetch models",
@@ -105,7 +110,7 @@
     "deletedOnDisk": "This file was deleted on disk. Saving will recreate it.",
     "binary": "Binary file, cannot be edited.",
     "truncated": "File is too large; only the beginning is shown (read-only).",
-    "sharedReadOnly": "This is a global shared file (read-only). Right-click it in the sidebar and choose “Copy into problem” to modify it.",
+    "sharedReadOnly": "Shared file (read-only)",
     "noFile": "No file open",
     "quickOpen": "Quick open",
     "quickOpenHint": "Type a file name…",
@@ -182,7 +187,7 @@
   "toolbar": {
     "generate": "Generate tests",
     "invocation": "Invocation",
-    "sync": "Sync ↑",
+    "sync": "Sync",
     "ai": "AI",
     "comingIn": "Coming in {m}",
     "stress": "Stress",
@@ -205,7 +210,7 @@
     "size": "Size",
     "noAnswer": "No answer",
     "count": "{n} tests",
-    "none": "No tests generated yet. Click “Generate tests” or press Ctrl+Shift+G.",
+    "none": "No tests generated yet",
     "test": "Test",
     "runHere": "Run on this test",
     "noFile": "(none)",
@@ -213,7 +218,9 @@
       "in": "Input",
       "ans": "Answer",
       "overview": "Validator overview"
-    }
+    },
+    "manual": "manual",
+    "generated": "generated"
   },
   "run": {
     "custom": "Custom input",
@@ -229,19 +236,22 @@
     "validator": "Validator tests",
     "checker": "Checker tests",
     "run": "Run",
-    "validatorHint": "Files in validator-tests/; \"valid\" / \"invalid\" in the name gives the expected result, e.g. 01.valid.in, 02.invalid.in.",
-    "checkerHint": "NAME.in + NAME.out (+ NAME.ans) in checker-tests/; the expected verdict goes in NAME.verdict or the name (ok / wa / pe / fail)."
+    "validatorHint": "*.valid.in / *.invalid.in",
+    "checkerHint": "NAME.in + NAME.out (+ .ans); expected verdict in NAME.verdict or the file name",
+    "got": "got {v}"
   },
   "inv": {
     "start": "Run",
     "history": "History",
-    "none": "No invocations yet. Pick solutions and click “Run”.",
+    "none": "No invocations yet",
     "missing": "Expected verdict never occurred: {v}",
-    "legend": "Red border: verdict not allowed by the tag; yellow: correct solution above half the time limit (TL = {tl} ms). Numbers are CPU ms; click a cell for input / output / answer.",
+    "legend": "Red: violates the tag · Yellow: above TL/2 · numbers are CPU ms",
     "input": "Input",
     "output": "Output",
     "answer": "Answer",
-    "noOutput": "not saved (over 16 MB)"
+    "noOutput": "not saved (over 16 MB)",
+    "pass": "pass",
+    "fail": "mismatch"
   },
   "preview": {
     "unknown": "{n} unknown command(s)",
@@ -267,8 +277,8 @@
     "unbound": "Not bound to Polygon: pushing creates a problem named \"{name}\", or bind an existing id:",
     "bindPlaceholder": "Polygon ID",
     "bind": "Bind",
-    "push": "Push ↑",
-    "pull": "Pull ↓",
+    "push": "Push",
+    "pull": "Pull",
     "selected": "{n} selected",
     "showUnchanged": "Show unchanged",
     "nothing": "Nothing to push",
@@ -287,7 +297,7 @@
     "inSync": "Local and Polygon are in sync",
     "takeCount": "{n} items will be overwritten by Polygon",
     "apply": "Apply",
-    "pullHint": "Checked items are overwritten with the Polygon version. Conflicts (changed on both sides) keep the local version by default.",
+    "pullHint": "Checked items are replaced by the Polygon version; conflicts keep the local version by default.",
     "push_new": "new",
     "push_modified": "modified",
     "push_deleted": "deleted",
@@ -310,7 +320,7 @@
     "noSession": "Pick a session",
     "newSession": "New session",
     "deleteSession": "Delete this session (including unreviewed changes)?",
-    "intro": "Let the AI change any file of this problem: statement, validator, checker, generators, solutions, tests, problem.toml.\nIt works on a copy, compiles, generates tests and runs invocations to check its work; changes are written only after you accept them file by file below.\nUse a quick task below or describe what you want.",
+    "intro": "The AI can change any file of this problem. It works on a copy and verifies its work; you accept changes file by file.",
     "thinking": "Reasoning",
     "working": "Working…",
     "changes": "{n} file(s) to review",
@@ -370,7 +380,6 @@
     "noLocalIssues": "Local checks found no issues",
     "reviewNeedsAi": "Configure an AI endpoint to run the AI check.",
     "startReview": "Start AI check",
-    "reviewHint": "The AI only reads and judges; it does not change files",
     "fixIt": "Let AI fix",
     "sev": {
       "error": "error",
@@ -388,7 +397,7 @@
       "config": "config",
       "other": "other"
     },
-    "reviewIntro": "The AI check reads the statement, validator, checker, solutions and tests, verifies them by compiling, generating tests and running invocations, and lists every problem it finds (error / warning / suggestion). It never changes files; each finding can be handed to the AI to fix."
+    "reviewIntro": "Read-only check of the statement, validator, checker, solutions and tests; lists every issue found."
   },
   "lint": {
     "title": "Statement check & auto-fix",
@@ -406,7 +415,7 @@
     "title": "Stress test",
     "generator": "Generator",
     "argsPlaceholder": "arguments, e.g. 10 1000",
-    "argsHint": "{'{'}seed{'}'} in the arguments is replaced by the iteration seed; without it the seed is appended.",
+    "argsHint": "{'{'}seed{'}'} is replaced by the seed, otherwise appended",
     "solution": "Solution",
     "reference": "Reference",
     "limits": "Limits",
@@ -466,5 +475,50 @@
       "stress": "Stress",
       "export": "Exporting"
     }
+  },
+  "contest": {
+    "new": "New contest",
+    "none": "No contests yet",
+    "importTitle": "Import a Polygon contest",
+    "import": "Import",
+    "importWarnings": "{n} problem(s) failed to import",
+    "polygonId": "Polygon contest ID",
+    "problems": "Problems",
+    "problem": "Problem",
+    "missing": "problem not found",
+    "limits": "Limits",
+    "progress": "Progress",
+    "todo": "To do",
+    "result": "Result",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "add": "Add",
+    "addPlaceholder": "Add problems…",
+    "statements": "Statements",
+    "edit": "Contest settings",
+    "delete": "Delete contest",
+    "deleteConfirm": "Delete contest.toml? The problems are not affected.",
+    "pushConfirm": "Push local changes of {n} problem(s) to Polygon and commit. Unbound problems are created on Polygon.",
+    "batchBad": "{n} problem(s) did not pass",
+    "action": {
+      "generate": "Generate tests",
+      "invocation": "Run invocations",
+      "checks": "Local checks",
+      "export": "Export package",
+      "polygon-push": "Push to Polygon"
+    },
+    "done": {
+      "generate": "Tests generated for all problems",
+      "invocation": "All solutions behave as tagged",
+      "checks": "No errors found",
+      "export": "Contest package exported",
+      "polygon-push": "Pushed to Polygon"
+    },
+    "withTutorials": "Include tutorials",
+    "pageBreaks": "One problem per page",
+    "print": "Print / PDF",
+    "noStatementIn": "{list}: no {lang} statement",
+    "noTutorialIn": "{list}: no {lang} tutorial",
+    "noProblems": "This contest has no problems yet"
   }
 }

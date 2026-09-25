@@ -1,31 +1,41 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
-import { NButton, NButtonGroup, NCard, NEmpty, NInput, NProgress, NSelect, NSpin, NTag, NResult, useMessage } from 'naive-ui';
-import type { ProblemSummary } from '@polyforge/shared';
+import { useRoute, useRouter } from 'vue-router';
+import { NButton, NButtonGroup, NCard, NEmpty, NInput, NProgress, NSelect, NRadioButton, NRadioGroup, NSpin, NTag, NResult, useMessage } from 'naive-ui';
+import type { ContestSummary, ProblemSummary } from '@polyforge/shared';
 import AppHeader from '../components/AppHeader.vue';
+import ContestDialog from '../components/ContestDialog.vue';
 import CreateProblemDialog from '../components/CreateProblemDialog.vue';
 import ImportDialog from '../components/ImportDialog.vue';
 import { api, errorMessage } from '../lib/api';
 import { onWs } from '../lib/ws';
 import { problemTitle } from '../lib/format';
+import { checklist, progress } from '../lib/progress';
+import { Anvil, Check, Circle, LayoutGrid, List } from 'lucide-vue-next';
 
 const { t, locale } = useI18n();
 const router = useRouter();
+const route = useRoute();
 const message = useMessage();
 
 const problems = ref<ProblemSummary[]>([]);
+const contests = ref<ContestSummary[]>([]);
 const roots = ref<string[]>([]);
 const loading = ref(true);
 const filter = ref('');
 const showCreate = ref(false);
 const showImport = ref(false);
+const contestDialog = ref<'create' | 'import' | null>(null);
+
+const tab = ref<'problems' | 'contests'>(route.query.tab === 'contests' ? 'contests' : 'problems');
+watch(tab, (v) => router.replace({ query: v === 'contests' ? { tab: v } : {} }));
 
 async function load() {
   try {
-    const r = await api.problems();
+    const [r, c] = await Promise.all([api.problems(), api.contests()]);
     problems.value = r.problems;
+    contests.value = c;
     roots.value = r.roots;
   } catch (e) {
     message.error(errorMessage(e));
@@ -51,41 +61,54 @@ const sort = ref<'name' | 'progress'>((localStorage.getItem('polyforge-list-sort
 watch(view, (v) => localStorage.setItem('polyforge-list-view', v));
 watch(sort, (v) => localStorage.setItem('polyforge-list-sort', v));
 
-const progress = (p: ProblemSummary) => {
-  const items = checklist(p);
-  return Math.round((items.filter((c) => c.ok).length / items.length) * 100);
-};
-
 const shown = computed(() => {
   const q = filter.value.trim().toLowerCase();
   const list = q ? problems.value.filter((p) => p.name.includes(q) || Object.values(p.title).some((x) => x.toLowerCase().includes(q))) : [...problems.value];
   return list.sort((a, b) => (sort.value === 'progress' ? progress(a) - progress(b) : 0) || a.name.localeCompare(b.name));
 });
 
-function checklist(p: ProblemSummary) {
-  const s = p.status;
-  return [
-    { key: 'statement', ok: s.statement },
-    { key: 'tutorial', ok: s.statementLangs.length > 0 && s.statementLangs.every((x) => s.tutorialLangs.includes(x)) && s.tutorialLangs.every((x) => s.statementLangs.includes(x)) },
-    { key: 'validator', ok: s.validator },
-    { key: 'checker', ok: s.checker },
-    { key: 'std', ok: s.std },
-    { key: 'tests', ok: s.manualTests > 0 || s.hasScript },
-    { key: 'synced', ok: s.polygonId !== undefined },
-  ];
-}
-
 function open(p: ProblemSummary) {
   router.push({ name: 'problem', params: { id: p.id } });
+}
+
+const byId = computed(() => new Map(problems.value.map((p) => [p.id, p])));
+const shownContests = computed(() => {
+  const q = filter.value.trim().toLowerCase();
+  return q ? contests.value.filter((c) => c.name.includes(q) || Object.values(c.title).some((x) => x.toLowerCase().includes(q))) : contests.value;
+});
+/** Average completion over the contest's problems (missing ones count as 0). */
+function contestProgress(c: ContestSummary) {
+  if (!c.problems.length) return 0;
+  const sum = c.problems.reduce((acc, p) => acc + (byId.value.get(p.problem) ? progress(byId.value.get(p.problem)!) : 0), 0);
+  return Math.round(sum / c.problems.length);
+}
+/** problem id -> the contests it is in, e.g. "round-1 · A". */
+const contestsOf = computed(() => {
+  const m = new Map<string, { id: string; label: string; contest: ContestSummary }[]>();
+  for (const c of contests.value) {
+    for (const p of c.problems) {
+      if (!m.has(p.problem)) m.set(p.problem, []);
+      m.get(p.problem)!.push({ id: c.id, label: `${problemTitle(c.title, locale.value) || c.name} · ${p.index}`, contest: c });
+    }
+  }
+  return m;
+});
+function openContest(c: ContestSummary) {
+  router.push({ name: 'contest', params: { id: c.id } });
 }
 </script>
 
 <template>
   <div class="page">
     <app-header>
-      <template #left><strong class="brand">⚒ PolyForge</strong></template>
-      <n-input v-model:value="filter" size="small" clearable :placeholder="t('list.search')" style="max-width: 280px" />
+      <template #left><strong class="brand"><anvil :size="18" /> PolyForge</strong></template>
+      <n-radio-group v-model:value="tab" size="small">
+        <n-radio-button value="problems">{{ t('list.problems') }} {{ problems.length || '' }}</n-radio-button>
+        <n-radio-button value="contests">{{ t('list.contests') }} {{ contests.length || '' }}</n-radio-button>
+      </n-radio-group>
+      <n-input v-model:value="filter" size="small" clearable :placeholder="t(tab === 'contests' ? 'list.searchContests' : 'list.search')" style="max-width: 280px" />
       <n-select
+        v-if="tab === 'problems'"
         v-model:value="sort"
         size="small"
         style="width: 150px"
@@ -94,13 +117,19 @@ function open(p: ProblemSummary) {
           { label: t('list.sortProgress'), value: 'progress' },
         ]"
       />
-      <n-button-group size="small">
-        <n-button :type="view === 'grid' ? 'primary' : 'default'" @click="view = 'grid'">▦</n-button>
-        <n-button :type="view === 'list' ? 'primary' : 'default'" @click="view = 'list'">☰</n-button>
+      <n-button-group v-if="tab === 'problems'" size="small">
+        <n-button :type="view === 'grid' ? 'primary' : 'default'" @click="view = 'grid'"><layout-grid :size="14" /></n-button>
+        <n-button :type="view === 'list' ? 'primary' : 'default'" @click="view = 'list'"><list :size="14" /></n-button>
       </n-button-group>
       <template #right>
-        <n-button size="small" type="primary" :disabled="roots.length === 0" @click="showCreate = true">{{ t('list.new') }}</n-button>
-        <n-button size="small" :disabled="roots.length === 0" @click="showImport = true">{{ t('list.import') }}</n-button>
+        <template v-if="tab === 'problems'">
+          <n-button size="small" type="primary" :disabled="roots.length === 0" @click="showCreate = true">{{ t('list.new') }}</n-button>
+          <n-button size="small" :disabled="roots.length === 0" @click="showImport = true">{{ t('list.import') }}</n-button>
+        </template>
+        <template v-else>
+          <n-button size="small" type="primary" :disabled="roots.length === 0" @click="contestDialog = 'create'">{{ t('contest.new') }}</n-button>
+          <n-button size="small" :disabled="roots.length === 0" @click="contestDialog = 'import'">{{ t('list.import') }}</n-button>
+        </template>
         <n-button size="small" @click="router.push({ name: 'settings' })">{{ t('nav.settings') }}</n-button>
       </template>
     </app-header>
@@ -112,6 +141,45 @@ function open(p: ProblemSummary) {
           <n-button type="primary" @click="router.push({ name: 'settings' })">{{ t('list.goSettings') }}</n-button>
         </template>
       </n-result>
+      <template v-else-if="tab === 'contests'">
+        <n-empty v-if="contests.length === 0" :description="t('contest.none')" style="margin-top: 80px">
+          <template #extra>
+            <n-button type="primary" @click="contestDialog = 'create'">{{ t('contest.new') }}</n-button>
+          </template>
+        </n-empty>
+        <div v-else class="grid">
+          <n-card v-for="c in shownContests" :key="c.id" size="small" hoverable class="card" @click="openContest(c)">
+            <template #header>
+              <div class="title">{{ problemTitle(c.title, locale) || c.name }}</div>
+              <div class="sub mono">{{ c.id }}</div>
+            </template>
+            <template #header-extra>
+              <n-tag v-if="c.polygonId" size="small" :bordered="false">#{{ c.polygonId }}</n-tag>
+            </template>
+            <div v-if="c.error" class="error">{{ c.error }}</div>
+            <n-progress
+              type="line"
+              :percentage="contestProgress(c)"
+              :height="4"
+              :show-indicator="false"
+              :status="contestProgress(c) === 100 ? 'success' : 'default'"
+              style="margin-bottom: 8px"
+            />
+            <div class="checks">
+              <n-tag
+                v-for="p in c.problems"
+                :key="p.index"
+                size="small"
+                :type="!p.found ? 'error' : byId.get(p.problem) && progress(byId.get(p.problem)!) === 100 ? 'success' : 'default'"
+                :bordered="false"
+                :title="p.problem"
+              >
+                {{ p.index }}<span class="tag-sub">{{ byId.get(p.problem) ? problemTitle(byId.get(p.problem)!.title, locale) || p.problem : p.problem }}</span>
+              </n-tag>
+            </div>
+          </n-card>
+        </div>
+      </template>
       <n-empty v-else-if="problems.length === 0" :description="t('list.empty')" style="margin-top: 80px">
         <template #extra>
           <n-button type="primary" @click="showCreate = true">{{ t('list.new') }}</n-button>
@@ -151,9 +219,12 @@ function open(p: ProblemSummary) {
           />
           <div class="checks">
             <n-tag v-for="c in checklist(p)" :key="c.key" size="small" :type="c.ok ? 'success' : 'default'" :bordered="false">
-              {{ c.ok ? '✓' : '·' }} {{ t(`check.${c.key}`) }}
+              <span class="check-tag"><check v-if="c.ok" :size="11" /><circle v-else :size="8" />{{ t(`check.${c.key}`) }}</span>
             </n-tag>
             <n-tag v-if="p.interactive" size="small" type="info" :bordered="false">{{ t('problem.interactive') }}</n-tag>
+          </div>
+          <div v-if="contestsOf.get(p.id)" class="in-contest">
+            <a v-for="c in contestsOf.get(p.id)" :key="c.id" class="link" @click.stop="openContest(c.contest)">{{ c.label }}</a>
           </div>
           <div v-if="roots.length > 1" class="root mono" :title="p.dir">{{ p.root }}</div>
         </n-card>
@@ -162,6 +233,14 @@ function open(p: ProblemSummary) {
 
     <create-problem-dialog v-model:show="showCreate" :roots="roots" @created="open" />
     <import-dialog v-model:show="showImport" :roots="roots" @imported="open" />
+    <contest-dialog
+      :show="contestDialog !== null"
+      :mode="contestDialog ?? 'create'"
+      :roots="roots"
+      :problems="problems"
+      @update:show="(v: boolean) => !v && (contestDialog = null)"
+      @created="openContest"
+    />
   </div>
 </template>
 
@@ -173,6 +252,14 @@ function open(p: ProblemSummary) {
 }
 .brand {
   font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.check-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
 .body {
   flex: 1;
@@ -234,6 +321,25 @@ function open(p: ProblemSummary) {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+.in-contest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+.link:hover {
+  text-decoration: underline;
+}
+.tag-sub {
+  margin-left: 6px;
+  opacity: 0.7;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .warn {
   color: #e8b060;

@@ -28,6 +28,8 @@ import { PRESETS, pastedStatementPrompt } from '../lib/aiPresets';
 import { renderMarkdown } from '../lib/markdown';
 import { languageForPath } from '../lib/monaco';
 import TextDiff from './TextDiff.vue';
+import { Check, ChevronDown, ChevronRight, Circle, Lightbulb, Minus, Play, Plus, RotateCw, Trash2, X } from 'lucide-vue-next';
+import { FALLBACK_TOOL_ICON, TOOL_ICONS } from '../lib/icons';
 import type { Workspace } from '../lib/workspace';
 
 const props = defineProps<{ show: boolean; ai: Ai; problemId: string; ws?: Workspace }>();
@@ -148,23 +150,6 @@ function toolLabel(item: Extract<AiTranscriptItem, { kind: 'tool' }>): string {
   return `${t(`ai.tool.${item.name}`, item.name)}${detail ? ` · ${detail}` : ''}`;
 }
 
-const TOOL_ICON: Record<string, string> = {
-  list_files: '📂',
-  read_file: '📖',
-  write_file: '✏️',
-  edit_file: '✏️',
-  delete_file: '🗑',
-  list_shared: '📚',
-  read_shared: '📚',
-  compile: '🔨',
-  run: '▶',
-  generate_tests: '🧪',
-  view_test: '🔍',
-  run_invocation: '📊',
-  run_validator_tests: '✅',
-  run_checker_tests: '⚖️',
-  update_plan: '📝',
-};
 
 function toggle(id: string) {
   const next = new Set(expanded.value);
@@ -229,9 +214,9 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
         <div v-if="tab === 'review'" class="checks">
           <div class="checks-head">
             <strong>{{ t('ai.localChecks') }}</strong>
-            <n-button size="tiny" quaternary @click="loadChecks">↻</n-button>
+            <n-button size="tiny" quaternary @click="loadChecks"><rotate-cw :size="13" /></n-button>
           </div>
-          <div v-if="checks && !checks.length" class="small good">✓ {{ t('ai.noLocalIssues') }}</div>
+          <div v-if="checks && !checks.length" class="small good row-icon"><check :size="13" /> {{ t('ai.noLocalIssues') }}</div>
           <div v-for="(c, i) in checks ?? []" :key="i" class="check">
             <n-tag size="tiny" :type="SEV_TYPE[c.level]" :bordered="false">{{ t(`ai.sev.${c.level}`) }}</n-tag>
             <span>{{ c.message }}</span>
@@ -251,7 +236,6 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
             <n-button size="small" type="primary" :loading="ai.running.value && s.current?.mode === 'review'" :disabled="ai.running.value" @click="startReview">
               {{ t('ai.startReview') }}
             </n-button>
-            <span class="small dim">{{ t('ai.reviewHint') }}</span>
           </div>
           <div class="bar">
             <n-select
@@ -262,9 +246,9 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
               style="flex: 1; min-width: 0"
               @update:value="(v: string) => ai.open(v)"
             />
-            <n-button v-if="tab === 'agent'" size="small" @click="newSession">＋ {{ t('ai.newSession') }}</n-button>
+            <n-button v-if="tab === 'agent'" size="small" @click="newSession"><template #icon><plus /></template>{{ t('ai.newSession') }}</n-button>
             <n-popconfirm v-if="s.current" @positive-click="ai.remove(s.current!.id)">
-              <template #trigger><n-button size="small" quaternary>🗑</n-button></template>
+              <template #trigger><n-button size="small" quaternary><trash2 :size="15" /></n-button></template>
               {{ t('ai.deleteSession') }}
             </n-popconfirm>
           </div>
@@ -289,7 +273,7 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
 
           <div v-if="s.current?.plan.length" class="plan">
             <div v-for="(p, i) in s.current.plan" :key="i" :class="['step', p.status]">
-              <span class="mark">{{ p.status === 'done' ? '✓' : p.status === 'in_progress' ? '▶' : p.status === 'skipped' ? '–' : '○' }}</span>
+              <span class="mark"><check v-if="p.status === 'done'" :size="12" /><play v-else-if="p.status === 'in_progress'" :size="11" /><minus v-else-if="p.status === 'skipped'" :size="12" /><circle v-else :size="10" /></span>
               {{ p.title }}
             </div>
           </div>
@@ -303,7 +287,7 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
                 <n-button size="tiny" class="fix" :disabled="ai.running.value" @click="fixFinding(f)">{{ t('ai.fixIt') }}</n-button>
               </div>
               <div class="small">{{ f.detail }}</div>
-              <div v-if="f.suggestion" class="small dim">💡 {{ f.suggestion }}</div>
+              <div v-if="f.suggestion" class="small dim row-icon"><lightbulb :size="12" /> {{ f.suggestion }}</div>
               <a v-if="f.file" class="mono path small" @click="openAt(f.file, f.line)">{{ f.file }}{{ f.line ? `:${f.line}` : '' }}</a>
             </div>
           </div>
@@ -318,11 +302,11 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
               </details>
               <div v-else-if="item.kind === 'tool'" class="tool" :class="{ error: item.isError, pending: item.result === undefined }">
                 <div class="tool-head" @click="toggle(item.id)">
-                  <span>{{ TOOL_ICON[item.name] ?? '🔧' }}</span>
+                  <component :is="TOOL_ICONS[item.name] ?? FALLBACK_TOOL_ICON" :size="13" class="tool-icon" />
                   <span class="tool-label">{{ toolLabel(item) }}</span>
                   <n-spin v-if="item.result === undefined" :size="12" />
-                  <span v-else-if="item.isError" class="bad">✗</span>
-                  <span class="chev">{{ expanded.has(item.id) ? '▾' : '▸' }}</span>
+                  <x v-else-if="item.isError" :size="13" class="bad" />
+                  <component :is="expanded.has(item.id) ? ChevronDown : ChevronRight" :size="13" class="chev" />
                 </div>
                 <div v-if="expanded.has(item.id)" class="tool-body">
                   <pre class="mono">{{ JSON.stringify(item.input, null, 1).slice(0, 3000) }}</pre>
@@ -490,8 +474,18 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
   color: #63e2b7;
 }
 .mark {
-  display: inline-block;
-  width: 14px;
+  display: inline-flex;
+  width: 16px;
+  vertical-align: -1px;
+}
+.row-icon {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tool-icon {
+  opacity: 0.7;
+  flex-shrink: 0;
 }
 .log {
   flex: 1;
