@@ -595,7 +595,7 @@
       "polygon-push": "Pushed to Polygon"
     },
     "pageBreaks": "One problem per page",
-    "print": "Print / PDF",
+    "print": "Print",
     "noStatementIn": "{list}: no {lang} statement",
     "noTutorialIn": "{list}: no {lang} tutorial",
     "noProblems": "This contest has no problems yet",
@@ -607,7 +607,8 @@
     "noTutorials": "No tutorials yet",
     "problemsRoot": "Import problems to",
     "deleteTitle": "Delete contest {name}?",
-    "deleted": "Contest deleted"
+    "deleted": "Contest deleted",
+    "export": "Export"
   },
   "testsets": {
     "title": "Testsets and groups",

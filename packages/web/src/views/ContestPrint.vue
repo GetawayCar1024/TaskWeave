@@ -2,9 +2,11 @@
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { NAlert, NButton, NRadioButton, NRadioGroup, NSpin, NSwitch, NTag, useMessage } from 'naive-ui';
+import { NAlert, NButton, NDropdown, NRadioButton, NRadioGroup, NSpin, NSwitch, NTag, useMessage } from 'naive-ui';
 import 'katex/dist/katex.min.css';
-import { ArrowLeft, Printer } from 'lucide-vue-next';
+import { ArrowLeft, FileDown, Printer } from 'lucide-vue-next';
+import katex from 'katex';
+import { serverText } from '../lib/serverText';
 import { STATEMENT_SECTIONS, type ContestDetail, type ContestStatement, type StatementSection } from '@polyforge/shared';
 import StatementDoc from '../components/StatementDoc.vue';
 import { api, errorMessage, rawUrl } from '../lib/api';
@@ -72,6 +74,86 @@ const tutorialsMissing = computed(() => rendered.value.filter((r) => r.hasStatem
 
 const print = () => window.print();
 
+// ---- export as HTML (this page, self-contained) or TeX (server) ----
+const exporting = ref(false);
+const exportOptions = computed(() => [
+  { key: 'html', label: 'HTML' },
+  { key: 'tex', label: 'TeX' },
+]);
+const baseName = () => `${detail.value?.summary.name ?? props.id}-${doc.value}-${lang.value}`;
+async function onExport(key: string) {
+  exporting.value = true;
+  try {
+    if (key === 'tex') await api.contestTex(props.id, lang.value, doc.value, pageBreaks.value);
+    else await exportHtml();
+  } catch (e) {
+    message.error(serverText(errorMessage(e)));
+  } finally {
+    exporting.value = false;
+  }
+}
+/**
+ * The rendered sheet as one HTML file: the statement styles of this page are copied,
+ * images are embedded as data URLs, and KaTeX's stylesheet / fonts come from the CDN.
+ */
+async function exportHtml() {
+  const sheet = document.querySelector('.sheet');
+  if (!sheet) return;
+  const clone = sheet.cloneNode(true) as HTMLElement;
+  for (const img of Array.from(clone.querySelectorAll('img'))) {
+    try {
+      const blob = await (await fetch(img.src)).blob();
+      img.src = await new Promise<string>((resolve) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result));
+        r.readAsDataURL(blob);
+      });
+    } catch {
+      /* keep the link */
+    }
+  }
+  // The styles are Vue-scoped: copy the rules keyed by the data-v-* attributes that
+  // occur in the exported sheet (StatementDoc and this page), plus @page.
+  const scopes = new Set<string>();
+  for (const el of [clone, ...Array.from(clone.querySelectorAll('*'))]) for (const at of Array.from(el.attributes)) if (at.name.startsWith('data-v-')) scopes.add(at.name);
+  let css = '';
+  for (const s of Array.from(document.styleSheets)) {
+    let rules: CSSRuleList;
+    try {
+      rules = s.cssRules;
+    } catch {
+      continue;
+    }
+    for (const r of Array.from(rules)) {
+      const text = r.cssText;
+      if (text.startsWith('@page') || [...scopes].some((sc) => text.includes(sc))) css += text + '\n';
+    }
+  }
+  const html = `<!DOCTYPE html>
+<html lang="${lang.value}">
+<head>
+<meta charset="utf-8">
+<title>${docTitle.value.replace(/</g, '&lt;')}</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@${katex.version}/dist/katex.min.css">
+<style>
+body { margin: 0; background: #f0f0f0; }
+${css}
+@media print { body { background: #fff; } }
+</style>
+</head>
+<body>
+${clone.outerHTML}
+</body>
+</html>
+`;
+  const href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = `${baseName()}.html`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(href), 10_000);
+}
+
 const contestTitle = computed(() => detail.value?.summary.title[lang.value] || detail.value?.summary.title.en || detail.value?.summary.name || '');
 const docTitle = computed(() => (doc.value === 'tutorials' ? `${contestTitle.value} — ${lang.value === 'zh' ? '题解' : 'Tutorial'}` : contestTitle.value));
 const shown = computed(() => rendered.value.filter((r) => (doc.value === 'tutorials' ? r.hasTutorial : r.hasStatement)));
@@ -119,6 +201,9 @@ onBeforeUnmount(() => {
         {{ t('contest.noTutorialIn', { lang, list: tutorialsMissing.join(', ') }) }}
       </n-tag>
       <span class="grow" />
+      <n-dropdown trigger="click" :options="exportOptions" @select="onExport">
+        <n-button size="small" :loading="exporting"><template #icon><file-down /></template>{{ t('contest.export') }}</n-button>
+      </n-dropdown>
       <n-button size="small" type="primary" @click="print"><template #icon><printer /></template>{{ t('contest.print') }}</n-button>
     </div>
 

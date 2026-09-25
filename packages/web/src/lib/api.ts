@@ -184,6 +184,8 @@ export const api = {
   contestStatements: (id: string, lang: string) => request<ContestStatement[]>('GET', `/contests/${pid(id)}/statements?lang=${encodeURIComponent(lang)}`),
   contestBatch: (id: string, req: ContestBatchRequest) => request<JobInfo>('POST', `/contests/${pid(id)}/batch`, req),
   importContest: (req: ContestImportRequest) => request<JobInfo>('POST', '/contests/import/polygon', req),
+  contestTex: (id: string, lang: string, doc: string, breaks: boolean) =>
+    download(`/api/contests/${pid(id)}/tex?lang=${encodeURIComponent(lang)}&doc=${encodeURIComponent(doc)}&breaks=${breaks ? 1 : 0}`, `${id}-${doc}-${lang}.tex`),
   downloadContestExport: (id: string, file: string) => download(`/api/contests/${pid(id)}/export/${encodeURIComponent(file)}`, file),
 
   // ---- AI (M4) ----
@@ -211,7 +213,12 @@ export const api = {
 /** Download a file through fetch (the token travels in a header). */
 async function download(url: string, file: string) {
   const res = await fetch(url, { headers: { [TOKEN_HEADER]: token } });
-  if (!res.ok) throw new ApiError(res.status, 'download_failed', res.statusText);
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new ApiError(res.status, data?.error ?? 'download_failed', data?.message ?? res.statusText);
+  }
+  // The server's name wins (e.g. .tex or .zip depending on the content).
+  file = res.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] ?? file;
   const href = URL.createObjectURL(await res.blob());
   const a = document.createElement('a');
   a.href = href;

@@ -89,3 +89,35 @@ export async function macroExpansions(sharedDir: string, text: string, lang: str
   }
   return [...new Set(out)];
 }
+
+/** Replace the defs.toml macros in a statement text by their bodies (a few rounds, for nested macros). */
+export async function expandMacros(sharedDir: string, text: string, lang: string): Promise<string> {
+  const cmds = await commands(sharedDir, lang);
+  if (!cmds.size) return text;
+  let out = text;
+  for (let round = 0; round < 5; round++) {
+    let changed = false;
+    let res = '';
+    let last = 0;
+    const re = /\\([A-Za-z]+)/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(out))) {
+      const c = cmds.get(m[1]);
+      if (!c) continue;
+      let pos = m.index + m[0].length;
+      const vals = c.args.map((def) => {
+        const a = readArg(out, pos, '[') ?? readArg(out, pos, '{');
+        if (!a) return def;
+        pos = a.end;
+        return a.value;
+      });
+      res += out.slice(last, m.index) + c.body.replace(/#(\d)/g, (_, d: string) => vals[Number(d) - 1] ?? '');
+      last = pos;
+      re.lastIndex = pos;
+      changed = true;
+    }
+    if (!changed) break;
+    out = res + out.slice(last);
+  }
+  return out;
+}

@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { CONTEST_ACTIONS, type ContestBatchRequest, type ContestImportRequest, type CreateContestRequest, type UpdateContestRequest } from '@polyforge/shared';
 import type { JobManager } from '../jobs.js';
 import { contestExportDir, contestStatements, importContest, runContestBatch, type ContestDeps } from '../judge/contest.js';
+import { contestTex } from '../judge/statementTex.js';
 import { HttpError } from '../util/fs.js';
 import type { WsHub } from '../ws.js';
 
@@ -34,6 +35,19 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps, jobs: Job
     await contests.remove(req.params.id);
     hub.broadcast({ type: 'contests:changed' });
     return { ok: true };
+  });
+
+  /** Statements or tutorials as a self-contained .tex (a .zip when there are images). */
+  app.get<P & { Querystring: { lang?: string; doc?: string; breaks?: string } }>('/api/contests/:id/tex', async (req, reply) => {
+    const ref = await contests.get(req.params.id);
+    const lang = /^[a-z]{2,8}$/.test(req.query.lang ?? '') ? req.query.lang! : 'zh';
+    const doc = req.query.doc === 'tutorials' ? 'tutorials' : 'statements';
+    const r = await contestTex(judge, contests, ref.id, lang, doc, req.query.breaks !== '0');
+    const file = `${ref.id}-${doc}-${lang}.${r.ext}`;
+    return reply
+      .type(r.ext === 'zip' ? 'application/zip' : 'application/x-tex; charset=utf-8')
+      .header('content-disposition', `attachment; filename="${file}"`)
+      .send(r.data);
   });
 
   app.get<P & { Querystring: { lang?: string } }>('/api/contests/:id/statements', async (req) => {

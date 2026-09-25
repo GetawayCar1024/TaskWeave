@@ -595,7 +595,7 @@
       "polygon-push": "已推送到 Polygon"
     },
     "pageBreaks": "每题分页",
-    "print": "打印 / 导出 PDF",
+    "print": "打印",
     "noStatementIn": "{list} 没有 {lang} 题面",
     "noTutorialIn": "{list} 没有 {lang} 题解",
     "noProblems": "比赛里还没有题目",
@@ -607,7 +607,8 @@
     "noTutorials": "还没有题解",
     "problemsRoot": "题目导入到",
     "deleteTitle": "删除比赛 {name}？",
-    "deleted": "比赛已删除"
+    "deleted": "比赛已删除",
+    "export": "导出"
   },
   "testsets": {
     "title": "测试集与子任务",
