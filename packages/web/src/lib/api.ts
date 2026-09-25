@@ -131,7 +131,8 @@ export const api = {
   pushPreview: (id: string) => request<PushPreview>('POST', `/problems/${pid(id)}/polygon/diff`),
   push: (id: string, req: PushRequest) => request<JobInfo>('POST', `/problems/${pid(id)}/polygon/push`, req),
   pullPreview: (id: string) => request<PullPreview>('POST', `/problems/${pid(id)}/polygon/pull-preview`),
-  pull: (id: string, take: string[]) => request<{ applied: string[]; warnings: string[] }>('POST', `/problems/${pid(id)}/polygon/pull`, { take }),
+  pull: (id: string, take: string[], merge: string[] = []) =>
+    request<{ applied: string[]; merged: string[]; conflicts: string[]; warnings: string[] }>('POST', `/problems/${pid(id)}/polygon/pull`, { take, merge }),
   syncContent: (id: string, key: string) => request<ItemContent>('GET', `/problems/${pid(id)}/polygon/content?key=${encodeURIComponent(key)}`),
   importPolygon: (req: ImportRequest) => request<JobInfo>('POST', '/problems/import/polygon', req),
   job: (jobId: string) => request<JobInfo>('GET', `/jobs/${encodeURIComponent(jobId)}`),

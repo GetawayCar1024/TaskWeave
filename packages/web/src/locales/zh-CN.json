@@ -273,6 +273,11 @@
     "pull_local": "本地已改",
     "pull_conflict": "冲突",
     "pull_remote_only": "仅 Polygon",
-    "pull_local_only": "仅本地"
+    "pull_local_only": "仅本地",
+    "merge": "合并",
+    "mergeClean": "两边改动不重叠，可以自动合并",
+    "mergeWithConflicts": "有 {n} 处重叠改动，会写入冲突标记（<<<<<<< / >>>>>>>），需在编辑器里处理",
+    "mergePreview": "合并结果",
+    "mergeCount": "合并 {n} 项"
   }
 }

@@ -273,6 +273,11 @@
     "pull_local": "changed locally",
     "pull_conflict": "conflict",
     "pull_remote_only": "Polygon only",
-    "pull_local_only": "local only"
+    "pull_local_only": "local only",
+    "merge": "Merge",
+    "mergeClean": "The edits do not overlap and merge cleanly",
+    "mergeWithConflicts": "{n} overlapping edit(s) will be written with conflict markers (<<<<<<< / >>>>>>>) to resolve in the editor",
+    "mergePreview": "merged",
+    "mergeCount": "{n} to merge"
   }
 }

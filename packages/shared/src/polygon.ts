@@ -94,6 +94,10 @@ export interface PullItem extends SyncItem {
   status: PullStatus;
   /** Suggested choice: take the Polygon version? */
   takeRemote: boolean;
+  /** A three-way merge is possible (text item with a recorded base). */
+  mergeable?: boolean;
+  /** Conflicting regions a merge would leave (0 = merges cleanly). */
+  mergeConflicts?: number;
 }
 
 export interface PullPreview {
@@ -105,6 +109,8 @@ export interface PullPreview {
 export interface PullRequest {
   /** Keys whose Polygon version should overwrite the local one. */
   take: string[];
+  /** Keys to three-way merge (local + Polygon changes against the last sync). */
+  merge?: string[];
 }
 
 export interface ItemContent {
@@ -112,6 +118,9 @@ export interface ItemContent {
   local: string | null;
   remote: string | null;
   binary?: boolean;
+  /** Three-way merge result, when a base is known. */
+  merged?: string;
+  mergeConflicts?: number;
 }
 
 export interface ImportRequest {

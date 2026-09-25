@@ -10,12 +10,15 @@
     "mock-polygon": "tsx scripts/mock-polygon.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@fastify/static": "^10.1.4",
     "@fastify/websocket": "^11.3.1",
     "@polyforge/shared": "workspace:*",
     "chokidar": "^5.0.0",
     "fastify": "^5.12.5",
+    "node-diff3": "^3.2.1",
     "open": "^11.0.4",
+    "openai": "^7.23.0",
     "smol-toml": "^1.9.0",
     "zod": "^4.6.5"
   },

@@ -35,7 +35,7 @@ export function polygonRoutes(app: FastifyInstance, judge: Judge, sync: PolygonS
 
   app.post<P & { Body: PullRequest }>('/api/problems/:id/polygon/pull', async (req) => {
     const ctx = await judge.ctx(req.params.id);
-    const r = await sync.pull(ctx, { take: req.body?.take ?? [] });
+    const r = await sync.pull(ctx, { take: req.body?.take ?? [], merge: req.body?.merge ?? [] });
     hub.broadcast({ type: 'problem:changed', problemId: ctx.ref.id });
     return r;
   });

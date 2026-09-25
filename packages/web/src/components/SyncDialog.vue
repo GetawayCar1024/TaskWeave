@@ -100,6 +100,8 @@ async function bind() {
 // ---- pull ----
 const pullPreview = ref<PullPreview | null>(null);
 const take = ref(new Set<string>());
+const merge = ref(new Set<string>());
+const diffMode = ref<'compare' | 'merged'>('compare');
 const showSame = ref(false);
 const pulling = ref(false);
 
@@ -109,6 +111,8 @@ async function loadPull() {
   try {
     pullPreview.value = await api.pullPreview(props.problemId);
     take.value = new Set(pullPreview.value.items.filter((i) => i.takeRemote).map((i) => i.key));
+    // Conflicts that merge without overlapping edits are merged by default.
+    merge.value = new Set(pullPreview.value.items.filter((i) => i.status === 'conflict' && i.mergeable && i.mergeConflicts === 0).map((i) => i.key));
   } catch (e) {
     error.value = errorMessage(e);
   } finally {
@@ -121,8 +125,8 @@ const pullItems = computed(() => (pullPreview.value?.items ?? []).filter((i) => 
 async function doPull() {
   pulling.value = true;
   try {
-    const r = await api.pull(props.problemId, [...take.value]);
-    message.success(t('sync.pulled', { n: r.applied.length }));
+    const r = await api.pull(props.problemId, [...take.value], [...merge.value]);
+    message.success(t('sync.pulled', { n: r.applied.length + r.merged.length }));
     if (r.warnings.length) message.warning(r.warnings.join('\n'));
     await props.ws.loadDetail();
     // Reload open tabs whose files changed underneath them.
@@ -140,8 +144,20 @@ const active = ref<string | null>(null);
 const content = ref<ItemContent | null>(null);
 const contentLoading = ref(false);
 
+function toggleMerge(key: string) {
+  const on = !merge.value.has(key);
+  merge.value = toggle(merge.value, key, on);
+  if (on) take.value = toggle(take.value, key, false);
+}
+
+function setTake(key: string, v: boolean) {
+  take.value = toggle(take.value, key, v);
+  if (v) merge.value = toggle(merge.value, key, false);
+}
+
 async function openItem(key: string) {
   active.value = key;
+  diffMode.value = merge.value.has(key) ? 'merged' : 'compare';
   content.value = null;
   contentLoading.value = true;
   try {
@@ -276,24 +292,47 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
               <n-scrollbar style="max-height: 52vh">
                 <div v-if="!pullItems.length" class="dim small empty">{{ t('sync.inSync') }}</div>
                 <div v-for="it in pullItems" :key="it.key" class="row" :class="{ active: active === it.key, conflict: it.status === 'conflict' }" @click="openItem(it.key)">
-                  <n-checkbox :checked="take.has(it.key)" :disabled="it.status === 'same'" @click.stop @update:checked="(v: boolean) => (take = toggle(take, it.key, v))" />
+                  <n-checkbox :checked="take.has(it.key)" :disabled="it.status === 'same'" @click.stop @update:checked="(v: boolean) => setTake(it.key, v)" />
                   <n-tag size="tiny" :type="PULL_TYPE[it.status]" :bordered="false">{{ t(`sync.pull_${it.status.replace('-', '_')}`) }}</n-tag>
                   <span class="label" :title="it.key">{{ it.label }}</span>
+                  <n-button
+                    v-if="it.mergeable"
+                    size="tiny"
+                    class="merge-btn"
+                    :type="merge.has(it.key) ? 'primary' : 'default'"
+                    :title="it.mergeConflicts ? t('sync.mergeWithConflicts', { n: it.mergeConflicts }) : t('sync.mergeClean')"
+                    @click.stop="toggleMerge(it.key)"
+                  >
+                    {{ t('sync.merge') }}{{ it.mergeConflicts ? ` (${it.mergeConflicts}!)` : '' }}
+                  </n-button>
                 </div>
               </n-scrollbar>
               <div class="hint small dim">{{ t('sync.pullHint') }}</div>
             </div>
             <div class="diff-pane">
-              <div class="labels"><span>{{ t('sync.local') }}</span><span>Polygon</span></div>
+              <div class="labels">
+                <span>{{ t('sync.local') }}</span>
+                <span v-if="content?.merged !== undefined" class="mode">
+                  <n-button size="tiny" text :type="diffMode === 'compare' ? 'primary' : 'default'" @click="diffMode = 'compare'">Polygon</n-button>
+                  ·
+                  <n-button size="tiny" text :type="diffMode === 'merged' ? 'primary' : 'default'" @click="diffMode = 'merged'">{{ t('sync.mergePreview') }}</n-button>
+                </span>
+                <span v-else>Polygon</span>
+              </div>
               <div v-if="contentLoading" class="center"><n-spin /></div>
               <div v-else-if="!content" class="dim small center">{{ t('sync.pickItem') }}</div>
               <div v-else-if="content.binary" class="dim small center">{{ t('sync.binary') }}</div>
-              <text-diff v-else :original="content.local ?? ''" :modified="content.remote ?? ''" class="diff" />
+              <text-diff
+                v-else
+                :original="content.local ?? ''"
+                :modified="diffMode === 'merged' && content.merged !== undefined ? content.merged : content.remote ?? ''"
+                class="diff"
+              />
             </div>
           </div>
           <div class="foot">
-            <span class="small dim">{{ t('sync.takeCount', { n: take.size }) }}</span>
-            <n-button type="primary" :loading="pulling" :disabled="!take.size" @click="doPull">{{ t('sync.apply') }}</n-button>
+            <span class="small dim">{{ t('sync.takeCount', { n: take.size }) }}<template v-if="merge.size"> · {{ t('sync.mergeCount', { n: merge.size }) }}</template></span>
+            <n-button type="primary" :loading="pulling" :disabled="!take.size && !merge.size" @click="doPull">{{ t('sync.apply') }}</n-button>
           </div>
         </template>
       </n-tab-pane>
@@ -336,6 +375,10 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
 }
 .row.conflict .label {
   color: #e88080;
+}
+.merge-btn {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 .label {
   overflow: hidden;

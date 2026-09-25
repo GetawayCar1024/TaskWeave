@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { parse, stringify } from 'smol-toml';
@@ -19,6 +20,7 @@ import type { Judge, ProblemCtx } from '../judge/index.js';
 import { atomicWrite, exists, HttpError } from '../util/fs.js';
 import { PROBLEM_FILE } from '../workspace/problems.js';
 import { PolygonClient } from './client.js';
+import { merge3, mergeMeta } from './merge.js';
 import {
   applyItem,
   DELETABLE_KINDS,
@@ -55,6 +57,39 @@ async function readSync(ctx: ProblemCtx): Promise<SyncState> {
 
 async function writeSync(ctx: ProblemCtx, s: SyncState) {
   await atomicWrite(syncPath(ctx), JSON.stringify(s, null, 1));
+}
+
+/**
+ * Content of text items as of the last sync (`.polyforge/sync-base/`), the common
+ * ancestor for three-way merges. Binary items only need their hash.
+ */
+interface BaseSnapshot {
+  text: string;
+  meta?: Record<string, unknown>;
+}
+const baseDir = (ctx: ProblemCtx) => path.join(ctx.work, 'sync-base');
+const baseFile = (ctx: ProblemCtx, key: string) => path.join(baseDir(ctx), `${createHash('sha1').update(key).digest('hex')}.json`);
+
+async function saveBase(ctx: ProblemCtx, it: Item) {
+  if (it.text === undefined) return;
+  await atomicWrite(baseFile(ctx, it.key), JSON.stringify({ key: it.key, text: it.text, meta: it.meta }));
+}
+async function loadBase(ctx: ProblemCtx, key: string): Promise<BaseSnapshot | null> {
+  try {
+    return JSON.parse(await fsp.readFile(baseFile(ctx, key), 'utf8')) as BaseSnapshot;
+  } catch {
+    return null;
+  }
+}
+async function dropBase(ctx: ProblemCtx, key: string) {
+  await fsp.rm(baseFile(ctx, key), { force: true });
+}
+
+/** The merge of local and remote against the recorded base, if one is possible. */
+function mergeItems(l: Item, r: Item, base: BaseSnapshot): Item | null {
+  if (l.text === undefined || r.text === undefined) return null;
+  const m = merge3(l.text, base.text, r.text);
+  return { ...l, text: m.text, meta: mergeMeta(l.meta, base.meta, r.meta), extra: { ...l.extra, mergeConflicts: m.conflicts } };
 }
 
 const byOrder = (a: { kind: string; key: string }, b: { kind: string; key: string }) =>
@@ -158,6 +193,7 @@ export class PolygonSync {
         job.progress(done, total, it.label);
         await pushItem(pc, it);
         sync.items[it.key] = itemHash(it);
+        await saveBase(ctx, it);
         pushed.push(it.key);
         done++;
       }
@@ -171,6 +207,7 @@ export class PolygonSync {
         job.progress(done, total, `clear ${key}`);
         await pushItem(pc, stub, true);
         delete sync.items[key];
+        await dropBase(ctx, key);
         pushed.push(key);
         done++;
       }
@@ -216,7 +253,11 @@ export class PolygonSync {
         if (lh === rh) out.push({ ...it, status: 'same', takeRemote: false });
         else if (base === lh) out.push({ ...it, status: 'remote', takeRemote: true });
         else if (base === rh) out.push({ ...it, status: 'local', takeRemote: false });
-        else out.push({ ...it, status: 'conflict', takeRemote: false });
+        else {
+          const base = await loadBase(ctx, key);
+          const m = base && mergeItems(l, r, base);
+          out.push({ ...it, status: 'conflict', takeRemote: false, mergeable: !!m, mergeConflicts: m ? (m.extra?.mergeConflicts as number) : undefined });
+        }
       } else if (r) {
         out.push({ ...it, status: 'remote-only', takeRemote: true });
       } else {
@@ -239,17 +280,25 @@ export class PolygonSync {
       this.remoteCache.set(ctx.ref.id, cached);
     }
     const r = cached?.items.find((i) => i.key === key);
-    return { key, local: l ? itemDisplay(l) : null, remote: r ? itemDisplay(r) : null, binary: (l ?? r)?.binary };
+    const out: ItemContent = { key, local: l ? itemDisplay(l) : null, remote: r ? itemDisplay(r) : null, binary: (l ?? r)?.binary };
+    const base = l && r && itemHash(l) !== itemHash(r) ? await loadBase(ctx, key) : null;
+    const m = base && mergeItems(l!, r!, base);
+    if (m) {
+      out.merged = itemDisplay(m);
+      out.mergeConflicts = m.extra?.mergeConflicts as number;
+    }
+    return out;
   }
 
   /** Apply the chosen remote items locally; everything seen on Polygon becomes the new base. */
-  async pull(ctx: ProblemCtx, req: PullRequest): Promise<{ applied: string[]; warnings: string[] }> {
+  async pull(ctx: ProblemCtx, req: PullRequest): Promise<{ applied: string[]; merged: string[]; conflicts: string[]; warnings: string[] }> {
     const cached = this.remoteCache.get(ctx.ref.id);
     if (!cached || cached.polygonId !== ctx.config.polygon.id) throw new HttpError(409, 'stale_preview', 'Fetch the Polygon state first');
     const { items: local } = await localItems(this.judge, ctx);
     const L = new Map(local.map((i) => [i.key, i]));
     const R = new Map(cached.items.map((i) => [i.key, i]));
     const take = new Set(req.take);
+    const mergeKeys = new Set((req.merge ?? []).filter((k) => !take.has(k)));
     const sync = await readSync(ctx);
     const problemFile = path.join(ctx.ref.dir, PROBLEM_FILE);
     const doc = parse(await fsp.readFile(problemFile, 'utf8')) as Record<string, any>;
@@ -266,9 +315,29 @@ export class PolygonSync {
       else continue;
       applied.push(key);
     }
+    const merged: string[] = [];
+    const conflicts: string[] = [];
+    for (const key of mergeKeys) {
+      const l = L.get(key);
+      const r = R.get(key);
+      const base = await loadBase(ctx, key);
+      const m = l && r && base && mergeItems(l, r, base);
+      if (!m) continue;
+      await applyItem({ ...ac, local: l }, m);
+      merged.push(key);
+      if ((m.extra?.mergeConflicts as number) > 0) conflicts.push(key);
+    }
     await atomicWrite(problemFile, stringify(doc) + '\n');
-    for (const [key, r] of R) sync.items[key] = itemHash(r);
-    for (const key of Object.keys(sync.items)) if (!R.has(key)) delete sync.items[key];
+    // Polygon's state is now the common ancestor for every key it has.
+    for (const [key, r] of R) {
+      sync.items[key] = itemHash(r);
+      await saveBase(ctx, r);
+    }
+    for (const key of Object.keys(sync.items)) {
+      if (R.has(key)) continue;
+      delete sync.items[key];
+      await dropBase(ctx, key);
+    }
     sync.polygonId = cached.polygonId;
     sync.lastSync = new Date().toISOString();
     try {
@@ -287,7 +356,8 @@ export class PolygonSync {
       const a = after.get(key);
       if (r && a && itemHash(a) !== itemHash(r)) warnings.push(`${key}: the local copy does not round-trip exactly`);
     }
-    return { applied, warnings };
+    if (conflicts.length) warnings.unshift(`Merged with conflict markers (<<<<<<< / >>>>>>>), resolve them in the editor: ${conflicts.join(', ')}`);
+    return { applied, merged, conflicts, warnings };
   }
 
   // ---- import ----
