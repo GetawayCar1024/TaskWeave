@@ -1,0 +1,27 @@
+[problem]
+name = "{{name}}"
+title = { zh = "{{title_zh}}", en = "{{title_en}}" }
+time_limit = {{time_limit}}        # ms
+memory_limit = {{memory_limit}}    # MB
+input = "stdin"
+output = "stdout"
+interactive = {{interactive}}
+
+[polygon]
+# id = 123456   # 绑定 Polygon 后写入
+
+[checker]
+source = "std:ncmp"
+
+[validator]
+source = "validator.cpp"
+
+[[solutions]]
+source = "solutions/std.cpp"
+tag = "MA"
+
+[[generators]]
+source = "generators/gen_random.cpp"
+
+[tests]
+script = "tests/script.txt"

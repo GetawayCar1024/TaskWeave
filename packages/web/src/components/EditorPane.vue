@@ -1,0 +1,205 @@
+<script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { NAlert, NButton, NEmpty, NSpace } from 'naive-ui';
+import { monaco } from '../lib/monaco';
+import { settings } from '../lib/settings';
+import { SHARED_TAB, type Tab, type Workspace } from '../lib/workspace';
+
+const props = defineProps<{ ws: Workspace }>();
+const emit = defineEmits<{ save: [path: string]; close: [path: string]; quickOpen: []; showDiff: [path: string] }>();
+const { t } = useI18n();
+
+const host = ref<HTMLDivElement>();
+let editor: monaco.editor.IStandaloneCodeEditor | null = null;
+let current: Tab | null = null;
+
+function editorOptions(): monaco.editor.IEditorOptions & monaco.editor.IGlobalEditorOptions {
+  const ed = settings.config!.editor;
+  return {
+    fontSize: ed.font_size,
+    tabSize: ed.tab_size,
+    wordWrap: ed.word_wrap ? 'on' : 'off',
+    minimap: { enabled: ed.minimap },
+    theme: settings.config!.ui.theme === 'light' ? 'vs' : 'vs-dark',
+  };
+}
+
+onMounted(() => {
+  editor = monaco.editor.create(host.value!, {
+    model: null,
+    automaticLayout: true,
+    scrollBeyondLastLine: false,
+    fontFamily: "Consolas, 'Cascadia Code', 'Courier New', monospace",
+    renderWhitespace: 'selection',
+    ...editorOptions(),
+  });
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => current && emit('save', current.path));
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, () => emit('quickOpen'));
+  props.ws.editorRef.value = editor;
+  show(props.ws.activeTab.value);
+});
+
+function show(tab: Tab | null) {
+  if (!editor) return;
+  if (current && current !== tab && !current.model.isDisposed()) current.viewState = editor.saveViewState();
+  current = tab;
+  editor.setModel(tab && !tab.model.isDisposed() ? tab.model : null);
+  if (tab) {
+    editor.updateOptions({ readOnly: tab.readOnly });
+    if (tab.viewState) editor.restoreViewState(tab.viewState);
+    editor.focus();
+  }
+}
+
+watch(() => props.ws.activeTab.value, show);
+watch(
+  () => settings.config,
+  () => editor?.updateOptions(editorOptions()),
+  { deep: true },
+);
+
+onBeforeUnmount(() => {
+  props.ws.editorRef.value = null;
+  editor?.dispose();
+});
+
+const label = (path: string) => (path.startsWith(SHARED_TAB) ? `std:${path.split('/').pop()}` : path.split('/').pop());
+
+function onTabMouse(e: MouseEvent, path: string) {
+  if (e.button === 1) {
+    e.preventDefault();
+    emit('close', path);
+  }
+}
+</script>
+
+<template>
+  <div class="pane">
+    <div class="tabs" v-if="ws.state.tabs.length">
+      <div
+        v-for="tab in ws.state.tabs"
+        :key="tab.path"
+        class="tab"
+        :class="{ active: tab.path === ws.state.active }"
+        :title="tab.path"
+        @click="ws.state.active = tab.path"
+        @mousedown="onTabMouse($event, tab.path)"
+      >
+        <span class="name" :class="{ gone: tab.disk === 'deleted' }">{{ label(tab.path) }}</span>
+        <span v-if="tab.readOnly" class="ro">🔒</span>
+        <span class="close" :class="{ dirty: tab.dirty }" @click.stop="emit('close', tab.path)">
+          <span class="dot">●</span><span class="x">×</span>
+        </span>
+      </div>
+    </div>
+
+    <template v-if="ws.activeTab.value">
+      <n-alert v-if="ws.activeTab.value.disk === 'changed'" type="warning" :show-icon="false" class="banner">
+        <n-space align="center" justify="space-between">
+          <span>{{ t('editor.changedOnDisk') }}</span>
+          <n-space size="small">
+            <n-button size="tiny" @click="emit('showDiff', ws.activeTab.value.path)">{{ t('editor.showDiff') }}</n-button>
+            <n-button size="tiny" @click="ws.reloadFromDisk(ws.activeTab.value.path)">{{ t('editor.useDisk') }}</n-button>
+          </n-space>
+        </n-space>
+      </n-alert>
+      <n-alert v-else-if="ws.activeTab.value.disk === 'deleted'" type="error" :show-icon="false" class="banner">
+        {{ t('editor.deletedOnDisk') }}
+      </n-alert>
+      <n-alert v-if="ws.activeTab.value.binary" type="info" :show-icon="false" class="banner">{{ t('editor.binary') }}</n-alert>
+      <n-alert v-else-if="ws.activeTab.value.truncated" type="info" :show-icon="false" class="banner">{{ t('editor.truncated') }}</n-alert>
+      <n-alert v-else-if="ws.activeTab.value.path.startsWith('@shared/')" type="info" :show-icon="false" class="banner">
+        {{ t('editor.sharedReadOnly') }}
+      </n-alert>
+    </template>
+
+    <div ref="host" class="host" v-show="ws.activeTab.value" />
+    <div v-if="!ws.activeTab.value" class="empty">
+      <n-empty :description="t('editor.noFile')">
+        <template #extra><span class="hint">Ctrl+P {{ t('editor.quickOpen') }} · Ctrl+S {{ t('common.save') }}</span></template>
+      </n-empty>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.pane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tabs {
+  display: flex;
+  overflow-x: auto;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  scrollbar-width: thin;
+}
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  border-right: 1px solid rgba(128, 128, 128, 0.15);
+  opacity: 0.7;
+  user-select: none;
+}
+.tab.active {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.14);
+  box-shadow: inset 0 -2px 0 #63e2b7;
+}
+.name.gone {
+  text-decoration: line-through;
+}
+.ro {
+  font-size: 10px;
+}
+.close {
+  width: 16px;
+  text-align: center;
+  border-radius: 3px;
+}
+.close:hover {
+  background: rgba(128, 128, 128, 0.3);
+}
+.close .dot {
+  display: none;
+}
+.close.dirty .dot {
+  display: inline;
+}
+.close.dirty .x {
+  display: none;
+}
+.close.dirty:hover .dot {
+  display: none;
+}
+.close.dirty:hover .x {
+  display: inline;
+}
+.banner {
+  border-radius: 0;
+  flex-shrink: 0;
+  padding: 2px 4px;
+}
+.host {
+  flex: 1;
+  min-height: 0;
+}
+.empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hint {
+  font-size: 12px;
+  opacity: 0.6;
+}
+</style>

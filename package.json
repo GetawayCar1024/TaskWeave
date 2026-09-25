@@ -1,0 +1,13 @@
+{
+  "name": "polyforge",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter @polyforge/server --filter @polyforge/web dev",
+    "build": "pnpm --filter @polyforge/web build",
+    "start": "pnpm build && pnpm --filter @polyforge/server start",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "engines": { "node": ">=20" }
+}

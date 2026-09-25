@@ -1,0 +1,15 @@
+# PolyForge 全局配置
+
+[ui]
+locale = "zh-CN"   # zh-CN | en
+theme = "dark"     # dark | light
+
+[problems]
+# 题目根目录，每个含 problem.toml 的子文件夹即一道题
+roots = []
+
+[editor]
+font_size = 14
+tab_size = 4
+word_wrap = false
+minimap = false

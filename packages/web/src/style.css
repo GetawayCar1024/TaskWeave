@@ -1,0 +1,16 @@
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+}
+* {
+  box-sizing: border-box;
+}
+.mono {
+  font-family: Consolas, 'Cascadia Code', 'Courier New', monospace;
+}

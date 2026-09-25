@@ -1,0 +1,25 @@
+{
+  "name": "@polyforge/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "vue-tsc -p . --noEmit"
+  },
+  "dependencies": {
+    "@polyforge/shared": "workspace:*",
+    "monaco-editor": "^0.56.0",
+    "naive-ui": "^2.45.3",
+    "vue": "^3.5.43",
+    "vue-i18n": "^11.4.12",
+    "vue-router": "^5.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.9",
+    "typescript": "~5.9.3",
+    "vite": "^8.3.0",
+    "vue-tsc": "^3.3.11"
+  }
+}
