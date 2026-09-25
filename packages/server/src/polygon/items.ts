@@ -7,6 +7,7 @@ import {
   STD_PREFIX,
   TAG_FROM_POLYGON,
   TAG_TO_POLYGON,
+  compressRanges,
   groupLayout as sharedGroupLayout,
   parseIndexList,
   testsetOf,
@@ -84,17 +85,7 @@ export const PUSH_ORDER: SyncItemKind[] = [
 // ---------------------------------------------------------------------------
 // Shared helpers
 
-export function compressRanges(nums: number[]): string {
-  const s = [...new Set(nums)].sort((a, b) => a - b);
-  const out: string[] = [];
-  for (let i = 0; i < s.length; ) {
-    let j = i;
-    while (j + 1 < s.length && s[j + 1] === s[j] + 1) j++;
-    out.push(i === j ? `${s[i]}` : `${s[i]}-${s[j]}`);
-    i = j + 1;
-  }
-  return out.join(',');
-}
+export { compressRanges };
 
 const polyCheckerName = (src: string) => (src.startsWith(STD_PREFIX) ? `std::${src.slice(STD_PREFIX.length)}.cpp` : path.posix.basename(src));
 

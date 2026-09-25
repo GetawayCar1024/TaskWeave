@@ -260,7 +260,15 @@
     "pickOne": "点击上方的测试查看内容",
     "group": "子任务",
     "points": "分值",
-    "subtasks": "子任务"
+    "subtasks": "子任务",
+    "addSample": "添加样例",
+    "addTest": "添加测试",
+    "add": "添加",
+    "markSample": "设为样例",
+    "addInputPlaceholder": "测试输入",
+    "addHint": "答案由主解法生成。",
+    "sampleAdded": "已添加样例：测试点 {n}",
+    "testAdded": "已添加测试点 {n}"
   },
   "run": {
     "custom": "自定义输入",

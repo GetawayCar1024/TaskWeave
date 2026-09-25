@@ -10,7 +10,7 @@ import { runStress } from '../judge/stress.js';
 import { exportDir, exportPackage } from '../judge/package.js';
 import { localChecks } from '../judge/checks.js';
 import { runCheckerTests, runValidatorTests } from '../judge/selftest.js';
-import { answerPath, generateTests, inputPath, overviewPath, publicManifest, readManifest, requireTestset } from '../judge/tests.js';
+import { addManualTest, answerPath, generateTests, inputPath, overviewPath, publicManifest, readManifest, requireTestset } from '../judge/tests.js';
 import { HttpError } from '../util/fs.js';
 
 const PREVIEW = 64 * 1024;
@@ -59,6 +59,15 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     const running = jobs.running(ctx.ref.id, 'generate');
     if (running) return running;
     return jobs.start('generate', ctx.ref.id, (job) => generateTests(judge, ctx, job, ts));
+  });
+
+  /** Add a manual test (optionally as a sample) with the next suitable index. */
+  app.post<P & { Body: { input?: string; sample?: boolean; testset?: string } }>('/api/problems/:id/tests/manual', async (req) => {
+    const ctx = await judge.ctx(req.params.id);
+    if (typeof req.body?.input !== 'string') throw new HttpError(400, 'bad_request', 'input required');
+    const r = await addManualTest(ctx, req.body.input, { sample: req.body.sample, testset: req.body.testset });
+    if (r.samples !== undefined) await judge.registry.patch(ctx.ref.id, { samples: r.samples });
+    return r;
   });
 
   app.get<P & TS>('/api/problems/:id/tests', async (req) => {

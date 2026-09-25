@@ -129,6 +129,8 @@ export const api = {
   // ---- judge (M2) ----
   build: (id: string, sources?: string[]) => request<CompileResult[]>('POST', `/problems/${pid(id)}/build`, { sources }),
   generateTests: (id: string, testset?: string) => request<JobInfo>('POST', `/problems/${pid(id)}/tests/generate${tsq(testset)}`),
+  addManualTest: (id: string, req: { input: string; sample?: boolean; testset?: string }) =>
+    request<{ index: number; path: string; samples?: string }>('POST', `/problems/${pid(id)}/tests/manual`, req),
   tests: (id: string, testset?: string) => request<TestsManifest | null>('GET', `/problems/${pid(id)}/tests${tsq(testset)}`),
   testFile: (id: string, n: number, kind: 'in' | 'ans' | 'overview', testset?: string) =>
     request<TestFileResponse>('GET', `/problems/${pid(id)}/tests/${n}/${kind}${tsq(testset)}`),

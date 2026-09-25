@@ -2,12 +2,12 @@
 import { computed, h, ref, watch } from 'vue';
 import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
-import { NAlert, NButton, NDataTable, NProgress, NScrollbar, NSelect, NSpace, NTabPane, NTabs, NTag, useMessage, type DataTableColumns } from 'naive-ui';
-import { testsetsOf, type TestFileResponse, type TestInfo } from '@polyforge/shared';
+import { NAlert, NButton, NDataTable, NInput, NModal, NProgress, NScrollbar, NSelect, NSpace, NSwitch, NTabPane, NTabs, NTag, useMessage, type DataTableColumns } from 'naive-ui';
+import { compressRanges, parseIndexList, testsetsOf, type TestFileResponse, type TestInfo } from '@polyforge/shared';
 import TestsetDialog from './TestsetDialog.vue';
 import { api, errorMessage } from '../lib/api';
 import { formatSize } from '../lib/format';
-import { Check, Cog, Layers, Pencil, X } from 'lucide-vue-next';
+import { Check, Cog, Layers, Pencil, Plus, X } from 'lucide-vue-next';
 import type { Judge } from '../lib/judge';
 import type { Workspace } from '../lib/workspace';
 
@@ -26,6 +26,46 @@ watch(testset, (ts) => ts !== 'tests' && props.judge.loadManifest(ts), { immedia
 const manifest = computed(() => (testset.value === 'tests' ? props.judge.state.manifest : props.judge.state.manifests[testset.value] ?? null));
 const pointsOn = computed(() => !!props.ws.state.detail?.config?.tests.points);
 const showTestsets = ref(false);
+
+// ---- add a manual test / sample ----
+const showAdd = ref(false);
+const addInput = ref('');
+const addAsSample = ref(true);
+const adding = ref(false);
+/** Test to select once the regenerated manifest contains it. */
+let selectAfterGenerate: number | null = null;
+function openAdd() {
+  addInput.value = '';
+  addAsSample.value = testset.value === 'tests';
+  showAdd.value = true;
+}
+async function addTest() {
+  adding.value = true;
+  try {
+    const r = await api.addManualTest(props.problemId, { input: addInput.value, sample: addAsSample.value, testset: testset.value });
+    message.success(t(addAsSample.value && testset.value === 'tests' ? 'tests.sampleAdded' : 'tests.testAdded', { n: r.index }));
+    showAdd.value = false;
+    selectAfterGenerate = r.index;
+    await props.judge.generate(testset.value);
+  } catch (e) {
+    message.error(serverText(errorMessage(e)));
+  } finally {
+    adding.value = false;
+  }
+}
+
+/** Mark / unmark a test of "tests" as a sample (tests.samples in problem.toml). */
+async function setSample(index: number, on: boolean) {
+  const cur = parseIndexList(props.ws.state.detail?.config?.tests.samples ?? '');
+  const next = on ? [...cur, index] : cur.filter((i) => i !== index);
+  try {
+    await props.ws.patch({ samples: compressRanges(next) });
+    selectAfterGenerate = index;
+    await props.judge.generate('tests');
+  } catch (e) {
+    message.error(serverText(errorMessage(e)));
+  }
+}
 const selected = ref<number | null>(null);
 
 async function generate() {
@@ -101,6 +141,11 @@ watch(
   () => manifest.value?.tests,
   (tests) => {
     if (!tests?.length) return (selected.value = null);
+    if (selectAfterGenerate !== null && tests.some((x) => x.index === selectAfterGenerate)) {
+      selected.value = selectAfterGenerate;
+      selectAfterGenerate = null;
+      return;
+    }
     if (!tests.some((x) => x.index === selected.value)) selected.value = tests[0].index;
   },
   { immediate: true },
@@ -121,6 +166,9 @@ watch(
           style="width: 110px"
         />
         <n-button size="small" quaternary :title="t('testsets.title')" @click="showTestsets = true"><layers :size="15" /></n-button>
+        <n-button size="small" quaternary :disabled="running" :title="testset === 'tests' ? t('tests.addSample') : t('tests.addTest')" @click="openAdd">
+          <template #icon><plus /></template>{{ testset === 'tests' ? t('tests.addSample') : t('tests.addTest') }}
+        </n-button>
       </n-space>
       <span v-if="manifest" class="dim small">{{ t('tests.count', { n: manifest.tests.length }) }} · {{ new Date(manifest.generatedAt).toLocaleTimeString() }}</span>
     </n-space>
@@ -157,7 +205,13 @@ watch(
     <div v-if="current" class="detail">
       <n-space align="center" justify="space-between" class="detail-head">
         <strong>{{ t('tests.test') }} #{{ current.index }}</strong>
-        <n-button v-if="testset === 'tests'" size="tiny" @click="emit('runOnTest', current.index)">{{ t('tests.runHere') }}</n-button>
+        <n-space size="small" align="center">
+          <label v-if="testset === 'tests'" class="sample-toggle">
+            <n-switch size="small" :value="!!current.sample" :disabled="running" @update:value="(v: boolean) => setSample(current!.index, v)" />
+            {{ t('tests.sample') }}
+          </label>
+          <n-button v-if="testset === 'tests'" size="tiny" @click="emit('runOnTest', current.index)">{{ t('tests.runHere') }}</n-button>
+        </n-space>
       </n-space>
       <div v-if="current.validatorMessage" class="bad small">{{ current.validatorMessage }}</div>
       <div v-if="current.error" class="bad small">{{ serverText(current.error) }}</div>
@@ -173,6 +227,27 @@ watch(
     </div>
     <div v-else-if="manifest" class="dim small empty">{{ t('tests.pickOne') }}</div>
     <testset-dialog v-model:show="showTestsets" :ws="ws" :judge="judge" :initial="testset" />
+    <n-modal v-model:show="showAdd" preset="card" :title="testset === 'tests' ? t('tests.addSample') : t('tests.addTest')" style="width: 520px">
+      <n-input
+        v-model:value="addInput"
+        type="textarea"
+        class="mono"
+        :autosize="{ minRows: 6, maxRows: 16 }"
+        :placeholder="t('tests.addInputPlaceholder')"
+        autofocus
+      />
+      <div class="add-foot small dim">{{ t('tests.addHint') }}</div>
+      <template #footer>
+        <n-space justify="space-between" align="center">
+          <label v-if="testset === 'tests'" class="sample-toggle"><n-switch v-model:value="addAsSample" size="small" /> {{ t('tests.markSample') }}</label>
+          <span v-else />
+          <n-space>
+            <n-button @click="showAdd = false">{{ t('common.cancel') }}</n-button>
+            <n-button type="primary" :loading="adding" :disabled="!addInput.trim()" @click="addTest">{{ t('tests.add') }}</n-button>
+          </n-space>
+        </n-space>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -204,6 +279,15 @@ watch(
 .detail {
   border-top: 1px solid rgba(128, 128, 128, 0.25);
   padding-top: 6px;
+}
+.sample-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.add-foot {
+  margin-top: 6px;
 }
 .detail-head {
   margin-bottom: 4px;

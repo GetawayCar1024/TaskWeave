@@ -274,6 +274,19 @@ export function parseIndexList(s: string): number[] {
   return out;
 }
 
+/** [1,2,3,5] → "1-3,5" (the inverse of parseIndexList). */
+export function compressRanges(nums: number[]): string {
+  const s = [...new Set(nums)].sort((a, b) => a - b);
+  const out: string[] = [];
+  for (let i = 0; i < s.length; ) {
+    let j = i;
+    while (j + 1 < s.length && s[j + 1] === s[j] + 1) j++;
+    out.push(i === j ? `${s[i]}` : `${s[i]}-${s[j]}`);
+    i = j + 1;
+  }
+  return out.join(',');
+}
+
 export interface StressRequest {
   /** Generator name (as in the script) or source path. */
   generator: string;

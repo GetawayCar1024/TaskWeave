@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_TESTSET, groupLayout, parseIndexList, testsetOf, type TestInfo, type TestsManifest, type TestsetConfig } from '@polyforge/shared';
+import { DEFAULT_TESTSET, compressRanges, groupLayout, parseIndexList, testsetOf, type TestInfo, type TestsManifest, type TestsetConfig } from '@polyforge/shared';
 import { HttpError } from '../util/fs.js';
 import type { JobCtx } from '../jobs.js';
 import { atomicWrite, exists, safeJoin, sha1 } from '../util/fs.js';
@@ -370,3 +370,33 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
 const inputPathOf = inputPath;
 const answerPathOf = answerPath;
 const overviewPathOf = overviewPath;
+
+/**
+ * Add a manual test (e.g. a new sample) with the next suitable index: after the
+ * current samples, skipping indices that manual files or script lines claim
+ * explicitly ("> 3"); tests from "> $" lines move up, as on Polygon.
+ */
+export async function addManualTest(ctx: ProblemCtx, input: string, opts: { sample?: boolean; testset?: string }): Promise<{ index: number; path: string; samples?: string }> {
+  const ts = requireTestset(ctx, opts.testset);
+  const planned = await plan(ctx, [], ts);
+  const explicit = new Set<number>();
+  for (const p of planned) {
+    const manualNumbered = p.origin === 'manual' && /^\d+$/.test(path.basename(p.source).replace(/\.[^.]*$/, ''));
+    const scriptExplicit = p.origin === 'script' && p.cmd && p.cmd.target.kind !== 'auto';
+    if (manualNumbered || scriptExplicit) explicit.add(p.index);
+  }
+  const samples = ts.name === DEFAULT_TESTSET ? parseIndexList(ts.samples ?? '') : [];
+  let index = samples.length ? Math.max(...samples) + 1 : 1;
+  const manualDir = ts.manual.replace(/\/+$/, '');
+  const fileOf = (i: number) => `${manualDir}/${String(i).padStart(2, '0')}.in`;
+  while (explicit.has(index) || (await exists(safeJoin(ctx.ref.dir, fileOf(index))))) index++;
+  const rel = fileOf(index);
+  const text = input.replace(/\r\n/g, '\n');
+  await fsp.mkdir(path.dirname(safeJoin(ctx.ref.dir, rel)), { recursive: true });
+  await atomicWrite(safeJoin(ctx.ref.dir, rel), text.endsWith('\n') || !text ? text : `${text}\n`);
+  if (opts.sample && ts.name === DEFAULT_TESTSET) {
+    const next = [...new Set([...samples, index])].sort((a, b) => a - b);
+    return { index, path: rel, samples: compressRanges(next) };
+  }
+  return { index, path: rel };
+}
