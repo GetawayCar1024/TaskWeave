@@ -36,7 +36,7 @@
     "io": "Input / Output",
     "delete": "Delete problem",
     "deleteTitle": "Delete problem {id}?",
-    "deleteBody": "The problem folder is moved to the trash folder in the global directory; move it back to restore it.",
+    "deleteBody": "The problem folder is moved to the trash folder in the global directory; move it back to restore it. Generated tests, builds and other caches are not kept; they are regenerated after a restore.",
     "deleteInContests": "It is in these contests: {list}. They will show it as missing.",
     "deleted": "Deleted; the folder was moved to {path}"
   },

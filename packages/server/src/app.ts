@@ -166,6 +166,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
     const dest = path.join(global.dir, 'trash', `${path.basename(ref.dir)}-${stamp}`);
     await fsp.mkdir(path.dirname(dest), { recursive: true });
+    // Drop what can be regenerated (generated tests, builds, invocation outputs,
+    // exports, AI sandboxes) so the trash stays small. Polygon sync state and AI
+    // conversations are kept, so a restored problem still knows what was pushed.
+    const cache = path.join(ref.dir, '.polyforge');
+    for (const d of ['tests', 'testsets', 'build', 'runs', 'export', 'tmp']) await fsp.rm(path.join(cache, d), { recursive: true, force: true });
+    for (const s of await fsp.readdir(path.join(cache, 'ai')).catch(() => [] as string[])) {
+      await fsp.rm(path.join(cache, 'ai', s, 'work'), { recursive: true, force: true });
+    }
     // The watcher holds directory handles on Windows; stop it while moving.
     await watcher.stop();
     try {
