@@ -252,6 +252,11 @@ export class ProblemRegistry {
       else list.push({ source: req.solution.source, tag: req.solution.tag });
       doc.solutions = list;
     }
+    if (req.samples !== undefined) {
+      doc.tests ??= {};
+      if (req.samples.trim()) doc.tests.samples = req.samples.trim();
+      else delete doc.tests.samples;
+    }
     if (req.generator) {
       const list: any[] = Array.isArray(doc.generators) ? doc.generators : [];
       const i = list.findIndex((g) => g?.source === req.generator!.source);

@@ -38,6 +38,18 @@ export interface AppDeps {
   webDist?: string;
 }
 
+/**
+ * Codeforces' defs.toml writes multi-line bodies as `body = '` … `'` (a line with a
+ * lone quote), which strict TOML rejects; turn those into ''' literals first.
+ */
+export function parseDefsToml(text: string): unknown {
+  const fixed = text
+    .replace(/\r\n/g, '\n')
+    .replace(/= '\n/g, "= '''\n")
+    .replace(/^'$/gm, "'''");
+  return parseToml(fixed);
+}
+
 const ALLOWED_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
@@ -45,6 +57,19 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false, bodyLimit: 64 * 1024 * 1024 });
 
   await app.register(fastifyWebsocket);
+
+  // Treat an empty JSON body as {} (Fastify rejects it by default), e.g. POST /cancel.
+  app.removeContentTypeParser('application/json');
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    const text = String(body);
+    if (!text.trim()) return done(null, {});
+    try {
+      done(null, JSON.parse(text));
+    } catch (e) {
+      const err = new HttpError(400, 'bad_json', `Invalid JSON: ${(e as Error).message}`);
+      done(err, undefined);
+    }
+  });
 
   // DESIGN §8: reject DNS-rebinding hosts and require the launch token on API/WS.
   app.addHook('onRequest', async (req, reply) => {
@@ -109,7 +134,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   /** Parsed defs.toml (statement macros, DESIGN §4.6). */
   app.get('/api/shared/defs', async () => {
     try {
-      return parseToml(await fsp.readFile(path.join(global.sharedDir, 'defs.toml'), 'utf8'));
+      return parseDefsToml(await fsp.readFile(path.join(global.sharedDir, 'defs.toml'), 'utf8'));
     } catch (e) {
       throw new HttpError(500, 'bad_defs', `defs.toml: ${(e as Error).message}`);
     }
@@ -199,7 +224,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // ---- frontend ----
   if (deps.webDist) {
-    await app.register(fastifyStatic, { root: deps.webDist, wildcard: false });
+    await app.register(fastifyStatic, { root: deps.webDist });
     // SPA fallback: unknown GETs render index.html so client-side routes work on reload.
     app.setNotFoundHandler((req, reply) => {
       if (req.method === 'GET' && !path.extname(req.url.split('?')[0])) return reply.sendFile('index.html');

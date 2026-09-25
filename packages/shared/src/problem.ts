@@ -130,4 +130,6 @@ export interface PatchProblemRequest {
   solution?: { source: string; tag: SolutionTag | null };
   /** Register (true) or unregister (false) a generator. */
   generator?: { source: string; enabled: boolean };
+  /** tests.samples, e.g. "1-2"; empty string removes it. */
+  samples?: string;
 }

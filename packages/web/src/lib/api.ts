@@ -1,5 +1,14 @@
+import type { DefsToml } from './latex';
 import {
   TOKEN_HEADER,
+  type CompileResult,
+  type Invocation,
+  type InvocationSummary,
+  type JobInfo,
+  type QuickRunRequest,
+  type QuickRunResponse,
+  type TestFileResponse,
+  type TestsManifest,
   type CreateProblemRequest,
   type FileContent,
   type GlobalConfig,
@@ -86,7 +95,31 @@ export const api = {
   mkdir: (id: string, path: string) => request<{ ok: true }>('POST', `/problems/${pid(id)}/mkdir`, { path }),
   copyShared: (id: string, source: string, to: string) =>
     request<WriteFileResponse>('POST', `/problems/${pid(id)}/copy-shared`, { source, to }),
+
+  // ---- judge (M2) ----
+  build: (id: string, sources?: string[]) => request<CompileResult[]>('POST', `/problems/${pid(id)}/build`, { sources }),
+  generateTests: (id: string) => request<JobInfo>('POST', `/problems/${pid(id)}/tests/generate`),
+  tests: (id: string) => request<TestsManifest | null>('GET', `/problems/${pid(id)}/tests`),
+  testFile: (id: string, n: number, kind: 'in' | 'ans' | 'overview') =>
+    request<TestFileResponse>('GET', `/problems/${pid(id)}/tests/${n}/${kind}`),
+  run: (id: string, req: QuickRunRequest) => request<QuickRunResponse>('POST', `/problems/${pid(id)}/run`, req),
+  startInvocation: (id: string, sources: string[], tests?: number[]) =>
+    request<{ job: JobInfo; invocationId: string }>('POST', `/problems/${pid(id)}/invocations`, { sources, tests }),
+  invocations: (id: string) => request<InvocationSummary[]>('GET', `/problems/${pid(id)}/invocations`),
+  invocation: (id: string, inv: string) => request<Invocation>('GET', `/problems/${pid(id)}/invocations/${encodeURIComponent(inv)}`),
+  invocationOutput: (id: string, inv: string, sol: number, test: number) =>
+    request<TestFileResponse>('GET', `/problems/${pid(id)}/invocations/${encodeURIComponent(inv)}/output/${sol}/${test}`),
+  validatorTests: (id: string) => request<JobInfo>('POST', `/problems/${pid(id)}/validator-tests`),
+  checkerTests: (id: string) => request<JobInfo>('POST', `/problems/${pid(id)}/checker-tests`),
+  jobs: (problemId: string) => request<JobInfo[]>('GET', `/jobs?problem=${encodeURIComponent(problemId)}`),
+  cancelJob: (jobId: string) => request<JobInfo>('POST', `/jobs/${encodeURIComponent(jobId)}/cancel`),
+  defs: () => request<DefsToml>('GET', '/shared/defs'),
 };
+
+/** URL for raw problem files in <img> tags (which cannot send the token header). */
+export function rawUrl(id: string, path: string): string {
+  return `/api/problems/${pid(id)}/raw/${encPath(path)}?token=${encodeURIComponent(token)}`;
+}
 
 export function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);

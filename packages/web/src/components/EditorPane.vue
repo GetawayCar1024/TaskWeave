@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NEmpty, NSpace } from 'naive-ui';
+import type { Judge } from '../lib/judge';
 import { monaco } from '../lib/monaco';
 import { settings } from '../lib/settings';
 import { SHARED_TAB, type Tab, type Workspace } from '../lib/workspace';
+import StatementPreview from './StatementPreview.vue';
 
-const props = defineProps<{ ws: Workspace }>();
-const emit = defineEmits<{ save: [path: string]; close: [path: string]; quickOpen: []; showDiff: [path: string] }>();
+const props = defineProps<{ ws: Workspace; judge: Judge; problemId: string }>();
+const emit = defineEmits<{ save: [path: string]; close: [path: string]; quickOpen: []; showDiff: [path: string]; run: []; generate: [] }>();
+
+// Statement tabs get a live preview next to the source (DESIGN §6.1).
+const statementLang = computed(() => props.ws.activeTab.value?.path.match(/^statement\/([^/]+)\/[^/]+\.tex$/)?.[1] ?? null);
+const showPreview = ref(localStorage.getItem('polyforge-preview') !== 'off');
+watch(showPreview, (v) => localStorage.setItem('polyforge-preview', v ? 'on' : 'off'));
 const { t } = useI18n();
 
 const host = ref<HTMLDivElement>();
@@ -36,6 +43,8 @@ onMounted(() => {
   });
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => current && emit('save', current.path));
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, () => emit('quickOpen'));
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => emit('run'));
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyG, () => emit('generate'));
   props.ws.editorRef.value = editor;
   show(props.ws.activeTab.value);
 });
@@ -114,7 +123,15 @@ function onTabMouse(e: MouseEvent, path: string) {
       </n-alert>
     </template>
 
-    <div ref="host" class="host" v-show="ws.activeTab.value" />
+    <div v-show="ws.activeTab.value" class="body">
+      <div ref="host" class="host" />
+      <div v-if="statementLang && showPreview" class="preview">
+        <statement-preview :ws="ws" :judge="judge" :problem-id="problemId" :lang="statementLang" />
+      </div>
+      <n-button v-if="statementLang" size="tiny" class="preview-toggle" secondary @click="showPreview = !showPreview">
+        {{ showPreview ? t('preview.hide') : t('preview.show') }}
+      </n-button>
+    </div>
     <div v-if="!ws.activeTab.value" class="empty">
       <n-empty :description="t('editor.noFile')">
         <template #extra><span class="hint">Ctrl+P {{ t('editor.quickOpen') }} · Ctrl+S {{ t('common.save') }}</span></template>
@@ -187,6 +204,28 @@ function onTabMouse(e: MouseEvent, path: string) {
   border-radius: 0;
   flex-shrink: 0;
   padding: 2px 4px;
+}
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative;
+}
+.body .host {
+  flex: 1;
+  min-width: 0;
+}
+.preview {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  border-left: 1px solid rgba(128, 128, 128, 0.25);
+}
+.preview-toggle {
+  position: absolute;
+  right: 18px;
+  bottom: 10px;
+  z-index: 5;
 }
 .host {
   flex: 1;

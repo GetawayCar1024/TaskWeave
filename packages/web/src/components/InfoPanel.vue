@@ -20,10 +20,11 @@ import {
 import { SOLUTION_TAGS, isSourceFile, type PatchProblemRequest, type SolutionTag } from '@polyforge/shared';
 import { errorMessage } from '../lib/api';
 import { formatSize } from '../lib/format';
+import type { Judge } from '../lib/judge';
 import { tagType } from '../lib/tags';
 import { SHARED_TAB, type Workspace } from '../lib/workspace';
 
-const props = defineProps<{ ws: Workspace }>();
+const props = defineProps<{ ws: Workspace; judge: Judge }>();
 const { t } = useI18n();
 const message = useMessage();
 
@@ -40,6 +41,7 @@ const form = reactive({
   checker: null as string | null,
   validator: null as string | null,
   interactor: null as string | null,
+  samples: '',
 });
 
 function reset() {
@@ -56,6 +58,7 @@ function reset() {
     checker: c.checker?.source ?? null,
     validator: c.validator?.source ?? null,
     interactor: c.interactor?.source ?? null,
+    samples: c.tests.samples ?? '',
   });
 }
 watch(cfg, reset, { immediate: true });
@@ -73,7 +76,8 @@ const dirty = computed(() => {
     form.output !== c.problem.output ||
     form.checker !== (c.checker?.source ?? null) ||
     form.validator !== (c.validator?.source ?? null) ||
-    form.interactor !== (c.interactor?.source ?? null)
+    form.interactor !== (c.interactor?.source ?? null) ||
+    form.samples !== (c.tests.samples ?? '')
   );
 });
 
@@ -103,6 +107,7 @@ async function save() {
     checker: form.checker,
     validator: form.validator,
     interactor: form.interactor,
+    samples: form.samples,
   };
   try {
     await props.ws.patch(req);
@@ -125,6 +130,7 @@ const renderTag = (o: SelectOption) =>
   h(NTag, { size: 'tiny', type: tagType(o.value as SolutionTag), bordered: false }, () => o.label as string);
 
 const active = computed(() => props.ws.activeTab.value);
+const compile = computed(() => (active.value ? props.judge.state.compile[active.value.path] ?? null : null));
 const activeInfo = computed(() => {
   const tab = active.value;
   if (!tab) return null;
@@ -187,6 +193,9 @@ const activeInfo = computed(() => {
           <n-form-item v-if="form.interactive" :label="t('roles.interactor')">
             <n-select v-model:value="form.interactor" :options="sourceOptions" filterable clearable />
           </n-form-item>
+          <n-form-item :label="t('info.samples')">
+            <n-input v-model:value="form.samples" placeholder="1-2" class="mono" />
+          </n-form-item>
         </n-form>
       </n-card>
 
@@ -205,8 +214,13 @@ const activeInfo = computed(() => {
         </div>
       </n-card>
 
-      <n-card size="small" :title="t('info.results')">
-        <div class="dim small">{{ t('info.resultsSoon') }}</div>
+      <n-card v-if="compile" size="small" :title="t('info.compile')">
+        <template #header-extra>
+          <span v-if="judge.state.compiling[compile.source]" class="dim small">{{ t('info.compiling') }}</span>
+          <span v-else :class="compile.ok ? 'good' : 'bad'" class="small">{{ compile.ok ? '✓ ' + t('info.compileOk') : '✗ ' + t('info.compileFailed') }}</span>
+        </template>
+        <div class="dim small">{{ compile.durationMs }} ms{{ compile.cached ? ' · ' + t('run.cached') : '' }}</div>
+        <pre v-if="compile.log" class="log mono">{{ compile.log }}</pre>
       </n-card>
     </div>
   </n-scrollbar>
@@ -238,6 +252,19 @@ const activeInfo = computed(() => {
 }
 .dim {
   opacity: 0.6;
+}
+.log {
+  margin: 6px 0 0;
+  font-size: 12px;
+  white-space: pre-wrap;
+  max-height: 240px;
+  overflow: auto;
+}
+.good {
+  color: #63e2b7;
+}
+.bad {
+  color: #e88080;
 }
 .link {
   cursor: pointer;

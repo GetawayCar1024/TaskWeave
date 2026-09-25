@@ -6,8 +6,18 @@
     "connected": "已连接到本地服务",
     "disconnected": "与本地服务断开，正在重连…"
   },
-  "nav": { "settings": "设置", "problems": "题目列表" },
-  "common": { "cancel": "取消", "create": "创建", "save": "保存", "saved": "已保存", "remove": "移除", "ok": "确定" },
+  "nav": {
+    "settings": "设置",
+    "problems": "题目列表"
+  },
+  "common": {
+    "cancel": "取消",
+    "create": "创建",
+    "save": "保存",
+    "saved": "已保存",
+    "remove": "移除",
+    "ok": "确定"
+  },
   "create": {
     "title": "新建题目",
     "name": "短名称",
@@ -16,7 +26,12 @@
     "titleEn": "英文标题",
     "root": "所在目录"
   },
-  "problem": { "timeLimit": "时间限制", "memoryLimit": "内存限制", "interactive": "交互题", "io": "输入 / 输出" },
+  "problem": {
+    "timeLimit": "时间限制",
+    "memoryLimit": "内存限制",
+    "interactive": "交互题",
+    "io": "输入 / 输出"
+  },
   "list": {
     "search": "搜索题目…",
     "new": "新建题目",
@@ -25,7 +40,14 @@
     "goSettings": "打开设置",
     "empty": "这里还没有题目"
   },
-  "check": { "statement": "题面", "validator": "Validator", "checker": "Checker", "std": "标程", "tests": "测试", "synced": "已同步" },
+  "check": {
+    "statement": "题面",
+    "validator": "Validator",
+    "checker": "Checker",
+    "std": "标程",
+    "tests": "测试",
+    "synced": "已同步"
+  },
   "dirPicker": {
     "title": "选择文件夹",
     "go": "前往",
@@ -130,8 +152,11 @@
     "stdCheckers": "标准 checker",
     "localFiles": "本题文件",
     "noSolutions": "还没有登记的解",
-    "results": "运行结果",
-    "resultsSoon": "编译、运行与评测将在 M2 提供。"
+    "compile": "编译",
+    "compiling": "编译中…",
+    "compileOk": "成功",
+    "compileFailed": "失败",
+    "samples": "样例测试"
   },
   "toolbar": {
     "generate": "生成测试",
@@ -140,5 +165,62 @@
     "ai": "AI",
     "comingIn": "将在 {m} 提供"
   },
-  "workspace": { "notFound": "找不到这道题" }
+  "workspace": {
+    "notFound": "找不到这道题"
+  },
+  "panel": {
+    "info": "信息",
+    "tests": "测试",
+    "run": "运行",
+    "selftest": "自测"
+  },
+  "tests": {
+    "source": "来源",
+    "sample": "样例",
+    "size": "大小",
+    "noAnswer": "没有答案",
+    "count": "{n} 个测试",
+    "none": "还没有生成测试。点击“生成测试”或按 Ctrl+Shift+G。",
+    "test": "测试",
+    "runHere": "在此测试上运行",
+    "noFile": "（无）",
+    "file": {
+      "in": "输入",
+      "ans": "答案",
+      "overview": "Validator 概览"
+    }
+  },
+  "run": {
+    "custom": "自定义输入",
+    "onTest": "测试点",
+    "stdin": "标准输入…",
+    "run": "运行",
+    "compileError": "编译错误",
+    "cached": "已缓存",
+    "truncated": "已截断",
+    "compileLog": "编译输出"
+  },
+  "selftest": {
+    "validator": "Validator 自测",
+    "checker": "Checker 自测",
+    "run": "运行",
+    "validatorHint": "validator-tests/ 下的文件，名字里带 valid / invalid 表示期望结果，例如 01.valid.in、02.invalid.in。",
+    "checkerHint": "checker-tests/ 下的 NAME.in + NAME.out（+ NAME.ans），期望结论写在 NAME.verdict 或名字里（ok / wa / pe / fail）。"
+  },
+  "inv": {
+    "start": "运行",
+    "history": "历史记录",
+    "none": "还没有 invocation。勾选解后点击“运行”。",
+    "missing": "没有出现期望的结论：{v}",
+    "legend": "红框：结论与 tag 不符；黄框：标程超过时限的一半（TL = {tl} ms）。单元格数字为 CPU 时间（ms），点击查看输入 / 输出 / 答案。",
+    "input": "输入",
+    "output": "输出",
+    "answer": "答案",
+    "noOutput": "未保存（超过 16 MB）"
+  },
+  "preview": {
+    "unknown": "{n} 个无法识别的命令",
+    "hide": "隐藏预览",
+    "show": "显示预览"
+  }
 }

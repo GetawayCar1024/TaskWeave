@@ -1,16 +1,23 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { onBeforeRouteLeave, useRouter } from 'vue-router';
-import { NButton, NInput, NModal, NResult, NSpace, NSpin, NSplit, NTooltip, useDialog, useMessage } from 'naive-ui';
+import { NButton, NInput, NModal, NResult, NScrollbar, NSpace, NSpin, NSplit, NTabPane, NTabs, NTooltip, useDialog, useMessage } from 'naive-ui';
+import { isSourceFile } from '@polyforge/shared';
 import AppHeader from '../components/AppHeader.vue';
 import DiffDialog from '../components/DiffDialog.vue';
 import EditorPane from '../components/EditorPane.vue';
 import FileSidebar, { type SidebarAction } from '../components/FileSidebar.vue';
 import InfoPanel from '../components/InfoPanel.vue';
+import InvocationDrawer from '../components/InvocationDrawer.vue';
 import QuickOpen from '../components/QuickOpen.vue';
+import RunPanel from '../components/RunPanel.vue';
+import SelfTestPanel from '../components/SelfTestPanel.vue';
+import TestsPanel from '../components/TestsPanel.vue';
 import { api, errorMessage } from '../lib/api';
 import { problemTitle } from '../lib/format';
+import { useJudge } from '../lib/judge';
+import { registerLatexMacros } from '../lib/latexEditor';
 import { onWs } from '../lib/ws';
 import { SHARED_TAB, useWorkspace } from '../lib/workspace';
 
@@ -21,7 +28,35 @@ const message = useMessage();
 const dialog = useDialog();
 
 const ws = useWorkspace(props.id);
+const judge = useJudge(props.id, ws);
 const summary = computed(() => ws.state.detail?.summary);
+
+// ---- right panel / judge actions ----
+const rightTab = ref<'info' | 'tests' | 'run' | 'selftest'>('info');
+const runPanel = ref<InstanceType<typeof RunPanel>>();
+const showInvocation = ref(false);
+
+async function generate() {
+  rightTab.value = 'tests';
+  try {
+    await judge.generate();
+  } catch (e) {
+    message.error(errorMessage(e));
+  }
+}
+
+function runCurrent() {
+  rightTab.value = 'run';
+  // The panel may mount on this tick; wait for it.
+  setTimeout(() => runPanel.value?.run(), 0);
+}
+
+function runOnTest(n: number) {
+  rightTab.value = 'run';
+  setTimeout(() => runPanel.value?.runOnTest(n), 0);
+}
+
+watch(() => ws.state.active, (p) => p && judge.refreshMarkers(p));
 
 // ---- save / conflicts ----
 const diff = ref({ show: false, path: '', disk: null as string | null, mine: '' });
@@ -31,6 +66,8 @@ async function save(path: string) {
     const r = await ws.save(path);
     if (r === 'conflict') await showDiff(path);
     else if (r === 'readonly') message.warning(t('editor.readOnly'));
+    // Ctrl+S also compiles in the background; errors show as squiggles (DESIGN §6.1).
+    else if (isSourceFile(path) && ws.languageFor(path)) judge.build(path).catch(() => {});
   } catch (e) {
     message.error(errorMessage(e));
   }
@@ -154,6 +191,12 @@ function onKeydown(e: KeyboardEvent) {
   } else if (k === 'p') {
     e.preventDefault();
     quickOpen.value = true;
+  } else if (k === 'enter') {
+    e.preventDefault();
+    runCurrent();
+  } else if (k === 'g' && e.shiftKey) {
+    e.preventDefault();
+    generate();
   }
 }
 
@@ -176,11 +219,15 @@ onBeforeRouteLeave(() => {
   });
 });
 
-const offWs = onWs((e) => void ws.onWsEvent(e));
+const offWs = onWs((e) => {
+  void ws.onWsEvent(e);
+  judge.onWsEvent(e);
+});
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown);
   window.addEventListener('beforeunload', onBeforeUnload);
-  await ws.init();
+  registerLatexMacros();
+  await Promise.all([ws.init(), judge.init()]);
   // Open the most useful file first.
   const cfg = ws.state.detail?.config;
   const first = ['statement/zh/legend.tex', 'statement/en/legend.tex', cfg?.validator?.source, 'problem.toml'].find(
@@ -196,8 +243,6 @@ onBeforeUnmount(() => {
 });
 
 const soon = [
-  { key: 'generate', milestone: 'M2' },
-  { key: 'invocation', milestone: 'M2' },
   { key: 'sync', milestone: 'M3' },
   { key: 'ai', milestone: 'M4' },
 ];
@@ -215,6 +260,13 @@ const soon = [
         <span class="dim">{{ summary.timeLimit / 1000 }}s / {{ summary.memoryLimit }}MB</span>
       </template>
       <template #right>
+        <n-tooltip>
+          <template #trigger>
+            <n-button size="small" :loading="judge.running('generate')" @click="generate">{{ t('toolbar.generate') }}</n-button>
+          </template>
+          Ctrl+Shift+G
+        </n-tooltip>
+        <n-button size="small" :loading="judge.running('invocation')" @click="showInvocation = true">{{ t('toolbar.invocation') }}</n-button>
         <n-tooltip v-for="b in soon" :key="b.key">
           <template #trigger>
             <n-button size="small" disabled>{{ t(`toolbar.${b.key}`) }}</n-button>
@@ -239,16 +291,40 @@ const soon = [
       <template #2>
         <n-split direction="horizontal" :default-size="0.76" :min="0.4" :max="0.9" class="split">
           <template #1>
-            <editor-pane :ws="ws" @save="save" @close="closeTab" @quick-open="quickOpen = true" @show-diff="showDiff" />
+            <editor-pane
+              :ws="ws"
+              :judge="judge"
+              :problem-id="id"
+              @save="save"
+              @close="closeTab"
+              @quick-open="quickOpen = true"
+              @show-diff="showDiff"
+              @run="runCurrent"
+              @generate="generate"
+            />
           </template>
           <template #2>
-            <info-panel :ws="ws" />
+            <n-tabs v-model:value="rightTab" type="line" size="small" class="right-tabs" pane-class="right-pane">
+              <n-tab-pane name="info" :tab="t('panel.info')">
+                <info-panel :ws="ws" :judge="judge" />
+              </n-tab-pane>
+              <n-tab-pane name="tests" :tab="t('panel.tests')">
+                <n-scrollbar style="height: 100%"><tests-panel :ws="ws" :judge="judge" :problem-id="id" @run-on-test="runOnTest" /></n-scrollbar>
+              </n-tab-pane>
+              <n-tab-pane name="run" :tab="t('panel.run')" display-directive="show">
+                <n-scrollbar style="height: 100%"><run-panel ref="runPanel" :ws="ws" :judge="judge" :problem-id="id" /></n-scrollbar>
+              </n-tab-pane>
+              <n-tab-pane name="selftest" :tab="t('panel.selftest')">
+                <n-scrollbar style="height: 100%"><self-test-panel :ws="ws" :judge="judge" /></n-scrollbar>
+              </n-tab-pane>
+            </n-tabs>
           </template>
         </n-split>
       </template>
     </n-split>
 
     <quick-open v-model:show="quickOpen" :files="allFiles" @open="(p: string) => ws.openFile(p)" />
+    <invocation-drawer v-model:show="showInvocation" :ws="ws" :judge="judge" :problem-id="id" />
     <diff-dialog v-model:show="diff.show" :path="diff.path" :disk="diff.disk" :mine="diff.mine" @keep-mine="keepMine" @use-disk="useDisk" />
 
     <n-modal v-model:show="prompt.show" preset="card" :title="prompt.title" style="width: 480px" @after-leave="prompt.resolve(null)">
@@ -272,6 +348,19 @@ const soon = [
 .split {
   flex: 1;
   min-height: 0;
+}
+.right-tabs {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.right-tabs :deep(.n-tabs-nav) {
+  padding: 0 8px;
+}
+.right-tabs :deep(.right-pane) {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
 }
 .center {
   flex: 1;

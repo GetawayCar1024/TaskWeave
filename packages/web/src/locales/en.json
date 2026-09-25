@@ -6,8 +6,18 @@
     "connected": "Connected to local server",
     "disconnected": "Disconnected from local server, reconnecting…"
   },
-  "nav": { "settings": "Settings", "problems": "Problems" },
-  "common": { "cancel": "Cancel", "create": "Create", "save": "Save", "saved": "Saved", "remove": "Remove", "ok": "OK" },
+  "nav": {
+    "settings": "Settings",
+    "problems": "Problems"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "create": "Create",
+    "save": "Save",
+    "saved": "Saved",
+    "remove": "Remove",
+    "ok": "OK"
+  },
   "create": {
     "title": "New problem",
     "name": "Short name",
@@ -16,7 +26,12 @@
     "titleEn": "English title",
     "root": "Location"
   },
-  "problem": { "timeLimit": "Time limit", "memoryLimit": "Memory limit", "interactive": "Interactive", "io": "Input / Output" },
+  "problem": {
+    "timeLimit": "Time limit",
+    "memoryLimit": "Memory limit",
+    "interactive": "Interactive",
+    "io": "Input / Output"
+  },
   "list": {
     "search": "Search problems…",
     "new": "New problem",
@@ -25,7 +40,14 @@
     "goSettings": "Open settings",
     "empty": "No problems here yet"
   },
-  "check": { "statement": "Statement", "validator": "Validator", "checker": "Checker", "std": "Main sol.", "tests": "Tests", "synced": "Synced" },
+  "check": {
+    "statement": "Statement",
+    "validator": "Validator",
+    "checker": "Checker",
+    "std": "Main sol.",
+    "tests": "Tests",
+    "synced": "Synced"
+  },
   "dirPicker": {
     "title": "Choose folder",
     "go": "Go",
@@ -130,8 +152,11 @@
     "stdCheckers": "Standard checkers",
     "localFiles": "Problem files",
     "noSolutions": "No solutions registered yet",
-    "results": "Results",
-    "resultsSoon": "Compiling, running and judging arrive in M2."
+    "compile": "Compile",
+    "compiling": "compiling…",
+    "compileOk": "ok",
+    "compileFailed": "failed",
+    "samples": "Sample tests"
   },
   "toolbar": {
     "generate": "Generate tests",
@@ -140,5 +165,62 @@
     "ai": "AI",
     "comingIn": "Coming in {m}"
   },
-  "workspace": { "notFound": "Problem not found" }
+  "workspace": {
+    "notFound": "Problem not found"
+  },
+  "panel": {
+    "info": "Info",
+    "tests": "Tests",
+    "run": "Run",
+    "selftest": "Self-tests"
+  },
+  "tests": {
+    "source": "Source",
+    "sample": "sample",
+    "size": "Size",
+    "noAnswer": "No answer",
+    "count": "{n} tests",
+    "none": "No tests generated yet. Click “Generate tests” or press Ctrl+Shift+G.",
+    "test": "Test",
+    "runHere": "Run on this test",
+    "noFile": "(none)",
+    "file": {
+      "in": "Input",
+      "ans": "Answer",
+      "overview": "Validator overview"
+    }
+  },
+  "run": {
+    "custom": "Custom input",
+    "onTest": "Test",
+    "stdin": "stdin…",
+    "run": "Run",
+    "compileError": "Compilation error",
+    "cached": "cached",
+    "truncated": "truncated",
+    "compileLog": "Compiler output"
+  },
+  "selftest": {
+    "validator": "Validator tests",
+    "checker": "Checker tests",
+    "run": "Run",
+    "validatorHint": "Files in validator-tests/; \"valid\" / \"invalid\" in the name gives the expected result, e.g. 01.valid.in, 02.invalid.in.",
+    "checkerHint": "NAME.in + NAME.out (+ NAME.ans) in checker-tests/; the expected verdict goes in NAME.verdict or the name (ok / wa / pe / fail)."
+  },
+  "inv": {
+    "start": "Run",
+    "history": "History",
+    "none": "No invocations yet. Pick solutions and click “Run”.",
+    "missing": "Expected verdict never occurred: {v}",
+    "legend": "Red border: verdict not allowed by the tag; yellow: correct solution above half the time limit (TL = {tl} ms). Numbers are CPU ms; click a cell for input / output / answer.",
+    "input": "Input",
+    "output": "Output",
+    "answer": "Answer",
+    "noOutput": "not saved (over 16 MB)"
+  },
+  "preview": {
+    "unknown": "{n} unknown command(s)",
+    "hide": "Hide preview",
+    "show": "Show preview"
+  }
 }
