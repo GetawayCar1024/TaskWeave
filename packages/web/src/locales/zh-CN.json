@@ -200,7 +200,8 @@
     "missingTutorial": "{lang} 题解（未创建）",
     "orphanTutorial": "这个语言没有题面",
     "empty": "空",
-    "createTutorials": "为所有题面语言创建题解"
+    "createTutorials": "为所有题面语言创建题解",
+    "images": "图片"
   },
   "info": {
     "file": "当前文件",

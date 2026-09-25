@@ -5,6 +5,7 @@ import { NButton, NButtonGroup, NDropdown, NTag, NTooltip, NTree, type DropdownO
 import {
   ROLE_ORDER,
   SOLUTION_TAGS,
+  STATEMENT_SECTIONS,
   STD_PREFIX,
   isSourceFile,
   statementLanguages,
@@ -15,7 +16,7 @@ import {
 } from '@polyforge/shared';
 import { SHARED_TAB, type Workspace } from '../lib/workspace';
 import { tagType } from '../lib/tags';
-import { FilePlus, Folder, FolderPlus, Plus } from 'lucide-vue-next';
+import { FilePlus, Folder, FolderPlus, Image, Languages, Plus } from 'lucide-vue-next';
 import { ROLE_ICONS } from '../lib/icons';
 
 export type SidebarAction =
@@ -72,6 +73,8 @@ interface Node extends TreeOption {
   missingLang?: string;
   /** Tutorial in a language without a statement. */
   orphan?: boolean;
+  /** Sub-group of the statement files of one language (or "images"). */
+  langGroup?: string;
   group?: FileRole;
   role?: FileRole;
   children?: Node[];
@@ -105,8 +108,49 @@ const roleTree = computed<Node[]>(() => {
       tut.push({ key: `missing-tutorial:${lang}`, label: t('tree.missingTutorial', { lang }), missingLang: lang, isLeaf: true });
     }
   }
-  tut.sort((a, b) => String(a.key).localeCompare(String(b.key)));
+  // Label tutorials by language, Chinese first, like the statement languages.
+  const tutLang = (n: Node) => n.missingLang ?? n.path!.split('/')[1];
+  for (const n of tut) if (!n.missingLang) n.label = LANG_NAMES[tutLang(n)] ? `${LANG_NAMES[tutLang(n)]} (${tutLang(n)})` : `${tutLang(n)}/tutorial.tex`;
+  const rank = (l: string) => (l === 'zh' ? 0 : l === 'en' ? 1 : 2);
+  tut.sort((a, b) => rank(tutLang(a)) - rank(tutLang(b)) || tutLang(a).localeCompare(tutLang(b)));
   if (tut.length) groups.set('tutorial', tut);
+
+  // Statement files by language (zh, en, …), sections in statement order; images apart.
+  const stmt = groups.get('statement');
+  if (stmt) {
+    const byLang = new Map<string, Node[]>();
+    for (const n of stmt) {
+      const m = n.path!.match(/^statement\/([^/]+)\/(.+)$/);
+      const lang = m ? m[1] : '';
+      if (!byLang.has(lang)) byLang.set(lang, []);
+      byLang.get(lang)!.push({ ...n, label: m ? m[2] : n.label });
+    }
+    const order = (p: string) => {
+      const i = (STATEMENT_SECTIONS as readonly string[]).indexOf(p.replace(/\.tex$/, ''));
+      return i < 0 ? 99 : i;
+    };
+    const langRank = (l: string) => (l === 'images' ? 2 : l === '' ? 3 : l === 'zh' ? 0 : l === 'en' ? 0.5 : 1);
+    groups.set(
+      'statement',
+      [...byLang]
+        .sort(([a], [b]) => langRank(a) - langRank(b) || a.localeCompare(b))
+        .map(([lang, nodes]) =>
+          lang === ''
+            ? nodes
+            : [
+                {
+                  key: `lang:${lang}`,
+                  label: lang === 'images' ? t('tree.images') : LANG_NAMES[lang] ? `${LANG_NAMES[lang]} (${lang})` : lang,
+                  langGroup: lang,
+                  dir: `statement/${lang}`,
+                  children: nodes.sort((a, b) => order(String(a.label)) - order(String(b.label)) || String(a.label).localeCompare(String(b.label))),
+                  isLeaf: false,
+                },
+              ],
+        )
+        .flat(),
+    );
+  }
 
   const out: Node[] = [];
   const cfg = groups.get('config');
@@ -131,6 +175,9 @@ function toDirNodes(nodes: FileNode[]): Node[] {
 }
 const dirTree = computed<Node[]>(() => toDirNodes(props.ws.state.detail?.tree ?? []));
 
+const LANG_NAMES: Record<string, string> = { zh: '中文', en: 'English', ru: 'Русский' };
+const countLeaves = (n: Node): number => (n.children ?? []).reduce((a, c) => a + (c.isLeaf ? 1 : countLeaves(c)), 0);
+
 const expanded = ref<string[]>(JSON.parse(localStorage.getItem('polyforge-tree-expanded') ?? 'null') ?? [
   'group:statement',
   'group:tutorial',
@@ -141,6 +188,19 @@ const expanded = ref<string[]>(JSON.parse(localStorage.getItem('polyforge-tree-e
   'group:solution',
 ]);
 watch(expanded, (v) => localStorage.setItem('polyforge-tree-expanded', JSON.stringify(v)));
+const seenLangKeys = new Set<string>(JSON.parse(localStorage.getItem('polyforge-tree-seen-langs') ?? '[]'));
+watch(
+  roleTree,
+  (tree) => {
+    const keys = (tree.find((n) => n.key === 'group:statement')?.children ?? []).filter((n) => n.langGroup).map((n) => n.key);
+    const fresh = keys.filter((k) => !seenLangKeys.has(k));
+    if (!fresh.length) return;
+    fresh.forEach((k) => seenLangKeys.add(k));
+    localStorage.setItem('polyforge-tree-seen-langs', JSON.stringify([...seenLangKeys]));
+    expanded.value = [...new Set([...expanded.value, ...fresh])];
+  },
+  { immediate: true },
+);
 
 const selected = computed(() => (props.ws.state.active ? [props.ws.state.active] : []));
 
@@ -160,6 +220,7 @@ function badge(path: string) {
 
 function renderLabel({ option }: { option: TreeOption }) {
   const n = option as Node;
+  if (n.langGroup) return h('span', { class: 'group-dir' }, [h(n.langGroup === 'images' ? Image : Languages, { size: 13, class: 'gi' }), n.label as string]);
   if (n.group) return h('span', { class: 'group' }, [h(ROLE_ICONS[n.group], { size: 14, class: 'gi' }), n.label as string]);
   const tab = n.path ? props.ws.state.tabs.find((x) => x.path === n.path) : undefined;
   const cls = ['file', tab?.dirty ? 'dirty' : ''].join(' ');
@@ -170,7 +231,7 @@ function renderLabel({ option }: { option: TreeOption }) {
 
 function renderSuffix({ option }: { option: TreeOption }) {
   const n = option as Node;
-  if (n.group) return h('span', { class: 'count' }, String(n.children?.length ?? 0));
+  if (n.group || n.langGroup) return h('span', { class: 'count' }, String(n.group === 'statement' ? countLeaves(n) : n.children?.length ?? 0));
   if (n.orphan) return h(NTag, { size: 'tiny', type: 'warning', bordered: false, title: t('tree.orphanTutorial') }, () => '!');
   if (n.role === 'tutorial' && n.path && !props.ws.files.value.find((f) => f.path === n.path)?.size) {
     return h('span', { class: 'count' }, t('tree.empty'));

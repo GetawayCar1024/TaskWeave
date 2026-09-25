@@ -200,7 +200,8 @@
     "missingTutorial": "{lang} tutorial (not created)",
     "orphanTutorial": "No statement in this language",
     "empty": "empty",
-    "createTutorials": "Create tutorials for all statement languages"
+    "createTutorials": "Create tutorials for all statement languages",
+    "images": "Images"
   },
   "info": {
     "file": "Current file",
