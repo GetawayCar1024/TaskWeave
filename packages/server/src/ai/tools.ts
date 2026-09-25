@@ -7,7 +7,7 @@ import type { Judge, ProblemCtx } from '../judge/index.js';
 import { readInvocation, runInvocation } from '../judge/invocation.js';
 import { quickRun } from '../judge/quickrun.js';
 import { runCheckerTests, runValidatorTests } from '../judge/selftest.js';
-import { answerPath, generateTests, inputPath, overviewPath } from '../judge/tests.js';
+import { answerPath, generateTests, inputPath, overviewPath, requireTestset } from '../judge/tests.js';
 import { macroExpansions } from './macros.js';
 import { listShared } from '../sharedFiles.js';
 import { safeJoin } from '../util/fs.js';
@@ -188,7 +188,8 @@ const TOOLS = [
     schema: z.object({ index: z.number().int().min(1), part: z.enum(['input', 'answer', 'overview']), max_chars: z.number().int().min(100).max(50_000).optional(), testset: z.string().optional().describe('Testset name (default "tests"; others are [testsets.NAME] in problem.toml)') }),
     async run(i, env) {
       const ctx = await env.ctx();
-      const file = { input: inputPath, answer: answerPath, overview: overviewPath }[i.part](ctx, i.index, i.testset);
+      const ts = requireTestset(ctx, i.testset).name;
+      const file = { input: inputPath, answer: answerPath, overview: overviewPath }[i.part](ctx, i.index, ts);
       const text = await fsp.readFile(file, 'utf8').catch(() => null);
       if (text === null) throw new Error(`test ${i.index} ${i.part} not found (run generate_tests first)`);
       return clip(text, i.max_chars ?? 4000);

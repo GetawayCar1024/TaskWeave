@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_TESTSET, compressRanges, groupLayout, parseIndexList, testsetOf, type TestInfo, type TestsManifest, type TestsetConfig } from '@polyforge/shared';
+import { DEFAULT_TESTSET, TESTSET_NAME_RE, compressRanges, groupLayout, parseIndexList, testsetOf, type TestInfo, type TestsManifest, type TestsetConfig } from '@polyforge/shared';
 import { HttpError } from '../util/fs.js';
 import type { JobCtx } from '../jobs.js';
 import { atomicWrite, exists, safeJoin, sha1 } from '../util/fs.js';
@@ -33,7 +33,12 @@ export interface Planned {
 }
 
 /** Generated files of a testset: "tests" keeps its historic folder, others go to testsets/<name>. */
-export const testsDir = (ctx: ProblemCtx, ts = DEFAULT_TESTSET) => (ts === DEFAULT_TESTSET ? path.join(ctx.work, 'tests') : path.join(ctx.work, 'testsets', ts));
+export const testsDir = (ctx: ProblemCtx, ts = DEFAULT_TESTSET) => {
+  if (ts === DEFAULT_TESTSET) return path.join(ctx.work, 'tests');
+  // The name becomes a folder: never let it point elsewhere.
+  if (!TESTSET_NAME_RE.test(ts)) throw new HttpError(400, 'bad_testset', `Invalid testset name: ${ts}`);
+  return path.join(ctx.work, 'testsets', ts);
+};
 export const inputPath = (ctx: ProblemCtx, i: number, ts?: string) => path.join(testsDir(ctx, ts), `${i}.in`);
 export const answerPath = (ctx: ProblemCtx, i: number, ts?: string) => path.join(testsDir(ctx, ts), `${i}.ans`);
 export const overviewPath = (ctx: ProblemCtx, i: number, ts?: string) => path.join(testsDir(ctx, ts), `${i}.overview.txt`);
