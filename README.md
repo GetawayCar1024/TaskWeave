@@ -41,7 +41,7 @@ pnpm release      # 打包成独立的 npm 包到 release/（无运行时依赖�
 - **Invocation**：选若干解 × 全部测试，矩阵显示结论 / 时间，按 tag 标出不符合预期的格子；点格子看输入和“答案 vs 输出”的 diff；保留历史记录。
 - **自测**：validator 自测、checker 自测（约定见下）。
 - **快速运行**（`Ctrl+Enter`）：当前文件在自定义输入或某个测试上运行，带 checker 结论。
-- **题面预览**：打开 `statement/<语言>/*.tex` 时右侧实时渲染（Polygon LaTeX 子集 + KaTeX + defs.toml 宏展开），无法识别的命令标黄；输入 `\Def` 自动补全宏，悬停显示展开内容。
+- **题面预览**：打开 `statement/<语言>/*.tex` 时右侧实时渲染（Polygon LaTeX 子集 + KaTeX + defs.toml 宏展开），无法识别的命令标黄；输入 `\Def` 自动补全宏，悬停显示展开内容。也会补全 Codeforces / Polygon 支持的 TeX 命令与环境（`\textbf`、`\t`、`\epigraph`、`\includegraphics`、itemize / enumerate / tabular …，列表的 `\item` 缩进两个空格），公式里补全常用数学命令（`\le`、`\frac`、`\bmod` …），悬停显示说明。
 
 ### 约定
 

@@ -3,6 +3,7 @@ import { lintMessage } from './serverText';
 import { lintStatement } from '@polyforge/shared';
 import { getDefs } from './defs';
 import { buildMacros, macroPreview, type MacroTable } from './latex';
+import { CF_TEX } from './cfTex';
 import { monaco } from './monaco';
 
 let registered = false;
@@ -48,6 +49,55 @@ export function registerLatexMacros() {
         range,
       }));
       return { suggestions };
+    },
+  });
+
+  // Codeforces / Polygon statement TeX: text commands, environments, and math inside $…$.
+  const zhUi = () => i18n.global.locale.value.startsWith('zh');
+  const inMath = (before: string) => (before.replace(/\\\$/g, '').match(/\$/g)?.length ?? 0) % 2 === 1;
+  monaco.languages.registerCompletionItemProvider('latex', {
+    triggerCharacters: ['\\'],
+    provideCompletionItems(model, position) {
+      const line = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+      const m = line.match(/\\([A-Za-z{]*)$/);
+      if (!m) return { suggestions: [] };
+      const range = new monaco.Range(position.lineNumber, position.column - m[1].length, position.lineNumber, position.column);
+      // "\begin{" auto-closed its brace: the environment snippet brings its own, so drop that "}".
+      const after = model.getLineContent(position.lineNumber).charAt(position.column - 1);
+      const dropBrace =
+        m[1].includes('{') && after === '}' ? [{ range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column + 1), text: '' }] : undefined;
+      const math = inMath(line.slice(0, line.length - m[0].length));
+      return {
+        suggestions: CF_TEX.filter((c) => !!c.math === math).map((c) => ({
+          label: c.name,
+          kind: c.name.startsWith('begin{') ? monaco.languages.CompletionItemKind.Module : monaco.languages.CompletionItemKind.Keyword,
+          detail: zhUi() ? c.zh : c.en,
+          insertText: c.snippet,
+          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+          additionalTextEdits: c.name.startsWith('begin{') ? dropBrace : undefined,
+          // After the defs.toml macros of the problem-setter's own library.
+          sortText: `1${c.name}`,
+          range,
+        })),
+        // Ask again as the user types, so "\begin{" sees the brace it auto-closed.
+        incomplete: true,
+      };
+    },
+  });
+  monaco.languages.registerHoverProvider('latex', {
+    provideHover(model, position) {
+      const line = model.getLineContent(position.lineNumber);
+      const re = /\\(begin\{[a-z]+\}|[A-Za-z]+)/g;
+      for (let m; (m = re.exec(line)); ) {
+        const start = m.index + 1;
+        const end = start + m[0].length;
+        if (position.column < start || position.column > end) continue;
+        const math = inMath(line.slice(0, m.index));
+        const c = CF_TEX.find((x) => x.name === m![1] && !!x.math === math) ?? CF_TEX.find((x) => x.name === m![1]);
+        if (!c) return null;
+        return { range: new monaco.Range(position.lineNumber, start, position.lineNumber, end), contents: [{ value: `**\\${c.name}** — ${zhUi() ? c.zh : c.en}` }] };
+      }
+      return null;
     },
   });
 
