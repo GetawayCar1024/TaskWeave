@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, shallowRef, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { NAlert, NButton, NRadioButton, NRadioGroup, NSpin, NSwitch, NTag, useMessage } from 'naive-ui';
 import 'katex/dist/katex.min.css';
 import { ArrowLeft, Printer } from 'lucide-vue-next';
@@ -11,10 +11,14 @@ import { api, errorMessage, rawUrl } from '../lib/api';
 import { getDefs } from '../lib/defs';
 import { buildMacros, renderLatex, type MacroTable } from '../lib/latex';
 
-/** All statements of a contest in one language, laid out for printing (browser print → PDF). */
+/**
+ * The statements, or the tutorials, of a contest in one language as a separate
+ * document, laid out as A4 pages for printing (browser print → PDF).
+ */
 const props = defineProps<{ id: string }>();
 const { t } = useI18n();
 const router = useRouter();
+const route = useRoute();
 const message = useMessage();
 
 const detail = ref<ContestDetail | null>(null);
@@ -22,7 +26,9 @@ const statements = ref<ContestStatement[]>([]);
 const macros = shallowRef<MacroTable>(new Map());
 const loading = ref(true);
 const lang = ref(localStorage.getItem('polyforge-print-lang') ?? 'zh');
-const withTutorials = ref(false);
+/** Which document: the problem statements or the tutorials (kept in the URL). */
+const doc = ref<'statements' | 'tutorials'>(route.query.doc === 'tutorials' ? 'tutorials' : 'statements');
+watch(doc, (d) => router.replace({ query: d === 'tutorials' ? { doc: d } : {} }));
 const pageBreaks = ref(true);
 
 const langs = computed(() => {
@@ -66,6 +72,17 @@ const tutorialsMissing = computed(() => rendered.value.filter((r) => r.hasStatem
 
 const print = () => window.print();
 const contestTitle = computed(() => detail.value?.summary.title[lang.value] || detail.value?.summary.title.en || detail.value?.summary.name || '');
+const docTitle = computed(() => (doc.value === 'tutorials' ? `${contestTitle.value} — ${lang.value === 'zh' ? '题解' : 'Tutorial'}` : contestTitle.value));
+const shown = computed(() => rendered.value.filter((r) => (doc.value === 'tutorials' ? r.hasTutorial : r.hasStatement)));
+// The browser suggests the page title as the PDF file name.
+watch(
+  () => [detail.value?.summary.name, doc.value, lang.value],
+  () => {
+    if (detail.value) document.title = `${detail.value.summary.name}-${doc.value}-${lang.value}`;
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => (document.title = 'PolyForge'));
 </script>
 
 <template>
@@ -77,10 +94,13 @@ const contestTitle = computed(() => detail.value?.summary.title[lang.value] || d
       <n-radio-group v-model:value="lang" size="small">
         <n-radio-button v-for="l in langs.length ? langs : [lang]" :key="l" :value="l">{{ l }}</n-radio-button>
       </n-radio-group>
-      <label class="opt"><n-switch v-model:value="withTutorials" size="small" /> {{ t('contest.withTutorials') }}</label>
+      <n-radio-group v-model:value="doc" size="small">
+        <n-radio-button value="statements">{{ t('contest.docStatements') }}</n-radio-button>
+        <n-radio-button value="tutorials">{{ t('contest.docTutorials') }}</n-radio-button>
+      </n-radio-group>
       <label class="opt"><n-switch v-model:value="pageBreaks" size="small" /> {{ t('contest.pageBreaks') }}</label>
-      <n-tag v-if="problemsMissing.length" size="small" type="error" :bordered="false">{{ t('contest.noStatementIn', { lang, list: problemsMissing.join(', ') }) }}</n-tag>
-      <n-tag v-if="withTutorials && tutorialsMissing.length" size="small" type="warning" :bordered="false">
+      <n-tag v-if="doc === 'statements' && problemsMissing.length" size="small" type="error" :bordered="false">{{ t('contest.noStatementIn', { lang, list: problemsMissing.join(', ') }) }}</n-tag>
+      <n-tag v-if="doc === 'tutorials' && tutorialsMissing.length" size="small" type="warning" :bordered="false">
         {{ t('contest.noTutorialIn', { lang, list: tutorialsMissing.join(', ') }) }}
       </n-tag>
       <span class="grow" />
@@ -90,9 +110,11 @@ const contestTitle = computed(() => detail.value?.summary.title[lang.value] || d
     <div v-if="loading && !statements.length" class="center no-print"><n-spin /></div>
     <n-alert v-else-if="!statements.length" type="info" :show-icon="false" class="no-print empty">{{ t('contest.noProblems') }}</n-alert>
     <div v-else class="sheet" :class="{ breaks: pageBreaks }">
-      <h1 class="contest-title">{{ contestTitle }}</h1>
-      <section v-for="r in rendered.filter((x) => x.hasStatement)" :key="r.s.index" class="problem">
+      <h1 class="contest-title">{{ docTitle }}</h1>
+      <div v-if="!shown.length" class="nothing">{{ doc === 'tutorials' ? t('contest.noTutorials') : t('contest.noProblems') }}</div>
+      <section v-for="r in shown" :key="r.s.index" class="problem">
         <statement-doc
+          v-if="doc === 'statements'"
           :lang="lang"
           :index="r.s.index"
           :title="r.s.title"
@@ -100,12 +122,8 @@ const contestTitle = computed(() => detail.value?.summary.title[lang.value] || d
           :sections="r.sections"
           :samples="r.s.samples"
         />
+        <statement-doc v-else :lang="lang" :index="r.s.index" :title="r.s.title" :sections="r.sections" :samples="[]" mode="tutorial" />
       </section>
-      <template v-if="withTutorials">
-        <section v-for="r in rendered.filter((x) => x.hasTutorial)" :key="'t' + r.s.index" class="problem">
-          <statement-doc :lang="lang" :index="r.s.index" :title="r.s.title" :sections="r.sections" :samples="[]" mode="tutorial" />
-        </section>
-      </template>
     </div>
   </div>
 </template>
@@ -148,10 +166,16 @@ const contestTitle = computed(() => detail.value?.summary.title[lang.value] || d
 .sheet {
   background: #fff;
   color: #1a1a1a;
-  max-width: 820px;
+  width: 210mm;
+  min-height: 297mm;
+  box-sizing: border-box;
   margin: 24px auto;
-  padding: 40px 56px;
+  padding: 20mm;
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.35);
+}
+.nothing {
+  text-align: center;
+  color: #888;
 }
 .sheet :deep(.statement-doc) {
   --pf-sample-bg: rgb(239, 239, 239);
@@ -184,7 +208,8 @@ const contestTitle = computed(() => detail.value?.summary.title[lang.value] || d
     box-shadow: none;
     margin: 0;
     padding: 0;
-    max-width: none;
+    width: auto;
+    min-height: 0;
   }
   .breaks .problem + .problem {
     break-before: page;
@@ -195,6 +220,11 @@ const contestTitle = computed(() => detail.value?.summary.title[lang.value] || d
 </style>
 
 <style>
+/* The page margins of the PDF match the 20 mm padding of the on-screen sheet. */
+@page {
+  size: A4;
+  margin: 20mm;
+}
 @media print {
   html,
   body,

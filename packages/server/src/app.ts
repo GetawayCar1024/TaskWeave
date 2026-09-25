@@ -267,10 +267,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // ---- frontend ----
   if (deps.webDist) {
-    await app.register(fastifyStatic, { root: deps.webDist });
+    await app.register(fastifyStatic, {
+      root: deps.webDist,
+      // Chunks are content-hashed; index.html must always be fresh so that a reload
+      // after a rebuild or update picks up the new chunk names.
+      setHeaders: (res, file) => {
+        if (file.endsWith('index.html')) res.header('cache-control', 'no-cache');
+        else if (file.includes(`${path.sep}assets${path.sep}`)) res.header('cache-control', 'public, max-age=31536000, immutable');
+      },
+    });
     // SPA fallback: unknown GETs render index.html so client-side routes work on reload.
     app.setNotFoundHandler((req, reply) => {
-      if (req.method === 'GET' && !path.extname(req.url.split('?')[0])) return reply.sendFile('index.html');
+      if (req.method === 'GET' && !path.extname(req.url.split('?')[0])) return reply.header('cache-control', 'no-cache').sendFile('index.html');
       return reply.code(404).send({ error: 'not_found', message: 'Not found' });
     });
   }

@@ -37,8 +37,8 @@
     "io": "Input / Output",
     "delete": "Delete problem",
     "deleteTitle": "Delete problem {id}?",
-    "deleteBody": "The problem folder is moved to the trash folder in the global directory; move it back to restore it. Generated tests, builds and other caches are not kept; they are regenerated after a restore.",
-    "deleteInContests": "It is in these contests: {list}. They will show it as missing.",
+    "deleteBody": "The folder moves to the trash in the global directory (without generated caches); move it back to restore.",
+    "deleteInContests": "In contests: {list}",
     "deleted": "Deleted; the folder was moved to {path}"
   },
   "list": {
@@ -105,7 +105,7 @@
     "aiName": "Name",
     "aiModels": "Models (comma-separated, first is the default)",
     "aiFetchModels": "Fetch models",
-    "aiModelsFetched": "{n} models fetched, {added} new, saved",
+    "aiModelsFetched": "{n} models fetched, {added} new",
     "aiCompatible": "compatible",
     "aiDefault": "Default endpoint / model",
     "prices": "Prices",
@@ -116,7 +116,7 @@
     "priceCacheWrite": "Cache write",
     "priceOther": "Other models (*)",
     "priceAdd": "Add price",
-    "priceHint": "Per million tokens. Empty cache prices: Anthropic bills 0.1× (read) and 1.25× (write) the input price; other protocols the input price.",
+    "priceHint": "Per million tokens; empty cache prices use the default ratios",
     "usage": "Usage and cost",
     "usageRefresh": "Refresh",
     "usageClear": "Clear",
@@ -133,7 +133,7 @@
       "all": "All time"
     },
     "parallel": "Parallel jobs",
-    "parallelHint": "Programs running at once (tests, solutions, checkers); compilations use half. 0 = auto ({auto} of {cpus} logical CPUs). Lower it if the computer lags while judging."
+    "parallelHint": "0 = auto ({auto})"
   },
   "editor": {
     "changedOnDisk": "This file changed on disk while you have unsaved changes.",
@@ -284,7 +284,7 @@
     "history": "History",
     "none": "No invocations yet",
     "missing": "Expected verdict never occurred: {v}",
-    "legend": "Red: violates the tag · Yellow: above TL/2 · numbers are CPU ms",
+    "legend": "Red: violates the tag · Yellow: above half the time limit",
     "input": "Input",
     "output": "Output",
     "answer": "Answer",
@@ -299,7 +299,7 @@
     "selNone": "None",
     "selSamples": "Samples",
     "selInvert": "Invert",
-    "noTestsYet": "Tests of this testset have not been generated yet; running generates them first.",
+    "noTestsYet": "Not generated yet; running generates them first",
     "group": "Group {g}",
     "startN": "Run ({n} tests)",
     "blocked": "Dependency {g} did not pass completely",
@@ -349,7 +349,7 @@
     "inSync": "Local and Polygon are in sync",
     "takeCount": "{n} items will be overwritten by Polygon",
     "apply": "Apply",
-    "pullHint": "Checked items are replaced by the Polygon version; conflicts keep the local version by default.",
+    "pullHint": "Checked items are replaced by the Polygon version",
     "push_new": "new",
     "push_modified": "modified",
     "push_deleted": "deleted",
@@ -372,7 +372,7 @@
     "noSession": "Pick a session",
     "newSession": "New session",
     "deleteSession": "Delete this session (including unreviewed changes)?",
-    "intro": "The AI can change any file of this problem. It works on a copy and verifies its work; you accept changes file by file.",
+    "intro": "The AI can change any file of this problem; you accept changes file by file.",
     "thinking": "Reasoning",
     "working": "Working…",
     "changes": "{n} file(s) to review",
@@ -449,7 +449,7 @@
       "config": "config",
       "other": "other"
     },
-    "reviewIntro": "Read-only check of the statement, validator, checker, solutions and tests; lists every issue found.",
+    "reviewIntro": "Read-only check; lists every issue.",
     "usage": "{n} request(s)",
     "usageTokens": "in {in} · out {out}",
     "usageNoPrice": "no price set"
@@ -553,7 +553,7 @@
     "edit": "Contest settings",
     "delete": "Delete contest",
     "deleteConfirm": "Delete contest.toml? The problems are not affected.",
-    "pushConfirm": "Push local changes of {n} problem(s) to Polygon and commit. Unbound problems are created on Polygon.",
+    "pushConfirm": "Push and commit the changes of {n} problem(s) to Polygon?",
     "batchBad": "{n} problem(s) did not pass",
     "action": {
       "generate": "Generate tests",
@@ -569,15 +569,17 @@
       "export": "Contest package exported",
       "polygon-push": "Pushed to Polygon"
     },
-    "withTutorials": "Include tutorials",
     "pageBreaks": "One problem per page",
     "print": "Print / PDF",
     "noStatementIn": "{list}: no {lang} statement",
     "noTutorialIn": "{list}: no {lang} tutorial",
     "noProblems": "This contest has no problems yet",
-    "editIndex": "Problem letter (edit directly, e.g. A, B, C1)",
+    "editIndex": "Problem letter",
     "renumber": "Renumber",
-    "renumberHint": "Set the letters to A, B, C… in the current order"
+    "renumberHint": "Set the letters to A, B, C… in the current order",
+    "docStatements": "Statements",
+    "docTutorials": "Tutorials",
+    "noTutorials": "No tutorials yet"
   },
   "testsets": {
     "title": "Testsets and groups",
@@ -604,7 +606,7 @@
       "COMPLETE_GROUP": "Complete group",
       "EACH_TEST": "Each test"
     },
-    "note": "Testsets, groups and points map to Polygon; create a testset with the same name on Polygon before pushing."
+    "note": "Create a testset with the same name on Polygon before pushing"
   },
   "checks": {
     "noStatement": "No statement written yet",

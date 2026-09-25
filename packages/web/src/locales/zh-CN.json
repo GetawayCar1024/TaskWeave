@@ -37,8 +37,8 @@
     "io": "输入 / 输出",
     "delete": "删除题目",
     "deleteTitle": "删除题目 {id}？",
-    "deleteBody": "题目文件夹会移到全局目录的 trash 文件夹里，需要时可以移回来恢复。生成的测试、编译产物等缓存不会保留，恢复后重新生成即可。",
-    "deleteInContests": "它在这些比赛中：{list}。比赛里会显示为找不到的题目。",
+    "deleteBody": "文件夹将移到全局目录的 trash（不含生成的缓存），可移回恢复。",
+    "deleteInContests": "所在比赛：{list}",
     "deleted": "已删除，文件夹移到了 {path}"
   },
   "list": {
@@ -105,7 +105,7 @@
     "aiName": "名称",
     "aiModels": "模型（逗号分隔，第一个为默认）",
     "aiFetchModels": "拉取模型列表",
-    "aiModelsFetched": "拉取到 {n} 个模型，新增 {added} 个，已保存",
+    "aiModelsFetched": "拉取到 {n} 个模型，新增 {added} 个",
     "aiCompatible": "兼容",
     "aiDefault": "默认端点 / 模型",
     "prices": "价格",
@@ -116,7 +116,7 @@
     "priceCacheWrite": "缓存写入",
     "priceOther": "其他模型（*）",
     "priceAdd": "添加价格",
-    "priceHint": "单位：每百万 token。缓存价格留空时，Anthropic 按输入价的 0.1 倍（读取）和 1.25 倍（写入）计算，其他协议按输入价计算。",
+    "priceHint": "每百万 token；缓存价格留空按默认比例计算",
     "usage": "用量与费用",
     "usageRefresh": "刷新",
     "usageClear": "清空统计",
@@ -133,7 +133,7 @@
       "all": "全部"
     },
     "parallel": "最大并行任务数",
-    "parallelHint": "同时运行的程序数（测试、解法、检查器），编译占一半。0 = 自动（{auto} 个，本机 {cpus} 个逻辑核心）。调小可以避免评测时电脑卡顿。"
+    "parallelHint": "0 = 自动（{auto}）"
   },
   "editor": {
     "changedOnDisk": "此文件已在磁盘上被修改，而你有未保存的更改。",
@@ -284,7 +284,7 @@
     "history": "历史记录",
     "none": "还没有批量评测记录",
     "missing": "没有出现期望的结论：{v}",
-    "legend": "红框：结论与标签不符 · 黄框：超过时限的一半 · 数字为 CPU 时间（毫秒）",
+    "legend": "红框：与标签不符 · 黄框：超过时限一半",
     "input": "输入",
     "output": "输出",
     "answer": "答案",
@@ -299,7 +299,7 @@
     "selNone": "全不选",
     "selSamples": "样例",
     "selInvert": "反选",
-    "noTestsYet": "还没有生成这个测试集的测试，运行时会先生成。",
+    "noTestsYet": "尚未生成，运行时会先生成",
     "group": "子任务 {g}",
     "startN": "运行（{n} 个测试点）",
     "blocked": "依赖的子任务 {g} 未全部通过",
@@ -349,7 +349,7 @@
     "inSync": "本地与 Polygon 一致",
     "takeCount": "将用 Polygon 版本覆盖 {n} 项",
     "apply": "应用",
-    "pullHint": "勾选项会被 Polygon 版本覆盖；冲突项默认保留本地。",
+    "pullHint": "勾选项将被 Polygon 版本覆盖",
     "push_new": "新增",
     "push_modified": "修改",
     "push_deleted": "已删除",
@@ -372,7 +372,7 @@
     "noSession": "选择会话",
     "newSession": "新会话",
     "deleteSession": "删除这个会话（包括未确认的改动）？",
-    "intro": "AI 可以修改本题的任意文件。它在副本中改动并自行验证，改动需逐个文件确认后写入。",
+    "intro": "AI 可修改本题任意文件，改动需逐个确认后写入。",
     "thinking": "思考过程",
     "working": "正在工作…",
     "changes": "{n} 个文件待确认",
@@ -449,7 +449,7 @@
       "config": "配置",
       "other": "其他"
     },
-    "reviewIntro": "只读检查题面、校验器、检查器、解法和测试，并逐条列出问题。",
+    "reviewIntro": "只读检查，逐条列出问题。",
     "usage": "{n} 次请求",
     "usageTokens": "输入 {in} · 输出 {out}",
     "usageNoPrice": "未设置价格"
@@ -553,7 +553,7 @@
     "edit": "比赛设置",
     "delete": "删除比赛",
     "deleteConfirm": "删除 contest.toml？题目本身不受影响。",
-    "pushConfirm": "把 {n} 道题的本地改动推送到 Polygon 并提交。未绑定的题会在 Polygon 上新建。",
+    "pushConfirm": "推送 {n} 道题的改动并提交到 Polygon？",
     "batchBad": "{n} 道题未通过",
     "action": {
       "generate": "生成测试",
@@ -569,15 +569,17 @@
       "export": "比赛包已导出",
       "polygon-push": "已推送到 Polygon"
     },
-    "withTutorials": "附带题解",
     "pageBreaks": "每题分页",
     "print": "打印 / 导出 PDF",
     "noStatementIn": "{list} 没有 {lang} 题面",
     "noTutorialIn": "{list} 没有 {lang} 题解",
     "noProblems": "比赛里还没有题目",
-    "editIndex": "题号（可直接修改，如 A、B、C1）",
+    "editIndex": "题号",
     "renumber": "按顺序重新编号",
-    "renumberHint": "按当前顺序把题号改为 A、B、C…"
+    "renumberHint": "按当前顺序把题号改为 A、B、C…",
+    "docStatements": "题面",
+    "docTutorials": "题解",
+    "noTutorials": "还没有题解"
   },
   "testsets": {
     "title": "测试集与子任务",
@@ -604,7 +606,7 @@
       "COMPLETE_GROUP": "全部通过得分",
       "EACH_TEST": "按测试点得分"
     },
-    "note": "测试集、子任务和分值与 Polygon 对应；推送前需在 Polygon 上先建好同名测试集。"
+    "note": "推送前需在 Polygon 上建好同名测试集"
   },
   "checks": {
     "noStatement": "还没有写题面",
