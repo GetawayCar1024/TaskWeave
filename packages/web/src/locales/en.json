@@ -230,7 +230,10 @@
     "compileError": "Compilation error",
     "cached": "cached",
     "truncated": "truncated",
-    "compileLog": "Compiler output"
+    "compileLog": "Compiler output",
+    "exitCode": "exit {code}",
+    "stdout": "stdout",
+    "stderr": "stderr"
   },
   "selftest": {
     "validator": "Validator tests",
@@ -251,7 +254,8 @@
     "answer": "Answer",
     "noOutput": "not saved (over 16 MB)",
     "pass": "pass",
-    "fail": "mismatch"
+    "fail": "mismatch",
+    "max": "max"
   },
   "preview": {
     "unknown": "{n} unknown command(s)",

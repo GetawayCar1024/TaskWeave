@@ -51,6 +51,21 @@ function substitute(argv: string[], vars: Record<string, string>): string[] {
   return argv.map((a) => a.replace(/\{(\w+)\}/g, (m, k: string) => vars[k] ?? m));
 }
 
+const C_COMPILERS = /^(g\+\+|gcc|c\+\+|cc|clang|clang\+\+)(-\d+)?(\.exe)?$/i;
+
+/**
+ * Tests are stored with LF (as on Polygon). testlib built on Windows without FOR_LINUX
+ * expects CRLF in strict mode ("Expected EOLN"), so C/C++ builds always get -DFOR_LINUX,
+ * also with a languages.toml written before the default template had it.
+ */
+export function withLfNewlines(lang: Language): Language {
+  const cmd = lang.compile;
+  if (!cmd || /-DFOR_(LINUX|WINDOWS)\b/.test(cmd)) return lang;
+  const m = cmd.match(/^\s*("[^"]+"|\S+)/);
+  if (!m || !C_COMPILERS.test(path.basename(m[1].replace(/"/g, '')))) return lang;
+  return { ...lang, compile: `${m[0]} -DFOR_LINUX${cmd.slice(m[0].length)}` };
+}
+
 export function pickLanguage(languages: LanguagesConfig, file: string, override?: string): { id: string; lang: Language } | null {
   if (override) {
     const lang = languages[override];
@@ -122,7 +137,8 @@ export class Compiler {
     const languages = (await this.global.readLanguages()).languages;
     const picked = pickLanguage(languages, srcPath, langOverride);
     if (!picked) return fail(`No language in languages.toml matches ${path.extname(srcPath) || source}`);
-    const { id, lang } = picked;
+    const id = picked.id;
+    const lang = withLfNewlines(picked.lang);
     const usesShared = `${lang.compile ?? ''} ${lang.run}`.includes('{shared}');
     const testlib = usesShared ? await fsp.readFile(path.join(this.global.sharedDir, 'testlib.h')).catch(() => '') : '';
     const base = path.basename(srcPath, path.extname(srcPath));

@@ -89,14 +89,14 @@ defineExpose({ run, runOnTest });
         <n-space align="center" size="small">
           <n-tag v-if="result.verdict" :type="verdictType(result.verdict)" size="small" :bordered="false">{{ result.verdict }}</n-tag>
           <span v-if="result.run" class="small">{{ result.run.timeMs }} ms · {{ fmtMem(result.run.memoryKb) }}</span>
-          <span v-if="result.run && result.run.exitCode" class="small dim">exit {{ result.run.exitCode }}</span>
+          <span v-if="result.run && result.run.exitCode" class="small dim">{{ t('run.exitCode', { code: result.run.exitCode }) }}</span>
           <span v-if="result.compile.cached" class="small dim">{{ t('run.cached') }}</span>
         </n-space>
         <div v-if="result.checker?.message" class="small msg">{{ result.checker.message }}</div>
-        <div class="label">stdout<span v-if="result.stdoutTruncated" class="dim"> ({{ t('run.truncated') }})</span></div>
+        <div class="label">{{ t('run.stdout') }}<span v-if="result.stdoutTruncated" class="dim"> ({{ t('run.truncated') }})</span></div>
         <pre class="out mono">{{ result.stdout }}</pre>
         <template v-if="result.stderr">
-          <div class="label">stderr</div>
+          <div class="label">{{ t('run.stderr') }}</div>
           <pre class="out mono err">{{ result.stderr }}</pre>
         </template>
         <details v-if="result.compile.log" class="small">

@@ -223,7 +223,7 @@ onBeforeUnmount(disposeDiff);
           </tbody>
           <tfoot>
             <tr>
-              <td class="sticky dim small">max</td>
+              <td class="sticky dim small">{{ t('inv.max') }}</td>
               <td v-for="(s, si) in inv.solutions" :key="si" class="small dim foot">
                 <template v-if="s.maxTimeMs !== undefined">{{ s.maxTimeMs }} ms<br />{{ fmtMem(s.maxMemoryKb ?? 0) }}</template>
               </td>
@@ -246,7 +246,7 @@ onBeforeUnmount(disposeDiff);
       <n-space align="center" size="small">
         <n-tag :bordered="false" :style="{ background: verdictBg(detail.cell.verdict) }">{{ detail.cell.verdict }}</n-tag>
         <span>{{ detail.cell.timeMs }} ms · {{ fmtMem(detail.cell.memoryKb) }}</span>
-        <span v-if="detail.cell.exitCode" class="dim">exit {{ detail.cell.exitCode }}</span>
+        <span v-if="detail.cell.exitCode" class="dim">{{ t('run.exitCode', { code: detail.cell.exitCode }) }}</span>
       </n-space>
       <div v-if="detail.cell.message" class="msg mono">{{ detail.cell.message }}</div>
       <div class="three">
