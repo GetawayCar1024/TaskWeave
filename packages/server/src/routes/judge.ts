@@ -70,12 +70,12 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     return r;
   });
 
-  /** Remove a test: a manual test moves to the global trash, a script test loses its line. */
+  /** Remove a test: a manual test's files are deleted, a script test loses its line. */
   app.delete<{ Params: { id: string; n: string }; Querystring: { testset?: string; source?: string } }>('/api/problems/:id/tests/:n', async (req) => {
     const ctx = await judge.ctx(req.params.id);
     const n = Number(req.params.n);
     if (!Number.isInteger(n) || n < 1) throw new HttpError(400, 'bad_test', 'Invalid test index');
-    const r = await removeTest(ctx, n, { testset: req.query.testset, trashDir: path.join(judge.global.dir, 'trash'), source: req.query.source });
+    const r = await removeTest(ctx, n, { testset: req.query.testset, source: req.query.source });
     if (r.samples !== undefined) await judge.registry.patch(ctx.ref.id, { samples: r.samples });
     return r;
   });

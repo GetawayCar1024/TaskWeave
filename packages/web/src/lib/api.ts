@@ -133,7 +133,7 @@ export const api = {
     request<{ index: number; path: string; samples?: string }>('POST', `/problems/${pid(id)}/tests/manual`, req),
   /** `source` is the test as last seen (the server refuses if the test at `n` is another one). */
   removeTest: (id: string, n: number, source: string, testset?: string) =>
-    request<{ kind: 'manual' | 'script'; removed: number[]; trash?: string }>(
+    request<{ kind: 'manual' | 'script'; removed: number[] }>(
       'DELETE',
       `/problems/${pid(id)}/tests/${n}?source=${encodeURIComponent(source)}${testset && testset !== 'tests' ? `&testset=${encodeURIComponent(testset)}` : ''}`,
     ),

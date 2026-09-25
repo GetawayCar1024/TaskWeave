@@ -277,10 +277,10 @@
     "statementOutputBtn": "Statement output",
     "remove": "Remove test",
     "removeTitle": "Remove test {n}?",
-    "removeManual": "The manual test {file} moves to the trash folder of the global directory (move it back to restore).",
+    "removeManual": "The manual test {file} (and its statement input / output) will be deleted permanently.",
     "removeScript": "This line will be deleted from the script: {cmd}",
     "removeMulti": "The line makes tests {list}; they are all removed.",
-    "removedManual": "Moved to {path}",
+    "removedManual": "Manual test deleted",
     "removedScript": "Removed from the script ({n} test(s))"
   },
   "run": {

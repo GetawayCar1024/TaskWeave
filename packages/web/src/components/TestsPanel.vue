@@ -83,8 +83,8 @@ async function editStatementFile(t: TestInfo, which: 'in' | 'out') {
 
 const dialog = useDialog();
 /**
- * Remove a test after confirmation: a manual test's files move to the trash; a script
- * test's line is deleted from the script (with every test that line makes).
+ * Remove a test after confirmation: a manual test's files are deleted; a script test's
+ * line is deleted from the script (with every test that line makes).
  */
 function removeTest(test: TestInfo) {
   const siblings = test.origin === 'script' ? (manifest.value?.tests ?? []).filter((x) => x.origin === 'script' && x.source === test.source).map((x) => x.index) : [test.index];
@@ -100,7 +100,7 @@ function removeTest(test: TestInfo) {
     onPositiveClick: async () => {
       try {
         const r = await api.removeTest(props.problemId, test.index, test.source, testset.value);
-        message.success(r.kind === 'manual' ? t('tests.removedManual', { path: r.trash ?? '' }) : t('tests.removedScript', { n: r.removed.length }));
+        message.success(r.kind === 'manual' ? t('tests.removedManual') : t('tests.removedScript', { n: r.removed.length }));
       } catch (e) {
         message.error(serverText(errorMessage(e)));
       }

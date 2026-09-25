@@ -474,16 +474,16 @@ export function parseTestMarkup(buf: Buffer | null): number[] | undefined {
 }
 
 /**
- * Remove one test. A manual test is not deleted: its files (input and statement
- * input / output) move to `trashDir`. A script test loses its line in the script;
+ * Remove one test. A manual test's files (input and statement input / output) are
+ * deleted. A script test loses its line in the script;
  * a line that makes several tests ({a-b}) removes all of them. Lines produced by a
  * FreeMarker loop cannot be removed one by one. The index leaves tests.samples.
  */
 export async function removeTest(
   ctx: ProblemCtx,
   index: number,
-  opts: { testset?: string; trashDir: string; source?: string },
-): Promise<{ kind: 'manual' | 'script'; removed: number[]; trash?: string; samples?: string }> {
+  opts: { testset?: string; source?: string },
+): Promise<{ kind: 'manual' | 'script'; removed: number[]; samples?: string }> {
   const ts = requireTestset(ctx, opts.testset);
   const planned = await plan(ctx, [], ts);
   const p = planned.find((x) => x.index === index);
@@ -492,20 +492,11 @@ export async function removeTest(
   if (opts.source !== undefined && opts.source !== p.source) {
     throw new HttpError(409, 'test_changed', `Test ${index} is now ${p.source}, not ${opts.source}; regenerate the tests and try again`);
   }
-  let result: { kind: 'manual' | 'script'; removed: number[]; trash?: string };
+  let result: { kind: 'manual' | 'script'; removed: number[] };
   if (p.origin === 'manual' && p.manualPath) {
-    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
-    const dest = path.join(opts.trashDir, `${path.basename(ctx.ref.dir)}-tests-${stamp}`);
-    await fsp.mkdir(dest, { recursive: true });
     const sp = statementPaths(p.source);
-    for (const rel of [p.source, sp.input, sp.output]) {
-      const abs = safeJoin(ctx.ref.dir, rel);
-      if (await exists(abs)) await fsp.rename(abs, path.join(dest, path.basename(rel))).catch(async () => {
-        await fsp.copyFile(abs, path.join(dest, path.basename(rel)));
-        await fsp.rm(abs, { force: true });
-      });
-    }
-    result = { kind: 'manual', removed: [index], trash: dest };
+    for (const rel of [p.source, sp.input, sp.output]) await fsp.rm(safeJoin(ctx.ref.dir, rel), { force: true });
+    result = { kind: 'manual', removed: [index] };
   } else {
     if (!ts.script || !p.cmd) throw new HttpError(400, 'not_removable', `Test ${index} has no source to remove`);
     const file = safeJoin(ctx.ref.dir, ts.script);

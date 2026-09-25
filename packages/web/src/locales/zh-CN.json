@@ -277,10 +277,10 @@
     "statementOutputBtn": "题面输出",
     "remove": "移除测试",
     "removeTitle": "移除测试点 {n}？",
-    "removeManual": "手写测试 {file} 会移到全局目录的 trash 文件夹（可以移回恢复）。",
+    "removeManual": "将删除手写测试 {file}（及其题面输入 / 输出），无法恢复。",
     "removeScript": "将从 script 中删除这一行：{cmd}",
     "removeMulti": "这一行生成了测试点 {list}，会一起删除。",
-    "removedManual": "已移到 {path}",
+    "removedManual": "已删除手写测试",
     "removedScript": "已从 script 中删除（{n} 个测试点）"
   },
   "run": {
