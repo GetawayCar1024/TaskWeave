@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { AiEvent } from './ai.js';
 import type { CompileResult, JobInfo } from './judge.js';
 
 export const UI_LOCALES = ['zh-CN', 'en'] as const;
@@ -23,6 +24,11 @@ export const globalConfigSchema = z
       })
       .loose()
       .default({ roots: [] }),
+    /** Default AI endpoint (name from secrets.toml) and model. */
+    ai: z
+      .object({ endpoint: z.string().optional(), model: z.string().optional() })
+      .loose()
+      .default({}),
     editor: z
       .object({
         font_size: z.number().int().min(8).max(40).default(14),
@@ -127,7 +133,8 @@ export type WsEvent =
   | { type: 'settings:changed' }
   | { type: 'job:progress'; job: JobInfo }
   | { type: 'job:done'; job: JobInfo }
-  | { type: 'build:done'; problemId: string; result: CompileResult };
+  | { type: 'build:done'; problemId: string; result: CompileResult }
+  | { type: 'ai:event'; problemId: string; sessionId: string; event: AiEvent };
 
 export interface ApiError {
   error: string;

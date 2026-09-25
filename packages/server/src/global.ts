@@ -11,7 +11,19 @@ import {
   type LanguagesResponse,
   type SaveSecretsRequest,
   type SecretsResponse,
+  AI_PROTOCOLS,
+  type AiEndpoint,
+  type AiProtocol,
+  type SaveAiEndpoint,
 } from '@polyforge/shared';
+
+export interface RawAiEndpoint {
+  name: string;
+  protocol: AiProtocol;
+  baseUrl: string;
+  apiKey: string;
+  models: string[];
+}
 
 export const DEFAULT_POLYGON_API = 'https://polygon.codeforces.com/api/';
 import { atomicWrite, copyMissing, exists, HttpError } from './util/fs.js';
@@ -129,6 +141,53 @@ export class GlobalStore {
     }
     await atomicWrite(this.secretsPath, '# 密钥文件：Polygon key/secret 与 AI 端点。不要放进题目目录。\n\n' + stringify(doc) + '\n');
     return this.maskedSecrets();
+  }
+
+  /** AI endpoints from `[[ai.endpoints]]` in secrets.toml, keys included. */
+  async aiEndpointsRaw(): Promise<RawAiEndpoint[]> {
+    const list = (await this.readSecrets()).ai?.endpoints;
+    if (!Array.isArray(list)) return [];
+    return list
+      .filter((e) => e && typeof e.name === 'string')
+      .map((e) => ({
+        name: String(e.name),
+        protocol: e.protocol === 'openai' ? 'openai' : 'anthropic',
+        baseUrl: String(e.base_url ?? ''),
+        apiKey: String(e.api_key ?? ''),
+        models: Array.isArray(e.models) ? e.models.map(String) : [],
+      }));
+  }
+
+  async aiEndpoint(name?: string): Promise<RawAiEndpoint> {
+    const list = await this.aiEndpointsRaw();
+    const want = name || this.config.ai?.endpoint;
+    const ep = (want ? list.find((e) => e.name === want) : undefined) ?? list[0];
+    if (!ep) throw new HttpError(400, 'no_ai_endpoint', 'No AI endpoint configured (Settings → AI)');
+    return ep;
+  }
+
+  async maskedAiEndpoints(): Promise<AiEndpoint[]> {
+    const mask = (s: string) => (s.length <= 8 ? (s ? '••••' : '') : `${s.slice(0, 4)}…${s.slice(-2)}`);
+    return (await this.aiEndpointsRaw()).map((e) => ({ ...e, apiKey: mask(e.apiKey), hasKey: !!e.apiKey }));
+  }
+
+  async saveAiEndpoints(next: SaveAiEndpoint[]): Promise<AiEndpoint[]> {
+    const old = await this.aiEndpointsRaw();
+    const names = new Set<string>();
+    const endpoints = next.map((e) => {
+      const name = e.name.trim();
+      if (!name) throw new HttpError(400, 'bad_endpoint', 'Endpoint name is required');
+      if (names.has(name)) throw new HttpError(400, 'bad_endpoint', `Duplicate endpoint name: ${name}`);
+      names.add(name);
+      if (!AI_PROTOCOLS.includes(e.protocol)) throw new HttpError(400, 'bad_endpoint', `Unknown protocol: ${e.protocol}`);
+      const prev = old.find((o) => o.name === (e.previousName ?? name));
+      const apiKey = e.apiKey?.trim() || prev?.apiKey || '';
+      return { name, protocol: e.protocol, base_url: e.baseUrl?.trim() || '', api_key: apiKey, models: e.models.map((m) => m.trim()).filter(Boolean) };
+    });
+    const doc = await this.readSecrets();
+    doc.ai = { ...(doc.ai ?? {}), endpoints };
+    await atomicWrite(this.secretsPath, '# 密钥文件：Polygon key/secret 与 AI 端点。不要放进题目目录。\n\n' + stringify(doc) + '\n');
+    return this.maskedAiEndpoints();
   }
 
   async readLanguages(): Promise<LanguagesResponse> {

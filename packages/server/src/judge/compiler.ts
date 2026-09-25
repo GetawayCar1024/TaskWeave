@@ -104,9 +104,12 @@ export class Compiler {
     return { srcPath: safeJoin(problemDir, source), buildRoot: path.join(problemDir, '.polyforge', 'build') };
   }
 
-  async compile(problemDir: string, source: string, langOverride?: string): Promise<CompileOutcome> {
+  async compile(problemDir: string, source: string, langOverride?: string, buildRootOverride?: string): Promise<CompileOutcome> {
     const started = Date.now();
-    const { srcPath, buildRoot } = this.resolveSource(problemDir, source);
+    const resolved = this.resolveSource(problemDir, source);
+    const srcPath = resolved.srcPath;
+    // Shared std checkers keep their global cache; problem sources may use an override.
+    const buildRoot = source.startsWith(STD_PREFIX) || !buildRootOverride ? resolved.buildRoot : buildRootOverride;
     const fail = (log: string, lang?: string): CompileOutcome => ({
       result: { source, ok: false, cached: false, lang, log, diagnostics: [], durationMs: Date.now() - started },
     });

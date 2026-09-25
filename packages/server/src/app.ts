@@ -11,12 +11,14 @@ import {
   type SettingsResponse,
   type WriteFileRequest,
 } from '@polyforge/shared';
-import { parse as parseToml } from 'smol-toml';
+import { parseDefsToml } from './defs.js';
 import type { GlobalStore } from './global.js';
 import type { JobManager } from './jobs.js';
 import type { Judge } from './judge/index.js';
 import { judgeRoutes } from './routes/judge.js';
 import { polygonRoutes } from './routes/polygon.js';
+import { aiRoutes } from './routes/ai.js';
+import { AgentService } from './ai/agent.js';
 import { PolygonError } from './polygon/client.js';
 import { PolygonSync } from './polygon/sync.js';
 import { samePath } from './global.js';
@@ -39,18 +41,6 @@ export interface AppDeps {
   token: string;
   /** Built frontend to serve; omitted in dev (Vite serves it). */
   webDist?: string;
-}
-
-/**
- * Codeforces' defs.toml writes multi-line bodies as `body = '` … `'` (a line with a
- * lone quote), which strict TOML rejects; turn those into ''' literals first.
- */
-export function parseDefsToml(text: string): unknown {
-  const fixed = text
-    .replace(/\r\n/g, '\n')
-    .replace(/= '\n/g, "= '''\n")
-    .replace(/^'$/gm, "'''");
-  return parseToml(fixed);
 }
 
 const ALLOWED_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
@@ -196,6 +186,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   judgeRoutes(app, deps.judge, deps.jobs);
   polygonRoutes(app, deps.judge, new PolygonSync(deps.judge), deps.jobs, hub);
+  aiRoutes(app, global, new AgentService(deps.judge, hub));
 
   app.post<{ Params: { id: string }; Body: MoveFileRequest }>('/api/problems/:id/move', async (req) => {
     const ref = await registry.get(req.params.id);

@@ -15,6 +15,8 @@ export interface ProblemCtx {
   limits: ProblemLimits;
   /** .polyforge directory of the problem. */
   work: string;
+  /** Build cache override (AI sandboxes share the real problem's build cache). */
+  buildRoot?: string;
 }
 
 export class Judge {
@@ -31,13 +33,18 @@ export class Judge {
   }
 
   async ctx(problemId: string): Promise<ProblemCtx> {
-    const ref = await this.registry.get(problemId);
+    return this.ctxFor(await this.registry.get(problemId));
+  }
+
+  /** Context for an arbitrary problem folder, e.g. an AI sandbox copy. */
+  async ctxFor(ref: ProblemRef, buildRoot?: string): Promise<ProblemCtx> {
     const { config, error } = await this.registry.readConfig(ref);
     if (!config) throw new HttpError(400, 'invalid_problem_toml', error ?? 'problem.toml is invalid');
     return {
       ref,
       config,
       work: path.join(ref.dir, '.polyforge'),
+      buildRoot,
       limits: {
         timeLimitMs: config.problem.time_limit,
         memoryLimitMb: config.problem.memory_limit,
@@ -54,7 +61,7 @@ export class Judge {
   }
 
   async compile(ctx: ProblemCtx, source: string): Promise<CompileOutcome> {
-    const out = await this.compiler.compile(ctx.ref.dir, source, this.langOf(ctx.config, source));
+    const out = await this.compiler.compile(ctx.ref.dir, source, this.langOf(ctx.config, source), ctx.buildRoot);
     this.hub.broadcast({ type: 'build:done', problemId: ctx.ref.id, result: out.result });
     return out;
   }
