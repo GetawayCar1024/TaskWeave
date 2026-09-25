@@ -578,7 +578,7 @@
     "moveDown": "下移",
     "add": "添加",
     "addPlaceholder": "添加题目…",
-    "statements": "题面汇总",
+    "statements": "题面与题解",
     "edit": "比赛设置",
     "delete": "删除比赛",
     "deleteConfirm": "只删除比赛本身，题目不受影响。",
