@@ -37,6 +37,9 @@ export type AiRunState = 'idle' | 'running' | 'error';
 
 export interface AiSessionSummary {
   id: string;
+  mode: AiSessionMode;
+  /** Review mode: number of findings. */
+  findings: number;
   title: string;
   createdAt: string;
   updatedAt: string;
@@ -61,6 +64,7 @@ export interface AiPlanStep {
 
 export interface AiSessionDetail extends AiSessionSummary {
   transcript: AiTranscriptItem[];
+  findingList: AiFinding[];
   plan: AiPlanStep[];
   error?: string;
 }
@@ -79,6 +83,7 @@ export interface AiChangeContent {
 }
 
 export interface CreateAiSessionRequest {
+  mode?: AiSessionMode;
   endpoint?: string;
   model?: string;
   title?: string;
@@ -91,6 +96,32 @@ export type AiEvent =
   | { type: 'tool_call'; id: string; name: string; input: unknown }
   | { type: 'tool_result'; id: string; result: string; isError: boolean }
   | { type: 'plan'; plan: AiPlanStep[] }
+  | { type: 'finding'; finding: AiFinding }
   | { type: 'changes'; changes: AiChange[] }
   | { type: 'state'; state: AiRunState; error?: string }
   | { type: 'notice'; level: 'info' | 'warning' | 'error'; text: string };
+
+export type AiSessionMode = 'agent' | 'review';
+
+export const FINDING_CATEGORIES = ['statement', 'tutorial', 'validator', 'checker', 'interactor', 'solutions', 'tests', 'config', 'other'] as const;
+
+/** One result of an AI check (review mode). */
+export interface AiFinding {
+  id: string;
+  severity: 'error' | 'warning' | 'info';
+  category: (typeof FINDING_CATEGORIES)[number];
+  title: string;
+  detail: string;
+  file?: string;
+  line?: number;
+  suggestion?: string;
+}
+
+/** A deterministic (non-AI) check result. */
+export interface LocalCheck {
+  level: 'error' | 'warning' | 'info';
+  category: AiFinding['category'];
+  message: string;
+  file?: string;
+  line?: number;
+}

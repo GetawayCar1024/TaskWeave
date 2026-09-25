@@ -40,6 +40,7 @@ Your edits go to a working copy. The user reviews every changed file as a diff a
   groups = false               # optional: [[tests.group]] name/points/policy/dependencies/tests
   Tags: MA main correct; OK correct; WA wrong answer somewhere; TL time limit somewhere; TL-OR-OK may TL; TM TL or ML; ML memory limit; RE runtime error; PE presentation error; RJ fails somehow; NR not run.
 - statement/<lang>/{legend,input,output,interaction,scoring,notes,tutorial}.tex — languages zh and en. Images in statement/images/.
+- statement/<lang>/tutorial.tex is the tutorial (editorial) for that language. Tutorial languages must match the statement languages exactly: every language with a statement gets a tutorial, and no tutorial exists without a statement in that language. Keep the language versions equivalent.
 - validator.cpp, checker.cpp (if not a std checker), interactor.cpp — at the problem root.
 - generators/*.cpp — referenced in the script by file name without extension.
 - solutions/*.cpp — every solution must be listed in problem.toml with a tag.
@@ -99,4 +100,28 @@ async function macroList(sharedDir: string): Promise<string> {
 
 export async function systemPrompt(sharedDir: string): Promise<string> {
   return `${BASE}\n\n# Statement macros (defs.toml)\n${await macroList(sharedDir)}`;
+}
+
+/** Extra instructions for the AI check (review mode): read, judge, report — never edit. */
+const REVIEW = `# You are doing a check (review), not editing
+You cannot change files in this mode. Examine the problem thoroughly and call report_issue once for every distinct problem you find. Use the tools to verify claims instead of guessing: compile programs, generate tests, run the invocation, run validator and checker tests, compare the statement with the validator and std.
+
+Check at least:
+- Statement vs. validator: every constraint in the statement is enforced by the validator with the same bounds, and nothing stricter/looser; input format matches exactly (spaces, line breaks, EOF).
+- Samples: the sample tests match the statement, the validator accepts them, std produces the expected output.
+- std correctness and speed (compare with brute force on small tests if present; max tests well within the time limit).
+- Tests: cover minimum and maximum sizes, edge cases and special structures; every wrong solution is caught; enough maximum tests; no invalid tests.
+- Checker: appropriate for the output (unique answer → std checker; otherwise a checker that verifies properly); checker tests.
+- Interactive problems: interactor logic, query limits, flushing, tout for the checker.
+- problem.toml: tags match invocation results, limits sensible, samples set.
+- Statement and tutorial text: correctness, ambiguity, Polygon LaTeX formatting, consistency between languages; tutorial languages match statement languages; tutorial agrees with std.
+When done, reply with a short summary (overall verdict and the most important issues). Do not repeat every finding in the text.`;
+
+export async function reviewSystemPrompt(sharedDir: string): Promise<string> {
+  return `${await systemPrompt(sharedDir)}\n\n${REVIEW}`;
+}
+
+export function reviewKickoff(checks: { level: string; message: string; file?: string }[]): string {
+  const lines = checks.map((c) => `- [${c.level}] ${c.message}${c.file ? ` (${c.file})` : ''}`);
+  return `Check this problem and report every issue with report_issue.\n\nAutomatic local checks found:\n${lines.length ? lines.join('\n') : '- nothing'}\n\nConfirm or dismiss these, then look for everything they cannot see.`;
 }

@@ -1,0 +1,17 @@
+[
+  {
+    "text": "Checking the problem.",
+    "tools": [
+      { "name": "list_files", "input": {} },
+      { "name": "generate_tests", "input": {} }
+    ]
+  },
+  {
+    "tools": [
+      { "name": "report_issue", "input": { "severity": "error", "category": "tests", "title": "Tests too weak for int overflow", "detail": "No test has a sum above 2^31.", "file": "tests/script.txt", "line": 1, "suggestion": "Add gen_random 100000 1000000000 as an early test." } },
+      { "name": "report_issue", "input": { "severity": "warning", "category": "tutorial", "title": "English tutorial missing", "detail": "The statement has an English version but no English tutorial.", "file": "statement/en/tutorial.tex" } },
+      { "name": "write_file", "input": { "path": "hack.txt", "content": "should not be allowed" } }
+    ]
+  },
+  { "text": "Overall: mostly fine; 1 error, 1 warning. Last tool said: {{last_result}}" }
+]

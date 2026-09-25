@@ -50,9 +50,14 @@ export const PRESETS: AiPreset[] = [
       'Verify the whole problem: compile every program, generate tests, run validator and checker tests and a full invocation. Fix whatever fails, then report the results.',
   },
   {
+    key: 'tutorial',
+    prompt:
+      'Write the tutorial (editorial) as statement/<lang>/tutorial.tex for every language that has a statement, and only those. Explain the key idea, the algorithm and its complexity, consistent with solutions/std.cpp; use Polygon LaTeX and keep the language versions equivalent.',
+  },
+  {
     key: 'translate',
     prompt:
-      'Translate the statement to the other language (zh ⇄ en), keeping the Polygon LaTeX formatting, formulas and macros unchanged, and write it into the corresponding statement/<lang>/ files. Also fill in the title in problem.toml.',
+      'Translate the statement and the tutorial to the other language (zh ⇄ en), keeping the Polygon LaTeX formatting, formulas and macros unchanged, and write it into the corresponding statement/<lang>/ files. Also fill in the title in problem.toml.',
   },
   {
     key: 'lint',

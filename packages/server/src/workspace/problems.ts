@@ -4,6 +4,7 @@ import { parse, stringify } from 'smol-toml';
 import {
   PROBLEM_NAME_RE,
   STD_PREFIX,
+  statementLanguages,
   problemTomlSchema,
   type CreateProblemRequest,
   type PatchProblemRequest,
@@ -101,8 +102,8 @@ export class ProblemRegistry {
     const { config, error } = await this.readConfig(ref);
     const has = (rel?: string) => (rel ? this.sourceExists(ref, rel) : Promise.resolve(false));
     const std = config?.solutions.find((s) => s.tag === 'MA');
-    const [statement, validator, checker, stdOk, manualTests, hasScript] = await Promise.all([
-      this.hasStatement(ref),
+    const [langs, validator, checker, stdOk, manualTests, hasScript] = await Promise.all([
+      this.statementLangs(ref),
       has(config?.validator?.source),
       has(config?.checker?.source),
       has(std?.source),
@@ -119,7 +120,9 @@ export class ProblemRegistry {
       memoryLimit: config?.problem.memory_limit ?? 0,
       interactive: config?.problem.interactive ?? false,
       status: {
-        statement,
+        statement: langs.statement.length > 0,
+        statementLangs: langs.statement,
+        tutorialLangs: langs.tutorial,
         validator,
         checker,
         std: stdOk,
@@ -149,23 +152,18 @@ export class ProblemRegistry {
     }
   }
 
-  private async hasStatement(ref: ProblemRef): Promise<boolean> {
+  /** Languages with a non-empty statement / tutorial (whitespace-only files do not count). */
+  private async statementLangs(ref: ProblemRef) {
     const dir = path.join(ref.dir, 'statement');
-    let langs: string[];
-    try {
-      langs = await fsp.readdir(dir);
-    } catch {
-      return false;
-    }
-    for (const lang of langs) {
-      try {
-        const legend = await fsp.readFile(path.join(dir, lang, 'legend.tex'), 'utf8');
-        if (legend.trim()) return true;
-      } catch {
-        /* no legend for this language */
+    const files: { path: string; size: number }[] = [];
+    for (const lang of await fsp.readdir(dir).catch(() => [] as string[])) {
+      for (const f of await fsp.readdir(path.join(dir, lang)).catch(() => [] as string[])) {
+        if (!f.endsWith('.tex')) continue;
+        const text = await fsp.readFile(path.join(dir, lang, f), 'utf8').catch(() => '');
+        files.push({ path: `statement/${lang}/${f}`, size: text.trim().length });
       }
     }
-    return false;
+    return statementLanguages(files);
   }
 
   async create(req: CreateProblemRequest): Promise<ProblemSummary> {

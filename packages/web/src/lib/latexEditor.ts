@@ -1,3 +1,4 @@
+import { lintStatement } from '@polyforge/shared';
 import { getDefs } from './defs';
 import { buildMacros, macroPreview, type MacroTable } from './latex';
 import { monaco } from './monaco';
@@ -58,4 +59,31 @@ export function registerLatexMacros() {
       return null;
     },
   });
+}
+
+/** Show statement lint issues as editor warnings while typing (statement/<lang>/*.tex). */
+export function attachStatementLint(model: monaco.editor.ITextModel, lang: string): monaco.IDisposable {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const update = () => {
+    if (model.isDisposed()) return;
+    const { issues } = lintStatement(model.getValue(), { lang });
+    monaco.editor.setModelMarkers(
+      model,
+      'polyforge-lint',
+      issues.map((i) => ({
+        severity: i.fixable ? monaco.MarkerSeverity.Info : monaco.MarkerSeverity.Warning,
+        message: i.message + (i.fixable ? ' (auto-fixable)' : ''),
+        startLineNumber: i.line,
+        startColumn: i.col,
+        endLineNumber: i.line,
+        endColumn: Math.min(i.col + 3, model.getLineMaxColumn(Math.min(i.line, model.getLineCount()))),
+      })),
+    );
+  };
+  update();
+  const sub = model.onDidChangeContent(() => {
+    clearTimeout(timer);
+    timer = setTimeout(update, 400);
+  });
+  return { dispose: () => (clearTimeout(timer), sub.dispose()) };
 }

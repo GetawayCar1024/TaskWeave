@@ -56,6 +56,7 @@ function checklist(p: ProblemSummary) {
   const s = p.status;
   return [
     { key: 'statement', ok: s.statement },
+    { key: 'tutorial', ok: s.statementLangs.length > 0 && s.statementLangs.every((x) => s.tutorialLangs.includes(x)) && s.tutorialLangs.every((x) => s.statementLangs.includes(x)) },
     { key: 'validator', ok: s.validator },
     { key: 'checker', ok: s.checker },
     { key: 'std', ok: s.std },
@@ -103,6 +104,9 @@ function open(p: ProblemSummary) {
             <span class="limits">{{ p.timeLimit / 1000 }}s / {{ p.memoryLimit }}MB</span>
           </template>
           <div v-if="p.error" class="error">{{ p.error }}</div>
+          <div v-if="p.status.tutorialLangs.length && p.status.tutorialLangs.join() !== p.status.statementLangs.join()" class="warn">
+            {{ t('list.langMismatch', { s: p.status.statementLangs.join('/') || '—', t: p.status.tutorialLangs.join('/') }) }}
+          </div>
           <div class="checks">
             <n-tag v-for="c in checklist(p)" :key="c.key" size="small" :type="c.ok ? 'success' : 'default'" :bordered="false">
               {{ c.ok ? '✓' : '·' }} {{ t(`check.${c.key}`) }}
@@ -165,6 +169,11 @@ function open(p: ProblemSummary) {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+.warn {
+  color: #e8b060;
+  font-size: 12px;
+  margin-bottom: 6px;
 }
 .error {
   color: #e88080;

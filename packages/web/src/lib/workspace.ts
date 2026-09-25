@@ -10,6 +10,7 @@ import {
   type WsEvent,
 } from '@polyforge/shared';
 import { api, ApiError } from './api';
+import { attachStatementLint } from './latexEditor';
 import { monaco, languageForPath } from './monaco';
 
 /** Tabs for read-only files from the global shared/ directory use this prefix. */
@@ -110,6 +111,8 @@ export function useWorkspace(problemId: string) {
         tab.dirty = model.getAlternativeVersionId() !== tab.savedVersion;
       }),
     );
+    const lintLang = path.match(/^statement\/([^/]+)\/[^/]+\.tex$/)?.[1];
+    if (lintLang && lintLang !== 'images') disposables.push(attachStatementLint(model, lintLang));
     state.tabs.push(tab);
     state.active = path;
   }

@@ -261,7 +261,8 @@ export async function localItems(judge: Judge, ctx: ProblemCtx): Promise<LocalIt
       if (!(await exists(path.join(dir, rel)))) continue;
       const text = await readText(rel);
       if (!text.trim()) continue;
-      items.push({ key: `statement:${plang}:${sec}`, kind: 'statement', label: `statement (${plang}): ${sec}`, path: rel, text, extra: { lang: plang, section: sec } });
+      const label = sec === 'tutorial' ? `tutorial (${plang})` : `statement (${plang}): ${sec}`;
+      items.push({ key: `statement:${plang}:${sec}`, kind: 'statement', label, path: rel, text, extra: { lang: plang, section: sec } });
     }
   }
   for (const rel of await listFiles(path.join(stmtDir, 'images'))) {
@@ -415,7 +416,7 @@ export async function remoteItems(client: PolygonClient, problemId: number): Pro
     for (const sec of POLY_SECTIONS) {
       const text = st?.[sec];
       if (typeof text !== 'string' || !text.trim()) continue;
-      items.push({ key: `statement:${plang}:${sec}`, kind: 'statement', label: `statement (${plang}): ${sec}`, text: text.replace(/\r\n/g, '\n'), extra: { lang: plang, section: sec } });
+      items.push({ key: `statement:${plang}:${sec}`, kind: 'statement', label: sec === 'tutorial' ? `tutorial (${plang})` : `statement (${plang}): ${sec}`, text: text.replace(/\r\n/g, '\n'), extra: { lang: plang, section: sec } });
     }
   }
   for (const r of resources) {

@@ -32,6 +32,8 @@ export function aiRoutes(app: FastifyInstance, global: GlobalStore, agent: Agent
 
   app.get<P>('/api/problems/:id/ai/sessions', async (req) => agent.list(req.params.id));
   app.post<P & { Body: CreateAiSessionRequest }>('/api/problems/:id/ai/sessions', async (req) => agent.create(req.params.id, req.body ?? {}));
+  app.post<P & { Body: CreateAiSessionRequest }>('/api/problems/:id/ai/review', async (req) => agent.startReview(req.params.id, req.body ?? {}));
+
   app.get<S>('/api/problems/:id/ai/sessions/:sid', async (req) => agent.get(req.params.id, req.params.sid));
   app.patch<S & { Body: { title?: string; endpoint?: string; model?: string } }>('/api/problems/:id/ai/sessions/:sid', async (req) =>
     agent.update(req.params.id, req.params.sid, req.body ?? {}),

@@ -7,9 +7,10 @@ import { monaco } from '../lib/monaco';
 import { settings } from '../lib/settings';
 import { SHARED_TAB, type Tab, type Workspace } from '../lib/workspace';
 import StatementPreview from './StatementPreview.vue';
+import type { SidebarAction } from './FileSidebar.vue';
 
 const props = defineProps<{ ws: Workspace; judge: Judge; problemId: string }>();
-const emit = defineEmits<{ save: [path: string]; close: [path: string]; quickOpen: []; showDiff: [path: string]; run: []; generate: [] }>();
+const emit = defineEmits<{ save: [path: string]; close: [path: string]; quickOpen: []; showDiff: [path: string]; run: []; generate: []; action: [SidebarAction] }>();
 
 // Statement tabs get a live preview next to the source (DESIGN §6.1).
 const statementLang = computed(() => props.ws.activeTab.value?.path.match(/^statement\/([^/]+)\/[^/]+\.tex$/)?.[1] ?? null);
@@ -126,7 +127,14 @@ function onTabMouse(e: MouseEvent, path: string) {
     <div v-show="ws.activeTab.value" class="body">
       <div ref="host" class="host" />
       <div v-if="statementLang && showPreview" class="preview">
-        <statement-preview :ws="ws" :judge="judge" :problem-id="problemId" :lang="statementLang" />
+        <statement-preview
+          :ws="ws"
+          :judge="judge"
+          :problem-id="problemId"
+          :lang="statementLang"
+          :mode="ws.activeTab.value?.path.endsWith('/tutorial.tex') ? 'tutorial' : 'statement'"
+          @create-tutorial="(lang: string) => emit('action', { kind: 'createTutorials', langs: [lang] })"
+        />
       </div>
       <n-button v-if="statementLang" size="tiny" class="preview-toggle" secondary @click="showPreview = !showPreview">
         {{ showPreview ? t('preview.hide') : t('preview.show') }}

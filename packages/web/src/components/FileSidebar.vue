@@ -7,6 +7,7 @@ import {
   SOLUTION_TAGS,
   STD_PREFIX,
   isSourceFile,
+  statementLanguages,
   type FileNode,
   type FileRole,
   type PatchProblemRequest,
@@ -22,7 +23,8 @@ export type SidebarAction =
   | { kind: 'delete'; path: string }
   | { kind: 'copyPath'; path: string }
   | { kind: 'copyStd'; ref: string }
-  | { kind: 'patch'; req: PatchProblemRequest };
+  | { kind: 'patch'; req: PatchProblemRequest }
+  | { kind: 'createTutorials'; langs: string[] };
 
 const props = defineProps<{ ws: Workspace }>();
 const emit = defineEmits<{ action: [SidebarAction] }>();
@@ -34,6 +36,7 @@ watch(mode, (m) => localStorage.setItem('polyforge-tree-mode', m));
 const ROLE_ICON: Record<FileRole, string> = {
   config: '⚙️',
   statement: '📄',
+  tutorial: '📘',
   validator: '✅',
   checker: '⚖️',
   interactor: '🔁',
@@ -50,6 +53,7 @@ const ROLE_ICON: Record<FileRole, string> = {
 const ROLE_DIR: Record<FileRole, string> = {
   config: '',
   statement: 'statement/zh/',
+  tutorial: 'statement/',
   validator: '',
   checker: '',
   interactor: '',
@@ -64,6 +68,7 @@ const ROLE_DIR: Record<FileRole, string> = {
 
 const STRIP: Partial<Record<FileRole, string>> = {
   statement: 'statement/',
+  tutorial: 'statement/',
   generator: 'generators/',
   solution: 'solutions/',
   test: 'tests/',
@@ -76,6 +81,10 @@ interface Node extends TreeOption {
   key: string;
   path?: string;
   dir?: string;
+  /** Virtual entry: a statement language that has no tutorial yet. */
+  missingLang?: string;
+  /** Tutorial in a language without a statement. */
+  orphan?: boolean;
   group?: FileRole;
   role?: FileRole;
   children?: Node[];
@@ -100,13 +109,25 @@ const roleTree = computed<Node[]>(() => {
     if (!groups.has('checker')) groups.set('checker', []);
     groups.get('checker')!.unshift({ key: path, label: chk, path, role: 'checker', isLeaf: true });
   }
+  // Tutorials follow the statement languages: one per language, created on demand.
+  const langs = statementLanguages(props.ws.files.value);
+  const tut = groups.get('tutorial') ?? [];
+  for (const n of tut) n.orphan = langs.orphanTutorial.includes(n.path!.split('/')[1]);
+  for (const lang of langs.statement) {
+    if (!tut.some((n) => n.path === `statement/${lang}/tutorial.tex`)) {
+      tut.push({ key: `missing-tutorial:${lang}`, label: t('tree.missingTutorial', { lang }), missingLang: lang, isLeaf: true });
+    }
+  }
+  tut.sort((a, b) => String(a.key).localeCompare(String(b.key)));
+  if (tut.length) groups.set('tutorial', tut);
+
   const out: Node[] = [];
   const cfg = groups.get('config');
   if (cfg) out.push(...cfg.map((n) => ({ ...n, label: 'problem.toml' })));
   for (const role of ROLE_ORDER) {
     if (role === 'config') continue;
     const children = groups.get(role);
-    const always = ['statement', 'validator', 'checker', 'generator', 'solution', 'test'].includes(role);
+    const always = ['statement', 'tutorial', 'validator', 'checker', 'generator', 'solution', 'test'].includes(role);
     if (!children && !always) continue;
     if (role === 'interactor' && !children && !props.ws.state.detail?.summary.interactive) continue;
     out.push({ key: `group:${role}`, label: t(`roles.${role}`), group: role, children: children ?? [], isLeaf: false });
@@ -125,6 +146,7 @@ const dirTree = computed<Node[]>(() => toDirNodes(props.ws.state.detail?.tree ??
 
 const expanded = ref<string[]>(JSON.parse(localStorage.getItem('polyforge-tree-expanded') ?? 'null') ?? [
   'group:statement',
+  'group:tutorial',
   'group:validator',
   'group:checker',
   'group:interactor',
@@ -141,12 +163,17 @@ function renderLabel({ option }: { option: TreeOption }) {
   const tab = n.path ? props.ws.state.tabs.find((x) => x.path === n.path) : undefined;
   const cls = ['file', tab?.dirty ? 'dirty' : ''].join(' ');
   if (mode.value === 'dirs' && n.dir !== undefined) return h('span', `📁 ${n.label}`);
+  if (n.missingLang) return h('span', { class: 'missing' }, `＋ ${n.label}`);
   return h('span', { class: cls, title: n.path }, n.label as string);
 }
 
 function renderSuffix({ option }: { option: TreeOption }) {
   const n = option as Node;
   if (n.group) return h('span', { class: 'count' }, String(n.children?.length ?? 0));
+  if (n.orphan) return h(NTag, { size: 'tiny', type: 'warning', bordered: false, title: t('tree.orphanTutorial') }, () => '!');
+  if (n.role === 'tutorial' && n.path && !props.ws.files.value.find((f) => f.path === n.path)?.size) {
+    return h('span', { class: 'count' }, t('tree.empty'));
+  }
   if (n.role === 'solution' && n.path) {
     const tag = tagOf(n.path);
     if (tag) return h(NTag, { size: 'tiny', type: tagType(tag), bordered: false }, () => tag);
@@ -161,7 +188,8 @@ function nodeProps({ option }: { option: TreeOption }) {
   const n = option as Node;
   return {
     onClick() {
-      if (n.path) props.ws.openFile(n.path);
+      if (n.missingLang) emit('action', { kind: 'createTutorials', langs: [n.missingLang] });
+      else if (n.path) props.ws.openFile(n.path);
     },
     onContextmenu(e: MouseEvent) {
       e.preventDefault();
@@ -174,6 +202,10 @@ function nodeProps({ option }: { option: TreeOption }) {
 const menuOptions = computed<DropdownOption[]>(() => {
   const n = menu.value.node;
   if (!n) return [];
+  if (n.group === 'tutorial') {
+    const missing = statementLanguages(props.ws.files.value).missingTutorial;
+    return [{ key: 'createTutorials', label: t('tree.createTutorials'), disabled: !missing.length }];
+  }
   if (n.group || n.dir !== undefined) {
     const dir = n.group ? ROLE_DIR[n.group] : `${n.dir}/`;
     return [
@@ -224,6 +256,7 @@ function onMenu(key: string, option: DropdownOption) {
   if (!n) return;
   const path = n.path ?? n.dir ?? '';
   const act = (a: SidebarAction) => emit('action', a);
+  if (key === 'createTutorials') return act({ kind: 'createTutorials', langs: statementLanguages(props.ws.files.value).missingTutorial });
   if (key === 'newFile' || key === 'newDir') return act({ kind: key, dir: (option as { dir: string }).dir });
   if (key === 'open') return props.ws.openFile(path);
   if (key === 'rename' || key === 'delete' || key === 'copyPath') return act({ kind: key, path });
@@ -313,6 +346,10 @@ function onMenu(key: string, option: DropdownOption) {
 .tree :deep(.file.dirty)::after {
   content: ' ●';
   opacity: 0.7;
+}
+.tree :deep(.missing) {
+  opacity: 0.55;
+  font-style: italic;
 }
 .tree :deep(.count) {
   font-size: 11px;

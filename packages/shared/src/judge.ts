@@ -153,7 +153,7 @@ export interface QuickRunResponse {
   stdoutTruncated?: boolean;
 }
 
-export type JobKind = 'generate' | 'invocation' | 'validator-tests' | 'checker-tests' | 'polygon-push' | 'polygon-import';
+export type JobKind = 'generate' | 'invocation' | 'validator-tests' | 'checker-tests' | 'polygon-push' | 'polygon-import' | 'stress' | 'export';
 
 export interface JobInfo {
   id: string;
@@ -240,4 +240,36 @@ export function parseIndexList(s: string): number[] {
     } else if (/^\d+$/.test(p)) out.push(Number(p));
   }
   return out;
+}
+
+export interface StressRequest {
+  /** Generator name (as in the script) or source path. */
+  generator: string;
+  /** Generator arguments; {seed} is replaced by the iteration seed, otherwise it is appended. */
+  args: string;
+  /** Solution under test. */
+  solution: string;
+  /** Reference solution; defaults to the MA solution. */
+  reference?: string;
+  maxIterations?: number;
+  timeLimitSec?: number;
+  seedStart?: number;
+  /** Save the counterexample as tests/manual/stress-NN.in (default true). */
+  saveCounterexample?: boolean;
+}
+
+export interface StressResult {
+  iterations: number;
+  found: boolean;
+  stoppedBy: 'found' | 'iterations' | 'time' | 'cancelled';
+  counterexample?: {
+    seed: number;
+    args: string;
+    verdict: Verdict;
+    message: string;
+    input: string;
+    expected: string;
+    output: string;
+    savedAs?: string;
+  };
 }

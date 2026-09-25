@@ -1,10 +1,14 @@
 import { promises as fsp } from 'node:fs';
+import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { isSourceFile, type CompileResult, type QuickRunRequest, type TestFileResponse } from '@polyforge/shared';
+import { isSourceFile, type CompileResult, type QuickRunRequest, type StressRequest, type TestFileResponse } from '@polyforge/shared';
 import type { JobManager } from '../jobs.js';
 import type { Judge } from '../judge/index.js';
 import { listInvocations, outputPath, readInvocation, runInvocation } from '../judge/invocation.js';
 import { quickRun } from '../judge/quickrun.js';
+import { runStress } from '../judge/stress.js';
+import { exportDir, exportPackage } from '../judge/package.js';
+import { localChecks } from '../judge/checks.js';
 import { runCheckerTests, runValidatorTests } from '../judge/selftest.js';
 import { answerPath, generateTests, inputPath, overviewPath, publicManifest, readManifest } from '../judge/tests.js';
 import { HttpError } from '../util/fs.js';
@@ -114,6 +118,32 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
   app.post<P>('/api/problems/:id/checker-tests', async (req) => {
     const ctx = await judge.ctx(req.params.id);
     return jobs.start('checker-tests', ctx.ref.id, (job) => runCheckerTests(judge, ctx, job));
+  });
+
+  /** 对拍: generate random tests until the solution disagrees with the reference. */
+  app.post<P & { Body: StressRequest }>('/api/problems/:id/stress', async (req) => {
+    const ctx = await judge.ctx(req.params.id);
+    const body = req.body;
+    if (!body?.generator || !body.solution || typeof body.args !== 'string') throw new HttpError(400, 'bad_request', 'generator, args and solution are required');
+    const running = jobs.running(ctx.ref.id, 'stress');
+    if (running) return running;
+    return jobs.start('stress', ctx.ref.id, (job) => runStress(judge, ctx, body, job));
+  });
+
+  app.get<P>('/api/problems/:id/checks', async (req) => localChecks(judge, await judge.ctx(req.params.id)));
+
+  /** Polygon-style package (zip) with tests, statements and all programs. */
+  app.post<P>('/api/problems/:id/export', async (req) => {
+    const ctx = await judge.ctx(req.params.id);
+    return jobs.start('export', ctx.ref.id, (job) => exportPackage(judge, ctx, job));
+  });
+  app.get<{ Params: { id: string; file: string } }>('/api/problems/:id/export/:file', async (req, reply) => {
+    const ctx = await judge.ctx(req.params.id);
+    if (!/^[\w.-]+\.zip$/.test(req.params.file)) throw new HttpError(400, 'bad_file', 'Invalid file name');
+    const data = await fsp.readFile(path.join(exportDir(ctx), req.params.file)).catch(() => {
+      throw new HttpError(404, 'file_not_found', 'Export not found');
+    });
+    return reply.type('application/zip').header('content-disposition', `attachment; filename="${req.params.file}"`).send(data);
   });
 
   app.get<{ Querystring: { problem?: string } }>('/api/jobs', async (req) => jobs.list(req.query.problem));

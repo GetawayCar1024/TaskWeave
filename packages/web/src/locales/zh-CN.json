@@ -39,7 +39,8 @@
     "noRootsHint": "在设置中添加一个文件夹，其中每个含 problem.toml 的子文件夹就是一道题。",
     "goSettings": "打开设置",
     "empty": "这里还没有题目",
-    "import": "从 Polygon 导入"
+    "import": "从 Polygon 导入",
+    "langMismatch": "题面语言 {s}，题解语言 {t}"
   },
   "check": {
     "statement": "题面",
@@ -47,7 +48,8 @@
     "checker": "Checker",
     "std": "标程",
     "tests": "测试",
-    "synced": "已同步"
+    "synced": "已同步",
+    "tutorial": "题解"
   },
   "dirPicker": {
     "title": "选择文件夹",
@@ -130,7 +132,8 @@
     "validator-test": "Validator 自测",
     "checker-test": "Checker 自测",
     "resource": "资源文件",
-    "other": "其他"
+    "other": "其他",
+    "tutorial": "题解"
   },
   "tree": {
     "byRole": "按角色",
@@ -151,7 +154,11 @@
     "unregisterGen": "取消注册 generator",
     "confirmDelete": "确定删除 {path}？此操作不可撤销。",
     "copied": "已复制",
-    "saveFirst": "请先保存受影响的文件"
+    "saveFirst": "请先保存受影响的文件",
+    "missingTutorial": "{lang} 题解（未创建）",
+    "orphanTutorial": "这个语言没有题面",
+    "empty": "空",
+    "createTutorials": "为所有题面语言创建题解"
   },
   "info": {
     "file": "当前文件",
@@ -233,7 +240,11 @@
   "preview": {
     "unknown": "{n} 个无法识别的命令",
     "hide": "隐藏预览",
-    "show": "显示预览"
+    "show": "显示预览",
+    "tutorialNoStatement": "{lang} 没有对应的题面：题解语言应与题面语言一致",
+    "otherLangs": "其他语言",
+    "emptyTutorial": "题解还是空的。",
+    "noTutorial": "{lang} 还没有题解，点击创建"
   },
   "import": {
     "title": "从 Polygon 导入",
@@ -319,7 +330,8 @@
       "verify": "全面验证",
       "translate": "翻译题面",
       "lint": "题面检查",
-      "paste": "贴题面…"
+      "paste": "贴题面…",
+      "tutorial": "写题解"
     },
     "pastePlaceholder": "粘贴题面（任意格式），AI 会先写成 Polygon LaTeX 题面，再生成整题",
     "buildFromPaste": "写入题面并生成整题",

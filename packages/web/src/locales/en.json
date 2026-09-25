@@ -39,7 +39,8 @@
     "noRootsHint": "Add a folder in Settings. Every subfolder containing problem.toml is a problem.",
     "goSettings": "Open settings",
     "empty": "No problems here yet",
-    "import": "Import from Polygon"
+    "import": "Import from Polygon",
+    "langMismatch": "statement: {s}; tutorial: {t}"
   },
   "check": {
     "statement": "Statement",
@@ -47,7 +48,8 @@
     "checker": "Checker",
     "std": "Main sol.",
     "tests": "Tests",
-    "synced": "Synced"
+    "synced": "Synced",
+    "tutorial": "Tutorial"
   },
   "dirPicker": {
     "title": "Choose folder",
@@ -130,7 +132,8 @@
     "validator-test": "Validator tests",
     "checker-test": "Checker tests",
     "resource": "Resources",
-    "other": "Other"
+    "other": "Other",
+    "tutorial": "Tutorial"
   },
   "tree": {
     "byRole": "By role",
@@ -151,7 +154,11 @@
     "unregisterGen": "Unregister generator",
     "confirmDelete": "Delete {path}? This cannot be undone.",
     "copied": "Copied",
-    "saveFirst": "Save the affected files first"
+    "saveFirst": "Save the affected files first",
+    "missingTutorial": "{lang} tutorial (not created)",
+    "orphanTutorial": "No statement in this language",
+    "empty": "empty",
+    "createTutorials": "Create tutorials for all statement languages"
   },
   "info": {
     "file": "Current file",
@@ -233,7 +240,11 @@
   "preview": {
     "unknown": "{n} unknown command(s)",
     "hide": "Hide preview",
-    "show": "Show preview"
+    "show": "Show preview",
+    "tutorialNoStatement": "No {lang} statement: tutorial languages should match the statement languages",
+    "otherLangs": "Other languages",
+    "emptyTutorial": "The tutorial is still empty.",
+    "noTutorial": "No {lang} tutorial yet, click to create"
   },
   "import": {
     "title": "Import from Polygon",
@@ -319,7 +330,8 @@
       "verify": "Verify all",
       "translate": "Translate statement",
       "lint": "Check statement",
-      "paste": "Paste statement…"
+      "paste": "Paste statement…",
+      "tutorial": "Write tutorial"
     },
     "pastePlaceholder": "Paste a statement (any format); the AI writes it as a Polygon LaTeX statement, then builds the problem",
     "buildFromPaste": "Write statement and build",

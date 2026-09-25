@@ -4,6 +4,7 @@ import { STD_PREFIX } from './problem.js';
 export type FileRole =
   | 'config'
   | 'statement'
+  | 'tutorial'
   | 'validator'
   | 'checker'
   | 'interactor'
@@ -19,6 +20,7 @@ export type FileRole =
 export const ROLE_ORDER: FileRole[] = [
   'config',
   'statement',
+  'tutorial',
   'validator',
   'checker',
   'interactor',
@@ -42,6 +44,7 @@ const sameFile = (a: string | undefined, b: string) =>
  */
 export function classifyFile(path: string, config: ProblemToml | null): FileRole {
   if (path === 'problem.toml') return 'config';
+  if (/^statement\/[^/]+\/tutorial\.tex$/.test(path)) return 'tutorial';
   if (path.startsWith('statement/')) return 'statement';
   if (path.startsWith('tests/')) return 'test';
   if (path.startsWith('validator-tests/')) return 'validator-test';
@@ -63,6 +66,29 @@ export function classifyFile(path: string, config: ProblemToml | null): FileRole
     if (base === 'interactor' || base === 'interact') return 'interactor';
   }
   return 'other';
+}
+
+/**
+ * Statement and tutorial languages of a problem. Every statement language should have
+ * a tutorial and vice versa: the tutorial is a per-language part of the statement.
+ */
+export function statementLanguages(files: { path: string; size?: number }[]) {
+  const statement = new Set<string>();
+  const tutorial = new Set<string>();
+  for (const f of files) {
+    const m = f.path.match(/^statement\/([^/]+)\/([^/]+)\.tex$/);
+    if (!m || m[1] === 'images' || (f.size ?? 1) === 0) continue;
+    (m[2] === 'tutorial' ? tutorial : statement).add(m[1]);
+  }
+  const langs = [...statement].sort();
+  return {
+    statement: langs,
+    tutorial: [...tutorial].sort(),
+    /** Statement languages without a (non-empty) tutorial. */
+    missingTutorial: langs.filter((l) => !tutorial.has(l)),
+    /** Tutorials in a language that has no statement. */
+    orphanTutorial: [...tutorial].filter((l) => !statement.has(l)).sort(),
+  };
 }
 
 export function flattenFiles(tree: FileNode[]): FileNode[] {

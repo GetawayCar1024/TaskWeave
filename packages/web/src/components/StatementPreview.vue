@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import { useI18n } from 'vue-i18n';
 import { NTag, NTooltip } from 'naive-ui';
 import 'katex/dist/katex.min.css';
-import { STATEMENT_SECTIONS, type StatementSection } from '@polyforge/shared';
+import { STATEMENT_SECTIONS, statementLanguages, type StatementSection } from '@polyforge/shared';
 import { api, rawUrl } from '../lib/api';
 import type { Judge } from '../lib/judge';
 import { buildMacros, renderLatex, sampleHtml, type MacroTable } from '../lib/latex';
@@ -11,7 +11,8 @@ import { getDefs } from '../lib/defs';
 import { onWs } from '../lib/ws';
 import type { Workspace } from '../lib/workspace';
 
-const props = defineProps<{ ws: Workspace; judge: Judge; problemId: string; lang: string }>();
+const props = defineProps<{ ws: Workspace; judge: Judge; problemId: string; lang: string; mode?: 'statement' | 'tutorial' }>();
+const emit = defineEmits<{ createTutorial: [lang: string] }>();
 const { t } = useI18n();
 
 const HEADINGS: Record<string, Partial<Record<StatementSection | 'examples' | 'limits', string>>> = {
@@ -109,6 +110,12 @@ const summary = computed(() => props.ws.state.detail?.summary);
 const title = computed(() => summary.value?.title[props.lang] || summary.value?.title.en || summary.value?.name || '');
 const inLabel = computed(() => (props.lang === 'zh' ? '输入' : 'Input'));
 const outLabel = computed(() => (props.lang === 'zh' ? '输出' : 'Output'));
+
+// Tutorial languages follow the statement languages.
+const langs = computed(() => statementLanguages(props.ws.files.value));
+const noStatement = computed(() => props.mode === 'tutorial' && !langs.value.statement.includes(props.lang));
+const noTutorial = computed(() => props.mode !== 'tutorial' && langs.value.missingTutorial.includes(props.lang));
+const otherTutorials = computed(() => langs.value.tutorial.filter((l) => l !== props.lang));
 </script>
 
 <template>
@@ -120,6 +127,21 @@ const outLabel = computed(() => (props.lang === 'zh' ? '输出' : 'Output'));
         </template>
         {{ rendered.unknown.map((u) => '\\' + u).join('  ') }}
       </n-tooltip>
+    </div>
+    <template v-if="mode === 'tutorial'">
+      <div v-if="noStatement" class="lint">
+        <n-tag size="small" type="warning" :bordered="false">{{ t('preview.tutorialNoStatement', { lang }) }}</n-tag>
+      </div>
+      <div class="header">
+        <div class="title">{{ title }} — {{ heading('tutorial') }}</div>
+        <div v-if="otherTutorials.length" class="limits">{{ t('preview.otherLangs') }}: {{ otherTutorials.join(', ') }}</div>
+      </div>
+      <div v-if="rendered.sections.tutorial" class="section" v-html="rendered.sections.tutorial" />
+      <div v-else class="empty-hint">{{ t('preview.emptyTutorial') }}</div>
+    </template>
+    <template v-else>
+    <div v-if="noTutorial" class="lint">
+      <n-tag size="small" :bordered="false" class="clickable" @click="emit('createTutorial', lang)">{{ t('preview.noTutorial', { lang }) }}</n-tag>
     </div>
     <div class="header">
       <div class="title">{{ title }}</div>
@@ -139,11 +161,10 @@ const outLabel = computed(() => (props.lang === 'zh' ? '输出' : 'Output'));
       <div class="section-title">{{ heading('examples') }}</div>
       <div v-for="x in samples" :key="x.index" v-html="sampleHtml(x.input, x.output, inLabel, outLabel)" />
     </template>
-    <template v-for="s in ['notes', 'tutorial'] as const" :key="s">
-      <template v-if="rendered.sections[s]">
-        <div class="section-title">{{ heading(s) }}</div>
-        <div class="section" v-html="rendered.sections[s]" />
-      </template>
+    <template v-if="rendered.sections.notes">
+      <div class="section-title">{{ heading('notes') }}</div>
+      <div class="section" v-html="rendered.sections.notes" />
+    </template>
     </template>
   </div>
 </template>
@@ -159,6 +180,14 @@ const outLabel = computed(() => (props.lang === 'zh' ? '输出' : 'Output'));
 .lint {
   font-family: system-ui, sans-serif;
   margin-bottom: 8px;
+}
+.empty-hint {
+  opacity: 0.55;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+}
+.clickable {
+  cursor: pointer;
 }
 .header {
   text-align: center;

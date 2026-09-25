@@ -67,6 +67,9 @@ export type ProblemToml = z.infer<typeof problemTomlSchema>;
 
 export interface ProblemStatus {
   statement: boolean;
+  /** Languages that have a statement / a non-empty tutorial (these should match). */
+  statementLangs: string[];
+  tutorialLangs: string[];
   validator: boolean;
   checker: boolean;
   std: boolean;

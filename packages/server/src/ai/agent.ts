@@ -4,6 +4,8 @@ import path from 'node:path';
 import type {
   AiChange,
   AiEvent,
+  AiFinding,
+  AiSessionMode,
   AiPlanStep,
   AiRunState,
   AiSessionDetail,
@@ -15,10 +17,11 @@ import type { Judge } from '../judge/index.js';
 import { atomicWrite, HttpError } from '../util/fs.js';
 import type { ProblemRef } from '../workspace/problems.js';
 import type { WsHub } from '../ws.js';
-import { systemPrompt } from './prompts.js';
+import { reviewKickoff, reviewSystemPrompt, systemPrompt } from './prompts.js';
 import { createProvider, defaultModel, ToolInputParseError, type AgentMessage, type Block } from './provider.js';
 import { Sandbox } from './sandbox.js';
-import { clip, runTool, TOOL_DEFS, WRITE_TOOLS } from './tools.js';
+import { clip, runTool, toolsFor, WRITE_TOOLS } from './tools.js';
+import { localChecks } from '../judge/checks.js';
 
 /** Upper bound of model round-trips per user message. */
 const MAX_STEPS = 80;
@@ -32,6 +35,9 @@ interface Notice {
 
 interface SessionData {
   id: string;
+  /** Sessions written before review mode existed have no mode: they are agent sessions. */
+  mode?: AiSessionMode;
+  findings?: AiFinding[];
   problemId: string;
   title: string;
   createdAt: string;
@@ -106,10 +112,13 @@ export class AgentService {
     const ep = await this.judge.global.aiEndpoint(req.endpoint);
     const id = `${Date.now().toString(36)}${randomBytes(3).toString('hex')}`;
     const now = new Date().toISOString();
+    const mode = req.mode ?? 'agent';
     const data: SessionData = {
       id,
+      mode,
+      findings: [],
       problemId,
-      title: req.title?.trim() || 'New session',
+      title: req.title?.trim() || (mode === 'review' ? `AI check ${now.slice(0, 16).replace('T', ' ')}` : 'New session'),
       createdAt: now,
       updatedAt: now,
       endpoint: ep.name,
@@ -142,7 +151,18 @@ export class AgentService {
 
   private summary(l: Live, changes: number): AiSessionSummary {
     const d = l.data;
-    return { id: d.id, title: d.title, createdAt: d.createdAt, updatedAt: d.updatedAt, endpoint: d.endpoint, model: d.model, state: l.state, changes };
+    return {
+      id: d.id,
+      mode: d.mode ?? 'agent',
+      findings: d.findings?.length ?? 0,
+      title: d.title,
+      createdAt: d.createdAt,
+      updatedAt: d.updatedAt,
+      endpoint: d.endpoint,
+      model: d.model,
+      state: l.state,
+      changes,
+    };
   }
 
   private transcript(d: SessionData): AiTranscriptItem[] {
@@ -173,7 +193,7 @@ export class AgentService {
 
   private async detail(l: Live): Promise<AiSessionDetail> {
     const changes = await l.sandbox.changes().catch(() => [] as AiChange[]);
-    return { ...this.summary(l, changes.length), transcript: this.transcript(l.data), plan: l.data.plan, error: l.error };
+    return { ...this.summary(l, changes.length), transcript: this.transcript(l.data), findingList: l.data.findings ?? [], plan: l.data.plan, error: l.error };
   }
 
   async get(problemId: string, sid: string): Promise<AiSessionDetail> {
@@ -196,6 +216,13 @@ export class AgentService {
     const ref = await this.judge.registry.get(problemId);
     await fsp.rm(path.join(sessionsDir(ref), sid), { recursive: true, force: true });
     this.live.delete(this.key(problemId, sid));
+  }
+
+  /** AI check: a read-only review session seeded with the local check results. */
+  async startReview(problemId: string, req: CreateAiSessionRequest): Promise<AiSessionDetail> {
+    const d = await this.create(problemId, { ...req, mode: 'review' });
+    const checks = await localChecks(this.judge, await this.judge.ctx(problemId));
+    return this.send(problemId, d.id, reviewKickoff(checks));
   }
 
   cancel(problemId: string, sid: string) {
@@ -229,7 +256,9 @@ export class AgentService {
       await l.sandbox.sync();
       const ep = await this.judge.global.aiEndpoint(d.endpoint);
       const provider = await createProvider(ep);
-      const system = await systemPrompt(this.judge.global.sharedDir);
+      const mode = d.mode ?? 'agent';
+      const system = mode === 'review' ? await reviewSystemPrompt(this.judge.global.sharedDir) : await systemPrompt(this.judge.global.sharedDir);
+      const tools = toolsFor(mode);
       const ref = await this.judge.registry.get(d.problemId);
       const sandboxRef: ProblemRef = { id: `${d.problemId}@ai`, dir: l.sandbox.dir, root: ref.root };
       const buildRoot = path.join(ref.dir, '.polyforge', 'build');
@@ -243,6 +272,11 @@ export class AgentService {
           this.emit(l, { type: 'plan', plan });
         },
         changed: () => {},
+        report: (f: Omit<AiFinding, 'id'>) => {
+          const finding: AiFinding = { id: `f${(d.findings ??= []).length + 1}`, ...f };
+          d.findings.push(finding);
+          this.emit(l, { type: 'finding', finding });
+        },
       };
 
       let parseRetries = 0;
@@ -254,7 +288,7 @@ export class AgentService {
             model: d.model,
             system,
             messages: d.messages,
-            tools: TOOL_DEFS,
+            tools,
             signal,
             onText: (delta) => this.emit(l, { type: 'text', delta }),
             onThinking: (delta) => this.emit(l, { type: 'thinking', delta }),
@@ -290,7 +324,7 @@ export class AgentService {
         let wrote = false;
         for (const tu of toolUses) {
           this.emit(l, { type: 'tool_call', id: tu.id, name: tu.name, input: tu.input });
-          const r = await runTool(tu.name, tu.input, env);
+          const r = await runTool(tu.name, tu.input, env, mode);
           results.push({ type: 'tool_result', tool_use_id: tu.id, content: clip(r.content), is_error: r.isError || undefined });
           this.emit(l, { type: 'tool_result', id: tu.id, result: clip(r.content, 4000), isError: r.isError });
           if (WRITE_TOOLS.has(tu.name) && !r.isError) wrote = true;

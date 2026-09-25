@@ -178,6 +178,17 @@ async function onAction(a: SidebarAction) {
       case 'patch':
         await ws.patch(a.req);
         break;
+      case 'createTutorials': {
+        // One tutorial per statement language; existing files are only opened.
+        let first: string | null = null;
+        for (const lang of a.langs) {
+          const p = `statement/${lang}/tutorial.tex`;
+          if (!ws.files.value.some((f) => f.path === p)) await ws.createFile(p, '');
+          first ??= p;
+        }
+        if (first) await ws.openFile(first);
+        break;
+      }
     }
   } catch (e) {
     message.error(e instanceof Error && e.message === 'dirty' ? t('tree.saveFirst') : errorMessage(e));
@@ -310,6 +321,7 @@ onBeforeUnmount(() => {
               @show-diff="showDiff"
               @run="runCurrent"
               @generate="generate"
+              @action="onAction"
             />
           </template>
           <template #2>

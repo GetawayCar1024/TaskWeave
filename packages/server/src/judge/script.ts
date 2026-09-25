@@ -380,7 +380,7 @@ export function expandTemplate(src: string): string {
 // ---------------------------------------------------------------------------
 // Commands
 
-function splitArgs(s: string): string[] {
+export function splitArgs(s: string): string[] {
   const out: string[] = [];
   const re = /"((?:[^"\\]|\\.)*)"|(\S+)/g;
   for (let m; (m = re.exec(s)); ) out.push(m[1] !== undefined ? m[1].replace(/\\(.)/g, '$1') : m[2]);

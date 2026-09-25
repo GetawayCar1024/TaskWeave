@@ -1,7 +1,7 @@
 import { promises as fsp } from 'node:fs';
 import { parse as parseToml } from 'smol-toml';
 import { z } from 'zod';
-import { classifyFile, problemTomlSchema, type AiPlanStep } from '@polyforge/shared';
+import { classifyFile, FINDING_CATEGORIES, problemTomlSchema, type AiFinding, type AiPlanStep, type AiSessionMode } from '@polyforge/shared';
 import type { JobCtx } from '../jobs.js';
 import type { Judge, ProblemCtx } from '../judge/index.js';
 import { readInvocation, runInvocation } from '../judge/invocation.js';
@@ -22,6 +22,8 @@ export interface ToolEnv {
   setPlan: (plan: AiPlanStep[]) => void;
   /** A file in the sandbox changed. */
   changed: () => void;
+  /** Review mode: record a finding. */
+  report?: (f: Omit<AiFinding, 'id'>) => void;
 }
 
 interface Tool<S extends z.ZodType> {
@@ -247,20 +249,46 @@ const TOOLS = [
       return 'Plan updated.';
     },
   }),
+  tool({
+    name: 'report_issue',
+    description:
+      'Record one problem found during the check. Report each distinct issue separately, with the file (and line) it is in and a concrete suggestion. Severity: error = the problem is wrong or broken; warning = likely to cause trouble; info = polish.',
+    schema: z.object({
+      severity: z.enum(['error', 'warning', 'info']),
+      category: z.enum(FINDING_CATEGORIES),
+      title: z.string().min(1).max(200),
+      detail: z.string().min(1),
+      file: z.string().optional(),
+      line: z.number().int().min(1).optional(),
+      suggestion: z.string().optional(),
+    }),
+    async run(i, env) {
+      if (!env.report) throw new Error('report_issue is only available during a check');
+      env.report(i);
+      return 'Recorded.';
+    },
+  }),
 ];
-
-export const TOOL_DEFS: ToolDef[] = TOOLS.map((t) => {
-  const { $schema: _s, ...schema } = z.toJSONSchema(t.schema) as Record<string, unknown>;
-  return { name: t.name, description: t.description, input_schema: schema };
-});
 
 /** Tools whose calls change files (shown with a distinct style in the UI). */
 export const WRITE_TOOLS = new Set(['write_file', 'edit_file', 'delete_file']);
 
+const defs = new Map(
+  TOOLS.map((t) => {
+    const { $schema: _s, ...schema } = z.toJSONSchema(t.schema) as Record<string, unknown>;
+    return [t.name, { name: t.name, description: t.description, input_schema: schema } as ToolDef];
+  }),
+);
+
+/** The agent edits files; the review (AI check) only reads, judges and reports. */
+export function toolsFor(mode: AiSessionMode): ToolDef[] {
+  return [...defs.values()].filter((d) => (mode === 'review' ? !WRITE_TOOLS.has(d.name) : d.name !== 'report_issue'));
+}
+
 /** Validate and run a tool call; errors become `is_error` results the model can react to. */
-export async function runTool(name: string, input: unknown, env: ToolEnv): Promise<{ content: string; isError: boolean }> {
+export async function runTool(name: string, input: unknown, env: ToolEnv, mode: AiSessionMode = 'agent'): Promise<{ content: string; isError: boolean }> {
   const t = TOOLS.find((x) => x.name === name);
-  if (!t) return { content: `Unknown tool: ${name}`, isError: true };
+  if (!t || !toolsFor(mode).some((d) => d.name === name)) return { content: `Unknown tool: ${name}`, isError: true };
   const parsed = t.schema.safeParse(input ?? {});
   if (!parsed.success) {
     return { content: `Invalid input for ${name}: ${parsed.error.issues.map((i) => `${i.path.join('.') || '(input)'}: ${i.message}`).join('; ')}`, isError: true };
