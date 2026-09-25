@@ -1,0 +1,176 @@
+import { execFile, spawn } from 'node:child_process';
+import { promises as fsp } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { RunStats, RunStatus } from '@polyforge/shared';
+import { exists, HttpError, sha1 } from '../util/fs.js';
+
+const RUNNER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../runner/runner.cpp');
+
+export interface ProcSpec {
+  /** argv; argv[0] is resolved by CreateProcess (absolute path or on PATH). */
+  argv: string[];
+  cwd: string;
+  stdin?: string;
+  stdout?: string;
+  stderr?: string;
+  timeLimitMs?: number;
+  wallLimitMs?: number;
+  memoryLimitBytes?: number;
+  outputLimitBytes?: number;
+  processLimit?: number;
+}
+
+/** Counting semaphore bounding concurrent runs (DESIGN §4.2: CPU cores − 1 workers). */
+export class Semaphore {
+  private waiters: (() => void)[] = [];
+  constructor(private free: number) {}
+  async use<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.free > 0) this.free--;
+    else await new Promise<void>((r) => this.waiters.push(r));
+    try {
+      return await fn();
+    } finally {
+      const next = this.waiters.shift();
+      if (next) next();
+      else this.free++;
+    }
+  }
+}
+
+/** Quote one argument following the MSVC CommandLineToArgvW rules. */
+export function quoteArg(a: string): string {
+  if (a !== '' && !/[\s"]/.test(a)) return a;
+  let out = '"';
+  let backslashes = 0;
+  for (const ch of a) {
+    if (ch === '\\') {
+      backslashes++;
+    } else if (ch === '"') {
+      out += '\\'.repeat(backslashes * 2 + 1) + '"';
+      backslashes = 0;
+    } else {
+      out += '\\'.repeat(backslashes) + ch;
+      backslashes = 0;
+    }
+  }
+  return out + '\\'.repeat(backslashes * 2) + '"';
+}
+
+function specText(p: ProcSpec): string {
+  const lines = [`cmd=${p.argv.map(quoteArg).join(' ')}`, `cwd=${p.cwd}`];
+  if (p.stdin) lines.push(`stdin=${p.stdin}`);
+  if (p.stdout) lines.push(`stdout=${p.stdout}`);
+  if (p.stderr) lines.push(`stderr=${p.stderr}`);
+  lines.push(`time_limit=${Math.round(p.timeLimitMs ?? 0)}`);
+  lines.push(`wall_limit=${Math.round(p.wallLimitMs ?? 0)}`);
+  lines.push(`memory_limit=${Math.round(p.memoryLimitBytes ?? 0)}`);
+  lines.push(`output_limit=${Math.round(p.outputLimitBytes ?? 0)}`);
+  lines.push(`process_limit=${p.processLimit ?? 1}`);
+  for (const l of lines) if (l.includes('\n')) throw new HttpError(400, 'bad_spec', 'Newline in run spec');
+  return lines.join('\n');
+}
+
+interface RawResult {
+  status: RunStatus;
+  exit_code: number;
+  time_ms: number;
+  wall_ms: number;
+  memory_kb: number;
+  idle: boolean;
+  error: string;
+}
+
+const toStats = (r: RawResult): RunStats => ({
+  status: r.status,
+  exitCode: r.exit_code,
+  timeMs: r.time_ms,
+  wallMs: r.wall_ms,
+  memoryKb: r.memory_kb,
+  idle: r.idle,
+  error: r.error || undefined,
+});
+
+export class Runner {
+  private exe: string | null = null;
+  private building: Promise<string> | null = null;
+  private tscHz = 0;
+  readonly pool: Semaphore;
+  readonly workers: number;
+
+  constructor(private binDir: string) {
+    this.workers = Math.max(1, os.availableParallelism() - 1);
+    this.pool = new Semaphore(this.workers);
+  }
+
+  /** Compile the runner with the local g++ on first use; cached by source hash. */
+  async ensure(): Promise<string> {
+    if (this.exe) return this.exe;
+    if (process.platform !== 'win32') {
+      throw new HttpError(501, 'unsupported_platform', 'The runner currently supports Windows only');
+    }
+    this.building ??= this.build().finally(() => (this.building = null));
+    this.exe = await this.building;
+    return this.exe;
+  }
+
+  private async build(): Promise<string> {
+    const src = await fsp.readFile(RUNNER_SRC);
+    const exe = path.join(this.binDir, `runner-${sha1(src).slice(0, 12)}.exe`);
+    if (!(await exists(exe))) {
+      await fsp.mkdir(this.binDir, { recursive: true });
+      const tmp = `${exe}.tmp.exe`;
+      await new Promise<void>((resolve, reject) => {
+        execFile('g++', ['-O2', '-static', '-std=c++17', '-o', tmp, RUNNER_SRC], { timeout: 120_000, windowsHide: true }, (err, _o, stderr) =>
+          err ? reject(new HttpError(500, 'runner_build_failed', `Failed to build runner with g++: ${stderr || err.message}`)) : resolve(),
+        );
+      });
+      await fsp.rename(tmp, exe);
+      // Drop runners built from older sources.
+      for (const f of await fsp.readdir(this.binDir)) {
+        if (/^runner-[0-9a-f]+\.exe$/.test(f) && f !== path.basename(exe)) await fsp.rm(path.join(this.binDir, f), { force: true }).catch(() => {});
+      }
+    }
+    this.tscHz = Number((await this.exec(exe, ['--calibrate'], '')).trim()) || 0;
+    return exe;
+  }
+
+  private exec(exe: string, args: string[], input: string, signal?: AbortSignal): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(exe, args, { windowsHide: true, signal });
+      let out = '';
+      let err = '';
+      child.stdout.on('data', (d) => (out += d));
+      child.stderr.on('data', (d) => (err += d));
+      child.on('error', reject);
+      child.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(`runner exited ${code}: ${err || out}`))));
+      child.stdin.end(input);
+    });
+  }
+
+  private tsc() {
+    return this.tscHz ? `\ntsc_hz=${this.tscHz}` : '';
+  }
+
+  /** Run one program. Holds a worker slot for the duration. */
+  async run(spec: ProcSpec, signal?: AbortSignal): Promise<RunStats> {
+    const exe = await this.ensure();
+    return this.pool.use(async () => {
+      signal?.throwIfAborted();
+      const out = await this.exec(exe, [], specText(spec) + this.tsc(), signal);
+      return toStats(JSON.parse(out) as RawResult);
+    });
+  }
+
+  /** Run a solution wired to an interactor (stdin/stdout of each are ignored). */
+  async runInteractive(sol: ProcSpec, inter: ProcSpec, signal?: AbortSignal): Promise<{ solution: RunStats; interactor: RunStats }> {
+    const exe = await this.ensure();
+    return this.pool.use(async () => {
+      signal?.throwIfAborted();
+      const text = specText(sol) + this.tsc() + '\n[interactor]\n' + specText(inter);
+      const r = JSON.parse(await this.exec(exe, [], text, signal)) as { solution: RawResult; interactor: RawResult };
+      return { solution: toStats(r.solution), interactor: toStats(r.interactor) };
+    });
+  }
+}

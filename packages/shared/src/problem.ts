@@ -17,6 +17,9 @@ export const PROBLEM_NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 const localized = z.record(z.string(), z.string());
 
+/** A program referenced from problem.toml; `lang` overrides the extension-based language. */
+const sourceEntry = z.object({ source: z.string(), lang: z.string().optional() }).loose();
+
 export const problemTomlSchema = z.object({
   problem: z
     .object({
@@ -30,16 +33,16 @@ export const problemTomlSchema = z.object({
     })
     .loose(),
   polygon: z.object({ id: z.number().int().optional() }).loose().default({}),
-  checker: z.object({ source: z.string() }).loose().optional(),
-  validator: z.object({ source: z.string() }).loose().optional(),
-  interactor: z.object({ source: z.string() }).loose().optional(),
-  solutions: z
-    .array(z.object({ source: z.string(), tag: z.enum(SOLUTION_TAGS) }).loose())
-    .default([]),
-  generators: z.array(z.object({ source: z.string() }).loose()).default([]),
+  checker: sourceEntry.optional(),
+  validator: sourceEntry.optional(),
+  interactor: sourceEntry.optional(),
+  solutions: z.array(sourceEntry.extend({ tag: z.enum(SOLUTION_TAGS) })).default([]),
+  generators: z.array(sourceEntry).default([]),
   tests: z
     .object({
       script: z.string().optional(),
+      /** Tests shown as examples in the statement, e.g. "1-2". */
+      samples: z.string().optional(),
       groups: z.boolean().optional(),
       points: z.boolean().optional(),
       group: z

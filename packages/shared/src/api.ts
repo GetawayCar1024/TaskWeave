@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { CompileResult, JobInfo } from './judge.js';
 
 export const UI_LOCALES = ['zh-CN', 'en'] as const;
 export type UiLocale = (typeof UI_LOCALES)[number];
@@ -123,7 +124,10 @@ export type WsEvent =
     }
   | { type: 'problems:changed' }
   | { type: 'problem:changed'; problemId: string }
-  | { type: 'settings:changed' };
+  | { type: 'settings:changed' }
+  | { type: 'job:progress'; job: JobInfo }
+  | { type: 'job:done'; job: JobInfo }
+  | { type: 'build:done'; problemId: string; result: CompileResult };
 
 export interface ApiError {
   error: string;

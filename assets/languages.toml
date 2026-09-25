@@ -1,18 +1,19 @@
 # PolyForge 本地语言配置
 # 占位符：{src} 源文件  {exe} 可执行文件  {dir} 输出目录  {class} Java 类名  {shared} 全局 shared/ 目录
 # 每个文件默认按扩展名匹配第一个语言；polygon 为同步到 Polygon 时使用的语言 id。
+# -DFOR_LINUX：让 testlib 在 Windows 上也按 LF 换行校验（测试统一使用 LF，与 Polygon 一致）。
 
 [cpp17]
 name = "C++17 (GCC)"
 extensions = [".cpp", ".cc", ".cxx"]
-compile = "g++ -std=c++17 -O2 -Wall -Wl,--stack=268435456 -I{shared} -o {exe} {src}"
+compile = "g++ -std=c++17 -O2 -Wall -static -DFOR_LINUX -Wl,--stack=268435456 -isystem {shared} -o {exe} {src}"
 run = "{exe}"
 polygon = "cpp.g++17"
 
 [cpp20]
 name = "C++20 (GCC)"
 extensions = [".cpp"]
-compile = "g++ -std=c++20 -O2 -Wall -Wl,--stack=268435456 -I{shared} -o {exe} {src}"
+compile = "g++ -std=c++20 -O2 -Wall -static -DFOR_LINUX -Wl,--stack=268435456 -isystem {shared} -o {exe} {src}"
 run = "{exe}"
 polygon = "cpp.gcc14-64-msys2-g++23"
 

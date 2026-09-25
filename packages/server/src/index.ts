@@ -5,6 +5,8 @@ import { parseArgs } from 'node:util';
 import open from 'open';
 import { buildApp } from './app.js';
 import { ASSETS_DIR, GlobalStore, defaultGlobalDir } from './global.js';
+import { JobManager } from './jobs.js';
+import { Judge } from './judge/index.js';
 import { exists } from './util/fs.js';
 import { FileService, SelfWrites } from './workspace/files.js';
 import { ProblemRegistry } from './workspace/problems.js';
@@ -38,7 +40,12 @@ async function main() {
   const hasDist = !args.dev && (await exists(path.join(webDist, 'index.html')));
   if (!args.dev && !hasDist) console.warn('[polyforge] web build not found; run `pnpm build` first.');
 
-  const app = await buildApp({ global, registry, files, watcher, hub, token, webDist: hasDist ? webDist : undefined });
+  const judge = new Judge(global, registry, hub);
+  const jobs = new JobManager(hub);
+  // Build the runner in the background so the first run does not wait for g++.
+  judge.runner.ensure().catch((e) => console.warn(`[polyforge] runner unavailable: ${e.message}`));
+
+  const app = await buildApp({ global, registry, files, watcher, hub, judge, jobs, token, webDist: hasDist ? webDist : undefined });
 
   // Dev uses a fixed port so the Vite proxy can find it.
   const port = await listenOnFreePort(app, args.port ? Number(args.port) : DEFAULT_PORT, !args.port && !args.dev);

@@ -25,3 +25,4 @@ source = "generators/gen_random.cpp"
 
 [tests]
 script = "tests/script.txt"
+samples = "1"

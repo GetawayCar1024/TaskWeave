@@ -11,7 +11,11 @@ import {
   type SettingsResponse,
   type WriteFileRequest,
 } from '@polyforge/shared';
+import { parse as parseToml } from 'smol-toml';
 import type { GlobalStore } from './global.js';
+import type { JobManager } from './jobs.js';
+import type { Judge } from './judge/index.js';
+import { judgeRoutes } from './routes/judge.js';
 import { samePath } from './global.js';
 import { listShared, stdRefToPath } from './sharedFiles.js';
 import { detectTools, listDirs } from './tools.js';
@@ -27,6 +31,8 @@ export interface AppDeps {
   files: FileService;
   watcher: ProblemWatcher;
   hub: WsHub;
+  judge: Judge;
+  jobs: JobManager;
   token: string;
   /** Built frontend to serve; omitted in dev (Vite serves it). */
   webDist?: string;
@@ -47,7 +53,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const isApi = req.url.startsWith('/api/');
     const isWs = req.url.startsWith('/ws');
     if (!isApi && !isWs) return;
-    const given = isWs ? new URL(req.url, 'http://x').searchParams.get('token') : req.headers[TOKEN_HEADER];
+    // WebSockets and <img src> (statement images) cannot send headers.
+    const queryOk = isWs || /^\/api\/problems\/[^/]+\/raw\//.test(req.url);
+    const given = req.headers[TOKEN_HEADER] ?? (queryOk ? new URL(req.url, 'http://x').searchParams.get('token') : null);
     if (given !== token) return reply.code(401).send({ error: 'unauthorized', message: 'Missing or invalid token' });
   });
 
@@ -98,6 +106,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // ---- shared files ----
   app.get('/api/shared', async () => listShared(global.sharedDir));
+  /** Parsed defs.toml (statement macros, DESIGN §4.6). */
+  app.get('/api/shared/defs', async () => {
+    try {
+      return parseToml(await fsp.readFile(path.join(global.sharedDir, 'defs.toml'), 'utf8'));
+    } catch (e) {
+      throw new HttpError(500, 'bad_defs', `defs.toml: ${(e as Error).message}`);
+    }
+  });
   app.get<{ Params: { '*': string } }>('/api/shared/file/*', async (req) => files.read(global.sharedDir, req.params['*']));
 
   // ---- problems ----
@@ -136,6 +152,20 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     await files.remove(ref.dir, req.params['*']);
     return { ok: true };
   });
+
+  /** Raw bytes of a problem file (statement images). */
+  app.get<FileParams>('/api/problems/:id/raw/*', async (req, reply) => {
+    const ref = await registry.get(req.params.id);
+    const abs = safeJoin(ref.dir, req.params['*']);
+    const data = await fsp.readFile(abs).catch(() => {
+      throw new HttpError(404, 'file_not_found', 'File not found');
+    });
+    const ext = path.extname(abs).toLowerCase();
+    const types: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.svg': 'image/svg+xml', '.pdf': 'application/pdf' };
+    return reply.type(types[ext] ?? 'application/octet-stream').header('cache-control', 'no-cache').send(data);
+  });
+
+  judgeRoutes(app, deps.judge, deps.jobs);
 
   app.post<{ Params: { id: string }; Body: MoveFileRequest }>('/api/problems/:id/move', async (req) => {
     const ref = await registry.get(req.params.id);
