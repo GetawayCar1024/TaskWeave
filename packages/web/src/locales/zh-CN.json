@@ -708,6 +708,7 @@
     "math-exponent-braces": "多位数的指数或下标要加花括号：10^18 会显示成 10¹8",
     "math-e-notation": "程序写法的数（1e9）应改为 10^9",
     "math-star": "乘号 * 应改为 \\cdot",
-    "math-ellipsis": "公式里的 \"...\" 应改为 \\ldots"
+    "math-ellipsis": "公式里的 \"...\" 应改为 \\ldots",
+    "list-indent": "列表按层级缩进（每层两个空格）"
   }
 }

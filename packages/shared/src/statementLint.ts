@@ -220,19 +220,65 @@ function convertLists(src: string, issues: LintIssue[], verbatimLines: Set<numbe
       out.push(lines[i++]);
       continue;
     }
-    const re = kind === 'itemize' ? bullet : numbered;
     issues.push({ line: i + 1, col: 1, rule: 'md-list', message: `Markdown list → \\begin{${kind}}`, fixable: true });
-    out.push(`\\begin{${kind}}`);
-    while (i < lines.length && !verbatimLines.has(i) && re.test(lines[i])) out.push(`\\item ${lines[i++].match(re)![1]}`);
-    out.push(`\\end{${kind}}`);
+    // Nesting follows the indentation, two spaces per level; each level is its own
+    // list (a numbered list inside a bulleted one, …). Indentation is set by indentLists.
+    const stack: { kind: string; level: number }[] = [];
+    const listKind = (l: string) => (bullet.test(l) ? 'itemize' : numbered.test(l) ? 'enumerate' : null);
+    for (let k: string | null; i < lines.length && !verbatimLines.has(i) && (k = listKind(lines[i])); i++) {
+      const level = Math.floor(lines[i].match(/^ */)![0].length / 2);
+      while (stack.length && stack[stack.length - 1].level > level) out.push(`\\end{${stack.pop()!.kind}}`);
+      const top = stack[stack.length - 1];
+      if (top && top.level === level && top.kind !== k) out.push(`\\end{${stack.pop()!.kind}}`);
+      if (!stack.length || stack[stack.length - 1].level < level) {
+        out.push(`\\begin{${k}}`);
+        stack.push({ kind: k, level });
+      }
+      out.push(`\\item ${lines[i].match(k === 'itemize' ? bullet : numbered)![1]}`);
+    }
+    while (stack.length) out.push(`\\end{${stack.pop()!.kind}}`);
   }
   return out.join('\n');
+}
+
+const LIST_ENVS = /\\(begin|end)\{(itemize|enumerate)\}/g;
+
+/**
+ * Indent list structure by nesting depth, two spaces per level: \begin / \end of a list
+ * at the depth outside it, its \item lines one level deeper. Other lines are left alone.
+ */
+function indentLists(src: string, issues: LintIssue[]): string {
+  const lines = src.split('\n');
+  let depth = 0;
+  let verbatim: string | null = null;
+  return lines
+    .map((line, n) => {
+      if (verbatim) {
+        if (line.includes(`\\end{${verbatim}}`)) verbatim = null;
+        return line;
+      }
+      const v = line.match(/\\begin\{(verbatim|lstlisting)\}/);
+      if (v && !line.includes(`\\end{${v[1]}}`)) verbatim = v[1];
+      const code = line.replace(/(?<!\\)%.*$/, '');
+      const t = code.trimStart();
+      let target: number | null = null;
+      if (/^\\end\{(itemize|enumerate)\}/.test(t)) target = Math.max(depth - 1, 0);
+      else if (/^\\begin\{(itemize|enumerate)\}/.test(t)) target = depth;
+      else if (/^\\item\b/.test(t) && depth > 0) target = depth;
+      for (const m of code.matchAll(LIST_ENVS)) depth = Math.max(depth + (m[1] === 'begin' ? 1 : -1), 0);
+      if (target === null) return line;
+      const want = ' '.repeat(2 * target) + line.trimStart();
+      if (want !== line) issues.push({ line: n + 1, col: 1, rule: 'list-indent', message: 'Indent lists by two spaces per level', fixable: true });
+      return want;
+    })
+    .join('\n');
 }
 
 export const LINT_RULE_IDS = [
   ...TEXT_RULES.map((r) => r.id),
   ...MATH_RULES.map((r) => r.id),
   'md-list',
+  'list-indent',
   'cjk-math-space',
   'cjk-punct-space',
   'cjk-fullwidth',
@@ -283,7 +329,7 @@ export function lintStatement(src: string, opts: { lang: string }): LintResult {
     const b = pos(s.start + s.text.length).line - 1;
     for (let l = a; l <= b; l++) verbatimLines.add(l);
   }
-  let fixed = convertLists(out.join(''), issues, verbatimLines);
+  let fixed = indentLists(convertLists(out.join(''), issues, verbatimLines), issues);
   const collapsed = fixed.replace(/\n{3,}/g, '\n\n');
   if (collapsed !== fixed) issues.push({ line: 1, col: 1, rule: 'blank-lines', message: 'More than one blank line in a row', fixable: true });
   fixed = collapsed;
