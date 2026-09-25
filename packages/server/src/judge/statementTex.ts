@@ -90,7 +90,8 @@ export async function contestTex(
     const secs = s.timeLimit / 1000;
     const tl = zh ? `时间限制：${secs} 秒` : `time limit per test: ${secs} second${secs === 1 ? '' : 's'}`;
     const ml = zh ? `空间限制：${s.memoryLimit} MB` : `memory limit per test: ${s.memoryLimit} megabytes`;
-    const io = (v: string, std: string, name: string) => (v && v !== std ? `\\\\${zh ? `${name}：` : `${name}: `}\\texttt{${esc(v)}}` : '');
+    // Input / output under every problem: the standard stream in words, or the file name.
+    const io = (v: string, std: 'stdin' | 'stdout', name: string) => `\\\\${zh ? `${name}：` : `${name}: `}${!v || v === std ? h[std] : `\\texttt{${esc(v)}}`}`;
     body.push(
       `\\begin{center}{\\Large ${heading}}\\\\[0.4em]`,
       `{\\small ${tl}\\\\${ml}${io(s.input, 'stdin', h.inFile)}${io(s.output, 'stdout', h.outFile)}}\\end{center}`,

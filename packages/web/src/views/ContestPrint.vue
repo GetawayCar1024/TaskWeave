@@ -434,6 +434,11 @@ onBeforeUnmount(() => {
   margin: 20mm;
 }
 @media print {
+  /* Menus, messages and tooltips are teleported to <body>; one still open at the screen's
+     right edge (the export menu when picking PDF) makes the browser shrink every page. */
+  body > *:not(#app) {
+    display: none !important;
+  }
   html,
   body,
   #app {
