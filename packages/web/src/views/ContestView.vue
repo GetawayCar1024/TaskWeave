@@ -85,32 +85,59 @@ onUnmounted(() => {
 const summary = computed(() => detail.value?.summary);
 const title = computed(() => (summary.value ? problemTitle(summary.value.title, locale.value) || summary.value.name : ''));
 
-// ---- problem list editing (letters follow the order) ----
+// ---- problem list editing ----
+// Letters are edited directly (A, B, …, or A1, A2); moving a problem keeps the letters
+// in place and swaps the problems; "renumber" assigns A, B, C… by position.
 const letter = (i: number) => (i < 26 ? String.fromCharCode(65 + i) : `Z${i - 25}`);
-async function saveProblems(ids: string[]) {
+type Entry = { index: string; problem: string };
+async function saveProblems(list: Entry[]): Promise<boolean> {
   try {
-    detail.value = await api.updateContest(props.id, { problems: ids.map((problem, i) => ({ index: letter(i), problem })) });
+    detail.value = await api.updateContest(props.id, { problems: list });
+    version.value++;
+    return true;
   } catch (e) {
-    message.error(errorMessage(e));
+    message.error(serverText(errorMessage(e)));
+    return false;
   }
 }
-const ids = () => detail.value?.problems.map((p) => p.problem) ?? [];
+/** Bumped on every save / reload so the letter inputs drop unsaved text. */
+const version = ref(0);
+const entries = (): Entry[] => detail.value?.problems.map((p) => ({ index: p.index, problem: p.problem })) ?? [];
+const ids = () => entries().map((e) => e.problem);
 function move(i: number, d: number) {
-  const list = ids();
+  const list = entries();
   const j = i + d;
   if (j < 0 || j >= list.length) return;
-  [list[i], list[j]] = [list[j], list[i]];
+  [list[i].problem, list[j].problem] = [list[j].problem, list[i].problem];
   saveProblems(list);
 }
-const remove = (i: number) => saveProblems(ids().filter((_, k) => k !== i));
+const remove = (i: number) => saveProblems(entries().filter((_, k) => k !== i));
+const renumber = () => saveProblems(entries().map((e, i) => ({ index: letter(i), problem: e.problem })));
+/** The next letter after the ones in use: A, B, … then A1-style suffixes are left to the user. */
+function nextIndex(used: Set<string>): string {
+  for (let i = 0; ; i++) if (!used.has(letter(i))) return letter(i);
+}
+async function setIndex(pos: number, value: string) {
+  const index = value.trim().toUpperCase();
+  const list = entries();
+  if (!index || index === list[pos].index) return;
+  list[pos].index = index;
+  if (!(await saveProblems(list))) version.value++;
+}
 const adding = ref<string[]>([]);
 const addOptions = computed(() => {
   const inContest = new Set(ids());
   return allProblems.value.filter((p) => !inContest.has(p.id)).map((p) => ({ label: `${problemTitle(p.title, locale.value) || p.name} (${p.id})`, value: p.id }));
 });
 async function addProblems() {
-  await saveProblems([...ids(), ...adding.value]);
-  adding.value = [];
+  const list = entries();
+  const used = new Set(list.map((e) => e.index));
+  for (const problem of adding.value) {
+    const index = nextIndex(used);
+    used.add(index);
+    list.push({ index, problem });
+  }
+  if (await saveProblems(list)) adding.value = [];
 }
 
 // ---- contest settings ----
@@ -205,13 +232,28 @@ const columns = computed<DataTableColumns<Row>>(() => [
         detailLines(resultByIndex.value.get(r.index)).map((d) => h('div', { class: d.bad ? 'bad' : '' }, d.text)),
       ),
   },
-  { title: '#', key: 'index', width: 44, render: (r) => h('strong', r.index) },
+  {
+    title: '#',
+    key: 'index',
+    width: 70,
+    render: (r) =>
+      h(NInput, {
+        // Uncontrolled: starts from the saved letter, saved on Enter / blur, remounted after a save.
+        key: `${r.index}|${r.problem}|${version.value}`,
+        size: 'small',
+        defaultValue: r.index,
+        class: 'index-input',
+        disabled: running.value,
+        title: t('contest.editIndex'),
+        onChange: (v: string) => setIndex(r.pos, v),
+      }),
+  },
   {
     title: t('contest.problem'),
     key: 'problem',
     render: (r) =>
       r.summary
-        ? h('a', { class: 'link', onClick: () => router.push({ name: 'problem', params: { id: r.problem } }) }, [
+        ? h('a', { class: 'link', onClick: () => router.push({ name: 'problem', params: { id: r.problem }, query: { from: `contest:${props.id}` } }) }, [
             h('span', problemTitle(r.summary.title, locale.value) || r.summary.name),
             h('span', { class: 'mono sub' }, ` ${r.problem}`),
           ])
@@ -317,6 +359,8 @@ const columns = computed<DataTableColumns<Row>>(() => [
         <div class="add">
           <n-select v-model:value="adding" multiple filterable size="small" :options="addOptions" :placeholder="t('contest.addPlaceholder')" style="max-width: 480px" />
           <n-button size="small" :disabled="!adding.length" @click="addProblems">{{ t('contest.add') }}</n-button>
+          <span class="grow" />
+          <n-button size="small" quaternary :disabled="running || rows.length < 2" :title="t('contest.renumberHint')" @click="renumber">{{ t('contest.renumber') }}</n-button>
         </div>
       </template>
     </main>
@@ -369,6 +413,13 @@ const columns = computed<DataTableColumns<Row>>(() => [
   flex-direction: column;
   gap: 6px;
   max-width: 320px;
+}
+.grow {
+  flex: 1;
+}
+:deep(.index-input input) {
+  font-weight: bold;
+  text-align: center;
 }
 .add {
   display: flex;

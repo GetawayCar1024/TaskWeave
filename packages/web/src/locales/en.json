@@ -10,7 +10,8 @@
     "settings": "Settings",
     "problems": "Problems",
     "contests": "Contests",
-    "contest": "Contest"
+    "contest": "Contest",
+    "backToContest": "Back to contest"
   },
   "common": {
     "cancel": "Cancel",
@@ -571,7 +572,10 @@
     "print": "Print / PDF",
     "noStatementIn": "{list}: no {lang} statement",
     "noTutorialIn": "{list}: no {lang} tutorial",
-    "noProblems": "This contest has no problems yet"
+    "noProblems": "This contest has no problems yet",
+    "editIndex": "Problem letter (edit directly, e.g. A, B, C1)",
+    "renumber": "Renumber",
+    "renumberHint": "Set the letters to A, B, C… in the current order"
   },
   "testsets": {
     "title": "Testsets and groups",

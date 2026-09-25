@@ -10,7 +10,8 @@
     "settings": "设置",
     "problems": "题目列表",
     "contests": "比赛列表",
-    "contest": "比赛"
+    "contest": "比赛",
+    "backToContest": "返回比赛"
   },
   "common": {
     "cancel": "取消",
@@ -571,7 +572,10 @@
     "print": "打印 / 导出 PDF",
     "noStatementIn": "{list} 没有 {lang} 题面",
     "noTutorialIn": "{list} 没有 {lang} 题解",
-    "noProblems": "比赛里还没有题目"
+    "noProblems": "比赛里还没有题目",
+    "editIndex": "题号（可直接修改，如 A、B、C1）",
+    "renumber": "按顺序重新编号",
+    "renumberHint": "按当前顺序把题号改为 A、B、C…"
   },
   "testsets": {
     "title": "测试集与子任务",

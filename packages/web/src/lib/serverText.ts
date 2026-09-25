@@ -100,6 +100,10 @@ const RULES: Rule[] = [
         .join('；')}`,
   ],
 
+  [/^Invalid problem index: (.*)$/, (m) => `题号无效：${m[1]}（应为大写字母开头，最多 4 位，如 A、B、C1）`],
+  [/^Duplicate index (.+)$/, (m) => `题号 ${m[1]} 重复了`],
+  [/^Problem (.+) is listed twice$/, (m) => `题目 ${m[1]} 重复加入`],
+
   // ---- AI endpoints ----
   [/^This endpoint does not provide a model list \(([\s\S]*)\)\. Enter the model names by hand, then use Test connection\.$/, (m, tr) => `这个端点不提供模型列表（${tr(m[1])}）。请手动填写模型名称，再点“测试连接”确认。`],
   [/^HTTP (\d+): the server returned a web page(?: \((.+)\))? instead of an API response$/, (m) => `HTTP ${m[1]}：服务器返回的是网页${m[2] ? `（${m[2]}）` : ''}，不是 API 响应`],

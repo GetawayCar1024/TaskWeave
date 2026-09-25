@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
-import { onBeforeRouteLeave, useRouter } from 'vue-router';
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 import { NButton, NDropdown, NInput, NModal, NResult, NScrollbar, NSpace, NSpin, NSplit, NTabPane, NTabs, NTooltip, useDialog, useMessage } from 'naive-ui';
 import { isSourceFile, statementLanguages } from '@polyforge/shared';
 import AppHeader from '../components/AppHeader.vue';
@@ -38,8 +38,19 @@ import { SHARED_TAB, useWorkspace } from '../lib/workspace';
 const props = defineProps<{ id: string }>();
 const { t, locale } = useI18n();
 const router = useRouter();
+const route = useRoute();
 const message = useMessage();
 const dialog = useDialog();
+
+/** Opened from a contest page (?from=contest:<id>): the back button returns there. */
+const backTo = computed(() => {
+  const from = route.query.from;
+  return typeof from === 'string' && from.startsWith('contest:') ? from.slice('contest:'.length) : null;
+});
+function goBack() {
+  if (backTo.value) router.push({ name: 'contest', params: { id: backTo.value } });
+  else router.push({ name: 'problems' });
+}
 
 const ws = useWorkspace(props.id);
 const judge = useJudge(props.id, ws);
@@ -383,7 +394,7 @@ onBeforeUnmount(() => {
   <div class="page">
     <app-header>
       <template #left>
-        <n-button size="small" quaternary @click="router.push({ name: 'problems' })"><template #icon><arrow-left /></template>{{ t('nav.problems') }}</n-button>
+        <n-button size="small" quaternary @click="goBack"><template #icon><arrow-left /></template>{{ backTo ? t('nav.backToContest') : t('nav.problems') }}</n-button>
       </template>
       <template v-if="summary">
         <strong class="title">{{ problemTitle(summary.title, locale) || summary.name }}</strong>
