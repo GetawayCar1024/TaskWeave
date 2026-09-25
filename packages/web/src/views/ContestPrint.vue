@@ -194,6 +194,7 @@ onBeforeUnmount(() => {
 }
 .sheet :deep(.statement-doc) {
   --pf-sample-bg: rgb(239, 239, 239);
+  --pf-line-even: rgb(224, 224, 224);
 }
 .contest-title {
   text-align: center;

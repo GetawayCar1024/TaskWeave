@@ -19,7 +19,7 @@ const { t } = useI18n();
 const disk = ref<Partial<Record<StatementSection, string>>>({});
 const macros = shallowRef<MacroTable>(new Map());
 const tick = ref(0);
-const samples = ref<{ index: number; input: string; output: string }[]>([]);
+const samples = ref<{ index: number; input: string; output: string; inputCases?: number[] }[]>([]);
 
 const pathOf = (s: StatementSection) => `statement/${props.lang}/${s}.tex`;
 
@@ -38,6 +38,7 @@ async function loadSamples() {
   samples.value = await Promise.all(
     tests.map(async (x) => ({
       index: x.index,
+      inputCases: x.inputCases,
       input: (await api.testFile(props.problemId, x.index, 'in').catch(() => null))?.content ?? '',
       output: (await api.testFile(props.problemId, x.index, 'ans').catch(() => null))?.content ?? '',
     })),

@@ -11,7 +11,7 @@ const props = defineProps<{
   limits?: { timeLimit: number; memoryLimit: number } | null;
   /** Rendered HTML per section. */
   sections: Partial<Record<StatementSection, string>>;
-  samples: { input: string; output: string }[];
+  samples: { input: string; output: string; inputCases?: number[] }[];
   mode?: 'statement' | 'tutorial';
   /** Small line under the title (tutorial mode). */
   note?: string;
@@ -25,10 +25,18 @@ const HEADINGS: Record<string, Partial<Record<StatementSection | 'examples', str
 };
 const heading = (k: StatementSection | 'examples') => (HEADINGS[props.lang] ?? HEADINGS.en)[k] ?? k;
 const zh = () => props.lang === 'zh';
+
+/** Hovering a test case line highlights that case in the input and the output box. */
+function hover(e: MouseEvent, on: boolean) {
+  const line = (e.target as HTMLElement).closest?.('.test-example-line[data-case]') as HTMLElement | null;
+  if (!line) return;
+  const sample = line.closest('.sample');
+  sample?.querySelectorAll(`.test-example-line[data-case="${line.dataset.case}"]`).forEach((el) => el.classList.toggle('hl', on));
+}
 </script>
 
 <template>
-  <div class="statement-doc">
+  <div class="statement-doc" @mouseover="hover($event, true)" @mouseout="hover($event, false)">
     <template v-if="mode === 'tutorial'">
       <div class="header">
         <div class="title"><template v-if="index">{{ index }}. </template>{{ title }}<template v-if="tutorialSuffix !== false"> — {{ heading('tutorial') }}</template></div>
@@ -54,7 +62,7 @@ const zh = () => props.lang === 'zh';
       </template>
       <template v-if="samples.length">
         <div class="section-title">{{ heading('examples') }}</div>
-        <div v-for="(x, i) in samples" :key="i" v-html="sampleHtml(x.input, x.output, zh() ? '输入' : 'Input', zh() ? '输出' : 'Output')" />
+        <div v-for="(x, i) in samples" :key="i" v-html="sampleHtml(x.input, x.output, zh() ? '输入' : 'Input', zh() ? '输出' : 'Output', x.inputCases)" />
       </template>
       <template v-if="sections.notes">
         <div class="section-title">{{ heading('notes') }}</div>
@@ -73,6 +81,8 @@ const zh = () => props.lang === 'zh';
   line-height: 1.5em;
   --pf-sample-bg: rgba(128, 128, 128, 0.12);
   --pf-rule: rgb(136, 136, 136);
+  --pf-line-even: rgba(128, 128, 128, 0.22);
+  --pf-line-hl: rgba(255, 196, 0, 0.35);
 }
 .header {
   margin-bottom: 1em;
@@ -198,6 +208,19 @@ const zh = () => props.lang === 'zh';
   border-bottom: 1px solid var(--pf-rule);
   text-transform: lowercase;
   font-weight: bold;
+}
+/* Test cases in samples (Codeforces: .test-example-line-even, hover highlight). */
+.statement-doc :deep(.test-example-line-even) {
+  background: var(--pf-line-even);
+}
+.statement-doc :deep(.test-example-line.hl) {
+  background: var(--pf-line-hl);
+}
+.statement-doc :deep(.sample pre),
+.statement-doc :deep(.test-example-line) {
+  /* Keep the shades when printing / saving as PDF. */
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 .statement-doc :deep(.sample pre) {
   line-height: 1.25em;

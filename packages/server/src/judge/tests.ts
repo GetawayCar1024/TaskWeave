@@ -296,14 +296,18 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
     const inFile = inputPath(ctx, p.index);
 
     if (validator) {
-      const key = sha1(JSON.stringify([e.inputHash, validator.hash, e.group ?? '', ts.name]));
+      // Samples also get the validator's test markup (which lines belong to which test
+      // case, from setTestCase), for the per-test-case highlighting of the statement.
+      const markup = !!e.sample;
+      const key = sha1(JSON.stringify([e.inputHash, validator.hash, e.group ?? '', ts.name, markup]));
       const ov = overviewPath(ctx, p.index);
       if (old?.validKey === key && old.valid !== undefined) {
-        Object.assign(e, { validKey: key, valid: old.valid, validatorMessage: old.validatorMessage, hasOverview: old.hasOverview });
+        Object.assign(e, { validKey: key, valid: old.valid, validatorMessage: old.validatorMessage, hasOverview: old.hasOverview, inputCases: old.inputCases });
       } else {
         await withTmp(ctx.ref.dir, async (tmp) => {
           const err = path.join(tmp, 'err.txt');
-          const args = ['--testOverviewLogFileName', ov, '--testset', ts.name, ...(e.group ? ['--group', e.group] : [])];
+          const mu = path.join(tmp, 'markup.txt');
+          const args = ['--testOverviewLogFileName', ov, '--testset', ts.name, ...(e.group ? ['--group', e.group] : []), ...(markup ? ['--testMarkupFileName', mu] : [])];
           await fsp.rm(ov, { force: true });
           const r = await runHelper(judge.runner, validator, args, { cwd: tmp, stdin: inFile, stderr: err }, job.signal);
           e.validKey = key;
@@ -311,6 +315,7 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
           const msg = (await readHead(err, 2000)).trim();
           e.validatorMessage = e.valid ? undefined : msg || describeRun(r);
           e.hasOverview = await exists(ov);
+          e.inputCases = markup && e.valid ? parseTestMarkup(await fsp.readFile(mu).catch(() => null)) : undefined;
         });
       }
     } else {
@@ -399,4 +404,42 @@ export async function addManualTest(ctx: ProblemCtx, input: string, opts: { samp
     return { index, path: rel, samples: compressRanges(next) };
   }
   return { index, path: rel };
+}
+
+/**
+ * testlib's test markup (validator --testMarkupFileName): the input with "!c<n>;"
+ * where test case n starts; \ and ! are escaped with a backslash. Returns the test case
+ * of every input line (0 = before the first case, e.g. the line with t), or undefined
+ * when the validator does not mark test cases.
+ */
+export function parseTestMarkup(buf: Buffer | null): number[] | undefined {
+  if (!buf) return undefined;
+  const s = buf.toString('latin1');
+  const HEADER = 'MU\xF3\x01';
+  if (!s.startsWith(HEADER)) return undefined;
+  const lines: number[] = [];
+  let cur = 0;
+  let lineCase: number | null = null;
+  let seen = false;
+  for (let i = HEADER.length; i < s.length; i++) {
+    let c = s[i];
+    if (c === '!' && s[i + 1] === 'c') {
+      const end = s.indexOf(';', i);
+      if (end > i) {
+        // setTestCase(i) starts case i; count the markers instead of trusting the
+        // number: testlib 0.9.44 built with GCC 15 prints 0 for every case (vtos bug).
+        cur++;
+        seen = true;
+        i = end;
+        continue;
+      }
+    }
+    if (c === '\\' && i + 1 < s.length) c = s[++i];
+    if (c === '\n') {
+      lines.push(lineCase ?? cur);
+      lineCase = null;
+    } else if (lineCase === null && c !== '\r') lineCase = cur;
+  }
+  if (lineCase !== null) lines.push(lineCase);
+  return seen ? lines : undefined;
 }

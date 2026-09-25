@@ -107,5 +107,5 @@ export interface ContestStatement {
   output: string;
   /** Raw LaTeX per section (empty sections omitted). */
   sections: Record<string, string>;
-  samples: { input: string; output: string }[];
+  samples: { input: string; output: string; inputCases?: number[] }[];
 }

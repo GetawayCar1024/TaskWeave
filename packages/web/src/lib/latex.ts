@@ -578,10 +578,33 @@ function paragraphs(html: string): string {
     .join('');
 }
 
-export function sampleHtml(input: string, output: string, inLabel: string, outLabel: string): string {
+/**
+ * A sample as input / output boxes. With `inputCases` (test case of each input line,
+ * from the validator's test markup) lines are tagged per test case as on Codeforces:
+ * alternating shades, and hovering a case highlights it in both boxes. Output lines
+ * are matched when their count is a multiple of the number of cases.
+ */
+export function sampleHtml(input: string, output: string, inLabel: string, outLabel: string, inputCases?: number[]): string {
+  const split = (s: string) => s.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n');
+  const inLines = split(input);
+  const cases = inputCases?.length ? Math.max(...inputCases) : 0;
+  const outLines = split(output);
+  const outCases =
+    cases > 0 && outLines.length % cases === 0 && outLines.length >= cases ? outLines.map((_, i) => Math.floor(i / (outLines.length / cases)) + 1) : undefined;
+  const lines = (ls: string[], of?: number[]) =>
+    of
+      ? ls
+          .map((l, i) => {
+            const c = of[i] ?? 0;
+            const text = esc(l) || ' ';
+            return c > 0 ? `<div class="test-example-line test-example-line-${c % 2 ? 'odd' : 'even'}" data-case="${c}">${text}</div>` : `<div class="test-example-line">${text}</div>`;
+          })
+          .join('')
+      : esc(ls.join('\n'));
+  const marked = cases > 0 && inLines.length === inputCases!.length;
   return (
-    `<div class="sample"><div class="sample-part"><div class="sample-title">${esc(inLabel)}</div><pre>${esc(input)}</pre></div>` +
-    `<div class="sample-part"><div class="sample-title">${esc(outLabel)}</div><pre>${esc(output)}</pre></div></div>`
+    `<div class="sample"><div class="sample-part"><div class="sample-title">${esc(inLabel)}</div><pre>${lines(inLines, marked ? inputCases : undefined)}</pre></div>` +
+    `<div class="sample-part"><div class="sample-title">${esc(outLabel)}</div><pre>${lines(outLines, marked ? outCases : undefined)}</pre></div></div>`
   );
 }
 

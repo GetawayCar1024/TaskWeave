@@ -45,6 +45,8 @@ export interface TestInfo {
   /** 1-based line of the command in script.txt. */
   line?: number;
   group?: string;
+  /** Samples: test case of each input line (from the validator's setTestCase markup; 0 = none). */
+  inputCases?: number[];
   /** Points of the test when points are enabled (derived from its group). */
   points?: number;
   sample?: boolean;
