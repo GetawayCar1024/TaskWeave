@@ -3,7 +3,7 @@ import type { GlobalConfig } from '@polyforge/shared';
 import { api } from './api';
 import { setLocale } from '../i18n';
 
-export const settings = reactive<{ loaded: boolean; config: GlobalConfig | null; globalDir: string }>({
+export const settings = reactive<{ loaded: boolean; config: GlobalConfig | null; globalDir: string; cpus?: number; defaultParallel?: number }>({
   loaded: false,
   config: null,
   globalDir: '',
@@ -13,6 +13,8 @@ export async function loadSettings() {
   const r = await api.settings();
   settings.config = r.config;
   settings.globalDir = r.globalDir;
+  settings.cpus = r.cpus;
+  settings.defaultParallel = r.defaultParallel;
   settings.loaded = true;
   setLocale(r.config.ui.locale);
 }

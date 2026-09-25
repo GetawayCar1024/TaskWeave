@@ -28,8 +28,9 @@ export class Judge {
     readonly registry: ProblemRegistry,
     readonly hub: WsHub,
   ) {
-    this.compiler = new Compiler(global);
     this.runner = new Runner(path.join(global.cacheDir, 'bin'));
+    this.runner.setParallel(global.config.judge?.parallel ?? 0);
+    this.compiler = new Compiler(global, this.runner.compilePool);
   }
 
   async ctx(problemId: string): Promise<ProblemCtx> {

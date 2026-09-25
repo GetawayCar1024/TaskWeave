@@ -36,9 +36,16 @@ export class ProblemWatcher {
         return p.split(/[\\/]/).some((seg) => HIDDEN_DIRS.has(seg));
       },
       awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 20 },
+      ignorePermissionErrors: true,
     });
     this.watcher.on('all', (kind, p) => void this.onEvent(kind as Kind, p));
-    this.watcher.on('error', (e) => console.warn('[polyforge] watcher error:', e));
+    // On Windows, deleting or moving a watched folder makes fs.watch report EPERM; the
+    // watcher drops that folder by itself, so this is not worth a warning.
+    this.watcher.on('error', (e) => {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code === 'EPERM' || code === 'EACCES') return;
+      console.warn('[polyforge] watcher error:', e);
+    });
   }
 
   async stop(): Promise<void> {

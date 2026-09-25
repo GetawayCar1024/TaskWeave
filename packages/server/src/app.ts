@@ -1,5 +1,7 @@
 import { promises as fsp } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { defaultParallel } from './judge/runner.js';
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
@@ -92,13 +94,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get('/ws', { websocket: true }, (socket) => hub.add(socket));
 
   // ---- settings ----
-  const settings = (): SettingsResponse => ({ config: global.config, globalDir: global.dir });
+  const settings = (): SettingsResponse => ({ config: global.config, globalDir: global.dir, cpus: os.availableParallelism(), defaultParallel: defaultParallel() });
 
   app.get('/api/settings', async () => settings());
 
   app.put<{ Body: unknown }>('/api/settings', async (req) => {
     const before = global.config.problems.roots;
     await global.saveConfig(req.body);
+    deps.judge.runner.setParallel(global.config.judge?.parallel ?? 0);
     const after = global.config.problems.roots;
     const rootsChanged = before.length !== after.length || before.some((r, i) => !samePath(r, after[i]));
     if (rootsChanged) {

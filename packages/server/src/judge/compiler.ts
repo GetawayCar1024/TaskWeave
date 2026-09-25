@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import type { Semaphore } from './runner.js';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { STD_PREFIX, type CompileResult, type Diagnostic, type Language, type LanguagesConfig } from '@polyforge/shared';
@@ -107,7 +108,11 @@ interface CacheRecord {
 export class Compiler {
   private inflight = new Map<string, Promise<CompileOutcome>>();
 
-  constructor(private global: GlobalStore) {}
+  constructor(
+    private global: GlobalStore,
+    /** Bounds concurrent compiler processes. */
+    private pool?: Semaphore,
+  ) {}
 
   /** Resolve a problem.toml source reference to an absolute path. */
   resolveSource(problemDir: string, source: string): { srcPath: string; buildRoot: string } {
@@ -197,7 +202,7 @@ export class Compiler {
 
     await fsp.mkdir(dir, { recursive: true });
     const [cmd, ...args] = substitute(splitCommand(a.lang.compile), vars);
-    const rec = await new Promise<CacheRecord>((resolve) => {
+    const compileOnce = () => new Promise<CacheRecord>((resolve) => {
       execFile(
         cmd,
         args,
@@ -210,6 +215,7 @@ export class Compiler {
         },
       );
     });
+    const rec = this.pool ? await this.pool.use(compileOnce) : await compileOnce();
     // A compiler missing from PATH is not a property of the source; don't cache it.
     if (!rec.log.startsWith('Compiler not found')) await atomicWrite(recordPath, JSON.stringify(rec));
     return done(rec, false);

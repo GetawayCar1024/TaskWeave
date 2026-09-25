@@ -366,6 +366,12 @@ onMounted(() => {
               </n-form-item>
               <n-form-item :label="t('settings.wordWrap')"><n-switch v-model:value="draft.editor.word_wrap" /></n-form-item>
               <n-form-item :label="t('settings.minimap')"><n-switch v-model:value="draft.editor.minimap" /></n-form-item>
+              <n-form-item :label="t('settings.parallel')">
+                <n-space align="center">
+                  <n-input-number v-model:value="draft.judge.parallel" :min="0" :max="64" style="width: 120px" />
+                  <span class="small dim">{{ t('settings.parallelHint', { auto: settings.defaultParallel ?? '?', cpus: settings.cpus ?? '?' }) }}</span>
+                </n-space>
+              </n-form-item>
             </n-form>
             <n-space justify="end">
               <n-button type="primary" :loading="saving" @click="saveGeneral">{{ t('common.save') }}</n-button>

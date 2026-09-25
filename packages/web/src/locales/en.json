@@ -131,7 +131,9 @@
       "today": "Today",
       "month": "This month",
       "all": "All time"
-    }
+    },
+    "parallel": "Parallel jobs",
+    "parallelHint": "Programs running at once (tests, solutions, checkers); compilations use half. 0 = auto ({auto} of {cpus} logical CPUs). Lower it if the computer lags while judging."
   },
   "editor": {
     "changedOnDisk": "This file changed on disk while you have unsaved changes.",

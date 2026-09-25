@@ -38,6 +38,14 @@ export const globalConfigSchema = z
       })
       .loose()
       .default({ font_size: 14, tab_size: 4, word_wrap: false, minimap: false }),
+    /**
+     * Judging: how many programs may run at once (tests, solutions, checkers); 0 = half
+     * the CPU cores. Compilations use half as many slots.
+     */
+    judge: z
+      .object({ parallel: z.number().int().min(0).max(256).default(0) })
+      .loose()
+      .default({ parallel: 0 }),
   })
   .loose();
 
@@ -60,6 +68,9 @@ export interface SettingsResponse {
   config: GlobalConfig;
   /** Absolute path of the global directory (~/.polyforge). */
   globalDir: string;
+  /** Logical CPUs and the default number of parallel runs (judge.parallel = 0). */
+  cpus?: number;
+  defaultParallel?: number;
 }
 
 export interface LanguagesResponse {

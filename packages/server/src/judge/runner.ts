@@ -21,19 +21,40 @@ export interface ProcSpec {
   processLimit?: number;
 }
 
+/** Default number of parallel runs: half the logical CPUs, so the machine stays responsive. */
+export const defaultParallel = () => Math.max(1, Math.floor(os.availableParallelism() / 2));
+
 /** Counting semaphore bounding concurrent runs (DESIGN §4.2: CPU cores − 1 workers). */
 export class Semaphore {
   private waiters: (() => void)[] = [];
-  constructor(private free: number) {}
+  private active = 0;
+  constructor(private limit: number) {}
+
+  get size() {
+    return this.limit;
+  }
+
+  /** Change the number of slots; running work finishes, waiting work follows the new size. */
+  resize(n: number) {
+    this.limit = Math.max(1, n);
+    this.pump();
+  }
+
+  private pump() {
+    while (this.active < this.limit && this.waiters.length) {
+      this.active++;
+      this.waiters.shift()!();
+    }
+  }
+
   async use<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.free > 0) this.free--;
+    if (this.active < this.limit) this.active++;
     else await new Promise<void>((r) => this.waiters.push(r));
     try {
       return await fn();
     } finally {
-      const next = this.waiters.shift();
-      if (next) next();
-      else this.free++;
+      this.active--;
+      this.pump();
     }
   }
 }
@@ -96,11 +117,23 @@ export class Runner {
   private building: Promise<string> | null = null;
   private tscHz = 0;
   readonly pool: Semaphore;
-  readonly workers: number;
+  /** Compilations (g++ is heavy): half the run slots. */
+  readonly compilePool: Semaphore;
 
   constructor(private binDir: string) {
-    this.workers = Math.max(1, os.availableParallelism() - 1);
-    this.pool = new Semaphore(this.workers);
+    this.pool = new Semaphore(defaultParallel());
+    this.compilePool = new Semaphore(Math.max(1, Math.floor(defaultParallel() / 2)));
+  }
+
+  get workers() {
+    return this.pool.size;
+  }
+
+  /** Apply the judge.parallel setting (0 = default). */
+  setParallel(n: number) {
+    const runs = n > 0 ? n : defaultParallel();
+    this.pool.resize(runs);
+    this.compilePool.resize(Math.max(1, Math.floor(runs / 2)));
   }
 
   /** Compile the runner with the local g++ on first use; cached by source hash. */
