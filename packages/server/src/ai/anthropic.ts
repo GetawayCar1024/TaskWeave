@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { AiTestResult } from '@polyforge/shared';
 import type { RawAiEndpoint } from '../global.js';
 import type { AgentMessage, Block, ChatRequest, ChatResponse, Provider, StopReason } from './provider.js';
-import { ToolInputParseError } from './provider.js';
+import { cleanApiError, ToolInputParseError } from './provider.js';
 
 const OFFICIAL_HOSTS = new Set(['api.anthropic.com']);
 
@@ -20,10 +20,14 @@ const FALLBACKS = /^claude-(opus-5|fable-5)/;
 export class AnthropicProvider implements Provider {
   private client: Anthropic;
   private official: boolean;
+  private baseURL?: string;
+  private apiKey: string;
 
   constructor(ep: RawAiEndpoint) {
     // The SDK adds /v1 itself; proxies are often given as https://host/v1.
     const baseURL = ep.baseUrl.trim().replace(/\/+$/, '').replace(/\/v1$/, '') || undefined;
+    this.baseURL = baseURL;
+    this.apiKey = ep.apiKey;
     this.official = !baseURL || OFFICIAL_HOSTS.has(new URL(baseURL).hostname);
     this.client = new Anthropic({ apiKey: ep.apiKey, baseURL, maxRetries: 3 });
   }
@@ -125,9 +129,36 @@ export class AnthropicProvider implements Provider {
   }
 
   async listModels(): Promise<string[]> {
-    const ids: string[] = [];
-    for await (const m of this.client.models.list({}, { timeout: 20_000, maxRetries: 0 })) ids.push(m.id);
-    return ids;
+    try {
+      const ids: string[] = [];
+      for await (const m of this.client.models.list({}, { timeout: 20_000, maxRetries: 0 })) ids.push(m.id);
+      return ids;
+    } catch (e) {
+      // Many proxies implement /v1/messages but not the models API, or only an
+      // OpenAI-style one: try the usual alternatives before giving up.
+      const found = await this.listModelsFallback();
+      if (found) return found;
+      throw new Error(cleanApiError(e));
+    }
+  }
+
+  private async listModelsFallback(): Promise<string[] | null> {
+    const base = (this.baseURL ?? 'https://api.anthropic.com').replace(/\/+$/, '');
+    const headers: Record<string, string>[] = [{ 'x-api-key': this.apiKey, 'anthropic-version': '2023-06-01' }, { authorization: `Bearer ${this.apiKey}` }];
+    for (const url of [`${base}/v1/models`, `${base}/models`]) {
+      for (const h of headers) {
+        try {
+          const res = await fetch(url, { headers: h, signal: AbortSignal.timeout(10_000) });
+          if (!res.ok) continue;
+          const j = (await res.json()) as { data?: { id?: string }[] };
+          const ids = (j.data ?? []).map((m) => m.id).filter((x): x is string => typeof x === 'string');
+          if (ids.length) return ids;
+        } catch {
+          /* try the next form */
+        }
+      }
+    }
+    return null;
   }
 
   async test(model: string): Promise<AiTestResult> {
@@ -137,7 +168,7 @@ export class AnthropicProvider implements Provider {
       const text = r.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text ?? '';
       return { ok: true, ms: Date.now() - t0, reply: text.trim().slice(0, 100) };
     } catch (e) {
-      return { ok: false, ms: Date.now() - t0, error: e instanceof Anthropic.APIError ? `${e.status ?? ''} ${e.message}`.trim() : (e as Error).message };
+      return { ok: false, ms: Date.now() - t0, error: cleanApiError(e) };
     }
   }
 }

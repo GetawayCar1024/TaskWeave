@@ -68,3 +68,18 @@ export async function createProvider(ep: RawAiEndpoint): Promise<Provider> {
 export function defaultModel(ep: RawAiEndpoint): string {
   return ep.models[0] ?? (ep.protocol === 'anthropic' ? 'claude-opus-5' : '');
 }
+
+/**
+ * Readable text for an API error. Proxies often answer unknown paths with their web
+ * app's HTML page; reduce that to the status and the page title.
+ */
+export function cleanApiError(e: unknown): string {
+  const err = e as { status?: number; message?: string };
+  let msg = String(err?.message ?? e);
+  if (/<(!doctype|html)[\s>]/i.test(msg)) {
+    const title = [...msg.matchAll(/<title>([^<]*)<\/title>/gi)].map((m) => m[1].trim()).filter(Boolean);
+    const status = err?.status ?? msg.match(/^\s*(\d{3})\b/)?.[1];
+    msg = `${status ? `HTTP ${status}: ` : ''}the server returned a web page${title.length ? ` (${title.join(' / ')})` : ''} instead of an API response`;
+  }
+  return msg.length > 500 ? `${msg.slice(0, 500)}…` : msg;
+}

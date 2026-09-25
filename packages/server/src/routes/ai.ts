@@ -23,7 +23,7 @@ export function aiRoutes(app: FastifyInstance, global: GlobalStore, agent: Agent
     try {
       return await (await createProvider(ep)).listModels();
     } catch (e) {
-      throw new HttpError(502, 'models_failed', `Could not list models: ${(e as Error).message}`);
+      throw new HttpError(502, 'models_failed', `This endpoint does not provide a model list (${(e as Error).message}). Enter the model names by hand, then use Test connection.`);
     }
   });
 

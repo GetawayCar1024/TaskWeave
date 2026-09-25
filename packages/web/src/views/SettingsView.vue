@@ -30,6 +30,7 @@ import CodeEditor from '../components/CodeEditor.vue';
 import DirPicker from '../components/DirPicker.vue';
 import { api, errorMessage } from '../lib/api';
 import { settings, saveSettings } from '../lib/settings';
+import { serverText } from '../lib/serverText';
 
 const { t } = useI18n();
 const router = useRouter();
@@ -258,11 +259,11 @@ async function testEndpoint(e: EditEndpoint) {
     await saveEndpoints();
     const ep = fresh(name, e);
     const r = await api.testAiEndpoint(name, ep.models.split(/[\s,]+/).filter(Boolean)[0]);
-    ep.status = r.ok ? { ok: true, text: `${r.ms} ms · ${r.reply ?? ''}` } : { ok: false, text: r.error ?? '' };
-    if (!r.ok) message.error(r.error ?? t('settings.failed'));
+    ep.status = r.ok ? { ok: true, text: `${r.ms} ms · ${r.reply ?? ''}` } : { ok: false, text: serverText(r.error) };
+    if (!r.ok) message.error(serverText(r.error) || t('settings.failed'));
   } catch (err) {
-    fresh(name, e).status = { ok: false, text: errorMessage(err) };
-    message.error(errorMessage(err));
+    fresh(name, e).status = { ok: false, text: serverText(errorMessage(err)) };
+    message.error(serverText(errorMessage(err)));
   } finally {
     aiBusy.value = null;
   }
@@ -284,8 +285,8 @@ async function fetchModels(e: EditEndpoint) {
     fresh(name, e).status = { ok: true, text: t('settings.aiModelsFetched', { n: models.length, added }) };
     message.success(t('settings.aiModelsFetched', { n: models.length, added }));
   } catch (err) {
-    fresh(name, e).status = { ok: false, text: errorMessage(err) };
-    message.error(errorMessage(err));
+    fresh(name, e).status = { ok: false, text: serverText(errorMessage(err)) };
+    message.error(serverText(errorMessage(err)));
   } finally {
     aiBusy.value = null;
   }

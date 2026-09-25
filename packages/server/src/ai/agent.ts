@@ -22,7 +22,7 @@ import { atomicWrite, HttpError } from '../util/fs.js';
 import type { ProblemRef } from '../workspace/problems.js';
 import type { WsHub } from '../ws.js';
 import { reviewKickoff, reviewSystemPrompt, systemPrompt } from './prompts.js';
-import { createProvider, defaultModel, ToolInputParseError, type AgentMessage, type Block } from './provider.js';
+import { cleanApiError, createProvider, defaultModel, ToolInputParseError, type AgentMessage, type Block } from './provider.js';
 import { Sandbox } from './sandbox.js';
 import { clip, runTool, toolsFor, WRITE_TOOLS } from './tools.js';
 import { localChecks } from '../judge/checks.js';
@@ -396,7 +396,7 @@ export class AgentService {
         }
       } else {
         l.state = 'error';
-        l.error = (e as Error).message;
+        l.error = cleanApiError(e);
         this.notice(l, 'error', l.error);
       }
     }

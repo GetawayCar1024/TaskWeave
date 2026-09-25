@@ -91,6 +91,11 @@ const RULES: Rule[] = [
   [/^buildPackage: ([\s\S]+)$/, (m) => `构建题目包：${m[1]}`],
   [/^(.+) — create the testset "(.+)" on Polygon first \(Tests page → testsets\), then push again$/, (m) => `${m[1]} —— 请先在 Polygon 的 Tests 页面建好测试集“${m[2]}”，再重新推送`],
 
+  // ---- AI endpoints ----
+  [/^This endpoint does not provide a model list \(([\s\S]*)\)\. Enter the model names by hand, then use Test connection\.$/, (m, tr) => `这个端点不提供模型列表（${tr(m[1])}）。请手动填写模型名称，再点“测试连接”确认。`],
+  [/^HTTP (\d+): the server returned a web page(?: \((.+)\))? instead of an API response$/, (m) => `HTTP ${m[1]}：服务器返回的是网页${m[2] ? `（${m[2]}）` : ''}，不是 API 响应`],
+  [/^the server returned a web page(?: \((.+)\))? instead of an API response$/, (m) => `服务器返回的是网页${m[1] ? `（${m[1]}）` : ''}，不是 API 响应`],
+
   // ---- export warnings ----
   [/^no checker configured$/, () => '没有设置检查器'],
   [/^statement language (\w+) has no tutorial$/, (m) => `题面语言 ${m[1]} 没有题解`],

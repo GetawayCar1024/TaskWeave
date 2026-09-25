@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import type { AiTestResult } from '@polyforge/shared';
 import type { RawAiEndpoint } from '../global.js';
 import type { AgentMessage, Block, ChatRequest, ChatResponse, Provider, StopReason } from './provider.js';
-import { ToolInputParseError } from './provider.js';
+import { cleanApiError, ToolInputParseError } from './provider.js';
 
 type Msg = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 
@@ -98,7 +98,11 @@ export class OpenAiProvider implements Provider {
 
   async listModels(): Promise<string[]> {
     const ids: string[] = [];
-    for await (const m of this.client.models.list({ timeout: 20_000, maxRetries: 0 })) ids.push(m.id);
+    try {
+      for await (const m of this.client.models.list({ timeout: 20_000, maxRetries: 0 })) ids.push(m.id);
+    } catch (e) {
+      throw new Error(cleanApiError(e));
+    }
     return ids;
   }
 
@@ -108,7 +112,7 @@ export class OpenAiProvider implements Provider {
       const r = await this.client.chat.completions.create({ model, messages: [{ role: 'user', content: 'Reply with the single word: pong' }] }, { timeout: 60_000, maxRetries: 0 });
       return { ok: true, ms: Date.now() - t0, reply: (r.choices[0]?.message.content ?? '').trim().slice(0, 100) };
     } catch (e) {
-      return { ok: false, ms: Date.now() - t0, error: e instanceof OpenAI.APIError ? `${e.status ?? ''} ${e.message}`.trim() : (e as Error).message };
+      return { ok: false, ms: Date.now() - t0, error: cleanApiError(e) };
     }
   }
 }
