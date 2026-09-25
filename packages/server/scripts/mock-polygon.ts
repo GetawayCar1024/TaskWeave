@@ -22,6 +22,8 @@ interface Test {
   group?: string;
   points?: number;
   useInStatements?: boolean;
+  inputForStatement?: string;
+  outputForStatement?: string;
 }
 
 interface Testset {
@@ -228,7 +230,7 @@ function handle(method: string, a: Record<string, string>, files: Record<string,
     case 'problem.tests':
       return Object.values(set(get()).tests)
         .sort((x, y) => x.index - y.index)
-        .map((t) => ({ index: t.index, manual: t.manual, input: t.manual ? t.input : undefined, group: t.group ?? '', points: t.points ?? 0, useInStatements: !!t.useInStatements, description: '' }));
+        .map((t) => ({ index: t.index, manual: t.manual, input: t.manual ? t.input : undefined, group: t.group ?? '', points: t.points ?? 0, useInStatements: !!t.useInStatements, description: '', inputForStatement: t.inputForStatement ?? '', outputForStatement: t.outputForStatement ?? '' }));
     case 'problem.testInput': {
       const t = set(get()).tests[Number(a.testIndex)];
       if (!t) throw new Fail('testIndex: not found');
@@ -245,6 +247,8 @@ function handle(method: string, a: Record<string, string>, files: Record<string,
         t.points = Number(a.testPoints);
       }
       if (a.testUseInStatements !== undefined) t.useInStatements = bool(a.testUseInStatements);
+      if (a.testInputForStatements !== undefined) t.inputForStatement = a.testInputForStatements;
+      if (a.testOutputForStatements !== undefined) t.outputForStatement = a.testOutputForStatements;
       touch(p);
       return null;
     }
