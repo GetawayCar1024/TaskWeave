@@ -79,12 +79,15 @@ const exporting = ref(false);
 const exportOptions = computed(() => [
   { key: 'html', label: 'HTML' },
   { key: 'tex', label: 'TeX' },
+  // PDF: the browser's print dialog ("Save as PDF"), which matches this page.
+  { key: 'pdf', label: 'PDF' },
 ]);
 const baseName = () => `${detail.value?.summary.name ?? props.id}-${doc.value}-${lang.value}`;
 async function onExport(key: string) {
   exporting.value = true;
   try {
     if (key === 'tex') await api.contestTex(props.id, lang.value, doc.value, pageBreaks.value);
+    else if (key === 'pdf') print();
     else await exportHtml();
   } catch (e) {
     message.error(serverText(errorMessage(e)));
@@ -143,6 +146,16 @@ ${css}
 </head>
 <body>
 ${clone.outerHTML}
+<script>
+// Hovering a test case line highlights that case in the input and the output box.
+document.addEventListener('mouseover', (e) => toggle(e, true));
+document.addEventListener('mouseout', (e) => toggle(e, false));
+function toggle(e, on) {
+  const line = e.target.closest && e.target.closest('.test-example-line[data-case]');
+  if (!line) return;
+  line.closest('.sample').querySelectorAll('.test-example-line[data-case="' + line.dataset.case + '"]').forEach((el) => el.classList.toggle('hl', on));
+}
+<\/script>
 </body>
 </html>
 `;

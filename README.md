@@ -151,7 +151,7 @@ problem = "a-plus-b"
 - 比赛页：题目表（编号、标题、限制、完成度、Polygon 绑定），可添加、移除、调整顺序（编号随顺序重排）。
 - 批量操作，逐题执行，每题单独给出结果和详情：生成测试、运行 invocation（全部非 NR 的解，检查是否符合 tag）、本地检查、导出比赛包（`contest.xml` + `problems/<短名>/` 下的完整 package）、推送到 Polygon（推送所有改动并 commit；Polygon 上被改过的题会跳过并提示先拉取）。
 - 题面汇总：某一语言的全部题面或全部题解（两份文档分开生成），与预览相同的 Codeforces 样式，A4、20 mm 页边距、页脚为页码；用“打印”在浏览器里打印或另存为 PDF。缺少该语言题面或题解的题会标出来。
-- 导出：题面汇总页的“导出”可以存为 HTML（与预览相同、自包含，图片内嵌，公式字体从 KaTeX CDN 加载）或 TeX（不依赖 olymp.sty 的独立 `.tex`，展开 defs 宏，中文用 ctex、需 XeLaTeX 编译；有图片时为含图片的 zip）。
+- 导出：题面汇总页的“导出”可以存为 HTML（与预览相同、自包含，图片内嵌，样例悬停高亮，公式字体从 KaTeX CDN 加载）、PDF（打开打印对话框，另存为 PDF）或 TeX（不依赖 olymp.sty 的独立 `.tex`，展开 defs 宏，中文用 ctex、需 XeLaTeX 编译；有图片时为含图片的 zip）。
 
 ## 结构
 
