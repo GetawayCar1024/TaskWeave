@@ -20,7 +20,7 @@ import StatusBar from '../components/StatusBar.vue';
 import StressDialog from '../components/StressDialog.vue';
 import { waitJob } from '../lib/jobs';
 import { confirmDeleteProblem } from '../lib/deleteProblem';
-import { ArrowLeft, ChevronDown, Command as CommandIcon } from 'lucide-vue-next';
+import { ArrowLeft, ChevronDown, Command as CommandIcon, Trash2 } from 'lucide-vue-next';
 import { patchSettings } from '../lib/settings';
 import type { PackageResult } from '../lib/types';
 import { useAi } from '../lib/ai';
@@ -98,8 +98,6 @@ const moreOptions = computed(() => [
   { type: 'divider', key: 'd1' },
   { key: 'palette', label: `${t('palette.title')}  (Ctrl+K)` },
   { key: 'shortcuts', label: `${t('shortcuts.title')}  (Ctrl+/)` },
-  { type: 'divider', key: 'd2' },
-  { key: 'delete', label: t('problem.delete'), props: { style: 'color: #e88080' } },
 ]);
 
 function onMore(key: string) {
@@ -108,11 +106,12 @@ function onMore(key: string) {
   else if (key === 'selftest') rightTab.value = 'selftest';
   else if (key === 'palette') showPalette.value = true;
   else if (key === 'shortcuts') showShortcuts.value = true;
-  else if (key === 'delete') {
-    confirmDeleteProblem(dialog, message, props.id).then((ok) => {
-      if (ok) router.push({ name: 'problems' });
-    });
-  }
+}
+
+function deleteProblem() {
+  confirmDeleteProblem(dialog, message, props.id).then((ok) => {
+    if (ok) goBack();
+  });
 }
 
 const commands = computed<Command[]>(() => {
@@ -428,6 +427,7 @@ onBeforeUnmount(() => {
           </template>
           {{ t('palette.title') }} (Ctrl+K)
         </n-tooltip>
+        <n-button size="small" quaternary :title="t('problem.delete')" @click="deleteProblem"><trash2 :size="15" /></n-button>
       </template>
     </app-header>
 

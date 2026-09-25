@@ -18,6 +18,7 @@ import {
   NSpace,
   NTag,
   NTooltip,
+  useDialog,
   useMessage,
   type DataTableColumns,
 } from 'naive-ui';
@@ -42,6 +43,7 @@ import AppHeader from '../components/AppHeader.vue';
 import { api, errorMessage } from '../lib/api';
 import { problemTitle } from '../lib/format';
 import { waitJob } from '../lib/jobs';
+import { confirmDeleteContest } from '../lib/deleteProblem';
 import { checklist, progress } from '../lib/progress';
 import { onWs } from '../lib/ws';
 
@@ -156,13 +158,11 @@ async function saveEdit() {
     message.error(errorMessage(e));
   }
 }
-async function deleteContest() {
-  try {
-    await api.deleteContest(props.id);
-    router.push({ name: 'problems', query: { tab: 'contests' } });
-  } catch (e) {
-    message.error(errorMessage(e));
-  }
+const dialog = useDialog();
+function deleteContest() {
+  confirmDeleteContest(dialog, message, props.id, title.value).then((ok) => {
+    if (ok) router.push({ name: 'problems', query: { tab: 'contests' } });
+  });
 }
 
 // ---- batch actions ----
@@ -311,10 +311,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
           <template #icon><file-text /></template>{{ t('contest.statements') }}
         </n-button>
         <n-button size="small" quaternary :disabled="!summary" :title="t('contest.edit')" @click="openEdit"><pencil :size="15" /></n-button>
-        <n-popconfirm @positive-click="deleteContest">
-          <template #trigger><n-button size="small" quaternary :title="t('contest.delete')"><trash2 :size="15" /></n-button></template>
-          {{ t('contest.deleteConfirm') }}
-        </n-popconfirm>
+        <n-button size="small" quaternary :title="t('contest.delete')" @click="deleteContest"><trash2 :size="15" /></n-button>
       </template>
     </app-header>
 

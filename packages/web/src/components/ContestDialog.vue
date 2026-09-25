@@ -64,7 +64,7 @@ async function submit() {
     emit('update:show', false);
     emit('created', r.contest);
   } catch (e) {
-    message.error(errorMessage(e));
+    message.error(serverText(errorMessage(e)));
   } finally {
     busy.value = false;
   }

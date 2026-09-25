@@ -61,7 +61,7 @@ async function submit() {
     emit('update:show', false);
     emit('imported', done.result as ProblemSummary);
   } catch (e) {
-    message.error(errorMessage(e));
+    message.error(serverText(errorMessage(e)));
   } finally {
     busy.value = false;
   }

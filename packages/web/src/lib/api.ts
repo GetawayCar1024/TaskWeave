@@ -176,6 +176,8 @@ export const api = {
   contestStatements: (id: string, lang: string) => request<ContestStatement[]>('GET', `/contests/${pid(id)}/statements?lang=${encodeURIComponent(lang)}`),
   contestBatch: (id: string, req: ContestBatchRequest) => request<JobInfo>('POST', `/contests/${pid(id)}/batch`, req),
   importContest: (req: ContestImportRequest) => request<JobInfo>('POST', '/contests/import/polygon', req),
+  contestPdf: (id: string, lang: string, doc: string, file: string) =>
+    download(`/api/contests/${pid(id)}/pdf?lang=${encodeURIComponent(lang)}&doc=${encodeURIComponent(doc)}`, file),
   downloadContestExport: (id: string, file: string) => download(`/api/contests/${pid(id)}/export/${encodeURIComponent(file)}`, file),
 
   // ---- AI (M4) ----

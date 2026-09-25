@@ -27,3 +27,29 @@ export function confirmDeleteProblem(dialog: ReturnType<typeof useDialog>, messa
     });
   });
 }
+
+/** Confirm, then delete the contest (only contest.toml; its problems stay). Resolves true when deleted. */
+export function confirmDeleteContest(dialog: ReturnType<typeof useDialog>, message: ReturnType<typeof useMessage>, id: string, title: string): Promise<boolean> {
+  const t = i18n.global.t as (k: string, p?: Record<string, unknown>) => string;
+  return new Promise((resolve) => {
+    dialog.warning({
+      title: t('contest.deleteTitle', { name: title }),
+      content: t('contest.deleteConfirm'),
+      positiveText: t('contest.delete'),
+      negativeText: t('common.cancel'),
+      onPositiveClick: async () => {
+        try {
+          await api.deleteContest(id);
+          message.success(t('contest.deleted'));
+          resolve(true);
+        } catch (e) {
+          message.error(errorMessage(e));
+          resolve(false);
+        }
+      },
+      onNegativeClick: () => resolve(false),
+      onClose: () => resolve(false),
+      onMaskClick: () => resolve(false),
+    });
+  });
+}

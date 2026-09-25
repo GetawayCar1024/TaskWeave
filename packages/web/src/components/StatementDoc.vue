@@ -43,7 +43,9 @@ const zh = () => props.lang === 'zh';
   <div class="statement-doc" :class="{ paper }">
     <template v-if="mode === 'tutorial'">
       <div class="header">
-        <div class="title"><template v-if="index">{{ index }}. </template>{{ title }} — {{ heading('tutorial') }}</div>
+        <!-- On paper the document title already says Tutorial: problems get just their name. -->
+        <div v-if="paper" class="paper-title"><template v-if="index">{{ index }}. </template>{{ title }}</div>
+        <div v-else class="title"><template v-if="index">{{ index }}. </template>{{ title }} — {{ heading('tutorial') }}</div>
         <div v-if="note" class="limits">{{ note }}</div>
       </div>
       <div v-if="sections.tutorial" class="section" v-html="sections.tutorial" />
@@ -268,6 +270,9 @@ const zh = () => props.lang === 'zh';
 }
 .paper :deep(.katex) {
   font-size: 1.05em;
+}
+.paper .header {
+  text-align: left;
 }
 .paper-header {
   margin-bottom: 1em;

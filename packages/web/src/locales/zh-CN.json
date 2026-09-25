@@ -556,7 +556,7 @@
     "statements": "题面汇总",
     "edit": "比赛设置",
     "delete": "删除比赛",
-    "deleteConfirm": "删除 contest.toml？题目本身不受影响。",
+    "deleteConfirm": "只删除比赛本身，题目不受影响。",
     "pushConfirm": "推送 {n} 道题的改动并提交到 Polygon？",
     "batchBad": "{n} 道题未通过",
     "action": {
@@ -584,7 +584,11 @@
     "docStatements": "题面",
     "docTutorials": "题解",
     "noTutorials": "还没有题解",
-    "problemsRoot": "题目导入到"
+    "problemsRoot": "题目导入到",
+    "deleteTitle": "删除比赛 {name}？",
+    "deleted": "比赛已删除",
+    "printPaper": "打印",
+    "exportPdf": "导出 PDF"
   },
   "testsets": {
     "title": "测试集与子任务",

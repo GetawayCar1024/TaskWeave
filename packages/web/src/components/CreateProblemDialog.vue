@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { serverText } from '../lib/serverText';
 import { NModal, NForm, NFormItem, NInput, NInputNumber, NSwitch, NSelect, NButton, NSpace, useMessage } from 'naive-ui';
 import { PROBLEM_NAME_RE, type ProblemSummary } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
@@ -37,7 +38,7 @@ async function submit() {
     emit('update:show', false);
     emit('created', p);
   } catch (e) {
-    message.error(errorMessage(e));
+    message.error(serverText(errorMessage(e)));
   } finally {
     busy.value = false;
   }

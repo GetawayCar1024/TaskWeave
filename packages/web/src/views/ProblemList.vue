@@ -14,7 +14,7 @@ import { problemTitle } from '../lib/format';
 import { checklist, progress } from '../lib/progress';
 import { Anvil, Check, Circle, LayoutGrid, List, Trash2 } from 'lucide-vue-next';
 import { useDialog } from 'naive-ui';
-import { confirmDeleteProblem } from '../lib/deleteProblem';
+import { confirmDeleteContest, confirmDeleteProblem } from '../lib/deleteProblem';
 
 const { t, locale } = useI18n();
 const router = useRouter();
@@ -96,6 +96,11 @@ const contestsOf = computed(() => {
   return m;
 });
 const dialog = useDialog();
+function deleteContest(c: ContestSummary) {
+  confirmDeleteContest(dialog, message, c.id, problemTitle(c.title, locale.value) || c.name).then((ok) => {
+    if (ok) load();
+  });
+}
 function deleteProblem(p: ProblemSummary) {
   const inContests = (contestsOf.value.get(p.id) ?? []).map((c) => c.label);
   confirmDeleteProblem(dialog, message, p.id, inContests).then((ok) => {
@@ -165,6 +170,7 @@ function openContest(c: ContestSummary) {
             </template>
             <template #header-extra>
               <n-tag v-if="c.polygonId" size="small" :bordered="false">#{{ c.polygonId }}</n-tag>
+              <n-button size="tiny" quaternary class="card-del" :title="t('contest.delete')" @click.stop="deleteContest(c)"><trash2 :size="13" /></n-button>
             </template>
             <div v-if="c.error" class="error">{{ c.error }}</div>
             <n-progress

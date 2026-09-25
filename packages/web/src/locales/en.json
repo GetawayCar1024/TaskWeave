@@ -556,7 +556,7 @@
     "statements": "Statements",
     "edit": "Contest settings",
     "delete": "Delete contest",
-    "deleteConfirm": "Delete contest.toml? The problems are not affected.",
+    "deleteConfirm": "Only the contest is deleted; its problems are not affected.",
     "pushConfirm": "Push and commit the changes of {n} problem(s) to Polygon?",
     "batchBad": "{n} problem(s) did not pass",
     "action": {
@@ -584,7 +584,11 @@
     "docStatements": "Statements",
     "docTutorials": "Tutorials",
     "noTutorials": "No tutorials yet",
-    "problemsRoot": "Import problems to"
+    "problemsRoot": "Import problems to",
+    "deleteTitle": "Delete contest {name}?",
+    "deleted": "Contest deleted",
+    "printPaper": "Print",
+    "exportPdf": "Export PDF"
   },
   "testsets": {
     "title": "Testsets and groups",

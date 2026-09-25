@@ -4,7 +4,8 @@ import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { NAlert, NButton, NRadioButton, NRadioGroup, NSpin, NSwitch, NTag, useMessage } from 'naive-ui';
 import 'katex/dist/katex.min.css';
-import { ArrowLeft, Printer } from 'lucide-vue-next';
+import { ArrowLeft, FileDown, Printer } from 'lucide-vue-next';
+import { serverText } from '../lib/serverText';
 import { STATEMENT_SECTIONS, type ContestDetail, type ContestStatement, type StatementSection } from '@polyforge/shared';
 import StatementDoc from '../components/StatementDoc.vue';
 import { api, errorMessage, rawUrl } from '../lib/api';
@@ -25,10 +26,10 @@ const detail = ref<ContestDetail | null>(null);
 const statements = ref<ContestStatement[]>([]);
 const macros = shallowRef<MacroTable>(new Map());
 const loading = ref(true);
-const lang = ref(localStorage.getItem('polyforge-print-lang') ?? 'zh');
+const lang = ref((typeof route.query.lang === 'string' && route.query.lang) || localStorage.getItem('polyforge-print-lang') || 'zh');
 /** Which document: the problem statements or the tutorials (kept in the URL). */
 const doc = ref<'statements' | 'tutorials'>(route.query.doc === 'tutorials' ? 'tutorials' : 'statements');
-watch(doc, (d) => router.replace({ query: d === 'tutorials' ? { doc: d } : {} }));
+watch(doc, (d) => router.replace({ query: { ...route.query, doc: d === 'tutorials' ? d : undefined } }));
 const pageBreaks = ref(true);
 
 const langs = computed(() => {
@@ -71,6 +72,19 @@ const problemsMissing = computed(() => rendered.value.filter((r) => !r.hasStatem
 const tutorialsMissing = computed(() => rendered.value.filter((r) => r.hasStatement && !r.hasTutorial).map((r) => r.s.index));
 
 const print = () => window.print();
+// The PDF is made by a headless Edge / Chrome on this page, so it has the page's own
+// A4 size and margins and none of the print dialog's headers and footers.
+const exporting = ref(false);
+async function exportPdf() {
+  exporting.value = true;
+  try {
+    await api.contestPdf(props.id, lang.value, doc.value, `${detail.value?.summary.name ?? props.id}-${doc.value}-${lang.value}.pdf`);
+  } catch (e) {
+    message.error(serverText(errorMessage(e)));
+  } finally {
+    exporting.value = false;
+  }
+}
 const contestTitle = computed(() => detail.value?.summary.title[lang.value] || detail.value?.summary.title.en || detail.value?.summary.name || '');
 const docTitle = computed(() => (doc.value === 'tutorials' ? `${contestTitle.value} — ${lang.value === 'zh' ? '题解' : 'Tutorial'}` : contestTitle.value));
 const shown = computed(() => rendered.value.filter((r) => (doc.value === 'tutorials' ? r.hasTutorial : r.hasStatement)));
@@ -120,7 +134,8 @@ onBeforeUnmount(() => {
         {{ t('contest.noTutorialIn', { lang, list: tutorialsMissing.join(', ') }) }}
       </n-tag>
       <span class="grow" />
-      <n-button size="small" type="primary" @click="print"><template #icon><printer /></template>{{ t('contest.print') }}</n-button>
+      <n-button size="small" @click="print"><template #icon><printer /></template>{{ t('contest.printPaper') }}</n-button>
+      <n-button size="small" type="primary" :loading="exporting" @click="exportPdf"><template #icon><file-down /></template>{{ t('contest.exportPdf') }}</n-button>
     </div>
 
     <div v-if="loading && !statements.length" class="center no-print"><n-spin /></div>
