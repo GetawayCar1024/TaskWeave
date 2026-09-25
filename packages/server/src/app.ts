@@ -155,6 +155,37 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return detail;
   });
 
+  /**
+   * Delete a problem: its folder is moved to <global>/trash/<name>-<time> (restore by
+   * moving it back). Contests keep their reference, shown as a missing problem.
+   */
+  app.delete<{ Params: { id: string } }>('/api/problems/:id', async (req) => {
+    const ref = await registry.get(req.params.id);
+    const busy = deps.jobs.list(ref.id).find((j) => j.status === 'running');
+    if (busy) throw new HttpError(409, 'busy', `A ${busy.kind} job is running for this problem`);
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
+    const dest = path.join(global.dir, 'trash', `${path.basename(ref.dir)}-${stamp}`);
+    await fsp.mkdir(path.dirname(dest), { recursive: true });
+    // The watcher holds directory handles on Windows; stop it while moving.
+    await watcher.stop();
+    try {
+      await fsp.rename(ref.dir, dest).catch(async (e: NodeJS.ErrnoException) => {
+        if (e.code !== 'EXDEV') throw e;
+        // Different drive: copy, then remove.
+        await fsp.cp(ref.dir, dest, { recursive: true });
+        await fsp.rm(ref.dir, { recursive: true, force: true });
+      });
+    } catch (e) {
+      throw new HttpError(500, 'delete_failed', `Could not move the problem folder: ${(e as Error).message}`);
+    } finally {
+      await watcher.start();
+    }
+    await registry.scan();
+    hub.broadcast({ type: 'problems:changed' });
+    hub.broadcast({ type: 'contests:changed' });
+    return { ok: true, trash: dest };
+  });
+
   type FileParams = { Params: { id: string; '*': string } };
 
   app.get<FileParams>('/api/problems/:id/files/*', async (req) => {

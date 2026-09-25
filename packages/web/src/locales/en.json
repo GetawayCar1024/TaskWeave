@@ -33,7 +33,12 @@
     "timeLimit": "Time limit",
     "memoryLimit": "Memory limit",
     "interactive": "Interactive",
-    "io": "Input / Output"
+    "io": "Input / Output",
+    "delete": "Delete problem",
+    "deleteTitle": "Delete problem {id}?",
+    "deleteBody": "The problem folder is moved to the trash folder in the global directory; move it back to restore it.",
+    "deleteInContests": "It is in these contests: {list}. They will show it as missing.",
+    "deleted": "Deleted; the folder was moved to {path}"
   },
   "list": {
     "search": "Search problems…",
@@ -99,9 +104,33 @@
     "aiName": "Name",
     "aiModels": "Models (comma-separated, first is the default)",
     "aiFetchModels": "Fetch models",
-    "aiModelsFetched": "Fetched {n} models",
+    "aiModelsFetched": "{n} models fetched, {added} new, saved",
     "aiCompatible": "compatible",
-    "aiDefault": "Default endpoint / model"
+    "aiDefault": "Default endpoint / model",
+    "prices": "Prices",
+    "priceModel": "Model",
+    "priceInput": "Input",
+    "priceOutput": "Output",
+    "priceCacheRead": "Cache read",
+    "priceCacheWrite": "Cache write",
+    "priceOther": "Other models (*)",
+    "priceAdd": "Add price",
+    "priceHint": "Per million tokens. Empty cache prices: Anthropic bills 0.1× (read) and 1.25× (write) the input price; other protocols the input price.",
+    "usage": "Usage and cost",
+    "usageRefresh": "Refresh",
+    "usageClear": "Clear",
+    "usageClearConfirm": "Delete all usage records?",
+    "usageRequests": "Requests",
+    "usageCost": "Cost",
+    "usageNoPrice": "no price set",
+    "usagePartial": "partly unpriced",
+    "usageByModel": "By model",
+    "usageByProblem": "By problem",
+    "usagePeriod": {
+      "today": "Today",
+      "month": "This month",
+      "all": "All time"
+    }
   },
   "editor": {
     "changedOnDisk": "This file changed on disk while you have unsaved changes.",
@@ -417,7 +446,10 @@
       "config": "config",
       "other": "other"
     },
-    "reviewIntro": "Read-only check of the statement, validator, checker, solutions and tests; lists every issue found."
+    "reviewIntro": "Read-only check of the statement, validator, checker, solutions and tests; lists every issue found.",
+    "usage": "{n} request(s)",
+    "usageTokens": "in {in} · out {out}",
+    "usageNoPrice": "no price set"
   },
   "lint": {
     "title": "Statement check & auto-fix",

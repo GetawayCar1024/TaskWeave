@@ -12,7 +12,11 @@ import type {
   AiSessionSummary,
   AiTranscriptItem,
   CreateAiSessionRequest,
+  AiUsage,
 } from '@polyforge/shared';
+import { addUsage, emptyUsage } from '@polyforge/shared';
+import { recordCost, UsageLog } from './usage.js';
+import type { RawAiEndpoint } from '../global.js';
 import type { Judge } from '../judge/index.js';
 import { atomicWrite, HttpError } from '../util/fs.js';
 import type { ProblemRef } from '../workspace/problems.js';
@@ -48,6 +52,8 @@ interface SessionData {
   plan: AiPlanStep[];
   touched: string[];
   notices: Notice[];
+  /** Token usage by "endpoint\0model" (the model can change during a session). */
+  usage?: Record<string, { endpoint: string; model: string; protocol: string; usage: AiUsage }>;
 }
 
 interface Live {
@@ -68,11 +74,36 @@ const sessionsDir = (ref: ProblemRef) => path.join(ref.dir, '.polyforge', 'ai');
  */
 export class AgentService {
   private live = new Map<string, Live>();
+  readonly usageLog: UsageLog;
 
   constructor(
     private judge: Judge,
     private hub: WsHub,
-  ) {}
+  ) {
+    this.usageLog = new UsageLog(judge.global);
+  }
+
+  /** Total usage of a session and its cost (only when every part has a price in one currency). */
+  private sessionCost(d: SessionData, endpoints: RawAiEndpoint[]): { usage: AiUsage; cost?: number; currency?: string } {
+    let usage = emptyUsage();
+    let cost: number | undefined = 0;
+    let currency: string | undefined;
+    for (const part of Object.values(d.usage ?? {})) {
+      usage = addUsage(usage, part.usage);
+      const c = recordCost(part, endpoints.find((e) => e.name === part.endpoint));
+      if (!c || (currency && currency !== c.currency)) cost = undefined;
+      else if (cost !== undefined) {
+        cost += c.cost;
+        currency = c.currency;
+      }
+    }
+    return usage.requests ? { usage, cost, currency: cost !== undefined ? currency : undefined } : { usage };
+  }
+
+  private async withCost<T extends AiSessionSummary>(l: Live, s: T): Promise<T> {
+    const c = this.sessionCost(l.data, await this.judge.global.aiEndpointsRaw());
+    return { ...s, usage: c.usage, cost: c.cost, currency: c.currency };
+  }
 
   private key(problemId: string, sid: string) {
     return `${problemId}\0${sid}`;
@@ -80,6 +111,21 @@ export class AgentService {
 
   private emit(l: Live, event: AiEvent) {
     this.hub.broadcast({ type: 'ai:event', problemId: l.data.problemId, sessionId: l.data.id, event });
+  }
+
+  /** Add one request's tokens to the session and the global log, and tell the UI. */
+  private async recordUsage(l: Live, ep: RawAiEndpoint, u: { input: number; output: number; cacheRead?: number; cacheWrite?: number }) {
+    const d = l.data;
+    const usage: AiUsage = { requests: 1, input: u.input, output: u.output, cacheRead: u.cacheRead ?? 0, cacheWrite: u.cacheWrite ?? 0 };
+    const key = `${ep.name}\0${d.model}`;
+    d.usage ??= {};
+    const part = (d.usage[key] ??= { endpoint: ep.name, model: d.model, protocol: ep.protocol, usage: emptyUsage() });
+    part.usage = addUsage(part.usage, usage);
+    await this.usageLog
+      .append({ at: new Date().toISOString(), endpoint: ep.name, protocol: ep.protocol, model: d.model, problem: d.problemId, session: d.id, usage })
+      .catch(() => {});
+    const c = this.sessionCost(d, await this.judge.global.aiEndpointsRaw());
+    this.emit(l, { type: 'usage', usage: c.usage, cost: c.cost, currency: c.currency });
   }
 
   private async save(l: Live) {
@@ -141,7 +187,7 @@ export class AgentService {
     for (const id of ids) {
       try {
         const l = await this.load(problemId, id);
-        out.push(this.summary(l, l.sandbox.touched.size));
+        out.push(await this.withCost(l, this.summary(l, l.sandbox.touched.size)));
       } catch {
         /* not a session */
       }
@@ -193,7 +239,7 @@ export class AgentService {
 
   private async detail(l: Live): Promise<AiSessionDetail> {
     const changes = await l.sandbox.changes().catch(() => [] as AiChange[]);
-    return { ...this.summary(l, changes.length), transcript: this.transcript(l.data), findingList: l.data.findings ?? [], plan: l.data.plan, error: l.error };
+    return this.withCost(l, { ...this.summary(l, changes.length), transcript: this.transcript(l.data), findingList: l.data.findings ?? [], plan: l.data.plan, error: l.error });
   }
 
   async get(problemId: string, sid: string): Promise<AiSessionDetail> {
@@ -294,6 +340,7 @@ export class AgentService {
             onThinking: (delta) => this.emit(l, { type: 'thinking', delta }),
           });
           parseRetries = 0;
+          if (res.usage) await this.recordUsage(l, ep, res.usage);
         } catch (e) {
           if (e instanceof ToolInputParseError && parseRetries++ < 2) {
             this.notice(l, 'warning', 'The model produced an unreadable tool call; retrying the step.');

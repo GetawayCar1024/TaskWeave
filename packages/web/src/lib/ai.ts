@@ -174,6 +174,9 @@ export function useAi(problemId: string) {
       case 'notice':
         state.live.push({ kind: 'notice', level: ev.level, text: ev.text });
         break;
+      case 'usage':
+        if (state.current) Object.assign(state.current, { usage: ev.usage, cost: ev.cost, currency: ev.currency });
+        break;
       case 'state':
         if (state.current) state.current.state = ev.state;
         // The persisted transcript replaces the live tail once the turn is over.

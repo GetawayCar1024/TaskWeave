@@ -33,7 +33,12 @@
     "timeLimit": "时间限制",
     "memoryLimit": "内存限制",
     "interactive": "交互题",
-    "io": "输入 / 输出"
+    "io": "输入 / 输出",
+    "delete": "删除题目",
+    "deleteTitle": "删除题目 {id}？",
+    "deleteBody": "题目文件夹会移到全局目录的 trash 文件夹里，需要时可以移回来恢复。",
+    "deleteInContests": "它在这些比赛中：{list}。比赛里会显示为找不到的题目。",
+    "deleted": "已删除，文件夹移到了 {path}"
   },
   "list": {
     "search": "搜索题目…",
@@ -99,9 +104,33 @@
     "aiName": "名称",
     "aiModels": "模型（逗号分隔，第一个为默认）",
     "aiFetchModels": "拉取模型列表",
-    "aiModelsFetched": "拉取到 {n} 个模型",
+    "aiModelsFetched": "拉取到 {n} 个模型，新增 {added} 个，已保存",
     "aiCompatible": "兼容",
-    "aiDefault": "默认端点 / 模型"
+    "aiDefault": "默认端点 / 模型",
+    "prices": "价格",
+    "priceModel": "模型",
+    "priceInput": "输入",
+    "priceOutput": "输出",
+    "priceCacheRead": "缓存读取",
+    "priceCacheWrite": "缓存写入",
+    "priceOther": "其他模型（*）",
+    "priceAdd": "添加价格",
+    "priceHint": "单位：每百万 token。缓存价格留空时，Anthropic 按输入价的 0.1 倍（读取）和 1.25 倍（写入）计算，其他协议按输入价计算。",
+    "usage": "用量与费用",
+    "usageRefresh": "刷新",
+    "usageClear": "清空统计",
+    "usageClearConfirm": "清空所有用量记录？",
+    "usageRequests": "请求数",
+    "usageCost": "费用",
+    "usageNoPrice": "未设置价格",
+    "usagePartial": "部分未计价",
+    "usageByModel": "按模型",
+    "usageByProblem": "按题目",
+    "usagePeriod": {
+      "today": "今天",
+      "month": "本月",
+      "all": "全部"
+    }
   },
   "editor": {
     "changedOnDisk": "此文件已在磁盘上被修改，而你有未保存的更改。",
@@ -417,7 +446,10 @@
       "config": "配置",
       "other": "其他"
     },
-    "reviewIntro": "只读检查题面、校验器、检查器、解法和测试，并逐条列出问题。"
+    "reviewIntro": "只读检查题面、校验器、检查器、解法和测试，并逐条列出问题。",
+    "usage": "{n} 次请求",
+    "usageTokens": "输入 {in} · 输出 {out}",
+    "usageNoPrice": "未设置价格"
   },
   "lint": {
     "title": "题面检查与自动修复",

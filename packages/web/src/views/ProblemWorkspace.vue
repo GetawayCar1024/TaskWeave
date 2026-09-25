@@ -19,6 +19,7 @@ import ShortcutsDialog from '../components/ShortcutsDialog.vue';
 import StatusBar from '../components/StatusBar.vue';
 import StressDialog from '../components/StressDialog.vue';
 import { waitJob } from '../lib/jobs';
+import { confirmDeleteProblem } from '../lib/deleteProblem';
 import { ArrowLeft, ChevronDown, Command as CommandIcon } from 'lucide-vue-next';
 import { patchSettings } from '../lib/settings';
 import type { PackageResult } from '../lib/types';
@@ -86,6 +87,8 @@ const moreOptions = computed(() => [
   { type: 'divider', key: 'd1' },
   { key: 'palette', label: `${t('palette.title')}  (Ctrl+K)` },
   { key: 'shortcuts', label: `${t('shortcuts.title')}  (Ctrl+/)` },
+  { type: 'divider', key: 'd2' },
+  { key: 'delete', label: t('problem.delete'), props: { style: 'color: #e88080' } },
 ]);
 
 function onMore(key: string) {
@@ -94,6 +97,11 @@ function onMore(key: string) {
   else if (key === 'selftest') rightTab.value = 'selftest';
   else if (key === 'palette') showPalette.value = true;
   else if (key === 'shortcuts') showShortcuts.value = true;
+  else if (key === 'delete') {
+    confirmDeleteProblem(dialog, message, props.id).then((ok) => {
+      if (ok) router.push({ name: 'problems' });
+    });
+  }
 }
 
 const commands = computed<Command[]>(() => {

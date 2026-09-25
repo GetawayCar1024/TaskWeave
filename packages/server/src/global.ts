@@ -14,6 +14,9 @@ import {
   type AiEndpoint,
   type AiProtocol,
   type SaveAiEndpoint,
+  CURRENCIES,
+  type EndpointPricing,
+  type ModelPrice,
 } from '@polyforge/shared';
 
 export interface RawAiEndpoint {
@@ -22,6 +25,7 @@ export interface RawAiEndpoint {
   baseUrl: string;
   apiKey: string;
   models: string[];
+  pricing?: EndpointPricing;
 }
 
 export const DEFAULT_POLYGON_API = 'https://polygon.codeforces.com/api/';
@@ -153,6 +157,7 @@ export class GlobalStore {
         baseUrl: String(e.base_url ?? ''),
         apiKey: String(e.api_key ?? ''),
         models: Array.isArray(e.models) ? e.models.map(String) : [],
+        pricing: readPricing(e),
       }));
   }
 
@@ -180,7 +185,7 @@ export class GlobalStore {
       if (!AI_PROTOCOLS.includes(e.protocol)) throw new HttpError(400, 'bad_endpoint', `Unknown protocol: ${e.protocol}`);
       const prev = old.find((o) => o.name === (e.previousName ?? name));
       const apiKey = e.apiKey?.trim() || prev?.apiKey || '';
-      return { name, protocol: e.protocol, base_url: e.baseUrl?.trim() || '', api_key: apiKey, models: e.models.map((m) => m.trim()).filter(Boolean) };
+      return { name, protocol: e.protocol, base_url: e.baseUrl?.trim() || '', api_key: apiKey, models: e.models.map((m) => m.trim()).filter(Boolean), ...writePricing(e.pricing) };
     });
     const doc = await this.readSecrets();
     doc.ai = { ...(doc.ai ?? {}), endpoints };
@@ -224,4 +229,29 @@ export function samePath(a: string, b: string): boolean {
   const na = path.resolve(a);
   const nb = path.resolve(b);
   return process.platform === 'win32' ? na.toLowerCase() === nb.toLowerCase() : na === nb;
+}
+
+/** [[ai.endpoints]] currency = "USD" and [ai.endpoints.prices."<model>"] input / output / cache_read / cache_write per 1M tokens. */
+function readPricing(e: Record<string, any>): EndpointPricing | undefined {
+  if (!e.prices || typeof e.prices !== 'object') return undefined;
+  const prices: Record<string, ModelPrice> = {};
+  for (const [model, p] of Object.entries(e.prices as Record<string, any>)) {
+    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined);
+    const input = num(p?.input);
+    const output = num(p?.output);
+    if (input === undefined || output === undefined) continue;
+    prices[model] = { input, output, cacheRead: num(p?.cache_read), cacheWrite: num(p?.cache_write) };
+  }
+  return { currency: CURRENCIES.includes(e.currency) ? e.currency : 'USD', prices };
+}
+
+function writePricing(p: EndpointPricing | undefined): Record<string, unknown> {
+  if (!p || !Object.keys(p.prices ?? {}).length) return {};
+  const prices: Record<string, Record<string, number>> = {};
+  for (const [model, v] of Object.entries(p.prices)) {
+    const m = model.trim();
+    if (!m || !(v.input >= 0) || !(v.output >= 0)) continue;
+    prices[m] = { input: Number(v.input), output: Number(v.output), ...(v.cacheRead !== undefined && v.cacheRead !== null ? { cache_read: Number(v.cacheRead) } : {}), ...(v.cacheWrite !== undefined && v.cacheWrite !== null ? { cache_write: Number(v.cacheWrite) } : {}) };
+  }
+  return { currency: CURRENCIES.includes(p.currency) ? p.currency : 'USD', prices };
 }

@@ -58,7 +58,7 @@ function anthropic(body: any, res: http.ServerResponse) {
   res.writeHead(200, { 'content-type': 'text/event-stream' });
   sse(res, 'message_start', {
     type: 'message_start',
-    message: { id: `msg_${assistants.length}`, type: 'message', role: 'assistant', model: body.model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 100, output_tokens: 0 } },
+    message: { id: `msg_${assistants.length}`, type: 'message', role: 'assistant', model: body.model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 100, output_tokens: 0, cache_read_input_tokens: 2000, cache_creation_input_tokens: 300 } },
   });
   let index = 0;
   if (turn.thinking) {
@@ -111,6 +111,10 @@ function openai(body: any, res: http.ServerResponse) {
     for (const part of json.match(/.{1,40}/gs) ?? []) chunk({ tool_calls: [{ index: k, function: { arguments: part } }] });
   }
   chunk({}, turn.tools?.length ? 'tool_calls' : 'stop');
+  // stream_options.include_usage: a final chunk with usage and no choices.
+  if (body.stream_options?.include_usage) {
+    sse(res, null, { id: 'chatcmpl-mock', object: 'chat.completion.chunk', created: 0, model: body.model, choices: [], usage: { prompt_tokens: 1200, completion_tokens: 60, total_tokens: 1260, prompt_tokens_details: { cached_tokens: 1000 } } });
+  }
   sse(res, null, '[DONE]');
   res.end();
 }

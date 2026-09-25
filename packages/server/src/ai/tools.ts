@@ -8,6 +8,7 @@ import { readInvocation, runInvocation } from '../judge/invocation.js';
 import { quickRun } from '../judge/quickrun.js';
 import { runCheckerTests, runValidatorTests } from '../judge/selftest.js';
 import { answerPath, generateTests, inputPath, overviewPath } from '../judge/tests.js';
+import { macroExpansions } from './macros.js';
 import { listShared } from '../sharedFiles.js';
 import { safeJoin } from '../util/fs.js';
 import type { ToolDef } from './provider.js';
@@ -83,10 +84,14 @@ const TOOLS = [
     async run(i, env) {
       const text = (await env.sandbox.read(i.path)).toString('utf8');
       const lines = text.split('\n');
-      if (!i.start_line && !i.end_line) return clip(text, 100_000) || '(empty file)';
+      // Statements: spell out the defs.toml macros used, with their arguments.
+      const st = i.path.match(/^statement\/([a-z]+)\/[^/]+\.tex$/);
+      const expanded = st ? await macroExpansions(env.judge.global.sharedDir, text, st[1]) : [];
+      const note = expanded.length ? `\n\n[PolyForge] Macros in this file and what they expand to (this text is part of the statement):\n${expanded.join('\n')}` : '';
+      if (!i.start_line && !i.end_line) return (clip(text, 100_000) || '(empty file)') + note;
       const a = (i.start_line ?? 1) - 1;
       const b = Math.min(i.end_line ?? lines.length, lines.length);
-      return `${i.path} lines ${a + 1}-${b} of ${lines.length}:\n${lines.slice(a, b).join('\n')}`;
+      return `${i.path} lines ${a + 1}-${b} of ${lines.length}:\n${lines.slice(a, b).join('\n')}${note}`;
     },
   }),
   tool({

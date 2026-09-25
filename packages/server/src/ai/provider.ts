@@ -43,7 +43,8 @@ export interface ChatResponse {
   stopReason: StopReason;
   /** Human-readable detail for refusals / unusual stops. */
   stopDetail?: string;
-  usage?: { input: number; output: number; cacheRead?: number };
+  /** input = uncached input tokens. */
+  usage?: { input: number; output: number; cacheRead?: number; cacheWrite?: number };
 }
 
 export interface Provider {

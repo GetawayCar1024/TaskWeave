@@ -12,6 +12,7 @@ import {
   NFormItem,
   NInput,
   NInputNumber,
+  NPopconfirm,
   NRadioButton,
   NRadioGroup,
   NSpace,
@@ -23,7 +24,7 @@ import {
   useMessage,
   type DataTableColumns,
 } from 'naive-ui';
-import { AI_PROTOCOLS, type AiProtocol, type GlobalConfig, type LanguagesConfig, type SecretsResponse, type ToolProbe } from '@polyforge/shared';
+import { AI_PROTOCOLS, CURRENCIES, type AiProtocol, type Currency, type EndpointPricing, type GlobalConfig, type LanguagesConfig, type SecretsResponse, type ToolProbe, type UsageGroup, type UsageStats } from '@polyforge/shared';
 import AppHeader from '../components/AppHeader.vue';
 import CodeEditor from '../components/CodeEditor.vue';
 import DirPicker from '../components/DirPicker.vue';
@@ -161,6 +162,17 @@ interface EditEndpoint {
   maskedKey: string;
   models: string;
   status?: { ok: boolean; text: string };
+  currency: Currency;
+  prices: PriceRow[];
+  showPrices: boolean;
+}
+/** Prices per 1M tokens; null = not set (cache prices then follow the protocol default). */
+interface PriceRow {
+  model: string;
+  input: number | null;
+  output: number | null;
+  cacheRead: number | null;
+  cacheWrite: number | null;
 }
 const endpoints = ref<EditEndpoint[]>([]);
 const aiBusy = ref<string | null>(null);
@@ -174,7 +186,25 @@ async function loadEndpoints() {
     apiKey: '',
     maskedKey: e.hasKey ? e.apiKey : '',
     models: e.models.join(', '),
+    currency: e.pricing?.currency ?? 'USD',
+    prices: Object.entries(e.pricing?.prices ?? {}).map(([model, p]) => ({ model, input: p.input, output: p.output, cacheRead: p.cacheRead ?? null, cacheWrite: p.cacheWrite ?? null })),
+    showPrices: false,
   }));
+}
+
+function pricingOf(e: EditEndpoint): EndpointPricing | undefined {
+  const rows = e.prices.filter((p) => p.model.trim() && p.input !== null && p.output !== null);
+  if (!rows.length) return undefined;
+  return {
+    currency: e.currency,
+    prices: Object.fromEntries(rows.map((p) => [p.model.trim(), { input: p.input!, output: p.output!, cacheRead: p.cacheRead ?? undefined, cacheWrite: p.cacheWrite ?? undefined }])),
+  };
+}
+function addPrice(e: EditEndpoint) {
+  const used = new Set(e.prices.map((p) => p.model));
+  const model = e.models.split(/[\s,]+/).filter(Boolean).find((m) => !used.has(m)) ?? (used.has('*') ? '' : '*');
+  e.prices.push({ model, input: null, output: null, cacheRead: null, cacheWrite: null });
+  e.showPrices = true;
 }
 
 function addEndpoint(protocol: AiProtocol) {
@@ -185,6 +215,9 @@ function addEndpoint(protocol: AiProtocol) {
     apiKey: '',
     maskedKey: '',
     models: protocol === 'anthropic' ? 'claude-opus-5, claude-sonnet-5' : '',
+    currency: 'USD',
+    prices: [],
+    showPrices: false,
   });
 }
 
@@ -196,10 +229,17 @@ async function saveEndpoints() {
     baseUrl: e.baseUrl,
     apiKey: e.apiKey,
     models: e.models.split(/[\s,]+/).filter(Boolean),
+    pricing: pricingOf(e),
   }));
+  // Keep per-row UI state (status line, open price table) across the reload.
+  const ui = new Map(endpoints.value.map((e) => [e.name, { status: e.status, showPrices: e.showPrices }]));
   await api.saveAiEndpoints(list);
   await loadEndpoints();
+  for (const e of endpoints.value) Object.assign(e, ui.get(e.name) ?? {});
 }
+
+/** Saving reloads the list, so look the endpoint up again afterwards. */
+const fresh = (name: string, fallback: EditEndpoint) => endpoints.value.find((x) => x.name === name) ?? fallback;
 
 async function saveAi() {
   try {
@@ -212,34 +252,62 @@ async function saveAi() {
 }
 
 async function testEndpoint(e: EditEndpoint) {
-  aiBusy.value = e.name;
+  const name = e.name;
+  aiBusy.value = name;
   try {
     await saveEndpoints();
-    const ep = endpoints.value.find((x) => x.name === e.name)!;
-    const r = await api.testAiEndpoint(e.name, ep.models.split(/[\s,]+/).filter(Boolean)[0]);
+    const ep = fresh(name, e);
+    const r = await api.testAiEndpoint(name, ep.models.split(/[\s,]+/).filter(Boolean)[0]);
     ep.status = r.ok ? { ok: true, text: `${r.ms} ms · ${r.reply ?? ''}` } : { ok: false, text: r.error ?? '' };
+    if (!r.ok) message.error(r.error ?? t('settings.failed'));
   } catch (err) {
-    e.status = { ok: false, text: errorMessage(err) };
+    fresh(name, e).status = { ok: false, text: errorMessage(err) };
+    message.error(errorMessage(err));
   } finally {
     aiBusy.value = null;
   }
 }
 
 async function fetchModels(e: EditEndpoint) {
-  aiBusy.value = e.name;
+  const name = e.name;
+  aiBusy.value = name;
   try {
     await saveEndpoints();
-    const ep = endpoints.value.find((x) => x.name === e.name)!;
-    const models = await api.aiModels(e.name);
-    const merged = [...new Set([...ep.models.split(/[\s,]+/).filter(Boolean), ...models])];
+    const models = await api.aiModels(name);
+    const ep = fresh(name, e);
+    const before = ep.models.split(/[\s,]+/).filter(Boolean);
+    const merged = [...new Set([...before, ...models])];
     ep.models = merged.join(', ');
-    ep.status = { ok: true, text: t('settings.aiModelsFetched', { n: models.length }) };
+    // Keep the fetched list.
+    await saveEndpoints();
+    const added = merged.length - before.length;
+    fresh(name, e).status = { ok: true, text: t('settings.aiModelsFetched', { n: models.length, added }) };
+    message.success(t('settings.aiModelsFetched', { n: models.length, added }));
   } catch (err) {
-    e.status = { ok: false, text: errorMessage(err) };
+    fresh(name, e).status = { ok: false, text: errorMessage(err) };
+    message.error(errorMessage(err));
   } finally {
     aiBusy.value = null;
   }
 }
+
+// ---- usage statistics ----
+const usage = ref<UsageStats | null>(null);
+async function loadUsage() {
+  usage.value = await api.aiUsage().catch(() => null);
+}
+async function clearUsage() {
+  await api.clearAiUsage();
+  await loadUsage();
+}
+const fmtTokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n));
+const SYMBOL: Record<string, string> = { USD: '$', CNY: '¥' };
+function fmtCost(g: UsageGroup) {
+  const parts = Object.entries(g.cost).map(([c, v]) => `${SYMBOL[c] ?? c}${(v as number) < 0.01 ? (v as number).toFixed(4) : (v as number).toFixed(2)}`);
+  if (!parts.length) return g.usage.requests ? t('settings.usageNoPrice') : '—';
+  return parts.join(' + ') + (g.unpriced ? ` (${t('settings.usagePartial')})` : '');
+}
+const usageRows = computed(() => (usage.value ? [usage.value.today, usage.value.month, usage.value.all] : []));
 
 const endpointNames = computed(() => endpoints.value.map((e) => ({ label: e.name, value: e.name })));
 
@@ -247,6 +315,7 @@ onMounted(() => {
   loadLanguages().catch((e) => message.error(errorMessage(e)));
   loadSecrets().catch((e) => message.error(errorMessage(e)));
   loadEndpoints().catch((e) => message.error(errorMessage(e)));
+  loadUsage();
 });
 </script>
 
@@ -348,7 +417,35 @@ onMounted(() => {
               <div class="ep-row">
                 <n-button size="tiny" :loading="aiBusy === e.name" :disabled="!e.name" @click="testEndpoint(e)">{{ t('settings.testConnection') }}</n-button>
                 <n-button size="tiny" :loading="aiBusy === e.name" :disabled="!e.name" @click="fetchModels(e)">{{ t('settings.aiFetchModels') }}</n-button>
+                <n-button size="tiny" quaternary @click="e.prices.length ? (e.showPrices = !e.showPrices) : addPrice(e)">
+                  {{ t('settings.prices') }}{{ e.prices.length ? ` (${e.prices.length})` : '' }}
+                </n-button>
                 <span v-if="e.status" class="small status" :class="e.status.ok ? 'good' : 'bad'"><check v-if="e.status.ok" :size="13" /><x v-else :size="13" />{{ e.status.text }}</span>
+              </div>
+              <div v-if="e.showPrices" class="prices">
+                <div class="price-head">
+                  <span>{{ t('settings.priceModel') }}</span><span>{{ t('settings.priceInput') }}</span><span>{{ t('settings.priceOutput') }}</span>
+                  <span>{{ t('settings.priceCacheRead') }}</span><span>{{ t('settings.priceCacheWrite') }}</span>
+                  <n-select v-model:value="e.currency" size="tiny" :options="CURRENCIES.map((c) => ({ label: c, value: c }))" style="width: 80px" />
+                </div>
+                <div v-for="(p, pi) in e.prices" :key="pi" class="price-row">
+                  <n-select
+                    v-model:value="p.model"
+                    size="tiny"
+                    filterable
+                    tag
+                    :options="['*', ...e.models.split(/[\s,]+/).filter(Boolean)].map((m) => ({ label: m === '*' ? t('settings.priceOther') : m, value: m }))"
+                  />
+                  <n-input-number v-model:value="p.input" size="tiny" :min="0" :show-button="false" placeholder="—" />
+                  <n-input-number v-model:value="p.output" size="tiny" :min="0" :show-button="false" placeholder="—" />
+                  <n-input-number v-model:value="p.cacheRead" size="tiny" :min="0" :show-button="false" :placeholder="e.protocol === 'anthropic' ? '×0.1' : '='" />
+                  <n-input-number v-model:value="p.cacheWrite" size="tiny" :min="0" :show-button="false" :placeholder="e.protocol === 'anthropic' ? '×1.25' : '='" />
+                  <n-button size="tiny" quaternary @click="e.prices.splice(pi, 1)">×</n-button>
+                </div>
+                <div class="price-foot">
+                  <n-button size="tiny" dashed @click="addPrice(e)">+ {{ t('settings.priceAdd') }}</n-button>
+                  <span class="small dim">{{ t('settings.priceHint') }}</span>
+                </div>
               </div>
             </div>
             <n-space>
@@ -366,6 +463,61 @@ onMounted(() => {
             <n-space justify="end">
               <n-button type="primary" @click="saveAi">{{ t('common.save') }}</n-button>
             </n-space>
+          </n-card>
+          <n-card size="small" :title="t('settings.usage')" style="margin-top: 12px">
+            <template #header-extra>
+              <n-space size="small">
+                <n-button size="tiny" quaternary @click="loadUsage">{{ t('settings.usageRefresh') }}</n-button>
+                <n-popconfirm @positive-click="clearUsage">
+                  <template #trigger><n-button size="tiny" quaternary type="error">{{ t('settings.usageClear') }}</n-button></template>
+                  {{ t('settings.usageClearConfirm') }}
+                </n-popconfirm>
+              </n-space>
+            </template>
+            <table v-if="usage" class="usage">
+              <thead>
+                <tr>
+                  <th />
+                  <th>{{ t('settings.usageRequests') }}</th>
+                  <th>{{ t('settings.priceInput') }}</th>
+                  <th>{{ t('settings.priceOutput') }}</th>
+                  <th>{{ t('settings.priceCacheRead') }}</th>
+                  <th>{{ t('settings.priceCacheWrite') }}</th>
+                  <th>{{ t('settings.usageCost') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="g in usageRows" :key="g.key">
+                  <td>{{ t(`settings.usagePeriod.${g.key}`) }}</td>
+                  <td>{{ g.usage.requests }}</td>
+                  <td>{{ fmtTokens(g.usage.input) }}</td>
+                  <td>{{ fmtTokens(g.usage.output) }}</td>
+                  <td>{{ fmtTokens(g.usage.cacheRead) }}</td>
+                  <td>{{ fmtTokens(g.usage.cacheWrite) }}</td>
+                  <td><strong>{{ fmtCost(g) }}</strong></td>
+                </tr>
+                <tr v-if="usage.byModel.length" class="sep"><td colspan="7">{{ t('settings.usageByModel') }}</td></tr>
+                <tr v-for="g in usage.byModel" :key="'m' + g.key">
+                  <td class="mono small">{{ g.key }}</td>
+                  <td>{{ g.usage.requests }}</td>
+                  <td>{{ fmtTokens(g.usage.input) }}</td>
+                  <td>{{ fmtTokens(g.usage.output) }}</td>
+                  <td>{{ fmtTokens(g.usage.cacheRead) }}</td>
+                  <td>{{ fmtTokens(g.usage.cacheWrite) }}</td>
+                  <td>{{ fmtCost(g) }}</td>
+                </tr>
+                <tr v-if="usage.byProblem.length" class="sep"><td colspan="7">{{ t('settings.usageByProblem') }}</td></tr>
+                <tr v-for="g in usage.byProblem" :key="'p' + g.key">
+                  <td class="mono small">{{ g.key }}</td>
+                  <td>{{ g.usage.requests }}</td>
+                  <td>{{ fmtTokens(g.usage.input) }}</td>
+                  <td>{{ fmtTokens(g.usage.output) }}</td>
+                  <td>{{ fmtTokens(g.usage.cacheRead) }}</td>
+                  <td>{{ fmtTokens(g.usage.cacheWrite) }}</td>
+                  <td>{{ fmtCost(g) }}</td>
+                </tr>
+              </tbody>
+            </table>
           </n-card>
         </n-tab-pane>
         <n-tab-pane name="polygon" tab="Polygon">
@@ -471,6 +623,58 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.prices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0 0;
+  border-top: 1px dashed rgba(128, 128, 128, 0.3);
+}
+.price-head,
+.price-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.6fr) repeat(4, minmax(70px, 1fr)) 80px;
+  gap: 6px;
+  align-items: center;
+}
+.price-head {
+  font-size: 12px;
+  opacity: 0.7;
+}
+.price-foot {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.dim {
+  opacity: 0.6;
+}
+.usage {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.usage th {
+  text-align: right;
+  font-weight: 500;
+  font-size: 12px;
+  opacity: 0.7;
+  padding: 2px 8px;
+}
+.usage td {
+  text-align: right;
+  padding: 3px 8px;
+}
+.usage td:first-child,
+.usage th:first-child {
+  text-align: left;
+}
+.usage tr.sep td {
+  text-align: left;
+  font-size: 12px;
+  opacity: 0.6;
+  padding-top: 10px;
 }
 .ep-row {
   display: flex;

@@ -27,6 +27,12 @@ export function aiRoutes(app: FastifyInstance, global: GlobalStore, agent: Agent
     }
   });
 
+  app.get('/api/ai/usage', async () => agent.usageLog.stats());
+  app.delete('/api/ai/usage', async () => {
+    await agent.usageLog.clear();
+    return { ok: true };
+  });
+
   type P = { Params: { id: string } };
   type S = { Params: { id: string; sid: string } };
 

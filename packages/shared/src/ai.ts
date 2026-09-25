@@ -1,4 +1,5 @@
 import type { CheckCode, CheckParams } from './checks.js';
+import type { AiUsage, EndpointPricing } from './usage.js';
 export const AI_PROTOCOLS = ['anthropic', 'openai'] as const;
 export type AiProtocol = (typeof AI_PROTOCOLS)[number];
 
@@ -11,6 +12,7 @@ export interface AiEndpoint {
   apiKey: string;
   hasKey: boolean;
   models: string[];
+  pricing?: EndpointPricing;
 }
 
 export interface SaveAiEndpoint {
@@ -20,6 +22,7 @@ export interface SaveAiEndpoint {
   /** Empty keeps the stored key (matched by `previousName ?? name`). */
   apiKey?: string;
   models: string[];
+  pricing?: EndpointPricing;
   /** Set when renaming an endpoint, to carry over its stored key. */
   previousName?: string;
 }
@@ -48,6 +51,10 @@ export interface AiSessionSummary {
   model: string;
   state: AiRunState;
   changes: number;
+  usage?: AiUsage;
+  /** Cost in the endpoint currency, when a price is configured. */
+  cost?: number;
+  currency?: string;
 }
 
 /** Transcript entry for the UI, derived from the stored conversation. */
@@ -100,7 +107,8 @@ export type AiEvent =
   | { type: 'finding'; finding: AiFinding }
   | { type: 'changes'; changes: AiChange[] }
   | { type: 'state'; state: AiRunState; error?: string }
-  | { type: 'notice'; level: 'info' | 'warning' | 'error'; text: string };
+  | { type: 'notice'; level: 'info' | 'warning' | 'error'; text: string }
+  | { type: 'usage'; usage: AiUsage; cost?: number; currency?: string };
 
 export type AiSessionMode = 'agent' | 'review';
 

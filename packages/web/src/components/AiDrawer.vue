@@ -31,6 +31,7 @@ import { languageForPath } from '../lib/monaco';
 import TextDiff from './TextDiff.vue';
 import { Check, ChevronDown, ChevronRight, Circle, Lightbulb, Minus, Play, Plus, RotateCw, Trash2, X } from 'lucide-vue-next';
 import { FALLBACK_TOOL_ICON, TOOL_ICONS } from '../lib/icons';
+import { fmtMoney, fmtTokens } from '../lib/usageFormat';
 import type { Workspace } from '../lib/workspace';
 
 const props = defineProps<{ show: boolean; ai: Ai; problemId: string; ws?: Workspace }>();
@@ -199,6 +200,18 @@ async function review(accept: boolean, paths = [...picked.value]) {
 }
 
 const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } as const;
+
+/** Token breakdown for the usage line tooltip. */
+const usageTitle = computed(() => {
+  const u = s.value.current?.usage;
+  if (!u) return '';
+  return [
+    `${t('settings.priceInput')}: ${fmtTokens(u.input)}`,
+    `${t('settings.priceCacheRead')}: ${fmtTokens(u.cacheRead)}`,
+    `${t('settings.priceCacheWrite')}: ${fmtTokens(u.cacheWrite)}`,
+    `${t('settings.priceOutput')}: ${fmtTokens(u.output)}`,
+  ].join('\n');
+});
 </script>
 
 <template>
@@ -270,6 +283,12 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
               style="flex: 1"
               @update:value="(v: string) => ai.setModel(s.current!.endpoint, v)"
             />
+          </div>
+          <div v-if="s.current?.usage?.requests" class="usage-line" :title="usageTitle">
+            <span>{{ t('ai.usage', { n: s.current.usage.requests }) }}</span>
+            <span>{{ t('ai.usageTokens', { in: fmtTokens(s.current.usage.input + s.current.usage.cacheRead + s.current.usage.cacheWrite), out: fmtTokens(s.current.usage.output) }) }}</span>
+            <strong v-if="s.current.cost !== undefined">{{ fmtMoney(s.current.cost, s.current.currency) }}</strong>
+            <span v-else class="dim">{{ t('ai.usageNoPrice') }}</span>
           </div>
 
           <div v-if="s.current?.plan.length" class="plan">
@@ -379,6 +398,14 @@ const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } 
 </template>
 
 <style scoped>
+.usage-line {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  opacity: 0.8;
+  padding: 0 2px 4px;
+}
 .ai {
   height: 100%;
   display: flex;

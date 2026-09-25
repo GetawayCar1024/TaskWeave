@@ -78,6 +78,8 @@ Answer in the user's language. Be brief: say what you changed and what the tools
 
 let macros: Promise<string> | null = null;
 
+const MACRO_RULES = `A macro stands for its full text: it is part of the statement exactly as if that text were written out, including any constraint it states. Arguments shown as [#k=default] are optional and written in square brackets; missing ones take the default. For example \\DefLimitSum[n][5 \\cdot 10^5] states "It is guaranteed that the sum of $n$ over all test cases does not exceed $5 \\cdot 10^5$". When you read a statement file, read_file lists the macros it uses with their expansions.`;
+
 /** The defs.toml macro list (name, arguments, first sentence of the English body). */
 async function macroList(sharedDir: string): Promise<string> {
   macros ??= (async () => {
@@ -88,7 +90,7 @@ async function macroList(sharedDir: string): Promise<string> {
         .map((c) => {
           const body = (c.body ?? '').replace(/\s+/g, ' ').trim();
           const first = body.split(/(?<=\.)\s/)[0]?.slice(0, 160) ?? '';
-          return `\\${c.name}${(c.args ?? []).map((a, i) => `{#${i + 1}${a ? `=${a}` : ''}}`).join('')} — ${first}`;
+          return `\\${c.name}${(c.args ?? []).map((a, i) => (a ? `[#${i + 1}=${a}]` : `{#${i + 1}}`)).join('')} — ${first}`;
         })
         .join('\n');
     } catch {
@@ -99,7 +101,7 @@ async function macroList(sharedDir: string): Promise<string> {
 }
 
 export async function systemPrompt(sharedDir: string): Promise<string> {
-  return `${BASE}\n\n# Statement macros (defs.toml)\n${await macroList(sharedDir)}`;
+  return `${BASE}\n\n# Statement macros (defs.toml)\n${MACRO_RULES}\n${await macroList(sharedDir)}`;
 }
 
 /** Extra instructions for the AI check (review mode): read, judge, report — never edit. */

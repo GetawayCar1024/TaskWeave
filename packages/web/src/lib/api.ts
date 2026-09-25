@@ -1,6 +1,7 @@
 import type { DefsToml } from './latex';
 import {
   TOKEN_HEADER,
+  type UsageStats,
   type ContestBatchRequest,
   type ContestDetail,
   type ContestImportRequest,
@@ -113,6 +114,8 @@ export const api = {
   createProblem: (req: CreateProblemRequest) => request<ProblemSummary>('POST', '/problems', req),
   problem: (id: string) => request<ProblemDetail>('GET', `/problems/${pid(id)}`),
   patchProblem: (id: string, req: PatchProblemRequest) => request<ProblemDetail>('PATCH', `/problems/${pid(id)}`, req),
+  /** Moves the problem folder to the global trash. */
+  deleteProblem: (id: string) => request<{ ok: true; trash: string }>('DELETE', `/problems/${pid(id)}`),
 
   readFile: (id: string, path: string) => request<FileContent>('GET', `/problems/${pid(id)}/files/${encPath(path)}`),
   writeFile: (id: string, path: string, content: string, baseHash?: string) =>
@@ -177,6 +180,8 @@ export const api = {
 
   // ---- AI (M4) ----
   aiEndpoints: () => request<AiEndpoint[]>('GET', '/ai/endpoints'),
+  aiUsage: () => request<UsageStats>('GET', '/ai/usage'),
+  clearAiUsage: () => request<{ ok: true }>('DELETE', '/ai/usage'),
   saveAiEndpoints: (list: SaveAiEndpoint[]) => request<AiEndpoint[]>('PUT', '/ai/endpoints', list),
   testAiEndpoint: (name: string, model?: string) => request<AiTestResult>('POST', '/ai/endpoints/test', { name, model }),
   aiModels: (name: string) => request<string[]>('POST', '/ai/endpoints/models', { name }),

@@ -12,7 +12,9 @@ import { api, errorMessage } from '../lib/api';
 import { onWs } from '../lib/ws';
 import { problemTitle } from '../lib/format';
 import { checklist, progress } from '../lib/progress';
-import { Anvil, Check, Circle, LayoutGrid, List } from 'lucide-vue-next';
+import { Anvil, Check, Circle, LayoutGrid, List, Trash2 } from 'lucide-vue-next';
+import { useDialog } from 'naive-ui';
+import { confirmDeleteProblem } from '../lib/deleteProblem';
 
 const { t, locale } = useI18n();
 const router = useRouter();
@@ -93,6 +95,14 @@ const contestsOf = computed(() => {
   }
   return m;
 });
+const dialog = useDialog();
+function deleteProblem(p: ProblemSummary) {
+  const inContests = (contestsOf.value.get(p.id) ?? []).map((c) => c.label);
+  confirmDeleteProblem(dialog, message, p.id, inContests).then((ok) => {
+    if (ok) load();
+  });
+}
+
 function openContest(c: ContestSummary) {
   router.push({ name: 'contest', params: { id: c.id } });
 }
@@ -204,6 +214,7 @@ function openContest(c: ContestSummary) {
           </template>
           <template #header-extra>
             <span class="limits">{{ p.timeLimit / 1000 }}s / {{ p.memoryLimit }}MB</span>
+            <n-button size="tiny" quaternary class="card-del" :title="t('problem.delete')" @click.stop="deleteProblem(p)"><trash2 :size="13" /></n-button>
           </template>
           <div v-if="p.error" class="error">{{ p.error }}</div>
           <div v-if="p.status.tutorialLangs.length && p.status.tutorialLangs.join() !== p.status.statementLangs.join()" class="warn">
@@ -255,6 +266,13 @@ function openContest(c: ContestSummary) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+.card-del {
+  margin-left: 4px;
+  opacity: 0;
+}
+.card:hover .card-del {
+  opacity: 0.7;
 }
 .check-tag {
   display: inline-flex;

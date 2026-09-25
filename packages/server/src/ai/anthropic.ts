@@ -22,7 +22,8 @@ export class AnthropicProvider implements Provider {
   private official: boolean;
 
   constructor(ep: RawAiEndpoint) {
-    const baseURL = ep.baseUrl || undefined;
+    // The SDK adds /v1 itself; proxies are often given as https://host/v1.
+    const baseURL = ep.baseUrl.trim().replace(/\/+$/, '').replace(/\/v1$/, '') || undefined;
     this.official = !baseURL || OFFICIAL_HOSTS.has(new URL(baseURL).hostname);
     this.client = new Anthropic({ apiKey: ep.apiKey, baseURL, maxRetries: 3 });
   }
@@ -114,20 +115,25 @@ export class AnthropicProvider implements Provider {
       message: { role: 'assistant', content, raw: { protocol: 'anthropic', model: req.model, content: message.content } },
       stopReason,
       stopDetail: stopReason === 'refusal' ? [details?.category, details?.explanation].filter(Boolean).join(': ') || 'refused' : sr ?? undefined,
-      usage: { input: message.usage.input_tokens, output: message.usage.output_tokens, cacheRead: message.usage.cache_read_input_tokens ?? undefined },
+      usage: {
+        input: message.usage.input_tokens,
+        output: message.usage.output_tokens,
+        cacheRead: message.usage.cache_read_input_tokens ?? 0,
+        cacheWrite: message.usage.cache_creation_input_tokens ?? 0,
+      },
     };
   }
 
   async listModels(): Promise<string[]> {
     const ids: string[] = [];
-    for await (const m of this.client.models.list()) ids.push(m.id);
+    for await (const m of this.client.models.list({}, { timeout: 20_000, maxRetries: 0 })) ids.push(m.id);
     return ids;
   }
 
   async test(model: string): Promise<AiTestResult> {
     const t0 = Date.now();
     try {
-      const r = await this.client.messages.create({ model, max_tokens: 64, messages: [{ role: 'user', content: 'Reply with the single word: pong' }] });
+      const r = await this.client.messages.create({ model, max_tokens: 64, messages: [{ role: 'user', content: 'Reply with the single word: pong' }] }, { timeout: 60_000, maxRetries: 0 });
       const text = r.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text ?? '';
       return { ok: true, ms: Date.now() - t0, reply: text.trim().slice(0, 100) };
     } catch (e) {

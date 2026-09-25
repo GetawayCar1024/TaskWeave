@@ -44,6 +44,7 @@ export class OpenAiProvider implements Provider {
       {
         model: req.model,
         stream: true,
+        stream_options: { include_usage: true },
         messages: this.toParams(req.system, req.messages),
         tools: req.tools.map((t) => ({ type: 'function' as const, function: { name: t.name, description: t.description, parameters: t.input_schema } })),
       },
@@ -54,7 +55,11 @@ export class OpenAiProvider implements Provider {
     const calls = new Map<number, { id: string; name: string; args: string }>();
     let usage: ChatResponse['usage'];
     for await (const chunk of stream) {
-      if (chunk.usage) usage = { input: chunk.usage.prompt_tokens, output: chunk.usage.completion_tokens };
+      if (chunk.usage) {
+        // prompt_tokens includes the cached part.
+        const cached = chunk.usage.prompt_tokens_details?.cached_tokens ?? 0;
+        usage = { input: chunk.usage.prompt_tokens - cached, output: chunk.usage.completion_tokens, cacheRead: cached, cacheWrite: 0 };
+      }
       const choice = chunk.choices[0];
       if (!choice) continue;
       const d = choice.delta;
@@ -93,14 +98,14 @@ export class OpenAiProvider implements Provider {
 
   async listModels(): Promise<string[]> {
     const ids: string[] = [];
-    for await (const m of this.client.models.list()) ids.push(m.id);
+    for await (const m of this.client.models.list({ timeout: 20_000, maxRetries: 0 })) ids.push(m.id);
     return ids;
   }
 
   async test(model: string): Promise<AiTestResult> {
     const t0 = Date.now();
     try {
-      const r = await this.client.chat.completions.create({ model, messages: [{ role: 'user', content: 'Reply with the single word: pong' }] });
+      const r = await this.client.chat.completions.create({ model, messages: [{ role: 'user', content: 'Reply with the single word: pong' }] }, { timeout: 60_000, maxRetries: 0 });
       return { ok: true, ms: Date.now() - t0, reply: (r.choices[0]?.message.content ?? '').trim().slice(0, 100) };
     } catch (e) {
       return { ok: false, ms: Date.now() - t0, error: e instanceof OpenAI.APIError ? `${e.status ?? ''} ${e.message}`.trim() : (e as Error).message };
