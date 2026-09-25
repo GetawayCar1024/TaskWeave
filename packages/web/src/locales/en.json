@@ -133,7 +133,10 @@
       "all": "All time"
     },
     "parallel": "Parallel jobs",
-    "parallelHint": "0 = auto ({auto})"
+    "parallelHint": "0 = auto ({auto})",
+    "contestsDir": "Contests folder",
+    "change": "Change",
+    "useDefault": "Use default"
   },
   "editor": {
     "changedOnDisk": "This file changed on disk while you have unsaved changes.",
@@ -579,7 +582,8 @@
     "renumberHint": "Set the letters to A, B, C… in the current order",
     "docStatements": "Statements",
     "docTutorials": "Tutorials",
-    "noTutorials": "No tutorials yet"
+    "noTutorials": "No tutorials yet",
+    "problemsRoot": "Import problems to"
   },
   "testsets": {
     "title": "Testsets and groups",

@@ -47,7 +47,9 @@ async function main() {
   // Build the runner in the background so the first run does not wait for g++.
   judge.runner.ensure().catch((e) => console.warn(`[polyforge] runner unavailable: ${e.message}`));
 
-  const app = await buildApp({ global, registry, contests: new ContestRegistry(registry), files, watcher, hub, judge, jobs, token, webDist: hasDist ? webDist : undefined });
+  const contests = new ContestRegistry(registry, global);
+  for (const m of await contests.migrateFromProblemRoots()) console.log(`[polyforge] moved contest ${m.from} -> ${m.to}`);
+  const app = await buildApp({ global, registry, contests, files, watcher, hub, judge, jobs, token, webDist: hasDist ? webDist : undefined });
 
   // Dev uses a fixed port so the Vite proxy can find it.
   const port = await listenOnFreePort(app, args.port ? Number(args.port) : DEFAULT_PORT, !args.port && !args.dev);

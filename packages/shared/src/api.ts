@@ -24,6 +24,11 @@ export const globalConfigSchema = z
       })
       .loose()
       .default({ roots: [] }),
+    /** Where contests are stored (separately from problems); empty = <global dir>/contests. */
+    contests: z
+      .object({ dir: z.string().optional() })
+      .loose()
+      .default({}),
     /** Default AI endpoint (name from secrets.toml) and model. */
     ai: z
       .object({ endpoint: z.string().optional(), model: z.string().optional() })

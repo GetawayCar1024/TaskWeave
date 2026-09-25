@@ -15,6 +15,7 @@ import {
 } from '@polyforge/shared';
 import { samePath } from '../global.js';
 import { atomicWrite, exists, HttpError } from '../util/fs.js';
+import type { GlobalStore } from '../global.js';
 import type { ProblemRegistry } from './problems.js';
 
 export interface ContestRef {
@@ -23,33 +24,66 @@ export interface ContestRef {
   root: string;
 }
 
-/** Contests: subfolders of the problem roots containing contest.toml. */
+/**
+ * Contests: subfolders of the contests folder (config contests.dir, default
+ * <global dir>/contests) containing contest.toml. They are kept apart from the
+ * problems, which they reference by id.
+ */
 export class ContestRegistry {
   private byId = new Map<string, ContestRef>();
 
-  constructor(private problems: ProblemRegistry) {}
+  constructor(
+    private problems: ProblemRegistry,
+    private global: GlobalStore,
+  ) {}
+
+  get dir() {
+    return this.global.contestsDir;
+  }
 
   async scan(): Promise<ContestRef[]> {
     const next = new Map<string, ContestRef>();
-    for (const root of this.problems.roots) {
-      let entries;
-      try {
-        entries = await fsp.readdir(root, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      entries.sort((a, b) => a.name.localeCompare(b.name));
-      for (const ent of entries) {
-        if (!ent.isDirectory() || ent.name.startsWith('.')) continue;
-        const dir = path.join(root, ent.name);
-        if (!(await exists(path.join(dir, CONTEST_FILE)))) continue;
-        let id = ent.name;
-        for (let i = 2; next.has(id); i++) id = `${ent.name}~${i}`;
-        next.set(id, { id, dir, root });
-      }
+    const root = this.dir;
+    const entries = await fsp.readdir(root, { withFileTypes: true }).catch(() => []);
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const ent of entries) {
+      if (!ent.isDirectory() || ent.name.startsWith('.')) continue;
+      const dir = path.join(root, ent.name);
+      if (!(await exists(path.join(dir, CONTEST_FILE)))) continue;
+      next.set(ent.name, { id: ent.name, dir, root });
     }
     this.byId = next;
     return [...next.values()];
+  }
+
+  /**
+   * Contests used to live in the problem roots: move such folders (contest.toml and
+   * no problem.toml) into the contests folder. Returns what was moved.
+   */
+  async migrateFromProblemRoots(): Promise<{ from: string; to: string }[]> {
+    const moved: { from: string; to: string }[] = [];
+    for (const root of this.problems.roots) {
+      const entries = await fsp.readdir(root, { withFileTypes: true }).catch(() => []);
+      for (const ent of entries) {
+        if (!ent.isDirectory() || ent.name.startsWith('.')) continue;
+        const from = path.join(root, ent.name);
+        if (!(await exists(path.join(from, CONTEST_FILE))) || (await exists(path.join(from, 'problem.toml')))) continue;
+        let to = path.join(this.dir, ent.name);
+        for (let i = 2; await exists(to); i++) to = path.join(this.dir, `${ent.name}-${i}`);
+        await fsp.mkdir(this.dir, { recursive: true });
+        try {
+          await fsp.rename(from, to).catch(async (e: NodeJS.ErrnoException) => {
+            if (e.code !== 'EXDEV') throw e;
+            await fsp.cp(from, to, { recursive: true });
+            await fsp.rm(from, { recursive: true, force: true });
+          });
+          moved.push({ from, to });
+        } catch (e) {
+          console.warn(`[polyforge] could not move contest ${from}: ${(e as Error).message}`);
+        }
+      }
+    }
+    return moved;
   }
 
   async get(id: string): Promise<ContestRef> {
@@ -113,21 +147,17 @@ export class ContestRegistry {
     return { summary, problems: summary.problems.map((p) => ({ index: p.index, problem: p.problem, summary: byId.get(p.problem) ?? null })) };
   }
 
-  /** Validate a new contest name / root; returns the folder to create. */
-  async checkNew(name: string, rootArg?: string): Promise<string> {
+  /** Validate a new contest name; returns the folder to create. */
+  async checkNew(name: string): Promise<string> {
     if (!PROBLEM_NAME_RE.test(name)) throw new HttpError(400, 'invalid_name', 'Name must be lowercase letters, digits and dashes');
-    const roots = this.problems.roots;
-    const root = rootArg ?? roots[0];
-    if (!root) throw new HttpError(400, 'no_root', 'No problem root directory configured');
-    if (!roots.some((r) => samePath(r, root))) throw new HttpError(400, 'invalid_root', 'Unknown problem root');
-    const dir = path.join(root, name);
+    const dir = path.join(this.dir, name);
     if (await exists(dir)) throw new HttpError(409, 'exists', `Folder already exists: ${dir}`);
     return dir;
   }
 
   async create(req: CreateContestRequest): Promise<ContestSummary> {
     const name = req.name?.trim() ?? '';
-    const dir = await this.checkNew(name, req.root);
+    const dir = await this.checkNew(name);
     const problems = checkProblems(req.problems ?? []);
     await fsp.mkdir(dir, { recursive: true });
     await this.write(dir, { contest: { name, title: req.title ?? {} }, problems });

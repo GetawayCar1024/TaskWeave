@@ -133,7 +133,10 @@
       "all": "全部"
     },
     "parallel": "最大并行任务数",
-    "parallelHint": "0 = 自动（{auto}）"
+    "parallelHint": "0 = 自动（{auto}）",
+    "contestsDir": "比赛目录",
+    "change": "更改",
+    "useDefault": "恢复默认"
   },
   "editor": {
     "changedOnDisk": "此文件已在磁盘上被修改，而你有未保存的更改。",
@@ -579,7 +582,8 @@
     "renumberHint": "按当前顺序把题号改为 A、B、C…",
     "docStatements": "题面",
     "docTutorials": "题解",
-    "noTutorials": "还没有题解"
+    "noTutorials": "还没有题解",
+    "problemsRoot": "题目导入到"
   },
   "testsets": {
     "title": "测试集与子任务",

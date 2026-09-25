@@ -42,7 +42,6 @@ async function submit() {
     if (props.mode === 'create') {
       const c = await api.createContest({
         name: form.name,
-        root: form.root || undefined,
         title: { zh: form.titleZh, en: form.titleEn },
         problems: form.problems.map((problem, i) => ({ index: letter(i), problem })),
       });
@@ -101,7 +100,7 @@ async function submit() {
           <span v-for="(p, i) in form.problems" :key="p" class="mono">{{ letter(i) }}: {{ p }}</span>
         </div>
       </template>
-      <n-form-item v-if="roots.length > 1" :label="t('create.root')">
+      <n-form-item v-if="mode === 'import' && roots.length > 1" :label="t('contest.problemsRoot')">
         <n-select v-model:value="form.root" :options="rootOptions" />
       </n-form-item>
     </n-form>

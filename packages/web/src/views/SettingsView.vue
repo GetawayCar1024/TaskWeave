@@ -42,6 +42,7 @@ const message = useMessage();
 const draft = ref<GlobalConfig>(JSON.parse(JSON.stringify(settings.config)));
 const saving = ref(false);
 const showPicker = ref(false);
+const showContestPicker = ref(false);
 
 async function saveGeneral() {
   saving.value = true;
@@ -346,6 +347,13 @@ onMounted(() => {
                   <n-button size="small" dashed @click="showPicker = true">+ {{ t('settings.addRoot') }}</n-button>
                 </div>
               </n-form-item>
+              <n-form-item :label="t('settings.contestsDir')">
+                <div class="root-row">
+                  <span class="mono">{{ draft.contests.dir || `${settings.globalDir}${settings.globalDir.includes('\\') ? '\\' : '/'}contests` }}</span>
+                  <n-button size="tiny" quaternary @click="showContestPicker = true">{{ t('settings.change') }}</n-button>
+                  <n-button v-if="draft.contests.dir" size="tiny" quaternary @click="draft.contests.dir = undefined">{{ t('settings.useDefault') }}</n-button>
+                </div>
+              </n-form-item>
               <n-form-item :label="t('settings.locale')">
                 <n-radio-group v-model:value="draft.ui.locale">
                   <n-radio-button value="zh-CN">简体中文</n-radio-button>
@@ -554,6 +562,7 @@ onMounted(() => {
     </main>
 
     <dir-picker v-model:show="showPicker" :initial="draft.problems.roots[0] ?? ''" @pick="addRoot" />
+    <dir-picker v-model:show="showContestPicker" :initial="draft.contests.dir ?? settings.globalDir" @pick="(p: string) => (draft.contests.dir = p)" />
   </div>
 </template>
 

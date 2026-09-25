@@ -109,6 +109,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await watcher.start();
       hub.broadcast({ type: 'problems:changed' });
     }
+    // Contests folder changed (or first set): create it and pick up the contests there.
+    await fsp.mkdir(global.contestsDir, { recursive: true });
+    await deps.contests.scan();
+    hub.broadcast({ type: 'contests:changed' });
     hub.broadcast({ type: 'settings:changed' });
     return settings();
   });

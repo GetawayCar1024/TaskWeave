@@ -222,7 +222,7 @@ export async function contestStatements(judge: Judge, contests: ContestRegistry,
 export async function importContest(deps: ContestDeps, req: ContestImportRequest, job: JobCtx): Promise<{ contest: ContestSummary; warnings: string[] }> {
   const { judge, contests, sync } = deps;
   const name = req.name?.trim() ?? '';
-  await contests.checkNew(name, req.root);
+  await contests.checkNew(name);
   const client = await sync.client();
   job.progress(0, 0, 'contest.problems');
   const map = await client.call<Record<string, PolygonProblem>>('contest.problems', { contestId: req.contestId });
@@ -248,7 +248,7 @@ export async function importContest(deps: ContestDeps, req: ContestImportRequest
       warnings.push(`${letter} (${p.name}, #${p.id}): ${(e as Error).message}`);
     }
   }
-  const contest = await contests.create({ name, root: req.root, problems });
+  const contest = await contests.create({ name, problems });
   await contests.update(contest.id, { polygonId: req.contestId });
   job.progress(entries.length, entries.length, 'done');
   return { contest: { ...contest, polygonId: req.contestId }, warnings };

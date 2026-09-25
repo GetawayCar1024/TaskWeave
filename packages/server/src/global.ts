@@ -51,6 +51,11 @@ export class GlobalStore {
   get templatesDir() {
     return path.join(this.dir, 'templates');
   }
+  /** Contests folder: config contests.dir, or <global dir>/contests. */
+  get contestsDir() {
+    const d = this.config.contests?.dir?.trim();
+    return d ? path.resolve(d) : path.join(this.dir, 'contests');
+  }
   get cacheDir() {
     return path.join(this.dir, 'cache');
   }
