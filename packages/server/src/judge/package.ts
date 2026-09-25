@@ -193,10 +193,11 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
     for (const [k, t] of sampleTests.entries()) {
       const n = String(k + 1).padStart(2, '0');
       zip.add(`${dir}/example.${n}`, await fsp.readFile(inputPath(ctx, t.index)).catch(() => Buffer.alloc(0)));
-      zip.add(`${dir}/example.${n}.a`, await fsp.readFile(answerPath(ctx, t.index)).catch(() => Buffer.alloc(0)));
+      const exampleOut = t.statementOutput ? safeJoin(ref.dir, t.statementOutput) : answerPath(ctx, t.index);
+      zip.add(`${dir}/example.${n}.a`, await fsp.readFile(exampleOut).catch(() => Buffer.alloc(0)));
       // exmpfile in problem.tex refers to files next to it.
       zip.add(`statements/${plang}/example.${n}`, await fsp.readFile(inputPath(ctx, t.index)).catch(() => Buffer.alloc(0)));
-      zip.add(`statements/${plang}/example.${n}.a`, await fsp.readFile(answerPath(ctx, t.index)).catch(() => Buffer.alloc(0)));
+      zip.add(`statements/${plang}/example.${n}.a`, await fsp.readFile(exampleOut).catch(() => Buffer.alloc(0)));
     }
     if (sec.legend || sec.input || sec.output) {
       const io = (v: string, std: string) => (v === std || !v ? `standard ${std === 'stdin' ? 'input' : 'output'}` : v);

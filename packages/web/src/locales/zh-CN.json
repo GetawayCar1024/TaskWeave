@@ -261,14 +261,19 @@
     "group": "子任务",
     "points": "分值",
     "subtasks": "子任务",
-    "addSample": "添加样例",
     "addTest": "添加测试",
     "add": "添加",
     "markSample": "设为样例",
     "addInputPlaceholder": "测试输入",
     "addHint": "答案由主解法生成。",
     "sampleAdded": "已添加样例：测试点 {n}",
-    "testAdded": "已添加测试点 {n}"
+    "testAdded": "已添加测试点 {n}",
+    "statementOutput": "题面中的输出",
+    "statementOutputOptional": "留空则使用标程的输出",
+    "statementOutputInteractive": "交互题需要填写题面中显示的输出",
+    "statementOutputAdd": "自定义题面输出",
+    "statementOutputEdit": "编辑题面输出",
+    "addHintCustom": "答案由主解法生成；题面中显示上面填写的输出。"
   },
   "run": {
     "custom": "自定义输入",

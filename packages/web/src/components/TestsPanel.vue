@@ -30,19 +30,23 @@ const showTestsets = ref(false);
 // ---- add a manual test / sample ----
 const showAdd = ref(false);
 const addInput = ref('');
-const addAsSample = ref(true);
+const addAsSample = ref(false);
+const addOutput = ref('');
+const interactive = computed(() => !!props.ws.state.detail?.config?.problem.interactive);
 const adding = ref(false);
 /** Test to select once the regenerated manifest contains it. */
 let selectAfterGenerate: number | null = null;
 function openAdd() {
   addInput.value = '';
-  addAsSample.value = testset.value === 'tests';
+  addOutput.value = '';
+  addAsSample.value = false;
   showAdd.value = true;
 }
 async function addTest() {
   adding.value = true;
   try {
-    const r = await api.addManualTest(props.problemId, { input: addInput.value, sample: addAsSample.value, testset: testset.value });
+    const sample = addAsSample.value && testset.value === 'tests';
+    const r = await api.addManualTest(props.problemId, { input: addInput.value, sample, testset: testset.value, statementOutput: sample ? addOutput.value : undefined });
     message.success(t(addAsSample.value && testset.value === 'tests' ? 'tests.sampleAdded' : 'tests.testAdded', { n: r.index }));
     showAdd.value = false;
     selectAfterGenerate = r.index;
@@ -51,6 +55,25 @@ async function addTest() {
     message.error(serverText(errorMessage(e)));
   } finally {
     adding.value = false;
+  }
+}
+
+/**
+ * The output a sample shows in the statement: tests/manual/NN.out next to the input.
+ * Created from the current answer (empty for interactive problems) and opened.
+ */
+async function editStatementOutput(t: TestInfo) {
+  const rel = t.statementOutput ?? t.source.replace(/\.[^./]*$/, '') + '.out';
+  try {
+    if (!t.statementOutput) {
+      const ans = interactive.value ? null : await api.testFile(props.problemId, t.index, 'ans').catch(() => null);
+      await api.writeFile(props.problemId, rel, ans?.content ?? '');
+      selectAfterGenerate = t.index;
+      props.judge.generate('tests');
+    }
+    await props.ws.openFile(rel);
+  } catch (e) {
+    message.error(serverText(errorMessage(e)));
   }
 }
 
@@ -166,9 +189,7 @@ watch(
           style="width: 110px"
         />
         <n-button size="small" quaternary :title="t('testsets.title')" @click="showTestsets = true"><layers :size="15" /></n-button>
-        <n-button size="small" quaternary :disabled="running" :title="testset === 'tests' ? t('tests.addSample') : t('tests.addTest')" @click="openAdd">
-          <template #icon><plus /></template>{{ testset === 'tests' ? t('tests.addSample') : t('tests.addTest') }}
-        </n-button>
+        <n-button size="small" quaternary :disabled="running" @click="openAdd"><template #icon><plus /></template>{{ t('tests.addTest') }}</n-button>
       </n-space>
       <span v-if="manifest" class="dim small">{{ t('tests.count', { n: manifest.tests.length }) }} · {{ new Date(manifest.generatedAt).toLocaleTimeString() }}</span>
     </n-space>
@@ -210,6 +231,9 @@ watch(
             <n-switch size="small" :value="!!current.sample" :disabled="running" @update:value="(v: boolean) => setSample(current!.index, v)" />
             {{ t('tests.sample') }}
           </label>
+          <n-button v-if="testset === 'tests' && current.sample && current.origin === 'manual'" size="tiny" :title="current.statementOutput ?? ''" @click="editStatementOutput(current)">
+            {{ current.statementOutput ? t('tests.statementOutputEdit') : t('tests.statementOutputAdd') }}
+          </n-button>
           <n-button v-if="testset === 'tests'" size="tiny" @click="emit('runOnTest', current.index)">{{ t('tests.runHere') }}</n-button>
         </n-space>
       </n-space>
@@ -227,7 +251,7 @@ watch(
     </div>
     <div v-else-if="manifest" class="dim small empty">{{ t('tests.pickOne') }}</div>
     <testset-dialog v-model:show="showTestsets" :ws="ws" :judge="judge" :initial="testset" />
-    <n-modal v-model:show="showAdd" preset="card" :title="testset === 'tests' ? t('tests.addSample') : t('tests.addTest')" style="width: 520px">
+    <n-modal v-model:show="showAdd" preset="card" :title="t('tests.addTest')" style="width: 520px">
       <n-input
         v-model:value="addInput"
         type="textarea"
@@ -236,14 +260,24 @@ watch(
         :placeholder="t('tests.addInputPlaceholder')"
         autofocus
       />
-      <div class="add-foot small dim">{{ t('tests.addHint') }}</div>
+      <template v-if="addAsSample && testset === 'tests'">
+        <div class="add-label small">{{ t('tests.statementOutput') }}</div>
+        <n-input
+          v-model:value="addOutput"
+          type="textarea"
+          class="mono"
+          :autosize="{ minRows: 3, maxRows: 12 }"
+          :placeholder="interactive ? t('tests.statementOutputInteractive') : t('tests.statementOutputOptional')"
+        />
+      </template>
+      <div class="add-foot small dim">{{ addAsSample && addOutput.trim() ? t('tests.addHintCustom') : t('tests.addHint') }}</div>
       <template #footer>
         <n-space justify="space-between" align="center">
           <label v-if="testset === 'tests'" class="sample-toggle"><n-switch v-model:value="addAsSample" size="small" /> {{ t('tests.markSample') }}</label>
           <span v-else />
           <n-space>
             <n-button @click="showAdd = false">{{ t('common.cancel') }}</n-button>
-            <n-button type="primary" :loading="adding" :disabled="!addInput.trim()" @click="addTest">{{ t('tests.add') }}</n-button>
+            <n-button type="primary" :loading="adding" :disabled="!addInput.trim() || (interactive && addAsSample && !addOutput.trim())" @click="addTest">{{ t('tests.add') }}</n-button>
           </n-space>
         </n-space>
       </template>
@@ -285,6 +319,9 @@ watch(
   align-items: center;
   gap: 6px;
   font-size: 12px;
+}
+.add-label {
+  margin: 10px 0 4px;
 }
 .add-foot {
   margin-top: 6px;

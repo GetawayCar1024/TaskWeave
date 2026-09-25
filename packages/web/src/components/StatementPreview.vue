@@ -40,7 +40,7 @@ async function loadSamples() {
       index: x.index,
       inputCases: x.inputCases,
       input: (await api.testFile(props.problemId, x.index, 'in').catch(() => null))?.content ?? '',
-      output: (await api.testFile(props.problemId, x.index, 'ans').catch(() => null))?.content ?? '',
+      output: (await api.testFile(props.problemId, x.index, 'statement').catch(() => null))?.content ?? '',
     })),
   );
 }

@@ -47,8 +47,10 @@ pnpm release      # 打包成独立的 npm 包到 release/（无运行时依赖�
 
 | 内容 | 约定 |
 | --- | --- |
-| 手写测试 | `tests/manual/` 下的文件；文件名是数字（如 `03.in`）时就是该测试编号，其余按顺序填空位 |
+| 手写测试 | `tests/manual/` 下的文件；文件名是数字（如 `03.in`）时就是该测试编号，其余按顺序填空位；增删改手写测试、script 或 `problem.toml` 后会自动重新生成已生成过的测试 |
 | 样例 | `problem.toml` 中 `[tests] samples = "1-2"`（信息面板可改；测试面板“添加样例”可直接新建）。多组数据：validator 用 `setTestCase(i)` 标出每组的开始，题面样例会像 Codeforces 一样按组交替底色、悬停时高亮对应的输入和输出（输出行数为组数的整数倍时按组对应） |
+| 题面输出 | 样例在题面中显示的输出默认是标程的答案；手写样例旁边放 `NN.out`（如 `tests/manual/02.in` 旁的 `02.out`）即用它代替，交互题需要这样写。测试面板“添加测试”勾选“设为样例”时可直接填写，已有样例用“自定义题面输出” |
+| testlib | 内置原版 0.9.45。全局目录里已有的文件不会被覆盖：版本不同时启动会提示，复制内置的 `testlib.h` 过去即可，编译缓存会自动失效 |
 | validator 自测 | `validator-tests/` 下文件名含 `valid` / `invalid`，如 `01.valid.in`、`02.invalid.in` |
 | checker 自测 | `checker-tests/NAME.in` + `NAME.out`（+ `NAME.ans`），期望结论写在 `NAME.verdict` 或名字里（`02.wa`） |
 | 换行 | 测试统一存为 LF（与 Polygon 一致）；编译 C/C++ 时总会加上 `-DFOR_LINUX`（即使 `languages.toml` 里没写），让 testlib 在 Windows 上也按 LF 校验 |

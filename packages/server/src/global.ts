@@ -80,6 +80,17 @@ export class GlobalStore {
     }
     await fsp.mkdir(path.join(this.cacheDir, 'bin'), { recursive: true });
     await this.loadConfig();
+    await this.checkTestlib();
+  }
+
+  /** Existing shared files are never overwritten: say so when testlib.h is not the bundled version. */
+  private async checkTestlib() {
+    const version = (file: string) =>
+      fsp.readFile(file, 'utf8').then((t) => t.match(/#define VERSION "([^"]+)"/)?.[1], () => undefined);
+    const [mine, bundled] = await Promise.all([version(path.join(this.sharedDir, 'testlib.h')), version(path.join(ASSETS_DIR, 'shared', 'testlib.h'))]);
+    if (mine && bundled && mine !== bundled) {
+      console.log(`[polyforge] shared/testlib.h is ${mine}; PolyForge ships ${bundled}. To update: copy ${path.join(ASSETS_DIR, 'shared', 'testlib.h')} to ${path.join(this.sharedDir, 'testlib.h')}`);
+    }
   }
 
   async loadConfig(): Promise<GlobalConfig> {

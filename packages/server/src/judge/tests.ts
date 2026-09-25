@@ -175,7 +175,10 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
 
   const entries = new Map<number, Entry>();
   for (const p of planned) {
+    const outRel = p.origin === 'manual' && samples.has(p.index) ? statementOutputPath(p.source) : undefined;
+    const statementOutput = outRel && (await exists(safeJoin(ctx.ref.dir, outRel))) ? outRel : undefined;
     entries.set(p.index, {
+      statementOutput,
       index: p.index,
       origin: p.origin,
       source: p.source,
@@ -381,7 +384,14 @@ const overviewPathOf = overviewPath;
  * current samples, skipping indices that manual files or script lines claim
  * explicitly ("> 3"); tests from "> $" lines move up, as on Polygon.
  */
-export async function addManualTest(ctx: ProblemCtx, input: string, opts: { sample?: boolean; testset?: string }): Promise<{ index: number; path: string; samples?: string }> {
+/** Output for the statement of a manual sample: tests/manual/NN.in → tests/manual/NN.out. */
+export const statementOutputPath = (manualSource: string) => manualSource.replace(/\.[^./]*$/, '') + '.out';
+
+export async function addManualTest(
+  ctx: ProblemCtx,
+  input: string,
+  opts: { sample?: boolean; testset?: string; statementOutput?: string },
+): Promise<{ index: number; path: string; samples?: string }> {
   const ts = requireTestset(ctx, opts.testset);
   const planned = await plan(ctx, [], ts);
   const explicit = new Set<number>();
@@ -399,6 +409,10 @@ export async function addManualTest(ctx: ProblemCtx, input: string, opts: { samp
   const text = input.replace(/\r\n/g, '\n');
   await fsp.mkdir(path.dirname(safeJoin(ctx.ref.dir, rel)), { recursive: true });
   await atomicWrite(safeJoin(ctx.ref.dir, rel), text.endsWith('\n') || !text ? text : `${text}\n`);
+  if (opts.sample && ts.name === DEFAULT_TESTSET && opts.statementOutput?.trim()) {
+    const out = opts.statementOutput.replace(/\r\n/g, '\n');
+    await atomicWrite(safeJoin(ctx.ref.dir, statementOutputPath(rel)), out.endsWith('\n') ? out : `${out}\n`);
+  }
   if (opts.sample && ts.name === DEFAULT_TESTSET) {
     const next = [...new Set([...samples, index])].sort((a, b) => a - b);
     return { index, path: rel, samples: compressRanges(next) };
@@ -427,7 +441,8 @@ export function parseTestMarkup(buf: Buffer | null): number[] | undefined {
       const end = s.indexOf(';', i);
       if (end > i) {
         // setTestCase(i) starts case i; count the markers instead of trusting the
-        // number: testlib 0.9.44 built with GCC 15 prints 0 for every case (vtos bug).
+        // number: testlib 0.9.44 built with GCC 15 prints 0 for every case (vtos bug,
+        // fixed in 0.9.45).
         cur++;
         seen = true;
         i = end;

@@ -45,6 +45,11 @@ export interface TestInfo {
   /** 1-based line of the command in script.txt. */
   line?: number;
   group?: string;
+  /**
+   * Samples: output shown in the statement instead of the answer (a manual test's
+   * NN.out next to NN.in; needed for interactive problems). Problem-relative path.
+   */
+  statementOutput?: string;
   /** Samples: test case of each input line (from the validator's setTestCase markup; 0 = none). */
   inputCases?: number[];
   /** Points of the test when points are enabled (derived from its group). */

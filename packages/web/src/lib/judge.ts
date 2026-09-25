@@ -123,7 +123,29 @@ export function useJudge(problemId: string, ws: Workspace) {
 
   const running = (kind: JobKind) => state.jobs[kind]?.status === 'running';
 
+  /*
+   * Keep the tests in step with their sources: after a manual test or script is added,
+   * changed or deleted (or problem.toml changes samples / groups), regenerate the
+   * testsets that were generated before. Generation is incremental, so this is cheap.
+   */
+  let regenTimer: ReturnType<typeof setTimeout> | undefined;
+  function scheduleRegenerate() {
+    clearTimeout(regenTimer);
+    regenTimer = setTimeout(async () => {
+      if (running('generate')) return scheduleRegenerate();
+      for (const ts of Object.keys(state.manifests)) {
+        if (!state.manifests[ts]) continue;
+        await generate(ts).catch(() => {});
+        // One job at a time: wait for it before starting the next testset.
+        while (running('generate')) await new Promise((r) => setTimeout(r, 200));
+      }
+    }, 800);
+  }
+
   function onWsEvent(e: WsEvent) {
+    if (e.type === 'file:changed' && e.problemId === problemId && (e.path.startsWith('tests/') || e.path === 'problem.toml')) {
+      if (Object.values(state.manifests).some(Boolean)) scheduleRegenerate();
+    }
     if (e.type === 'build:done' && e.problemId === problemId) {
       state.compile[e.result.source] = e.result;
       applyMarkers(e.result);
