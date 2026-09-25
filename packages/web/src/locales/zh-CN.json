@@ -266,7 +266,7 @@
     "markSample": "设为样例",
     "addInputPlaceholder": "测试输入",
     "addHint": "答案由主解法生成。",
-    "sampleAdded": "已添加样例：测试点 {n}",
+    "sampleAdded": "已添加测试点 {n}，并设为样例",
     "testAdded": "已添加测试点 {n}",
     "statementOutput": "题面中的输出",
     "statementOutputOptional": "留空则使用标程的输出",

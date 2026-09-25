@@ -597,11 +597,14 @@ export function sampleHtml(input: string, output: string, inLabel: string, outLa
           .map((l, i) => {
             const c = of[i] ?? 0;
             const text = esc(l) || ' ';
-            return c > 0 ? `<div class="test-example-line test-example-line-${c % 2 ? 'odd' : 'even'}" data-case="${c}">${text}</div>` : `<div class="test-example-line">${text}</div>`;
+            // Cases 1, 3, 5, … are shaded (Codeforces class name), so the line with t and
+            // the first case differ.
+            return c > 0 ? `<div class="test-example-line${c % 2 ? ' test-example-line-even' : ''}" data-case="${c}">${text}</div>` : `<div class="test-example-line">${text}</div>`;
           })
           .join('')
       : esc(ls.join('\n'));
-  const marked = cases > 0 && inLines.length === inputCases!.length;
+  // Only multi-test inputs with a line for t (a line before the first case) are marked.
+  const marked = cases > 0 && inLines.length === inputCases!.length && inputCases![0] === 0;
   return (
     `<div class="sample"><div class="sample-part"><div class="sample-title">${esc(inLabel)}</div><pre>${lines(inLines, marked ? inputCases : undefined)}</pre></div>` +
     `<div class="sample-part"><div class="sample-title">${esc(outLabel)}</div><pre>${lines(outLines, marked ? outCases : undefined)}</pre></div></div>`
