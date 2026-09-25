@@ -8,7 +8,7 @@ const props = defineProps<{
   title: string;
   /** Contest letter shown before the title. */
   index?: string;
-  limits?: { timeLimit: number; memoryLimit: number } | null;
+  limits?: { timeLimit: number; memoryLimit: number; input?: string; output?: string } | null;
   /** Rendered HTML per section. */
   sections: Partial<Record<StatementSection, string>>;
   samples: { input: string; output: string; inputCases?: number[] }[];
@@ -51,6 +51,8 @@ function hover(e: MouseEvent, on: boolean) {
         <div v-if="limits" class="limits">
           {{ zh() ? '时间限制' : 'time limit per test' }}: {{ limits.timeLimit / 1000 }} {{ zh() ? '秒' : limits.timeLimit === 1000 ? 'second' : 'seconds' }}<br />
           {{ zh() ? '空间限制' : 'memory limit per test' }}: {{ limits.memoryLimit }} {{ zh() ? 'MB' : 'megabytes' }}
+          <template v-if="limits.input && limits.input !== 'stdin'"><br />{{ zh() ? '输入文件' : 'input' }}: {{ limits.input }}</template>
+          <template v-if="limits.output && limits.output !== 'stdout'"><br />{{ zh() ? '输出文件' : 'output' }}: {{ limits.output }}</template>
         </div>
       </div>
       <div v-if="sections.legend" class="section" v-html="sections.legend" />

@@ -39,7 +39,10 @@
     "deleteTitle": "Delete problem {id}?",
     "deleteBody": "The folder moves to the trash in the global directory (without generated caches); move it back to restore.",
     "deleteInContests": "In contests: {list}",
-    "deleted": "Deleted; the folder was moved to {path}"
+    "deleted": "Deleted; the folder was moved to {path}",
+    "stdin": "standard input",
+    "stdout": "standard output",
+    "ioFile": "or type a file name"
   },
   "list": {
     "search": "Search problems…",

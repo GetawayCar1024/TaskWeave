@@ -61,15 +61,16 @@ export async function contestTex(
   if (toc && shown.length) {
     // Contents page: the problems of this document, then the first problem on a new page.
     const cols = doc === 'statements';
-    const th = zh ? ['题号', '题目', '时间限制', '空间限制'] : ['\\#', 'Problem', 'Time limit', 'Memory limit'];
+    const th = zh ? ['题号', '题目', '输入', '输出', '时间限制', '空间限制'] : ['\\#', 'Problem', 'Input', 'Output', 'Time limit', 'Memory limit'];
+    const stream = (v: string, std: 'stdin' | 'stdout') => (!v || v === std ? h[std] : `\\texttt{${esc(v)}}`);
     body.push(
       '\\begin{center}',
-      cols ? '\\begin{tabular}{llrr}' : '\\begin{tabular}{ll}',
+      cols ? '\\begin{tabular}{llllrr}' : '\\begin{tabular}{ll}',
       '\\hline',
       (cols ? th : th.slice(0, 2)).map((x) => `\\textbf{${x}}`).join(' & ') + ' \\\\ \\hline',
       ...shown.map((s) => {
         const cells = [`\\textbf{${esc(s.index)}}`, esc(s.title)];
-        if (cols) cells.push(zh ? `${s.timeLimit / 1000} 秒` : `${s.timeLimit / 1000} s`, `${s.memoryLimit} MB`);
+        if (cols) cells.push(stream(s.input, 'stdin'), stream(s.output, 'stdout'), zh ? `${s.timeLimit / 1000} 秒` : `${s.timeLimit / 1000} s`, `${s.memoryLimit} MB`);
         return cells.join(' & ') + ' \\\\';
       }),
       '\\hline',

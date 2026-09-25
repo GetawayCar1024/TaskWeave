@@ -76,6 +76,8 @@ const problemsMissing = computed(() => rendered.value.filter((r) => !r.hasStatem
 const tutorialsMissing = computed(() => rendered.value.filter((r) => r.hasStatement && !r.hasTutorial).map((r) => r.s.index));
 
 const print = () => window.print();
+/** Contents link: the preview scrolls inside .print-page, so scroll the problem into view there. */
+const jump = (index: string) => document.getElementById(`problem-${index}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
 // ---- export as HTML (this page, self-contained) or TeX (server) ----
 const exporting = ref(false);
@@ -173,7 +175,10 @@ function toggle(e, on) {
 const contestTitle = computed(() => detail.value?.summary.title[lang.value] || detail.value?.summary.title.en || detail.value?.summary.name || '');
 const docTitle = computed(() => (doc.value === 'tutorials' ? `${contestTitle.value} — ${lang.value === 'zh' ? '题解' : 'Tutorial'}` : contestTitle.value));
 /** Contents table headers, in the language of the document (not of the UI). */
-const tocHead = computed(() => (lang.value === 'zh' ? ['题号', '题目', '时间限制', '空间限制'] : ['#', 'Problem', 'Time limit', 'Memory limit']));
+const tocHead = computed(() => (lang.value === 'zh' ? ['题号', '题目', '输入', '输出', '时间限制', '空间限制'] : ['#', 'Problem', 'Input', 'Output', 'Time limit', 'Memory limit']));
+/** "standard input" / "standard output" in the document language, or the file name. */
+const stream = (v: string, std: 'stdin' | 'stdout') =>
+  !v || v === std ? (lang.value === 'zh' ? (std === 'stdin' ? '标准输入' : '标准输出') : std === 'stdin' ? 'standard input' : 'standard output') : v;
 const shown = computed(() => rendered.value.filter((r) => (doc.value === 'tutorials' ? r.hasTutorial : r.hasStatement)));
 // The browser suggests the page title as the PDF file name.
 watch(
@@ -237,16 +242,20 @@ onBeforeUnmount(() => {
               <th class="idx">{{ tocHead[0] }}</th>
               <th>{{ tocHead[1] }}</th>
               <template v-if="doc === 'statements'">
-                <th class="num">{{ tocHead[2] }}</th>
-                <th class="num">{{ tocHead[3] }}</th>
+                <th>{{ tocHead[2] }}</th>
+                <th>{{ tocHead[3] }}</th>
+                <th class="num">{{ tocHead[4] }}</th>
+                <th class="num">{{ tocHead[5] }}</th>
               </template>
             </tr>
           </thead>
           <tbody>
             <tr v-for="r in shown" :key="r.s.index">
               <td class="idx">{{ r.s.index }}</td>
-              <td>{{ r.s.title }}</td>
+              <td><a :href="`#problem-${r.s.index}`" class="toc-link" @click.prevent="jump(r.s.index)">{{ r.s.title }}</a></td>
               <template v-if="doc === 'statements'">
+                <td :class="{ mono: r.s.input && r.s.input !== 'stdin' }">{{ stream(r.s.input, 'stdin') }}</td>
+                <td :class="{ mono: r.s.output && r.s.output !== 'stdout' }">{{ stream(r.s.output, 'stdout') }}</td>
                 <td class="num">{{ r.s.timeLimit / 1000 }} {{ lang === 'zh' ? '秒' : 's' }}</td>
                 <td class="num">{{ r.s.memoryLimit }} MB</td>
               </template>
@@ -255,7 +264,7 @@ onBeforeUnmount(() => {
         </table>
       </section>
       <div v-if="!shown.length" class="nothing">{{ doc === 'tutorials' ? t('contest.noTutorials') : t('contest.noProblems') }}</div>
-      <section v-for="r in shown" :key="r.s.index" class="problem">
+      <section v-for="r in shown" :id="`problem-${r.s.index}`" :key="r.s.index" class="problem">
         <statement-doc
           v-if="doc === 'statements'"
           :lang="lang"
@@ -327,7 +336,7 @@ onBeforeUnmount(() => {
 /* Contents page: title and the problem table, then the problems from the next page on. */
 .toc {
   margin: 8px auto 32px;
-  max-width: 560px;
+  max-width: 680px;
   font-family: Verdana, 'Microsoft YaHei', 'PingFang SC', sans-serif;
   font-size: 14px;
 }
@@ -349,6 +358,17 @@ onBeforeUnmount(() => {
   width: 3em;
   font-weight: bold;
   white-space: nowrap;
+}
+.toc .mono {
+  font-family: Consolas, 'Courier New', monospace;
+}
+.toc-link {
+  color: inherit;
+  text-decoration: none;
+}
+.toc-link:hover {
+  color: #1a4fa0;
+  text-decoration: underline;
 }
 .toc .num {
   text-align: right;

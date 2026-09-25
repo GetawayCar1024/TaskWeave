@@ -133,6 +133,9 @@ export interface ProblemSummary {
   root: string;
   timeLimit: number;
   memoryLimit: number;
+  /** "stdin" or the input file name; likewise output. */
+  input: string;
+  output: string;
   interactive: boolean;
   status: ProblemStatus;
   /** Set when problem.toml could not be parsed. */

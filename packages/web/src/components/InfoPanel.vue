@@ -30,6 +30,11 @@ const props = defineProps<{ ws: Workspace; judge: Judge }>();
 const { t, locale } = useI18n();
 const message = useMessage();
 
+/** Input / output choices: the standard stream, or a file (kept when already set). */
+const streamOptions = (std: 'stdin' | 'stdout', cur: string) => [
+  { label: `${std} (${t(std === 'stdin' ? 'problem.stdin' : 'problem.stdout')})`, value: std },
+  ...(cur && cur !== std ? [{ label: cur, value: cur }] : []),
+];
 const cfg = computed(() => props.ws.state.detail?.config ?? null);
 
 const form = reactive({
@@ -104,8 +109,8 @@ async function save() {
     timeLimit: form.timeLimit,
     memoryLimit: form.memoryLimit,
     interactive: form.interactive,
-    input: form.input,
-    output: form.output,
+    input: form.input || 'stdin',
+    output: form.output || 'stdout',
     checker: form.checker,
     validator: form.validator,
     interactor: form.interactor,
@@ -181,8 +186,9 @@ const activeInfo = computed(() => {
           </n-form-item>
           <n-form-item :label="t('problem.io')">
             <div class="io">
-              <n-input v-model:value="form.input" placeholder="stdin" />
-              <n-input v-model:value="form.output" placeholder="stdout" />
+              <!-- stdin / stdout, or a file name typed in (e.g. input.txt) -->
+              <n-select v-model:value="form.input" :options="streamOptions('stdin', form.input)" filterable tag :placeholder="t('problem.ioFile')" />
+              <n-select v-model:value="form.output" :options="streamOptions('stdout', form.output)" filterable tag :placeholder="t('problem.ioFile')" />
             </div>
           </n-form-item>
           <n-form-item :label="t('problem.interactive')"><n-switch v-model:value="form.interactive" /></n-form-item>
@@ -241,6 +247,11 @@ const activeInfo = computed(() => {
 .io {
   display: flex;
   gap: 4px;
+  width: 100%;
+}
+.io > * {
+  flex: 1;
+  min-width: 0;
 }
 .sol {
   display: flex;

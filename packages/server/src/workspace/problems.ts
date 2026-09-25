@@ -94,12 +94,32 @@ export class ProblemRegistry {
     } catch (e) {
       return { config: null, raw: {}, error: `problem.toml: ${(e as Error).message}` };
     }
+    await this.fillStreams(ref, raw);
     const r = problemTomlSchema.safeParse(raw);
     if (!r.success) {
       const msg = r.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
       return { config: null, raw, error: `problem.toml: ${msg}` };
     }
     return { config: r.data, raw };
+  }
+
+  /**
+   * Problems without `input` / `output` (older files, other tools) get stdin / stdout
+   * written into [problem], as text so the rest of the file (comments) stays as it is.
+   */
+  private async fillStreams(ref: ProblemRef, raw: Record<string, unknown>) {
+    const p = raw.problem as Record<string, unknown> | undefined;
+    if (!p || typeof p !== 'object' || (p.input !== undefined && p.output !== undefined)) return;
+    const file = path.join(ref.dir, PROBLEM_FILE);
+    const text = await fsp.readFile(file, 'utf8');
+    const m = /^[ \t]*\[problem\][ \t]*(#.*)?\r?\n/m.exec(text);
+    if (!m) return;
+    const nl = text.includes('\r\n') ? '\r\n' : '\n';
+    const add = [p.input === undefined ? 'input = "stdin"' : '', p.output === undefined ? 'output = "stdout"' : ''].filter(Boolean);
+    const at = m.index + m[0].length;
+    await atomicWrite(file, text.slice(0, at) + add.map((l) => l + nl).join('') + text.slice(at)).catch(() => {});
+    p.input ??= 'stdin';
+    p.output ??= 'stdout';
   }
 
   async summary(ref: ProblemRef): Promise<ProblemSummary> {
@@ -122,6 +142,8 @@ export class ProblemRegistry {
       root: ref.root,
       timeLimit: config?.problem.time_limit ?? 0,
       memoryLimit: config?.problem.memory_limit ?? 0,
+      input: config?.problem.input ?? 'stdin',
+      output: config?.problem.output ?? 'stdout',
       interactive: config?.problem.interactive ?? false,
       status: {
         statement: langs.statement.length > 0,
@@ -211,7 +233,7 @@ export class ProblemRegistry {
         }
       }
       if (!(await exists(path.join(dir, PROBLEM_FILE)))) {
-        await atomicWrite(path.join(dir, PROBLEM_FILE), stringify({ problem: { name, time_limit: tl, memory_limit: ml, interactive } }));
+        await atomicWrite(path.join(dir, PROBLEM_FILE), stringify({ problem: { name, time_limit: tl, memory_limit: ml, input: 'stdin', output: 'stdout', interactive } }));
       }
     } catch (e) {
       await fsp.rm(dir, { recursive: true, force: true });

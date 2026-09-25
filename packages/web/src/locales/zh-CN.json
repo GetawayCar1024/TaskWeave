@@ -39,7 +39,10 @@
     "deleteTitle": "删除题目 {id}？",
     "deleteBody": "文件夹将移到全局目录的 trash（不含生成的缓存），可移回恢复。",
     "deleteInContests": "所在比赛：{list}",
-    "deleted": "已删除，文件夹移到了 {path}"
+    "deleted": "已删除，文件夹移到了 {path}",
+    "stdin": "标准输入",
+    "stdout": "标准输出",
+    "ioFile": "或输入文件名"
   },
   "list": {
     "search": "搜索题目…",
