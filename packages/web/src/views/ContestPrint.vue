@@ -155,8 +155,9 @@ const contestTitle = computed(() => detail.value?.summary.title[lang.value] || d
 }
 .contest-title {
   text-align: center;
-  font-family: 'Times New Roman', 'Songti SC', 'SimSun', serif;
-  font-size: 26px;
+  font-family: Verdana, Arial, 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  font-size: 24px;
+  font-weight: normal;
   margin: 0 0 24px;
 }
 .problem + .problem {

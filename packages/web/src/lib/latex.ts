@@ -223,6 +223,36 @@ class Parser {
     return s;
   }
 
+  /** `[...]` with nested brackets and braces (e.g. `[a[i] + \{x\}]`), or null. */
+  private readBracketRaw(): string | null {
+    const save = this.pos;
+    this.skipSpaces();
+    if (this.peek() !== '[') {
+      this.pos = save;
+      return null;
+    }
+    const start = this.pos + 1;
+    let depth = 0;
+    let braces = 0;
+    for (; !this.eof(); this.pos++) {
+      const c = this.peek();
+      if (c === '\\') {
+        this.pos++;
+        continue;
+      }
+      if (c === '{') braces++;
+      else if (c === '}') braces--;
+      else if (braces === 0 && c === '[') depth++;
+      else if (braces === 0 && c === ']' && --depth === 0) {
+        const s = this.src.slice(start, this.pos);
+        this.pos++;
+        return s;
+      }
+    }
+    this.pos = save;
+    return null;
+  }
+
   private readCommandName(): string {
     const m = this.src.slice(this.pos).match(/^([A-Za-z@]+\*?|.)/s);
     const name = m ? m[1] : '';
@@ -429,10 +459,9 @@ class Parser {
 
   private expand(m: Macro): string {
     if (++this.expansions > 500) return `<span class="tex-error">macro expansion limit</span>`;
-    const vals = m.args.map((def) => {
-      const g = this.readGroupRaw();
-      return g ?? def;
-    });
+    // Codeforces-style defs: arguments with defaults are optional `[...]` arguments,
+    // e.g. \DefLimitSum[r - l + 1][10^6]; `{...}` is accepted as well.
+    const vals = m.args.map((def) => this.readBracketRaw() ?? this.readGroupRaw() ?? def);
     const body = m.body.replace(/#(\d)/g, (_, d: string) => vals[Number(d) - 1] ?? '');
     // Textual substitution, as TeX does: the expansion is parsed in place.
     this.src = this.src.slice(0, this.pos) + body + this.src.slice(this.pos);

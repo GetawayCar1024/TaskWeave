@@ -63,34 +63,41 @@ const zh = () => props.lang === 'zh';
 </template>
 
 <style scoped>
+/* Typography follows Codeforces problem statements (Verdana body, Helvetica section
+   titles, Consolas for code and samples, TeX-style math). */
 .statement-doc {
-  font-size: 15px;
-  line-height: 1.6;
-  font-family: 'Times New Roman', 'Songti SC', 'SimSun', serif;
+  font-family: Verdana, Arial, 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
 }
 .header {
   text-align: center;
-  margin-bottom: 16px;
+  margin-bottom: 1.5em;
 }
 .title {
-  font-size: 1.5em;
-  font-weight: bold;
+  font-size: 150%;
+  margin-bottom: 0.25em;
 }
 .limits {
-  font-size: 0.9em;
-  opacity: 0.8;
+  font-size: 90%;
+  opacity: 0.85;
 }
 .section-title {
-  font-size: 1.15em;
+  font-family: 'Helvetica Neue', Helvetica, Arial, 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  font-size: 115%;
   font-weight: bold;
-  margin: 18px 0 6px;
+  margin: 1.25em 0 0.5em;
 }
 .section :deep(.p) {
-  margin: 0 0 0.8em;
+  margin: 0 0 1em;
 }
-.section :deep(code),
+.statement-doc :deep(code),
+.statement-doc :deep(.tt),
 .statement-doc :deep(pre) {
-  font-family: Consolas, 'Courier New', monospace;
+  font-family: Consolas, 'Lucida Console', 'Andale Mono', 'Bitstream Vera Sans Mono', 'Courier New', Courier, monospace;
+}
+.statement-doc :deep(.katex) {
+  font-size: 1.1em;
 }
 .statement-doc :deep(.tex-unknown) {
   background: rgba(240, 200, 40, 0.35);
@@ -129,7 +136,7 @@ const zh = () => props.lang === 'zh';
   font-variant: small-caps;
 }
 .statement-doc :deep(.sf) {
-  font-family: system-ui, sans-serif;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 .statement-doc :deep(.footnotes) {
   font-size: 0.85em;
@@ -138,33 +145,37 @@ const zh = () => props.lang === 'zh';
   margin-top: 16px;
 }
 .statement-doc :deep(.epigraph) {
-  margin: 0 0 1em auto;
+  margin: 0 0 1.5em auto;
   width: 60%;
   font-style: italic;
 }
 .statement-doc :deep(.epigraph .who) {
   text-align: right;
+  font-style: normal;
 }
+/* Samples: input above output, each in its own box with a title bar (as on Codeforces). */
 .statement-doc :deep(.sample) {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  border: 1px solid rgba(128, 128, 128, 0.5);
-  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+  margin-bottom: 1em;
   break-inside: avoid;
 }
-.statement-doc :deep(.sample-part + .sample-part) {
-  border-left: 1px solid rgba(128, 128, 128, 0.5);
+.statement-doc :deep(.sample-part) {
+  border: 1px solid rgba(128, 128, 128, 0.6);
 }
 .statement-doc :deep(.sample-title) {
-  font-family: system-ui, sans-serif;
-  font-size: 0.85em;
-  padding: 2px 8px;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.5);
+  font-family: 'Helvetica Neue', Helvetica, Arial, 'Microsoft YaHei', sans-serif;
+  font-size: 0.9em;
+  font-weight: bold;
+  padding: 0.2em 0.5em;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.6);
 }
 .statement-doc :deep(.sample pre) {
   margin: 0;
-  padding: 6px 8px;
-  font-size: 0.85em;
+  padding: 0.25em 0.5em;
+  font-size: 0.9em;
+  line-height: 1.25em;
   overflow-x: auto;
 }
 </style>

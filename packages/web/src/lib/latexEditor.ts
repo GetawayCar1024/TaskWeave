@@ -35,7 +35,15 @@ export function registerLatexMacros() {
         kind: monaco.languages.CompletionItemKind.Function,
         detail: mac.args.length ? `${mac.args.length} arg(s): ${mac.args.map((a) => a || '…').join(', ')}` : 'no arguments',
         documentation: macroPreview(mac),
-        insertText: mac.name + mac.args.map((a, i) => `{\${${i + 1}:${a.replace(/[$}\\]/g, '\\$&') || `arg${i + 1}`}}}`).join(''),
+        // Arguments with a default are optional [..] arguments (Codeforces defs); required ones {..}.
+        insertText:
+          mac.name +
+          mac.args
+            .map((a, i) => {
+              const ph = `\${${i + 1}:${a.replace(/[$}\\]/g, '\\$&') || `arg${i + 1}`}}`;
+              return a ? `[${ph}]` : `{${ph}}`;
+            })
+            .join(''),
         insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
         range,
       }));
