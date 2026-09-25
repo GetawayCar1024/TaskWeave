@@ -129,10 +129,16 @@ export const api = {
   // ---- judge (M2) ----
   build: (id: string, sources?: string[]) => request<CompileResult[]>('POST', `/problems/${pid(id)}/build`, { sources }),
   generateTests: (id: string, testset?: string) => request<JobInfo>('POST', `/problems/${pid(id)}/tests/generate${tsq(testset)}`),
-  addManualTest: (id: string, req: { input: string; sample?: boolean; testset?: string; statementOutput?: string }) =>
+  addManualTest: (id: string, req: { input: string; sample?: boolean; testset?: string; statementInput?: string; statementOutput?: string }) =>
     request<{ index: number; path: string; samples?: string }>('POST', `/problems/${pid(id)}/tests/manual`, req),
+  /** `source` is the test as last seen (the server refuses if the test at `n` is another one). */
+  removeTest: (id: string, n: number, source: string, testset?: string) =>
+    request<{ kind: 'manual' | 'script'; removed: number[]; trash?: string }>(
+      'DELETE',
+      `/problems/${pid(id)}/tests/${n}?source=${encodeURIComponent(source)}${testset && testset !== 'tests' ? `&testset=${encodeURIComponent(testset)}` : ''}`,
+    ),
   tests: (id: string, testset?: string) => request<TestsManifest | null>('GET', `/problems/${pid(id)}/tests${tsq(testset)}`),
-  testFile: (id: string, n: number, kind: 'in' | 'ans' | 'overview' | 'statement', testset?: string) =>
+  testFile: (id: string, n: number, kind: 'in' | 'ans' | 'overview' | 'statement-in' | 'statement-out', testset?: string) =>
     request<TestFileResponse>('GET', `/problems/${pid(id)}/tests/${n}/${kind}${tsq(testset)}`),
   run: (id: string, req: QuickRunRequest) => request<QuickRunResponse>('POST', `/problems/${pid(id)}/run`, req),
   startInvocation: (id: string, sources: string[], tests?: number[], testset?: string) =>

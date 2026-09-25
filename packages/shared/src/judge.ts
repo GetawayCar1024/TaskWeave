@@ -46,9 +46,11 @@ export interface TestInfo {
   line?: number;
   group?: string;
   /**
-   * Samples: output shown in the statement instead of the answer (a manual test's
-   * NN.out next to NN.in; needed for interactive problems). Problem-relative path.
+   * Samples: input / output shown in the statement instead of the test's input and
+   * answer (a manual test's NN.statement.in / NN.statement.out next to NN.in; needed
+   * for interactive problems). Problem-relative paths.
    */
+  statementInput?: string;
   statementOutput?: string;
   /** Samples: test case of each input line (from the validator's setTestCase markup; 0 = none). */
   inputCases?: number[];

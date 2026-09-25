@@ -10,7 +10,7 @@ import { runStress } from '../judge/stress.js';
 import { exportDir, exportPackage } from '../judge/package.js';
 import { localChecks } from '../judge/checks.js';
 import { runCheckerTests, runValidatorTests } from '../judge/selftest.js';
-import { addManualTest, answerPath, generateTests, inputPath, overviewPath, publicManifest, readManifest, requireTestset } from '../judge/tests.js';
+import { addManualTest, removeTest, answerPath, generateTests, inputPath, overviewPath, publicManifest, readManifest, requireTestset } from '../judge/tests.js';
 import { HttpError, safeJoin } from '../util/fs.js';
 
 const PREVIEW = 64 * 1024;
@@ -62,10 +62,20 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
   });
 
   /** Add a manual test (optionally as a sample) with the next suitable index. */
-  app.post<P & { Body: { input?: string; sample?: boolean; testset?: string; statementOutput?: string } }>('/api/problems/:id/tests/manual', async (req) => {
+  app.post<P & { Body: { input?: string; sample?: boolean; testset?: string; statementInput?: string; statementOutput?: string } }>('/api/problems/:id/tests/manual', async (req) => {
     const ctx = await judge.ctx(req.params.id);
     if (typeof req.body?.input !== 'string') throw new HttpError(400, 'bad_request', 'input required');
-    const r = await addManualTest(ctx, req.body.input, { sample: req.body.sample, testset: req.body.testset, statementOutput: req.body.statementOutput });
+    const r = await addManualTest(ctx, req.body.input, { sample: req.body.sample, testset: req.body.testset, statementInput: req.body.statementInput, statementOutput: req.body.statementOutput });
+    if (r.samples !== undefined) await judge.registry.patch(ctx.ref.id, { samples: r.samples });
+    return r;
+  });
+
+  /** Remove a test: a manual test moves to the global trash, a script test loses its line. */
+  app.delete<{ Params: { id: string; n: string }; Querystring: { testset?: string; source?: string } }>('/api/problems/:id/tests/:n', async (req) => {
+    const ctx = await judge.ctx(req.params.id);
+    const n = Number(req.params.n);
+    if (!Number.isInteger(n) || n < 1) throw new HttpError(400, 'bad_test', 'Invalid test index');
+    const r = await removeTest(ctx, n, { testset: req.query.testset, trashDir: path.join(judge.global.dir, 'trash'), source: req.query.source });
     if (r.samples !== undefined) await judge.registry.patch(ctx.ref.id, { samples: r.samples });
     return r;
   });
@@ -80,14 +90,14 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     const ctx = await judge.ctx(req.params.id);
     const n = Number(req.params.n);
     if (!Number.isInteger(n) || n < 1) throw new HttpError(400, 'bad_test', 'Invalid test index');
-    // "statement": what the statement shows as output (custom NN.out, else the answer).
-    if (req.params.kind === 'statement') {
-      const m = await readManifest(ctx);
-      const rel = m?.tests.find((t) => t.index === n)?.statementOutput;
-      return preview(rel ? safeJoin(ctx.ref.dir, rel) : answerPath(ctx, n));
+    // What the statement shows (custom NN.statement.in / .out, else the test itself).
+    if (req.params.kind === 'statement-in' || req.params.kind === 'statement-out') {
+      const t = (await readManifest(ctx))?.tests.find((x) => x.index === n);
+      const rel = req.params.kind === 'statement-in' ? t?.statementInput : t?.statementOutput;
+      return preview(rel ? safeJoin(ctx.ref.dir, rel) : req.params.kind === 'statement-in' ? inputPath(ctx, n) : answerPath(ctx, n));
     }
     const file = { in: inputPath, ans: answerPath, overview: overviewPath }[req.params.kind];
-    if (!file) throw new HttpError(400, 'bad_kind', 'kind must be in, ans, overview or statement');
+    if (!file) throw new HttpError(400, 'bad_kind', 'kind must be in, ans, overview, statement-in or statement-out');
     return preview(file(ctx, n, requireTestset(ctx, req.query.testset).name));
   });
 

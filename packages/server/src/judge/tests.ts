@@ -84,7 +84,7 @@ async function plan(ctx: ProblemCtx, errors: string[], ts: TestsetConfig): Promi
   const manualRel = ts.manual.replace(/\/+$/, '');
   const manualDir = safeJoin(ctx.ref.dir, manualRel);
   const manual = (await fsp.readdir(manualDir, { withFileTypes: true }).catch(() => []))
-    .filter((e) => e.isFile() && !e.name.startsWith('.') && !/\.(ans|out)$/i.test(e.name))
+    .filter((e) => e.isFile() && !e.name.startsWith('.') && !/\.(ans|out)$/i.test(e.name) && !/\.statement\.in$/i.test(e.name))
     .map((e) => e.name)
     .sort(natural);
   for (const name of manual) {
@@ -175,10 +175,11 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
 
   const entries = new Map<number, Entry>();
   for (const p of planned) {
-    const outRel = p.origin === 'manual' && samples.has(p.index) ? statementOutputPath(p.source) : undefined;
-    const statementOutput = outRel && (await exists(safeJoin(ctx.ref.dir, outRel))) ? outRel : undefined;
+    const sp = p.origin === 'manual' && samples.has(p.index) ? statementPaths(p.source) : undefined;
+    const has = async (rel?: string) => (rel && (await exists(safeJoin(ctx.ref.dir, rel))) ? rel : undefined);
     entries.set(p.index, {
-      statementOutput,
+      statementInput: await has(sp?.input),
+      statementOutput: await has(sp?.output),
       index: p.index,
       origin: p.origin,
       source: p.source,
@@ -359,6 +360,7 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
   }
 
   const tests = [...entries.values()].sort((a, b) => a.index - b.index);
+  for (const i of samples) if (!entries.has(i)) errors.push(`Sample test ${i} does not exist (tests.samples)`);
   for (const t of tests) {
     if (t.valid === false) errors.push(`Test ${t.index} is invalid: ${t.validatorMessage ?? ''}`.trim());
     if (t.error) errors.push(`Test ${t.index}: ${t.error}`);
@@ -384,13 +386,16 @@ const overviewPathOf = overviewPath;
  * current samples, skipping indices that manual files or script lines claim
  * explicitly ("> 3"); tests from "> $" lines move up, as on Polygon.
  */
-/** Output for the statement of a manual sample: tests/manual/NN.in → tests/manual/NN.out. */
-export const statementOutputPath = (manualSource: string) => manualSource.replace(/\.[^./]*$/, '') + '.out';
+/** Statement input / output of a manual sample: tests/manual/NN.in → NN.statement.in / NN.statement.out. */
+export function statementPaths(manualSource: string): { input: string; output: string } {
+  const stem = manualSource.replace(/\.[^./]*$/, '');
+  return { input: `${stem}.statement.in`, output: `${stem}.statement.out` };
+}
 
 export async function addManualTest(
   ctx: ProblemCtx,
   input: string,
-  opts: { sample?: boolean; testset?: string; statementOutput?: string },
+  opts: { sample?: boolean; testset?: string; statementInput?: string; statementOutput?: string },
 ): Promise<{ index: number; path: string; samples?: string }> {
   const ts = requireTestset(ctx, opts.testset);
   const planned = await plan(ctx, [], ts);
@@ -400,7 +405,9 @@ export async function addManualTest(
     const scriptExplicit = p.origin === 'script' && p.cmd && p.cmd.target.kind !== 'auto';
     if (manualNumbered || scriptExplicit) explicit.add(p.index);
   }
-  const samples = ts.name === DEFAULT_TESTSET ? parseIndexList(ts.samples ?? '') : [];
+  // Only samples that exist count: a stale entry in tests.samples must not leave a gap.
+  const existing = new Set(planned.map((p) => p.index));
+  const samples = ts.name === DEFAULT_TESTSET ? parseIndexList(ts.samples ?? '').filter((i) => existing.has(i)) : [];
   let index = samples.length ? Math.max(...samples) + 1 : 1;
   const manualDir = ts.manual.replace(/\/+$/, '');
   const fileOf = (i: number) => `${manualDir}/${String(i).padStart(2, '0')}.in`;
@@ -409,9 +416,16 @@ export async function addManualTest(
   const text = input.replace(/\r\n/g, '\n');
   await fsp.mkdir(path.dirname(safeJoin(ctx.ref.dir, rel)), { recursive: true });
   await atomicWrite(safeJoin(ctx.ref.dir, rel), text.endsWith('\n') || !text ? text : `${text}\n`);
-  if (opts.sample && ts.name === DEFAULT_TESTSET && opts.statementOutput?.trim()) {
-    const out = opts.statementOutput.replace(/\r\n/g, '\n');
-    await atomicWrite(safeJoin(ctx.ref.dir, statementOutputPath(rel)), out.endsWith('\n') ? out : `${out}\n`);
+  if (opts.sample && ts.name === DEFAULT_TESTSET) {
+    const sp = statementPaths(rel);
+    for (const [text, file] of [
+      [opts.statementInput, sp.input],
+      [opts.statementOutput, sp.output],
+    ] as const) {
+      if (!text?.trim()) continue;
+      const t = text.replace(/\r\n/g, '\n');
+      await atomicWrite(safeJoin(ctx.ref.dir, file), t.endsWith('\n') ? t : `${t}\n`);
+    }
   }
   if (opts.sample && ts.name === DEFAULT_TESTSET) {
     const next = [...new Set([...samples, index])].sort((a, b) => a - b);
@@ -457,4 +471,62 @@ export function parseTestMarkup(buf: Buffer | null): number[] | undefined {
   }
   if (lineCase !== null) lines.push(lineCase);
   return seen ? lines : undefined;
+}
+
+/**
+ * Remove one test. A manual test is not deleted: its files (input and statement
+ * input / output) move to `trashDir`. A script test loses its line in the script;
+ * a line that makes several tests ({a-b}) removes all of them. Lines produced by a
+ * FreeMarker loop cannot be removed one by one. The index leaves tests.samples.
+ */
+export async function removeTest(
+  ctx: ProblemCtx,
+  index: number,
+  opts: { testset?: string; trashDir: string; source?: string },
+): Promise<{ kind: 'manual' | 'script'; removed: number[]; trash?: string; samples?: string }> {
+  const ts = requireTestset(ctx, opts.testset);
+  const planned = await plan(ctx, [], ts);
+  const p = planned.find((x) => x.index === index);
+  if (!p) throw new HttpError(404, 'test_not_found', `Test ${index} does not exist`);
+  // The caller saw the test in a manifest that may be out of date: never remove another one.
+  if (opts.source !== undefined && opts.source !== p.source) {
+    throw new HttpError(409, 'test_changed', `Test ${index} is now ${p.source}, not ${opts.source}; regenerate the tests and try again`);
+  }
+  let result: { kind: 'manual' | 'script'; removed: number[]; trash?: string };
+  if (p.origin === 'manual' && p.manualPath) {
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
+    const dest = path.join(opts.trashDir, `${path.basename(ctx.ref.dir)}-tests-${stamp}`);
+    await fsp.mkdir(dest, { recursive: true });
+    const sp = statementPaths(p.source);
+    for (const rel of [p.source, sp.input, sp.output]) {
+      const abs = safeJoin(ctx.ref.dir, rel);
+      if (await exists(abs)) await fsp.rename(abs, path.join(dest, path.basename(rel))).catch(async () => {
+        await fsp.copyFile(abs, path.join(dest, path.basename(rel)));
+        await fsp.rm(abs, { force: true });
+      });
+    }
+    result = { kind: 'manual', removed: [index], trash: dest };
+  } else {
+    if (!ts.script || !p.cmd) throw new HttpError(400, 'not_removable', `Test ${index} has no source to remove`);
+    const file = safeJoin(ctx.ref.dir, ts.script);
+    const text = (await fsp.readFile(file, 'utf8')).replace(/\r\n/g, '\n');
+    const lines = text.split('\n');
+    const templated = /<#|\$\{/.test(text);
+    let at = -1;
+    if (!templated && lines[p.cmd.line - 1]?.trim() === p.cmd.text) at = p.cmd.line - 1;
+    else {
+      const same = lines.map((l, i) => (l.trim() === p.cmd!.text ? i : -1)).filter((i) => i >= 0);
+      if (same.length === 1) at = same[0];
+    }
+    if (at < 0) throw new HttpError(400, 'templated_script', `Test ${index} comes from a template loop in ${ts.script}; edit the script instead`);
+    lines.splice(at, 1);
+    await atomicWrite(file, lines.join('\n'));
+    const removed = planned.filter((x) => x.cmd === p.cmd).map((x) => x.index);
+    result = { kind: 'script', removed };
+  }
+  if (ts.name === DEFAULT_TESTSET) {
+    const samples = parseIndexList(ts.samples ?? '');
+    if (samples.some((i) => result.removed.includes(i))) return { ...result, samples: compressRanges(samples.filter((i) => !result.removed.includes(i))) };
+  }
+  return result;
 }

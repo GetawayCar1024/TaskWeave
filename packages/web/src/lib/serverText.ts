@@ -100,6 +100,10 @@ const RULES: Rule[] = [
         .join('；')}`,
   ],
 
+  [/^Test (\d+) comes from a template loop in (.+); edit the script instead$/, (m) => `测试点 ${m[1]} 由 ${m[2]} 中的模板循环生成，请直接编辑 script`],
+  [/^Test (\d+) does not exist$/, (m) => `测试点 ${m[1]} 不存在`],
+  [/^Test (\d+) is now (.+), not (.+); regenerate the tests and try again$/, (m) => `测试点 ${m[1]} 现在是 ${m[2]}，不是 ${m[3]}；请重新生成测试后再试`],
+  [/^Sample test (\d+) does not exist \(tests\.samples\)$/, (m) => `样例 ${m[1]} 对应的测试点不存在（tests.samples）`],
   [/^Folder already exists: (.+)$/, (m) => `文件夹已存在：${m[1]}`],
   [/^Name must be lowercase letters, digits and dashes$/, () => '名称只能包含小写字母、数字和连字符'],
   [/^Invalid problem index: (.*)$/, (m) => `题号无效：${m[1]}（应为大写字母开头，最多 4 位，如 A、B、C1）`],

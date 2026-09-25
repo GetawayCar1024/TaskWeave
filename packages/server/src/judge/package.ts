@@ -192,11 +192,12 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
     for (const [s, text] of Object.entries(sec)) if (text) zip.add(`${dir}/${s}.tex`, text);
     for (const [k, t] of sampleTests.entries()) {
       const n = String(k + 1).padStart(2, '0');
-      zip.add(`${dir}/example.${n}`, await fsp.readFile(inputPath(ctx, t.index)).catch(() => Buffer.alloc(0)));
+      const exampleIn = t.statementInput ? safeJoin(ref.dir, t.statementInput) : inputPath(ctx, t.index);
+      zip.add(`${dir}/example.${n}`, await fsp.readFile(exampleIn).catch(() => Buffer.alloc(0)));
       const exampleOut = t.statementOutput ? safeJoin(ref.dir, t.statementOutput) : answerPath(ctx, t.index);
       zip.add(`${dir}/example.${n}.a`, await fsp.readFile(exampleOut).catch(() => Buffer.alloc(0)));
       // exmpfile in problem.tex refers to files next to it.
-      zip.add(`statements/${plang}/example.${n}`, await fsp.readFile(inputPath(ctx, t.index)).catch(() => Buffer.alloc(0)));
+      zip.add(`statements/${plang}/example.${n}`, await fsp.readFile(exampleIn).catch(() => Buffer.alloc(0)));
       zip.add(`statements/${plang}/example.${n}.a`, await fsp.readFile(exampleOut).catch(() => Buffer.alloc(0)));
     }
     if (sec.legend || sec.input || sec.output) {

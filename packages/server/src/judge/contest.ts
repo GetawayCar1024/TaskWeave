@@ -197,8 +197,10 @@ export async function contestStatements(judge: Judge, contests: ContestRegistry,
           .readFile(f)
           .then((b) => b.subarray(0, SAMPLE_LIMIT).toString('utf8'))
           .catch(() => '');
+      const inFile = t.statementInput ? safeJoin(ctx.ref.dir, t.statementInput) : inputPath(ctx, t.index);
       const outFile = t.statementOutput ? safeJoin(ctx.ref.dir, t.statementOutput) : answerPath(ctx, t.index);
-      samples.push({ input: await read(inputPath(ctx, t.index)), output: await read(outFile), inputCases: t.inputCases });
+      // The markup describes the real input: drop it when the statement shows another one.
+      samples.push({ input: await read(inFile), output: await read(outFile), inputCases: t.statementInput ? undefined : t.inputCases });
     }
     out.push({
       index: p.index,

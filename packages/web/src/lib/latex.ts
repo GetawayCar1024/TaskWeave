@@ -420,7 +420,7 @@ class Parser {
         const arg = this.readGroupRaw() ?? '';
         this.footnotes.push(this.sub(arg));
         const n = this.footnotes.length;
-        return `<sup class="footnote-ref"><a href="#fn-${n}">${n}</a></sup>`;
+        return `<sup class="footnote-ref">${fnSymbol(n)}</sup>`;
       }
       case 'url': {
         const u = this.readGroupRaw() ?? '';
@@ -611,11 +611,18 @@ export function sampleHtml(input: string, output: string, inLabel: string, outLa
   );
 }
 
+/** Footnote marks as LaTeX \fnsymbol and Codeforces statements: ∗ † ‡ § ¶ ‖, then doubled. */
+const FN_SYMBOLS = ['∗', '†', '‡', '§', '¶', '‖'];
+function fnSymbol(n: number): string {
+  const s = FN_SYMBOLS[(n - 1) % FN_SYMBOLS.length];
+  return s.repeat(Math.floor((n - 1) / FN_SYMBOLS.length) + 1);
+}
+
 export function renderLatex(src: string, opts: RenderOptions): RenderResult {
   const p = new Parser(src.replace(/\r\n/g, '\n'), opts);
   let html = paragraphs(p.parse(() => false));
   if (p.footnotes.length) {
-    html += `<ol class="footnotes">${p.footnotes.map((f, i) => `<li id="fn-${i + 1}">${paragraphs(f)}</li>`).join('')}</ol>`;
+    html += `<div class="footnotes">${p.footnotes.map((f, i) => `<div class="footnote"><sup>${fnSymbol(i + 1)}</sup>${paragraphs(f)}</div>`).join('')}</div>`;
   }
   return { html, unknown: [...p.unknown] };
 }

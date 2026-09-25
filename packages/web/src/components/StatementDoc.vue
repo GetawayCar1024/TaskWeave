@@ -170,7 +170,20 @@ function hover(e: MouseEvent, on: boolean) {
   font-size: 85%;
   position: relative;
   margin: 1em 0;
-  padding-left: 1.5em;
+  padding-top: 0.25em;
+}
+/* Mark (∗, †, …) then the text, as in Polygon's .statement-footnote. */
+.statement-doc :deep(.footnote) {
+  display: flex;
+  gap: 0.25em;
+}
+.statement-doc :deep(.footnote .p) {
+  margin: 0 0 0.5em;
+}
+.statement-doc :deep(.footnote-ref),
+.statement-doc :deep(.footnote sup) {
+  font-size: 75%;
+  line-height: 0;
 }
 .statement-doc :deep(.footnotes)::before {
   content: '';

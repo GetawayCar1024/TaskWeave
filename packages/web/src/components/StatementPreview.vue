@@ -38,9 +38,10 @@ async function loadSamples() {
   samples.value = await Promise.all(
     tests.map(async (x) => ({
       index: x.index,
-      inputCases: x.inputCases,
-      input: (await api.testFile(props.problemId, x.index, 'in').catch(() => null))?.content ?? '',
-      output: (await api.testFile(props.problemId, x.index, 'statement').catch(() => null))?.content ?? '',
+      // The markup describes the real input, not a custom statement input.
+      inputCases: x.statementInput ? undefined : x.inputCases,
+      input: (await api.testFile(props.problemId, x.index, 'statement-in').catch(() => null))?.content ?? '',
+      output: (await api.testFile(props.problemId, x.index, 'statement-out').catch(() => null))?.content ?? '',
     })),
   );
 }
