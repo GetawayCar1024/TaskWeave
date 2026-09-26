@@ -366,6 +366,10 @@ onMounted(() => {
                   <n-radio-button value="light">{{ t('settings.light') }}</n-radio-button>
                 </n-radio-group>
               </n-form-item>
+              <n-form-item :label="t('settings.fullscreen')">
+                <n-switch v-model:value="draft.ui.fullscreen" />
+                <span class="small dim" style="margin-left: 8px">{{ t('settings.fullscreenHint') }}</span>
+              </n-form-item>
               <n-form-item :label="t('settings.fontSize')">
                 <n-input-number v-model:value="draft.editor.font_size" :min="8" :max="40" style="width: 120px" />
               </n-form-item>

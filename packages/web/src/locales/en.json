@@ -141,7 +141,9 @@
     "parallelHint": "0 = auto ({auto})",
     "contestsDir": "Contests folder",
     "change": "Change",
-    "useDefault": "Use default"
+    "useDefault": "Use default",
+    "fullscreen": "Fullscreen on open",
+    "fullscreenHint": "Enters fullscreen on the first click or key press; in fullscreen with a file open, Ctrl+W closes the file (Chrome / Edge)"
   },
   "editor": {
     "changedOnDisk": "This file changed on disk while you have unsaved changes.",

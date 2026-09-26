@@ -316,10 +316,32 @@ async function onAction(a: SidebarAction) {
 const quickOpen = ref(false);
 const allFiles = computed(() => ws.files.value.map((f) => f.path));
 
+/**
+ * Ctrl+W normally closes the browser tab and a page cannot stop it; in fullscreen
+ * (entered by the page) Chrome / Edge let it take the key with the Keyboard Lock API.
+ * Locked while a file is open, so Ctrl+W closes the file; released otherwise.
+ */
+type KeyboardLock = { lock?: (keys: string[]) => Promise<void>; unlock?: () => void };
+const keyboard = (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
+const fullscreen = ref(!!document.fullscreenElement);
+const onFullscreen = () => (fullscreen.value = !!document.fullscreenElement);
+const wLocked = computed(() => fullscreen.value && ws.state.tabs.length > 0);
+watch(
+  wLocked,
+  (on) => {
+    if (on) keyboard?.lock?.(['KeyW']).catch(() => {});
+    else keyboard?.unlock?.();
+  },
+  { immediate: true },
+);
+
 function onKeydown(e: KeyboardEvent) {
   if (e.defaultPrevented || !(e.ctrlKey || e.metaKey)) return;
   const k = e.key.toLowerCase();
-  if (k === 's') {
+  if (k === 'w' && wLocked.value && ws.state.active) {
+    e.preventDefault();
+    closeTab(ws.state.active);
+  } else if (k === 's') {
     e.preventDefault();
     if (ws.state.active) save(ws.state.active);
   } else if (k === 'p') {
@@ -372,6 +394,7 @@ const offWs = onWs((e) => {
 });
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown);
+  document.addEventListener('fullscreenchange', onFullscreen);
   window.addEventListener('beforeunload', onBeforeUnload);
   registerLatexMacros();
   await Promise.all([ws.init(), judge.init()]);
@@ -398,6 +421,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   offWs();
   window.removeEventListener('keydown', onKeydown);
+  document.removeEventListener('fullscreenchange', onFullscreen);
+  keyboard?.unlock?.();
   window.removeEventListener('beforeunload', onBeforeUnload);
   ws.dispose();
 });

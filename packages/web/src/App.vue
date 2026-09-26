@@ -24,6 +24,19 @@ const loadError = ref('');
 
 onUnauthorized(() => (unauthorized.value = true));
 
+/**
+ * "Fullscreen on open": a page may only enter fullscreen from a user gesture, so do it on
+ * the first click / key press after opening (once per page load).
+ */
+function firstGesture() {
+  window.removeEventListener('pointerdown', firstGesture, true);
+  window.removeEventListener('keydown', firstGesture, true);
+  if (settings.config?.ui.fullscreen === false || document.fullscreenElement) return;
+  document.documentElement.requestFullscreen?.().catch(() => {});
+}
+window.addEventListener('pointerdown', firstGesture, true);
+window.addEventListener('keydown', firstGesture, true);
+
 onMounted(async () => {
   try {
     await loadSettings();

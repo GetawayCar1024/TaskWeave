@@ -14,9 +14,11 @@ export const globalConfigSchema = z
       .object({
         locale: z.enum(UI_LOCALES).default('zh-CN'),
         theme: z.enum(['dark', 'light']).default('dark'),
+        /** Enter fullscreen on the first click / key press after opening (browsers need a gesture). */
+        fullscreen: z.boolean().default(true),
       })
       .loose()
-      .default({ locale: 'zh-CN', theme: 'dark' }),
+      .default({ locale: 'zh-CN', theme: 'dark', fullscreen: true }),
     problems: z
       .object({
         /** Absolute paths of problem root directories. */

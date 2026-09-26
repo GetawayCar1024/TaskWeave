@@ -41,7 +41,7 @@ pnpm release      # 打包成独立的 npm 包到 release/（无运行时依赖�
 - **Invocation**：选若干解 × 全部测试，矩阵显示结论 / 时间，按 tag 标出不符合预期的格子；点格子看输入和“答案 vs 输出”的 diff；保留历史记录。
 - **自测**：validator 自测、checker 自测（约定见下）。
 - **快速运行**（`Ctrl+Enter`）：当前文件在自定义输入或某个测试上运行，带 checker 结论。
-- **题面预览**：打开 `statement/<语言>/*.tex` 时右侧实时渲染（Polygon LaTeX 子集 + KaTeX + defs.toml 宏展开；defs.toml 有英文、俄文和中文三种版本，中文题面用中文版，缺少时用英文版），无法识别的命令标黄；输入 `\Def` 自动补全宏，悬停显示展开内容。也会补全 Codeforces / Polygon 支持的 TeX 命令与环境（`\textbf`、`\t`、`\epigraph`、`\includegraphics`、itemize / enumerate / tabular …，列表的 `\item` 缩进两个空格），公式里补全常用数学命令（`\le`、`\frac`、`\bmod` …），悬停显示说明。
+- **题面预览**：打开 `statement/<语言>/*.tex` 时右侧实时渲染（Polygon LaTeX 子集 + KaTeX + defs.toml 宏展开；defs.toml 有英文、俄文和中文三种版本，中文题面用中文版，缺少时用英文版），无法识别的命令标黄；输入 `\Def` 自动补全宏，悬停显示展开内容。也会补全 Codeforces / Polygon 支持的 TeX 命令与环境（`\textbf`、`\t`、`\epigraph`、`\includegraphics`、itemize / enumerate / tabular …，列表的 `\item` 缩进两个空格），公式里补全常用数学命令（`\le`、`\frac`、`\bmod` …），悬停显示说明。同名文件（如 `zh/input.tex` 与 `en/input.tex`）的标签页会附上区分它们的文件夹名。“设置 → 通用 → 打开时自动全屏”（默认开）：打开后第一次点击或按键时进入全屏；全屏且打开了文件时，Ctrl+W 关闭当前文件而不是浏览器标签页（Chrome / Edge 的 Keyboard Lock）。
 
 ### 约定
 
