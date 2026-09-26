@@ -175,18 +175,28 @@ function hover(e: MouseEvent, on: boolean) {
   margin: 1em 0;
   padding-top: 0.25em;
 }
-/* Mark (∗, †, …) then the text, as in Polygon's .statement-footnote. */
+/* Mark (∗, †, …) then the text, as on Codeforces: the mark sits in a box one character
+   wide before the first character, at its top right, on the first line of the text. */
 .statement-doc :deep(.footnote) {
   display: flex;
-  gap: 0.25em;
+  align-items: baseline;
 }
 .statement-doc :deep(.footnote .p) {
   margin: 0 0 0.5em;
 }
-.statement-doc :deep(.footnote-ref),
-.statement-doc :deep(.footnote sup) {
+.statement-doc :deep(.footnote-ref) {
   font-size: 75%;
   line-height: 0;
+}
+.statement-doc :deep(.footnote > sup) {
+  font-size: 75%;
+  line-height: 1;
+  /* One character of the footnote text (the mark's own font is 75% of it). */
+  flex: 0 0 calc(1em / 0.75);
+  text-align: right;
+  position: relative;
+  top: -0.45em;
+  vertical-align: baseline;
 }
 .statement-doc :deep(.footnotes)::before {
   content: '';
