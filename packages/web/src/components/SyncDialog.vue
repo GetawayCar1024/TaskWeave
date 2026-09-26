@@ -161,6 +161,28 @@ function setTake(key: string, v: boolean) {
   if (v) merge.value = toggle(merge.value, key, false);
 }
 
+// ---- select all / none (only rows that can be checked, among those shown) ----
+const pushSelectable = computed(() => pushItems.value.filter((it) => it.kind !== 'toml' && !(it.status === 'deleted' && !['statement', 'sample'].includes(it.kind))).map((it) => it.key));
+const pullSelectable = computed(() => pullItems.value.filter((it) => it.status !== 'same' && it.kind !== 'toml').map((it) => it.key));
+const allState = (keys: string[], set: Set<string>) => {
+  const n = keys.filter((k) => set.has(k)).length;
+  return { checked: n > 0 && n === keys.length, indeterminate: n > 0 && n < keys.length };
+};
+const pushAll = computed(() => allState(pushSelectable.value, selected.value));
+const pullAll = computed(() => allState(pullSelectable.value, take.value));
+function selectAllPush(on: boolean) {
+  const next = new Set(selected.value);
+  for (const k of pushSelectable.value) on ? next.add(k) : next.delete(k);
+  selected.value = next;
+}
+function selectAllPull(on: boolean) {
+  const next = new Set(take.value);
+  for (const k of pullSelectable.value) on ? next.add(k) : next.delete(k);
+  take.value = next;
+  // Taking an item replaces its merge.
+  if (on) merge.value = new Set([...merge.value].filter((k) => !next.has(k)));
+}
+
 async function openItem(key: string) {
   active.value = key;
   diffMode.value = merge.value.has(key) ? 'merged' : 'compare';
@@ -238,7 +260,14 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
           <div class="body">
             <div class="list">
               <n-space align="center" justify="space-between" class="list-head">
-                <span class="small">{{ t('sync.selected', { n: selected.size }) }}</span>
+                <n-checkbox
+                  :checked="pushAll.checked"
+                  :indeterminate="pushAll.indeterminate"
+                  :disabled="!pushSelectable.length"
+                  @update:checked="selectAllPush"
+                >
+                  <span class="small">{{ t('sync.selected', { n: selected.size }) }}</span>
+                </n-checkbox>
                 <n-space align="center" size="small">
                   <span class="small dim">{{ t('sync.showUnchanged') }}</span>
                   <n-switch v-model:value="showUnchanged" size="small" />
@@ -293,7 +322,16 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
           <div class="body">
             <div class="list">
               <n-space align="center" justify="space-between" class="list-head">
-                <n-button size="tiny" :loading="pullLoading" @click="loadPull">{{ t('sync.refetch') }}</n-button>
+                <n-space align="center" size="small">
+                  <n-checkbox
+                    :checked="pullAll.checked"
+                    :indeterminate="pullAll.indeterminate"
+                    :disabled="!pullSelectable.length"
+                    :title="t('sync.selectAll')"
+                    @update:checked="selectAllPull"
+                  />
+                  <n-button size="tiny" :loading="pullLoading" @click="loadPull">{{ t('sync.refetch') }}</n-button>
+                </n-space>
                 <n-space align="center" size="small">
                   <span class="small dim">{{ t('sync.showSame') }}</span>
                   <n-switch v-model:value="showSame" size="small" />

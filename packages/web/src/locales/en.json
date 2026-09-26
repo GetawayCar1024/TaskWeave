@@ -395,7 +395,8 @@
     "mergeWithConflicts": "{n} overlapping edit(s) will be written with conflict markers (<<<<<<< / >>>>>>>) to resolve in the editor",
     "mergePreview": "merged",
     "mergeCount": "{n} to merge",
-    "lastSynced": "Last sync"
+    "lastSynced": "Last sync",
+    "selectAll": "Select all / none"
   },
   "ai": {
     "noEndpoint": "No AI endpoint configured yet",

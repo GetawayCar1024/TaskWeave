@@ -395,7 +395,8 @@
     "mergeWithConflicts": "有 {n} 处重叠改动，会写入冲突标记（<<<<<<< / >>>>>>>），需在编辑器里处理",
     "mergePreview": "合并结果",
     "mergeCount": "合并 {n} 项",
-    "lastSynced": "上次同步"
+    "lastSynced": "上次同步",
+    "selectAll": "全选 / 全不选"
   },
   "ai": {
     "noEndpoint": "还没有配置 AI 端点",

@@ -137,6 +137,15 @@ function setPush(problem: string, on: boolean) {
   else next.delete(problem);
   pushPick.value = next;
 }
+const pushSelectable = computed(() => (status.value?.rows ?? []).filter(pushable).map((r) => r.problem));
+const pushAll = computed(() => {
+  const n = pushSelectable.value.filter((p) => pushPick.value.has(p)).length;
+  return { checked: n > 0 && n === pushSelectable.value.length, indeterminate: n > 0 && n < pushSelectable.value.length };
+});
+function selectAllPush(on: boolean) {
+  pushPick.value = on ? new Set(pushSelectable.value) : new Set();
+}
+
 async function push() {
   const indices = (status.value?.rows ?? []).filter((r) => pushPick.value.has(r.problem)).map((r) => r.index);
   if (!indices.length) return;
@@ -219,7 +228,15 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
           <table class="rows">
             <thead>
               <tr>
-                <th />
+                <th class="pick">
+                  <n-checkbox
+                    :checked="pushAll.checked"
+                    :indeterminate="pushAll.indeterminate"
+                    :disabled="!pushSelectable.length || busy"
+                    :title="t('sync.selectAll')"
+                    @update:checked="selectAllPush"
+                  />
+                </th>
                 <th>#</th>
                 <th>{{ t('contest.problem') }}</th>
                 <th>{{ t('csync.local') }}</th>
