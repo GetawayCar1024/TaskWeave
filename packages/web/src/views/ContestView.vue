@@ -459,11 +459,9 @@ const columns = computed<DataTableColumns<Row>>(() => [
   font-size: 12px;
   opacity: 0.6;
 }
+/* The whole row opens the problem: no underline on the title. */
 :deep(.link) {
   cursor: pointer;
-}
-:deep(.link:hover) {
-  text-decoration: underline;
 }
 :deep(.result) {
   display: inline-flex;
