@@ -262,8 +262,12 @@ export async function localItems(judge: Judge, ctx: ProblemCtx): Promise<LocalIt
 
   // ---- statements ----
   const stmtDir = path.join(dir, 'statement');
-  for (const lang of (await fsp.readdir(stmtDir).catch(() => [] as string[])).sort()) {
-    if (lang === 'images' || !(await isDir(path.join(stmtDir, lang)))) continue;
+  // Statement folders, plus titles set in problem.toml for a language without one yet
+  // (Polygon keeps the title with the statement of that language).
+  const folders: string[] = [];
+  for (const lang of await fsp.readdir(stmtDir).catch(() => [] as string[])) if (lang !== 'images' && (await isDir(path.join(stmtDir, lang)))) folders.push(lang);
+  const titled = Object.entries(config.problem.title).filter(([, v]) => typeof v === 'string' && v.trim()).map(([l]) => l);
+  for (const lang of [...new Set([...folders, ...titled])].sort()) {
     const plang = LANG_TO_POLYGON[lang] ?? lang;
     const title = config.problem.title[lang];
     if (title) items.push({ key: `statement:${plang}:name`, kind: 'statement', label: `statement (${plang}): name`, path: 'problem.toml', text: title, extra: { lang: plang, section: 'name' } });

@@ -11,7 +11,7 @@
  * Usage: pnpm release        (then `npm pack` in release/, or `npx ./release`)
  */
 import { build } from 'esbuild';
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -44,6 +44,12 @@ await build({
 });
 
 cpSync(path.join(root, 'packages/web/dist'), path.join(out, 'web'), { recursive: true });
+// Never ship a package without the frontend (a half-finished copy once left web/ empty).
+const webAssets = existsSync(path.join(out, 'web/assets')) ? readdirSync(path.join(out, 'web/assets')) : [];
+if (!existsSync(path.join(out, 'web/index.html')) || !webAssets.some((f) => f.endsWith('.js')) || !webAssets.some((f) => f.endsWith('.css'))) {
+  console.error('release/web is incomplete (index.html and the JS / CSS assets are required)');
+  process.exit(1);
+}
 cpSync(path.join(root, 'assets'), path.join(out, 'assets'), { recursive: true });
 mkdirSync(path.join(out, 'runner'));
 cpSync(path.join(root, 'packages/server/runner/runner.cpp'), path.join(out, 'runner/runner.cpp'));
