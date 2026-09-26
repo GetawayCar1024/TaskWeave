@@ -7,9 +7,9 @@ using namespace std;
 int main(int argc, char *argv[]) {
     registerValidation(argc, argv);
 
-    int n = inf.readInt(1, 1000, "n");
+    int n = inf.readInt(1, 1'000, "n");
     inf.readSpace();
-    int m = inf.readInt(0, 100000, "m");
+    int m = inf.readInt(0, 100'000, "m");
     inf.readEoln();
 
     set<pair<int, int>> edges;

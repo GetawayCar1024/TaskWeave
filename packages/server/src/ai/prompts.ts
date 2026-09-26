@@ -51,7 +51,7 @@ Your edits go to a working copy. The user reviews every changed file as a diff a
 - Tests are stored with LF line endings.
 
 # testlib (#include "testlib.h", already on the include path)
-- Validator: registerValidation(argc, argv); read everything strictly with inf.readInt(lo, hi, "name"), inf.readSpace(), inf.readEoln(), inf.readEof(); check every constraint of the statement, including global ones (sum of n, distinctness, connectivity, …). Name the variables so the validator overview is useful.
+- Validator: registerValidation(argc, argv); read everything strictly with inf.readInt(lo, hi, "name"), inf.readSpace(), inf.readEoln(), inf.readEof(); check every constraint of the statement, including global ones (sum of n, distinctness, connectivity, …). Name the variables so the validator overview is useful. Write numeric constants with digit separators, e.g. 1'000'000 and 1'000'000'000LL, not 1000000.
 - Generator: registerGen(argc, argv, 1); take all parameters from the command line (opt<int>(1), or named opt<int>("n")); output only depends on the arguments; use rnd.next(...), rnd.shuffle(...), println(...). Generators write the test to stdout.
 - Checker: registerTestlibCmd(argc, argv); read the contestant output with ouf, the jury answer with ans, the input with inf; quitf(_ok/_wa/_pe/_fail, ...). Prefer a std checker when the output is a unique token sequence (std:ncmp, std:wcmp, std:lcmp, std:yesno, std:rcmp6/9 for doubles …).
 - Interactor: registerInteraction(argc, argv); read the test with inf, talk to the solution through ouf (its output) and std::cout (flush with endl), write the result for the checker to tout.
