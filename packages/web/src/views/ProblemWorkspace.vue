@@ -63,7 +63,7 @@ const rightTab = ref<'info' | 'tests' | 'run' | 'selftest'>('info');
 const runPanel = ref<InstanceType<typeof RunPanel>>();
 const showInvocation = ref(false);
 const showSync = ref(false);
-/** ?sync=pull (from the contest sync): open the sync dialog on the pull tab. */
+/** ?sync=push|pull (from the contest sync): open the sync dialog on that tab. */
 const syncTab = ref<'push' | 'pull'>();
 const showLint = ref(false);
 const showStress = ref(false);
@@ -381,8 +381,8 @@ onMounted(async () => {
   const first = [asked, 'statement/zh/legend.tex', 'statement/en/legend.tex', cfg?.validator?.source, 'problem.toml'].find(
     (p) => p && ws.files.value.some((f) => f.path === p),
   );
-  if (route.query.sync === 'pull') {
-    syncTab.value = 'pull';
+  if (route.query.sync === 'pull' || route.query.sync === 'push') {
+    syncTab.value = route.query.sync;
     showSync.value = true;
   }
   if (first) {

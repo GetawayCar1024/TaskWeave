@@ -754,6 +754,7 @@
     "willCreate": "将新建 Polygon 题目",
     "pullFirst": "先拉取",
     "pushN": "推送所选（{n} 题）",
-    "pushedN": "{n} 题已推送"
+    "pushedN": "{n} 题已推送",
+    "openProblemSync": "打开这道题的同步"
   }
 }

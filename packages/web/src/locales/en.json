@@ -731,6 +731,7 @@
     "willCreate": "creates a Polygon problem",
     "pullFirst": "pull first",
     "pushN": "Push selected ({n})",
-    "pushedN": "{n} pushed"
+    "pushedN": "{n} pushed",
+    "openProblemSync": "Open this problem’s sync"
   }
 }

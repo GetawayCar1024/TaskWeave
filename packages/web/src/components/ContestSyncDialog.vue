@@ -167,10 +167,16 @@ async function push() {
   }
 }
 
-/** A conflict is resolved in the problem's own sync dialog, on the pull tab. */
-function resolveIn(problem: string) {
+/** Open a problem's own sync dialog (push or pull tab), e.g. to resolve a conflict. */
+function openSync(problem: string, which: 'push' | 'pull') {
   emit('update:show', false);
-  router.push({ name: 'problem', params: { id: problem }, query: { from: `contest:${props.contestId}`, sync: 'pull' } });
+  router.push({ name: 'problem', params: { id: problem }, query: { from: `contest:${props.contestId}`, sync: which } });
+}
+const resolveIn = (problem: string) => openSync(problem, 'pull');
+/** A click on a row (not on its checkbox) opens that problem's sync dialog on the same tab. */
+function rowClick(e: MouseEvent, r: ContestSyncRow) {
+  if (r.state === 'missing' || (e.target as HTMLElement).closest('.n-checkbox, button, a')) return;
+  openSync(r.problem, tab.value);
 }
 
 async function useLetters() {
@@ -244,7 +250,7 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="r in status.rows" :key="r.problem">
+              <tr v-for="r in status.rows" :key="r.problem" class="row-link" :title="t('csync.openProblemSync')" @click="rowClick($event, r)">
                 <td class="pick">
                   <n-checkbox :checked="pushPick.has(r.problem)" :disabled="!pushable(r) || busy" @update:checked="(v: boolean) => setPush(r.problem, v)" />
                 </td>
@@ -289,7 +295,7 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="r in status.rows" :key="r.problem">
+          <tr v-for="r in status.rows" :key="r.problem" class="row-link" :title="t('csync.openProblemSync')" @click="rowClick($event, r)">
             <td class="idx">{{ r.index }}</td>
             <td>
               {{ titleOf(r.problem) }} <span class="mono dim">{{ r.problem }}</span>
@@ -399,7 +405,14 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
 }
 .rows .idx {
   font-weight: bold;
-  width: 2.5em;
+  width: 4em;
+  white-space: nowrap;
+}
+.row-link {
+  cursor: pointer;
+}
+.row-link:hover td {
+  background: rgba(128, 128, 128, 0.08);
 }
 .structure,
 .preview,
