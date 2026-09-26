@@ -756,5 +756,10 @@
     "pushN": "推送所选（{n} 题）",
     "pushedN": "{n} 题已推送",
     "openProblemSync": "打开这道题的同步"
+  },
+  "keys": {
+    "taken": "页面全屏：打开了文件时 Ctrl+W 关闭当前文件，Ctrl+Shift+T 重新打开刚关闭的文件。点击退出全屏",
+    "noLockApi": "页面全屏，但这个浏览器不支持接管 Ctrl+W（需要 Chrome / Edge）",
+    "notFullscreen": "点击进入页面全屏：只有页面全屏时（F11 不算）Ctrl+W 才能关闭文件而不是浏览器标签页"
   }
 }

@@ -20,7 +20,7 @@ import StatusBar from '../components/StatusBar.vue';
 import StressDialog from '../components/StressDialog.vue';
 import { waitJob } from '../lib/jobs';
 import { confirmDeleteProblem } from '../lib/deleteProblem';
-import { ArrowLeft, ChevronDown, Command as CommandIcon, Trash2 } from 'lucide-vue-next';
+import { ArrowLeft, ChevronDown, Command as CommandIcon, Maximize, Minimize, Trash2 } from 'lucide-vue-next';
 import { patchSettings } from '../lib/settings';
 import type { PackageResult } from '../lib/types';
 import { useAi } from '../lib/ai';
@@ -363,6 +363,15 @@ watch(
   { immediate: true },
 );
 
+/** Header button: page fullscreen on / off (only page fullscreen lets Ctrl+W close files). */
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else document.documentElement.requestFullscreen().catch((e) => message.error(String(e?.message ?? e)));
+}
+const keysTitle = computed(() =>
+  fullscreen.value ? (keyboard?.lock ? t('keys.taken') : t('keys.noLockApi')) : t('keys.notFullscreen'),
+);
+
 function onKeydown(e: KeyboardEvent) {
   if (e.defaultPrevented || !(e.ctrlKey || e.metaKey)) return;
   const k = e.key.toLowerCase();
@@ -486,6 +495,9 @@ onBeforeUnmount(() => {
           </template>
           Ctrl+Shift+U
         </n-tooltip>
+        <n-button size="small" quaternary :type="fullscreen ? 'primary' : 'default'" :title="keysTitle" @click="toggleFullscreen">
+          <template #icon><minimize v-if="fullscreen" /><maximize v-else /></template>
+        </n-button>
         <n-button size="small" :type="ai.running.value ? 'primary' : 'default'" @click="showAi = true">
           AI<template v-if="ai.state.changes.length"> · {{ ai.state.changes.length }}</template>
         </n-button>
