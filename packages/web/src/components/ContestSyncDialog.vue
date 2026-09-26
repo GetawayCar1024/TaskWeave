@@ -104,6 +104,14 @@ function setTake(problem: string, key: string, on: boolean) {
   else next.delete(key);
   take.value = { ...take.value, [problem]: next };
 }
+/** Select all / none of one problem's items in the pull confirmation. */
+function problemAll(p: ContestPullPreview['problems'][number]) {
+  const n = p.items.filter((i) => take.value[p.problem]?.has(i.key)).length;
+  return { checked: n > 0 && n === p.items.length, indeterminate: n > 0 && n < p.items.length };
+}
+function setProblemAll(p: ContestPullPreview['problems'][number], on: boolean) {
+  take.value = { ...take.value, [p.problem]: new Set(on ? p.items.map((i) => i.key) : []) };
+}
 /** Problems a batch pull may touch: no conflict and no error (even with nothing to take: records Polygon's state). */
 const pullable = computed(() => (preview.value?.problems ?? []).filter((p) => !p.conflicts.length && !p.error));
 const takeCount = computed(() => pullable.value.reduce((n, p) => n + (take.value[p.problem]?.size ?? 0), 0));
@@ -331,6 +339,14 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
       <div v-if="preview" class="preview">
         <div v-for="p in preview.problems" :key="p.problem" class="pp">
           <div class="pp-head">
+            <n-checkbox
+              v-if="p.items.length"
+              :checked="problemAll(p).checked"
+              :indeterminate="problemAll(p).indeterminate"
+              :disabled="!!p.conflicts.length"
+              :title="t('sync.selectAll')"
+              @update:checked="(v: boolean) => setProblemAll(p, v)"
+            />
             <strong>{{ p.index }} · {{ titleOf(p.problem) }}</strong>
             <n-tag v-if="p.error" size="tiny" type="error" :bordered="false">{{ serverText(p.error) }}</n-tag>
             <span v-else-if="!p.items.length && !p.conflicts.length" class="small dim">{{ t('csync.nothingNew') }}</span>

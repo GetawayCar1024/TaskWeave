@@ -325,8 +325,6 @@
     "solutions": "解法",
     "tests": "测试点",
     "selectedCount": "已选 {n} / {total}",
-    "selAll": "全选",
-    "selNone": "全不选",
     "selSamples": "样例",
     "selInvert": "反选",
     "noTestsYet": "尚未生成，运行时会先生成",

@@ -231,7 +231,17 @@ onBeforeUnmount(disposeDiff);
     <n-drawer-content :title="t('toolbar.invocation')" closable :native-scrollbar="false">
       <div class="pick">
         <section class="pick-solutions">
-          <div class="pick-title">{{ t('inv.solutions') }}</div>
+          <div class="pick-title">
+            <!-- Select all / none, as in the sync dialogs -->
+            <n-checkbox
+              :checked="picked.length > 0 && picked.length === solutions.length"
+              :indeterminate="picked.length > 0 && picked.length < solutions.length"
+              :disabled="!solutions.length"
+              @update:checked="(v: boolean) => (picked = v ? solutions.map((x) => x.source) : [])"
+            >
+              {{ t('inv.solutions') }}
+            </n-checkbox>
+          </div>
           <n-checkbox-group v-model:value="picked">
             <div class="sol-list">
               <n-checkbox v-for="s in solutions" :key="s.source" :value="s.source">
@@ -243,12 +253,17 @@ onBeforeUnmount(disposeDiff);
         </section>
         <section class="pick-tests">
           <div class="pick-title">
-            {{ t('inv.tests') }}
+            <span>{{ t('inv.tests') }}</span>
             <n-select v-if="testsets.length > 1" v-model:value="testset" size="tiny" :options="testsets.map((x) => ({ label: x, value: x }))" style="width: 110px" />
-            <span class="dim small">{{ t('inv.selectedCount', { n: selected.size, total: manifestTests.length }) }}</span>
+            <n-checkbox
+              :checked="selected.size > 0 && selected.size === manifestTests.length"
+              :indeterminate="selected.size > 0 && selected.size < manifestTests.length"
+              :disabled="!manifestTests.length"
+              @update:checked="(v: boolean) => setSelection(v ? manifestTests.map((x) => x.index) : [])"
+            >
+              <span class="dim small">{{ t('inv.selectedCount', { n: selected.size, total: manifestTests.length }) }}</span>
+            </n-checkbox>
             <span class="grow" />
-            <n-button size="tiny" quaternary @click="setSelection(manifestTests.map((x) => x.index))">{{ t('inv.selAll') }}</n-button>
-            <n-button size="tiny" quaternary @click="setSelection([])">{{ t('inv.selNone') }}</n-button>
             <n-button size="tiny" quaternary @click="setSelection(manifestTests.filter((x) => x.sample).map((x) => x.index))">{{ t('inv.selSamples') }}</n-button>
             <n-button size="tiny" quaternary @click="setSelection(manifestTests.filter((x) => !selected.has(x.index)).map((x) => x.index))">{{ t('inv.selInvert') }}</n-button>
             <n-input v-model:value="rangeText" size="tiny" class="mono" placeholder="1-5, 8" style="width: 90px" @keyup.enter="applyRange" />

@@ -325,8 +325,6 @@
     "solutions": "Solutions",
     "tests": "Tests",
     "selectedCount": "{n} / {total} selected",
-    "selAll": "All",
-    "selNone": "None",
     "selSamples": "Samples",
     "selInvert": "Invert",
     "noTestsYet": "Not generated yet; running generates them first",
