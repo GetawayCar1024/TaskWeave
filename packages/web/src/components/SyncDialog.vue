@@ -31,7 +31,9 @@ const { t } = useI18n();
 const message = useMessage();
 
 const tab = ref<'push' | 'pull'>('push');
-const loading = ref(false);
+/** Push and pull load independently: the pull tab works while the push preview loads. */
+const pushLoading = ref(false);
+const pullLoading = ref(false);
 const error = ref('');
 
 // ---- push ----
@@ -46,7 +48,7 @@ const pushResult = ref<{ pushed: string[]; warnings: string[] } | null>(null);
 const bindId = ref<number | null>(null);
 
 async function loadPush() {
-  loading.value = true;
+  pushLoading.value = true;
   error.value = '';
   try {
     preview.value = await api.pushPreview(props.problemId);
@@ -54,7 +56,7 @@ async function loadPush() {
   } catch (e) {
     error.value = errorMessage(e);
   } finally {
-    loading.value = false;
+    pushLoading.value = false;
   }
 }
 
@@ -107,7 +109,7 @@ const showSame = ref(false);
 const pulling = ref(false);
 
 async function loadPull() {
-  loading.value = true;
+  pullLoading.value = true;
   error.value = '';
   try {
     pullPreview.value = await api.pullPreview(props.problemId);
@@ -117,7 +119,7 @@ async function loadPull() {
   } catch (e) {
     error.value = errorMessage(e);
   } finally {
-    loading.value = false;
+    pullLoading.value = false;
   }
 }
 
@@ -179,6 +181,8 @@ watch(
     pushResult.value = null;
     error.value = '';
     tab.value = 'push';
+    // Fresh pull preview each time the dialog opens (loaded when the tab is shown).
+    pullPreview.value = null;
     loadPush();
   },
 );
@@ -198,7 +202,8 @@ const PULL_TYPE: Record<PullItem['status'], 'info' | 'warning' | 'error' | 'defa
   'local-only': 'warning',
 };
 
-const bound = computed(() => preview.value?.polygonId !== undefined);
+// Known from the problem right away, before the push preview has loaded.
+const bound = computed(() => (preview.value?.polygonId ?? props.ws.state.detail?.summary.status.polygonId) !== undefined);
 const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((pushJob.value.progress.done / pushJob.value.progress.total) * 100) : 0));
 </script>
 
@@ -223,7 +228,7 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
 
     <n-tabs v-model:value="tab" type="line" size="small">
       <n-tab-pane name="push" :tab="t('sync.push')">
-        <div v-if="loading && !preview" class="center"><n-spin /></div>
+        <div v-if="pushLoading && !preview" class="center"><n-spin /></div>
         <template v-else-if="preview">
           <n-alert v-for="(w, i) in preview.warnings" :key="i" type="warning" :show-icon="false" class="alert small">{{ serverText(w) }}</n-alert>
           <div class="body">
@@ -278,13 +283,13 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
       </n-tab-pane>
 
       <n-tab-pane name="pull" :tab="t('sync.pull')" :disabled="!bound">
-        <div v-if="loading && !pullPreview" class="center"><n-spin /></div>
+        <div v-if="pullLoading && !pullPreview" class="center"><n-spin /></div>
         <template v-else-if="pullPreview">
           <n-alert v-for="(w, i) in pullPreview.warnings" :key="i" type="warning" :show-icon="false" class="alert small">{{ serverText(w) }}</n-alert>
           <div class="body">
             <div class="list">
               <n-space align="center" justify="space-between" class="list-head">
-                <n-button size="tiny" :loading="loading" @click="loadPull">{{ t('sync.refetch') }}</n-button>
+                <n-button size="tiny" :loading="pullLoading" @click="loadPull">{{ t('sync.refetch') }}</n-button>
                 <n-space align="center" size="small">
                   <span class="small dim">{{ t('sync.showSame') }}</span>
                   <n-switch v-model:value="showSame" size="small" />
