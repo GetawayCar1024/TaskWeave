@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import open from 'open';
+import open, { apps, openApp } from 'open';
 import { buildApp } from './app.js';
 import { GlobalStore, defaultGlobalDir } from './global.js';
 import { WEB_DIST } from './paths.js';
@@ -26,6 +26,25 @@ const { values: args } = parseArgs({
 
 const DEFAULT_PORT = 4523;
 const DEV_WEB_PORT = 5173;
+
+/**
+ * "Fullscreen on open" (ui.fullscreen): a page cannot go fullscreen before a click, so
+ * start Edge (Chrome elsewhere) as an app window in fullscreen. It gets its own profile
+ * under the global dir, so it is a new browser process and the start flag applies
+ * (and the user's browser windows are left alone). Otherwise: the default browser.
+ */
+async function openBrowser(url: string, global: GlobalStore) {
+  if (global.config.ui?.fullscreen !== false) {
+    const flags = [`--app=${url}`, '--start-fullscreen', `--user-data-dir=${path.join(global.dir, 'browser')}`, '--no-first-run', '--no-default-browser-check'];
+    try {
+      await openApp(process.platform === 'win32' ? apps.edge : apps.chrome, { arguments: flags });
+      return;
+    } catch {
+      /* fall back to the default browser */
+    }
+  }
+  await open(url);
+}
 
 async function main() {
   const global = new GlobalStore(args.home ? path.resolve(args.home) : defaultGlobalDir());
@@ -60,7 +79,7 @@ async function main() {
   console.log(`[polyforge] open ${url}`);
 
   // In dev, tsx watch restarts the server on every change, so we do not open a tab each time.
-  if (!args['no-open'] && !args.dev) open(url).catch(() => {});
+  if (!args['no-open'] && !args.dev) openBrowser(url, global).catch(() => {});
 
   const shutdown = async () => {
     await watcher.stop();
