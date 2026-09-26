@@ -394,7 +394,9 @@
     "mergeClean": "两边改动不重叠，可以自动合并",
     "mergeWithConflicts": "有 {n} 处重叠改动，会写入冲突标记（<<<<<<< / >>>>>>>），需在编辑器里处理",
     "mergePreview": "合并结果",
-    "mergeCount": "合并 {n} 项"
+    "mergeCount": "合并 {n} 项",
+    "lastSynced": "上次同步",
+    "tomlNote": "整个 problem.toml 与上次同步时相比；其中能同步到 Polygon 的内容在对应条目里推送 / 拉取，其余（注释、Polygon 没有的设置）只保存在本地。"
   },
   "ai": {
     "noEndpoint": "还没有配置 AI 端点",

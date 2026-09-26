@@ -71,6 +71,7 @@ const RULES: Rule[] = [
   [/^tutorial \((\w+)\)$/, (m) => `题解（${LANG[m[1]] ?? m[1]}）`],
   [/^statement resource: (.+)$/, (m) => `题面资源：${m[1]}`],
   [/^local file: (.+)$/, (m) => `本地文件：${m[1]}`],
+  [/^problem\.toml \(changed since the last sync\)$/, () => 'problem.toml（上次同步后有改动）'],
   [/^manual test (\d+)(?: \((.+)\))?$/, (m) => `手写测试 ${m[1]}${m[2] ? `（${m[2]}）` : ''}`],
   [/^test (\d+) is a sample$/, (m) => `测试点 ${m[1]} 为样例`],
   [/^validator test (\d+)(?: \((.+)\))?$/, (m) => `校验器自测 ${m[1]}${m[2] ? `（${m[2]}）` : ''}`],

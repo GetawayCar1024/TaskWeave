@@ -228,6 +228,16 @@ function resultCell(r: ContestBatchItem | undefined) {
   return h('span', { class: 'result' }, [icon, h('span', { class: 'result-text', title: serverText(r.message) }, serverText(r.message))]);
 }
 
+/** Clicking anywhere on a row opens the problem, except on its controls (letter, buttons, expand). */
+const openProblem = (r: Row) => router.push({ name: 'problem', params: { id: r.problem }, query: { from: `contest:${props.id}` } });
+const rowProps = (r: Row) => ({
+  class: r.summary ? 'clickable-row' : undefined,
+  onClick: (e: MouseEvent) => {
+    if (!r.summary || (e.target as HTMLElement).closest('input, button, a, .n-button, .n-input, .n-data-table-expand-trigger, .n-data-table-td--expand')) return;
+    openProblem(r);
+  },
+});
+
 const columns = computed<DataTableColumns<Row>>(() => [
   {
     type: 'expand',
@@ -260,7 +270,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
     key: 'problem',
     render: (r) =>
       r.summary
-        ? h('a', { class: 'link', onClick: () => router.push({ name: 'problem', params: { id: r.problem }, query: { from: `contest:${props.id}` } }) }, [
+        ? h('a', { class: 'link', onClick: () => openProblem(r) }, [
             h('span', problemTitle(r.summary.title, locale.value) || r.summary.name),
             h('span', { class: 'mono sub' }, ` ${r.problem}`),
           ])
@@ -359,6 +369,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
           :columns="columns"
           :data="rows"
           :row-key="(r: Row) => r.index"
+          :row-props="rowProps"
           :expanded-row-keys="expanded"
           :bordered="false"
           @update:expanded-row-keys="(k: (string | number)[]) => (expanded = k.map(String))"
@@ -392,6 +403,9 @@ const columns = computed<DataTableColumns<Row>>(() => [
 </template>
 
 <style scoped>
+:deep(.clickable-row) {
+  cursor: pointer;
+}
 .page {
   height: 100%;
   display: flex;

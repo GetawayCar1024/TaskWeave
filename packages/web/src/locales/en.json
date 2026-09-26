@@ -394,7 +394,9 @@
     "mergeClean": "The edits do not overlap and merge cleanly",
     "mergeWithConflicts": "{n} overlapping edit(s) will be written with conflict markers (<<<<<<< / >>>>>>>) to resolve in the editor",
     "mergePreview": "merged",
-    "mergeCount": "{n} to merge"
+    "mergeCount": "{n} to merge",
+    "lastSynced": "Last sync",
+    "tomlNote": "The whole problem.toml against the last sync; what Polygon knows is pushed / pulled through the matching items, the rest (comments, settings Polygon has no place for) stays local."
   },
   "ai": {
     "noEndpoint": "No AI endpoint configured yet",

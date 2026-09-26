@@ -88,6 +88,30 @@ async function dropBase(ctx: ProblemCtx, key: string) {
   await fsp.rm(baseFile(ctx, key), { force: true });
 }
 
+/**
+ * problem.toml as of the last push / pull. Its fields sync through other items; the
+ * copy only lets the dialogs show that the file itself changed (the "problem.toml" row).
+ */
+const tomlSnapshot = (ctx: ProblemCtx) => path.join(ctx.work, 'sync-problem.toml');
+const TOML_KEY = 'problemToml';
+const readText = (file: string) =>
+  fsp
+    .readFile(file, 'utf8')
+    .then((t) => t.replace(/\r\n/g, '\n'))
+    .catch(() => null);
+
+async function saveTomlSnapshot(ctx: ProblemCtx) {
+  const text = await readText(path.join(ctx.ref.dir, PROBLEM_FILE));
+  if (text !== null) await atomicWrite(tomlSnapshot(ctx), text);
+}
+
+/** The problem.toml row, when the file differs from the last sync (none before the first). */
+async function tomlRow(ctx: ProblemCtx): Promise<Omit<PushItem, 'status'> | null> {
+  const [now, then] = await Promise.all([readText(path.join(ctx.ref.dir, PROBLEM_FILE)), readText(tomlSnapshot(ctx))]);
+  if (now === null || then === null || now.trimEnd() === then.trimEnd()) return null;
+  return { key: TOML_KEY, kind: 'toml', label: 'problem.toml (changed since the last sync)', path: PROBLEM_FILE };
+}
+
 /** The merge of local and remote against the recorded base, if one is possible. */
 function mergeItems(l: Item, r: Item, base: BaseSnapshot): Item | null {
   // Testsets are structured data: take one side instead of merging lines.
@@ -147,6 +171,8 @@ export class PolygonSync {
       out.push({ key, kind, label: key, status: 'deleted' });
       if (!DELETABLE_KINDS.has(kind)) warnings.push(`${key} was removed locally; Polygon has no delete API, remove it there by hand if needed`);
     }
+    const row = await tomlRow(ctx);
+    if (row) out.push({ ...row, status: 'modified' });
     out.sort(byOrder);
     const preview: PushPreview = {
       polygonId: ctx.config.polygon.id,
@@ -234,6 +260,7 @@ export class PolygonSync {
     const info = await this.problemInfo(client, polygonId).catch(() => undefined);
     sync.revision = info?.revision;
     await writeSync(ctx, sync);
+    if (pushed.length) await saveTomlSnapshot(ctx);
     return { pushed, warnings, revision: sync.revision, polygonId };
   }
 
@@ -272,11 +299,17 @@ export class PolygonSync {
         out.push({ ...it, status: 'local-only', takeRemote: false });
       }
     }
+    const row = await tomlRow(ctx);
+    if (row) out.push({ ...row, status: 'local', takeRemote: false });
     out.sort(byOrder);
     return { polygonId, items: out, warnings };
   }
 
   async itemContent(ctx: ProblemCtx, key: string): Promise<ItemContent> {
+    if (key === TOML_KEY) {
+      const [now, then] = await Promise.all([readText(path.join(ctx.ref.dir, PROBLEM_FILE)), readText(tomlSnapshot(ctx))]);
+      return { key, local: now, remote: then, remoteIsLastSync: true };
+    }
     const { items } = key.startsWith('file:') ? await this.pullLocal(ctx) : await localItems(this.judge, ctx);
     const l = items.find((i) => i.key === key);
     const id = ctx.config.polygon.id;
@@ -340,7 +373,8 @@ export class PolygonSync {
       merged.push(key);
       if ((m.extra?.mergeConflicts as number) > 0) conflicts.push(key);
     }
-    await atomicWrite(problemFile, stringify(doc) + '\n');
+    // Rewriting drops comments: only when something was actually applied.
+    if (applied.length || merged.length) await atomicWrite(problemFile, stringify(doc) + '\n');
     // Polygon's state is now the common ancestor for every key it has.
     for (const [key, r] of R) {
       sync.items[key] = itemHash(r);
@@ -359,6 +393,7 @@ export class PolygonSync {
       /* keep the old revision */
     }
     await writeSync(ctx, sync);
+    await saveTomlSnapshot(ctx);
 
     // Items whose local form differs from Polygon's after writing reveal a lossy mapping.
     const fresh = await this.judge.ctx(ctx.ref.id);

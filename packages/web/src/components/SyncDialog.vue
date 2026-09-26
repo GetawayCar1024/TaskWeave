@@ -52,7 +52,9 @@ async function loadPush() {
   error.value = '';
   try {
     preview.value = await api.pushPreview(props.problemId);
-    selected.value = new Set(preview.value.items.filter((i) => i.status === 'new' || i.status === 'modified' || (i.status === 'deleted' && ['statement', 'sample'].includes(i.kind))).map((i) => i.key));
+    selected.value = new Set(
+      preview.value.items.filter((i) => i.kind !== 'toml' && (i.status === 'new' || i.status === 'modified' || (i.status === 'deleted' && ['statement', 'sample'].includes(i.kind)))).map((i) => i.key),
+    );
   } catch (e) {
     error.value = errorMessage(e);
   } finally {
@@ -245,7 +247,7 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
                 <div v-for="it in pushItems" :key="it.key" class="row" :class="{ active: active === it.key }" @click="openItem(it.key)">
                   <n-checkbox
                     :checked="selected.has(it.key)"
-                    :disabled="it.status === 'deleted' && !['statement', 'sample'].includes(it.kind)"
+                    :disabled="it.kind === 'toml' || (it.status === 'deleted' && !['statement', 'sample'].includes(it.kind))"
                     @click.stop
                     @update:checked="(v: boolean) => (selected = toggle(selected, it.key, v))"
                   />
@@ -255,7 +257,8 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
               </n-scrollbar>
             </div>
             <div class="diff-pane">
-              <div class="labels"><span>Polygon</span><span>{{ t('sync.local') }}</span></div>
+              <div class="labels"><span>{{ content?.remoteIsLastSync ? t('sync.lastSynced') : 'Polygon' }}</span><span>{{ t('sync.local') }}</span></div>
+              <div v-if="content?.remoteIsLastSync" class="small dim toml-note">{{ t('sync.tomlNote') }}</div>
               <div v-if="contentLoading" class="center"><n-spin /></div>
               <div v-else-if="!content" class="dim small center">{{ t('sync.pickItem') }}</div>
               <div v-else-if="content.binary" class="dim small center">{{ t('sync.binary') }}</div>
@@ -298,7 +301,7 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
               <n-scrollbar style="max-height: 52vh">
                 <div v-if="!pullItems.length" class="dim small empty">{{ t('sync.inSync') }}</div>
                 <div v-for="it in pullItems" :key="it.key" class="row" :class="{ active: active === it.key, conflict: it.status === 'conflict' }" @click="openItem(it.key)">
-                  <n-checkbox :checked="take.has(it.key)" :disabled="it.status === 'same'" @click.stop @update:checked="(v: boolean) => setTake(it.key, v)" />
+                  <n-checkbox :checked="take.has(it.key)" :disabled="it.status === 'same' || it.kind === 'toml'" @click.stop @update:checked="(v: boolean) => setTake(it.key, v)" />
                   <n-tag size="tiny" :type="PULL_TYPE[it.status]" :bordered="false">{{ t(`sync.pull_${it.status.replace('-', '_')}`) }}</n-tag>
                   <span class="label" :title="it.key">{{ serverText(it.label) }}</span>
                   <n-button
@@ -323,7 +326,7 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
                   ·
                   <n-button size="tiny" text :type="diffMode === 'merged' ? 'primary' : 'default'" @click="diffMode = 'merged'">{{ t('sync.mergePreview') }}</n-button>
                 </span>
-                <span v-else>Polygon</span>
+                <span v-else>{{ content?.remoteIsLastSync ? t('sync.lastSynced') : 'Polygon' }}</span>
               </div>
               <div v-if="contentLoading" class="center"><n-spin /></div>
               <div v-else-if="!content" class="dim small center">{{ t('sync.pickItem') }}</div>

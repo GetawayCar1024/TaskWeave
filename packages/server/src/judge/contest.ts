@@ -123,7 +123,8 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
             item.message = `changed on Polygon (revision ${preview.remoteRevision}); pull it first`;
             break;
           }
-          const keys = preview.items.filter((it) => it.status !== 'unchanged').map((it) => it.key);
+          // The problem.toml row is information only: nothing of its own to push.
+          const keys = preview.items.filter((it) => it.status !== 'unchanged' && it.kind !== 'toml').map((it) => it.key);
           if (!keys.length && preview.polygonId !== undefined) {
             item.ok = true;
             item.message = 'up to date';

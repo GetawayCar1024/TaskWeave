@@ -50,7 +50,9 @@ export type SyncItemKind =
   | 'checkerTest'
   | 'testset'
   /** A local file no other item accounts for (pull only: taking it deletes the file). */
-  | 'file';
+  | 'file'
+  /** problem.toml as a whole vs. the last sync (information: its fields sync through the other items). */
+  | 'toml';
 
 /** Push view: local state vs. what was last synced. */
 export type PushStatus = 'new' | 'modified' | 'unchanged' | 'deleted';
@@ -124,6 +126,8 @@ export interface ItemContent {
   /** Three-way merge result, when a base is known. */
   merged?: string;
   mergeConflicts?: number;
+  /** `remote` is the version of the last sync, not Polygon's (the problem.toml row). */
+  remoteIsLastSync?: boolean;
 }
 
 export interface ImportRequest {

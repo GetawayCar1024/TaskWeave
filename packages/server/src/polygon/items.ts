@@ -67,6 +67,7 @@ function looksText(b: Buffer) {
 }
 
 export const PUSH_ORDER: SyncItemKind[] = [
+  'toml',
   'info',
   'resource',
   'source',
@@ -81,6 +82,7 @@ export const PUSH_ORDER: SyncItemKind[] = [
   'validatorTest',
   'checkerTest',
   'testset',
+  'file',
 ];
 
 // ---------------------------------------------------------------------------
