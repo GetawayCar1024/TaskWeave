@@ -379,7 +379,7 @@
     "inSync": "Local and Polygon are in sync",
     "takeCount": "{n} items will be overwritten by Polygon",
     "apply": "Apply",
-    "pullHint": "Checked items are replaced by the Polygon version",
+    "pullHint": "Checked items are replaced by the Polygon version; checked \"local only\" items are deleted locally",
     "push_new": "new",
     "push_modified": "modified",
     "push_deleted": "deleted",

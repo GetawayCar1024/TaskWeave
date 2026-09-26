@@ -21,7 +21,8 @@ import {
 import { pickLanguage } from '../judge/compiler.js';
 import type { Judge, ProblemCtx } from '../judge/index.js';
 import { planTests, scriptStatementPaths, statementPaths } from '../judge/tests.js';
-import { exists, isDir, sha1 } from '../util/fs.js';
+import { exists, isDir, looksBinary, sha1 } from '../util/fs.js';
+import { HIDDEN_DIRS } from '../workspace/files.js';
 import type { PolygonClient } from './client.js';
 
 export const TESTSET = 'tests';
@@ -859,9 +860,46 @@ export async function applyItem(ac: ApplyContext, it: Item): Promise<void> {
 }
 
 /** Remove the local counterpart of an item that no longer exists on Polygon. */
+/** Files that belong to the repository, not the problem: never offered for deletion. */
+const NOT_PROBLEM_FILES = /^(problem\.toml|\.gitignore|\.gitattributes|readme(\.[a-z]+)?)$/i;
+
+/**
+ * Local files that no sync item accounts for (an unregistered solution, a stray file in
+ * a problem folder, …), as items the pull can delete: Polygon has nothing like them.
+ */
+export async function untrackedItems(dir: string, config: ProblemToml, items: Item[]): Promise<Item[]> {
+  const covered = new Set<string>();
+  const coveredDirs: string[] = [];
+  for (const it of items) {
+    if (it.path) covered.add(it.path);
+    if (it.kind === 'test' && it.path) for (const rel of Object.values(statementPaths(it.path))) covered.add(rel);
+    if (it.kind === 'sample') for (const rel of Object.values(scriptStatementPaths(it.extra?.index))) covered.add(rel);
+    if (it.kind === 'checkerTest') for (const ext of ['in', 'out', 'ans', 'verdict']) covered.add(`checker-tests/${it.extra?.name}.${ext}`);
+  }
+  // Further testsets are one item each: their script and manual tests.
+  for (const ts of testsetsOf(config).filter((t) => t.name !== TESTSET)) {
+    if (ts.script) covered.add(ts.script);
+    coveredDirs.push(`${ts.manual.replace(/\/+$/, '')}/`);
+  }
+  const out: Item[] = [];
+  for (const rel of await listFiles(dir)) {
+    if (rel.split('/').some((seg) => HIDDEN_DIRS.has(seg)) || NOT_PROBLEM_FILES.test(rel) || covered.has(rel) || coveredDirs.some((d) => rel.startsWith(d))) continue;
+    // Statement sections are synced when they have text; empty ones are placeholders.
+    const sec = rel.match(/^statement\/[^/]+\/([a-z]+)\.tex$/)?.[1];
+    if (sec && (STATEMENT_SECTIONS as readonly string[]).includes(sec)) continue;
+    const bytes = await fsp.readFile(path.join(dir, rel));
+    const binary = looksBinary(bytes);
+    out.push({ key: `file:${rel}`, kind: 'file', label: `local file: ${rel}`, path: rel, ...(binary ? { bytes, binary: true } : { text: bytes.toString('utf8') }) });
+  }
+  return out;
+}
+
 export async function removeLocal(ac: ApplyContext, it: Item): Promise<void> {
   const { doc } = ac;
   switch (it.kind) {
+    case 'file':
+      if (it.path) await fsp.rm(path.join(ac.dir, it.path), { force: true });
+      return;
     case 'sample':
     case 'test': {
       const s = samplesSet(doc);
@@ -885,6 +923,13 @@ export async function removeLocal(ac: ApplyContext, it: Item): Promise<void> {
       for (const ext of ['in', 'out', 'ans', 'verdict']) await fsp.rm(path.join(ac.dir, 'checker-tests', `${it.extra?.name}.${ext}`), { force: true });
       return;
     case 'source':
+      if (it.path) {
+        await fsp.rm(path.join(ac.dir, it.path), { force: true });
+        // Unregister it too, so problem.toml does not point to a missing file.
+        if (Array.isArray(doc.generators)) doc.generators = doc.generators.filter((g: any) => g?.source !== it.path);
+        for (const role of ['validator', 'checker', 'interactor']) if (doc[role]?.source === it.path) delete doc[role];
+      }
+      return;
     case 'resource':
     case 'statementResource':
     case 'script':

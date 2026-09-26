@@ -61,7 +61,7 @@ pnpm release      # 打包成独立的 npm 包到 release/（无运行时依赖�
 - **设置 → Polygon**：填 API key / secret（只存在全局目录的 `secrets.toml`，接口返回时打码），“测试连接”。
 - **同步对话框**（工具栏“同步”或 `Ctrl+Shift+U`）：
   - **推送**：列出变更集（新增 / 修改 / 已删除），点条目看与 Polygon 当前版本的 diff，勾选后推送；可选 commit（附说明）和构建 package。未绑定时会用短名新建 Polygon 题目，也可以填已有 ID 绑定。推送逐项记录进度，中途失败后再推只会发剩下的。Polygon 远端 revision 与上次同步不一致时会提示先拉取。
-  - **拉取**：三方比较（本地 / Polygon / 上次同步），分为“Polygon 已改”“本地已改”“冲突”“仅一方有”；默认只取 Polygon 单方改动。
+  - **拉取**：三方比较（本地 / Polygon / 上次同步），分为“Polygon 已改”“本地已改”“冲突”“仅一方有”；默认只取 Polygon 单方改动。“仅本地”的条目（包括没有登记在 problem.toml 里的多余文件，如未登记的解法）勾选后会删除本地文件；删除 generator / validator / checker 时一并从 problem.toml 去掉登记。problem.toml 里设了标题但还没有题面文件夹的语言，标题也会参与同步。
   - **合并**：两边都改过的文本条目（代码、题面段落、script、测试……）可以按行三方合并，改动不重叠时默认勾选“合并”，可先看合并结果的 diff；重叠的部分写成 `<<<<<<< local` / `=======` / `>>>>>>> Polygon` 冲突标记，在编辑器里处理后再推送。合并所需的共同祖先保存在 `.polyforge/sync-base/`。从未同步过的本地题目绑定 Polygon 后拉取，没有共同祖先，差异项只能二选一。
 - **从 Polygon 导入**（题目列表）：浏览可访问的题目或填 ID，下载为本地题目并记录同步状态。
 - 同步内容：题目信息、validator / checker / interactor、generators、资源文件、解和 tag、各语言题面（`zh` ↔ `chinese`、`en` ↔ `english`）与图片、script、手写测试、样例标记、分组与分值、validator / checker 自测。

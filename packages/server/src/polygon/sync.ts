@@ -32,6 +32,7 @@ import {
   PUSH_ORDER,
   remoteItems,
   removeLocal,
+  untrackedItems,
   TESTSET,
   type Item,
 } from './items.js';
@@ -243,7 +244,7 @@ export class PolygonSync {
     if (polygonId === undefined) throw new HttpError(400, 'not_bound', 'This problem is not bound to a Polygon problem');
     const remote = await remoteItems(await this.client(), polygonId, extraTestsets(ctx));
     this.remoteCache.set(ctx.ref.id, { polygonId, items: remote });
-    const { items: local, warnings } = await localItems(this.judge, ctx);
+    const { items: local, warnings } = await this.pullLocal(ctx);
     const sync = await readSync(ctx);
     const L = new Map(local.map((i) => [i.key, i]));
     const R = new Map(remote.map((i) => [i.key, i]));
@@ -276,7 +277,7 @@ export class PolygonSync {
   }
 
   async itemContent(ctx: ProblemCtx, key: string): Promise<ItemContent> {
-    const { items } = await localItems(this.judge, ctx);
+    const { items } = key.startsWith('file:') ? await this.pullLocal(ctx) : await localItems(this.judge, ctx);
     const l = items.find((i) => i.key === key);
     const id = ctx.config.polygon.id;
     let cached = this.remoteCache.get(ctx.ref.id);
@@ -296,11 +297,17 @@ export class PolygonSync {
     return out;
   }
 
+  /** Local items for a pull: the synced ones plus files nothing accounts for (deletable). */
+  private async pullLocal(ctx: ProblemCtx) {
+    const r = await localItems(this.judge, ctx);
+    return { ...r, items: [...r.items, ...(await untrackedItems(ctx.ref.dir, ctx.config, r.items))] };
+  }
+
   /** Apply the chosen remote items locally; everything seen on Polygon becomes the new base. */
   async pull(ctx: ProblemCtx, req: PullRequest): Promise<{ applied: string[]; merged: string[]; conflicts: string[]; warnings: string[] }> {
     const cached = this.remoteCache.get(ctx.ref.id);
     if (!cached || cached.polygonId !== ctx.config.polygon.id) throw new HttpError(409, 'stale_preview', 'Fetch the Polygon state first');
-    const { items: local } = await localItems(this.judge, ctx);
+    const { items: local } = await this.pullLocal(ctx);
     const L = new Map(local.map((i) => [i.key, i]));
     const R = new Map(cached.items.map((i) => [i.key, i]));
     const take = new Set(req.take);

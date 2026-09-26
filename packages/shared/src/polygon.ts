@@ -48,7 +48,9 @@ export type SyncItemKind =
   | 'sample'
   | 'validatorTest'
   | 'checkerTest'
-  | 'testset';
+  | 'testset'
+  /** A local file no other item accounts for (pull only: taking it deletes the file). */
+  | 'file';
 
 /** Push view: local state vs. what was last synced. */
 export type PushStatus = 'new' | 'modified' | 'unchanged' | 'deleted';

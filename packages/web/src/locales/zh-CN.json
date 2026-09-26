@@ -379,7 +379,7 @@
     "inSync": "本地与 Polygon 一致",
     "takeCount": "将用 Polygon 版本覆盖 {n} 项",
     "apply": "应用",
-    "pullHint": "勾选项将被 Polygon 版本覆盖",
+    "pullHint": "勾选项将被 Polygon 版本覆盖；“仅本地”的项勾选后会删除本地文件",
     "push_new": "新增",
     "push_modified": "修改",
     "push_deleted": "已删除",
