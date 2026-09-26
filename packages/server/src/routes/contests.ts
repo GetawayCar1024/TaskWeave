@@ -1,7 +1,8 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { CONTEST_ACTIONS, type ContestBatchRequest, type ContestImportRequest, type CreateContestRequest, type UpdateContestRequest } from '@polyforge/shared';
+import { CONTEST_ACTIONS, type ContestBatchRequest, type ContestImportRequest, type ContestPullRequest, type CreateContestRequest, type UpdateContestRequest } from '@polyforge/shared';
+import { contestPull, contestPullPreview, contestSyncStatus } from '../polygon/contestSync.js';
 import type { JobManager } from '../jobs.js';
 import { contestExportDir, contestStatements, importContest, runContestBatch, type ContestDeps } from '../judge/contest.js';
 import { contestTex } from '../judge/statementTex.js';
@@ -66,6 +67,31 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps, jobs: Job
     return jobs.start('contest', owner, async (job) => {
       const r = await runContestBatch(deps, ref.id, body, job);
       if (body.action === 'polygon-push') hub.broadcast({ type: 'problems:changed' });
+      return r;
+    });
+  });
+
+  // ---- Polygon sync of the whole contest: status, then pull only what changed there ----
+  app.get<P>('/api/contests/:id/polygon/status', async (req) => contestSyncStatus(deps, (await contests.get(req.params.id)).id));
+
+  const exclusive = (id: string, run: (job: Parameters<Parameters<JobManager['start']>[2]>[0]) => Promise<unknown>) => {
+    const owner = contestJobOwner(id);
+    if (jobs.running(owner, 'contest')) throw new HttpError(409, 'busy', 'Another batch is running for this contest');
+    return jobs.start('contest', owner, run);
+  };
+  app.post<P & { Body: { problems?: string[] } }>('/api/contests/:id/polygon/pull-preview', async (req) => {
+    const ref = await contests.get(req.params.id);
+    const problems = Array.isArray(req.body?.problems) ? req.body.problems.map(String) : [];
+    if (!problems.length) throw new HttpError(400, 'bad_request', 'problems required');
+    return exclusive(ref.id, (job) => contestPullPreview(deps, ref.id, problems, job));
+  });
+  app.post<P & { Body: ContestPullRequest }>('/api/contests/:id/polygon/pull', async (req) => {
+    const ref = await contests.get(req.params.id);
+    const body = req.body;
+    if (!body || !Array.isArray(body.problems)) throw new HttpError(400, 'bad_request', 'problems required');
+    return exclusive(ref.id, async (job) => {
+      const r = await contestPull(deps, ref.id, body, job);
+      hub.broadcast({ type: 'problems:changed' });
       return r;
     });
   });

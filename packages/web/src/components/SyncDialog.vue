@@ -25,7 +25,8 @@ import { waitJob } from '../lib/jobs';
 import type { Workspace } from '../lib/workspace';
 import TextDiff from './TextDiff.vue';
 
-const props = defineProps<{ show: boolean; ws: Workspace; problemId: string }>();
+/** initialTab: open on the pull tab (sent here from the contest sync to resolve a conflict). */
+const props = defineProps<{ show: boolean; ws: Workspace; problemId: string; initialTab?: 'push' | 'pull' }>();
 const emit = defineEmits<{ 'update:show': [boolean] }>();
 const { t } = useI18n();
 const message = useMessage();
@@ -182,9 +183,10 @@ watch(
     content.value = null;
     pushResult.value = null;
     error.value = '';
-    tab.value = 'push';
     // Fresh pull preview each time the dialog opens (loaded when the tab is shown).
     pullPreview.value = null;
+    tab.value = props.initialTab === 'pull' && bound.value ? 'pull' : 'push';
+    if (tab.value === 'pull') loadPull();
     loadPush();
   },
 );

@@ -37,10 +37,12 @@ import {
   Trash2,
   Upload,
   X,
+  RefreshCw,
 } from 'lucide-vue-next';
 import type { ContestAction, ContestBatchItem, ContestBatchResult, ContestDetail, JobInfo, ProblemSummary } from '@polyforge/shared';
 import AppHeader from '../components/AppHeader.vue';
 import AiDrawer from '../components/AiDrawer.vue';
+import ContestSyncDialog from '../components/ContestSyncDialog.vue';
 import { useAi } from '../lib/ai';
 import { api, errorMessage } from '../lib/api';
 import { problemTitle } from '../lib/format';
@@ -73,6 +75,7 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 /** The contest AI: sessions over all problems of the contest. */
 const ai = useAi(`contest:${props.id}`);
 const showAi = ref(false);
+const showSync = ref(false);
 
 const off = onWs((e) => {
   ai.onWsEvent(e);
@@ -334,6 +337,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
         <n-button size="small" quaternary :title="t('contest.delete')" @click="deleteContest"><trash2 :size="15" /></n-button>
       </template>
     </app-header>
+    <contest-sync-dialog v-model:show="showSync" :contest-id="id" :detail="detail" @push="run('polygon-push')" @changed="load" />
     <ai-drawer v-model:show="showAi" :ai="ai" :problem-id="`contest:${id}`" />
 
     <main class="body">
@@ -356,6 +360,9 @@ const columns = computed<DataTableColumns<Row>>(() => [
                 <n-input v-model:value="pushMessage" size="small" :placeholder="t('sync.commitMessage')" />
               </div>
             </n-popconfirm>
+            <n-button size="small" :disabled="running || !rows.length" @click="showSync = true">
+              <template #icon><refresh-cw /></template>{{ t('csync.button') }}
+            </n-button>
             <n-button v-if="running" size="small" type="warning" ghost @click="cancel">{{ t('common.cancel') }}</n-button>
           </n-space>
           <div v-if="running && job" class="progress">

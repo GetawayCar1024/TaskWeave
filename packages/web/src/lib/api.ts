@@ -5,6 +5,8 @@ import {
   type ContestBatchRequest,
   type ContestDetail,
   type ContestImportRequest,
+  type ContestPullRequest,
+  type ContestSyncStatus,
   type ContestStatement,
   type ContestSummary,
   type CreateContestRequest,
@@ -186,6 +188,9 @@ export const api = {
   contestStatements: (id: string, lang: string) => request<ContestStatement[]>('GET', `/contests/${pid(id)}/statements?lang=${encodeURIComponent(lang)}`),
   contestBatch: (id: string, req: ContestBatchRequest) => request<JobInfo>('POST', `/contests/${pid(id)}/batch`, req),
   importContest: (req: ContestImportRequest) => request<JobInfo>('POST', '/contests/import/polygon', req),
+  contestSyncStatus: (id: string) => request<ContestSyncStatus>('GET', `/contests/${pid(id)}/polygon/status`),
+  contestPullPreview: (id: string, problems: string[]) => request<JobInfo>('POST', `/contests/${pid(id)}/polygon/pull-preview`, { problems }),
+  contestPull: (id: string, req: ContestPullRequest) => request<JobInfo>('POST', `/contests/${pid(id)}/polygon/pull`, req),
   contestTex: (id: string, lang: string, doc: string, breaks: boolean, toc: boolean) =>
     download(`/api/contests/${pid(id)}/tex?lang=${encodeURIComponent(lang)}&doc=${encodeURIComponent(doc)}&breaks=${breaks ? 1 : 0}&toc=${toc ? 1 : 0}`, `${id}-${doc}-${lang}.tex`),
   downloadContestExport: (id: string, file: string) => download(`/api/contests/${pid(id)}/export/${encodeURIComponent(file)}`, file),

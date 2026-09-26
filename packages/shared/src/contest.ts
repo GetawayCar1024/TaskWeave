@@ -109,3 +109,68 @@ export interface ContestStatement {
   sections: Record<string, string>;
   samples: { input: string; output: string; inputCases?: number[] }[];
 }
+
+// ---------------------------------------------------------------------------
+// Contest ⇄ Polygon sync: status from one or two requests, then only the problems
+// that changed on Polygon are fetched in full.
+
+/** Where a problem of the contest stands against Polygon. */
+export type ContestSyncState = 'same' | 'local' | 'remote' | 'both' | 'unbound' | 'unreachable' | 'missing';
+
+export interface ContestSyncRow {
+  index: string;
+  /** Local problem id. */
+  problem: string;
+  polygonId?: number;
+  state: ContestSyncState;
+  /** Items changed locally since the last sync (computed locally). */
+  localChanges: number;
+  /** problem.toml differs from the last sync. */
+  tomlChanged?: boolean;
+  syncedRevision?: number;
+  remoteRevision?: number;
+  /** Polygon has uncommitted changes (made in its web UI, not committed yet). */
+  remoteUncommitted?: boolean;
+  /** Letter of this problem in the Polygon contest, when it differs. */
+  polygonIndex?: string;
+  /** Bound to Polygon but not a problem of the Polygon contest. */
+  notInPolygonContest?: boolean;
+}
+
+export interface ContestSyncStatus {
+  /** The Polygon contest, when the contest is bound to one. */
+  polygonId?: number;
+  rows: ContestSyncRow[];
+  /** Problems of the Polygon contest that are not in the local contest. */
+  remoteOnly: { index: string; polygonId: number; name: string; localProblem?: string }[];
+  warnings: string[];
+}
+
+export interface ContestPullItem {
+  key: string;
+  label: string;
+  status: string;
+  /** Checked by default (a change made only on Polygon). */
+  take: boolean;
+}
+
+export interface ContestPullProblem {
+  index: string;
+  problem: string;
+  items: ContestPullItem[];
+  /** Items changed on both sides: resolved in the problem's own sync dialog. */
+  conflicts: string[];
+  error?: string;
+}
+
+export interface ContestPullPreview {
+  problems: ContestPullProblem[];
+}
+
+export interface ContestPullRequest {
+  problems: { problem: string; take: string[] }[];
+}
+
+export interface ContestPullResult {
+  problems: { problem: string; index: string; applied: number; warnings: string[]; error?: string }[];
+}

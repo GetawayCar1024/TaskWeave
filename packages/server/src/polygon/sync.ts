@@ -41,6 +41,8 @@ import {
 interface SyncState {
   polygonId?: number;
   revision?: number;
+  /** Polygon had uncommitted edits at `revision` when this sync ran (they are in the base). */
+  uncommitted?: boolean;
   lastSync?: string;
   items: Record<string, string>;
 }
@@ -154,6 +156,15 @@ export class PolygonSync {
     return { ok: true, problems: list.length, ms: Date.now() - t0 };
   }
 
+  /** Local side of the sync state, without asking Polygon (the contest status table). */
+  async localStatus(ctx: ProblemCtx): Promise<{ changes: number; syncedRevision?: number; syncedUncommitted: boolean; tomlChanged: boolean }> {
+    const { items } = await localItems(this.judge, ctx);
+    const sync = await readSync(ctx);
+    const keys = new Set(items.map((i) => i.key));
+    const changes = items.filter((it) => sync.items[it.key] !== itemHash(it)).length + Object.keys(sync.items).filter((k) => !keys.has(k)).length;
+    return { changes, syncedRevision: sync.revision, syncedUncommitted: !!sync.uncommitted, tomlChanged: !!(await tomlRow(ctx)) };
+  }
+
   // ---- push ----
 
   async pushPreview(ctx: ProblemCtx): Promise<PushPreview> {
@@ -259,6 +270,7 @@ export class PolygonSync {
     }
     const info = await this.problemInfo(client, polygonId).catch(() => undefined);
     sync.revision = info?.revision;
+    sync.uncommitted = info?.modified || undefined;
     await writeSync(ctx, sync);
     if (pushed.length) await saveTomlSnapshot(ctx);
     return { pushed, warnings, revision: sync.revision, polygonId };
@@ -388,7 +400,9 @@ export class PolygonSync {
     sync.polygonId = cached.polygonId;
     sync.lastSync = new Date().toISOString();
     try {
-      sync.revision = (await this.problemInfo(await this.client(), cached.polygonId))?.revision;
+      const info = await this.problemInfo(await this.client(), cached.polygonId);
+      sync.revision = info?.revision;
+      sync.uncommitted = info?.modified || undefined;
     } catch {
       /* keep the old revision */
     }

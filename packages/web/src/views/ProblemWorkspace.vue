@@ -63,6 +63,8 @@ const rightTab = ref<'info' | 'tests' | 'run' | 'selftest'>('info');
 const runPanel = ref<InstanceType<typeof RunPanel>>();
 const showInvocation = ref(false);
 const showSync = ref(false);
+/** ?sync=pull (from the contest sync): open the sync dialog on the pull tab. */
+const syncTab = ref<'push' | 'pull'>();
 const showLint = ref(false);
 const showStress = ref(false);
 const showPalette = ref(false);
@@ -379,6 +381,10 @@ onMounted(async () => {
   const first = [asked, 'statement/zh/legend.tex', 'statement/en/legend.tex', cfg?.validator?.source, 'problem.toml'].find(
     (p) => p && ws.files.value.some((f) => f.path === p),
   );
+  if (route.query.sync === 'pull') {
+    syncTab.value = 'pull';
+    showSync.value = true;
+  }
   if (first) {
     await ws.openFile(first).catch(() => {});
     const line = Number(route.query.line);
@@ -503,7 +509,7 @@ onBeforeUnmount(() => {
     <lint-dialog v-model:show="showLint" :ws="ws" :problem-id="id" />
     <stress-dialog v-model:show="showStress" :ws="ws" :problem-id="id" />
     <invocation-drawer v-model:show="showInvocation" :ws="ws" :judge="judge" :problem-id="id" />
-    <sync-dialog v-model:show="showSync" :ws="ws" :problem-id="id" />
+    <sync-dialog v-model:show="showSync" :ws="ws" :problem-id="id" :initial-tab="syncTab" />
     <ai-drawer ref="aiDrawer" v-model:show="showAi" :ai="ai" :problem-id="id" :ws="ws" />
     <diff-dialog v-model:show="diff.show" :path="diff.path" :disk="diff.disk" :mine="diff.mine" @keep-mine="keepMine" @use-disk="useDisk" />
 
