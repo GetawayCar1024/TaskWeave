@@ -80,6 +80,32 @@ onBeforeUnmount(() => {
 
 const label = (path: string) => (path.startsWith(SHARED_TAB) ? `std:${path.split('/').pop()}` : path.split('/').pop());
 
+/**
+ * Tabs with the same name (statement/zh/input.tex, statement/en/input.tex) get the
+ * shortest part of their folder that tells them apart, as a dim hint: "zh", "en".
+ */
+const hints = computed(() => {
+  const out = new Map<string, string>();
+  const groups = new Map<string, string[]>();
+  for (const t of props.ws.state.tabs) {
+    const name = label(t.path) ?? t.path;
+    groups.set(name, [...(groups.get(name) ?? []), t.path]);
+  }
+  for (const paths of groups.values()) {
+    if (paths.length < 2) continue;
+    const dirs = paths.map((p) => p.split('/').slice(0, -1));
+    const max = Math.max(...dirs.map((d) => d.length));
+    for (let depth = 1; depth <= max; depth++) {
+      const tails = dirs.map((d) => d.slice(-depth).join('/'));
+      if (new Set(tails).size === tails.length || depth === max) {
+        paths.forEach((p, i) => out.set(p, tails[i] || '/'));
+        break;
+      }
+    }
+  }
+  return out;
+});
+
 function onTabMouse(e: MouseEvent, path: string) {
   if (e.button === 1) {
     e.preventDefault();
@@ -101,6 +127,7 @@ function onTabMouse(e: MouseEvent, path: string) {
         @mousedown="onTabMouse($event, tab.path)"
       >
         <span class="name" :class="{ gone: tab.disk === 'deleted' }">{{ label(tab.path) }}</span>
+        <span v-if="hints.get(tab.path)" class="hint">{{ hints.get(tab.path) }}</span>
         <lock v-if="tab.readOnly" :size="11" class="ro" />
         <span class="close" :class="{ dirty: tab.dirty }" @click.stop="emit('close', tab.path)">
           <span class="dot" /><x class="x" :size="12" />
@@ -188,6 +215,11 @@ function onTabMouse(e: MouseEvent, path: string) {
 }
 .name.gone {
   text-decoration: line-through;
+}
+.hint {
+  margin-left: 4px;
+  font-size: 11px;
+  opacity: 0.55;
 }
 .ro {
   opacity: 0.6;

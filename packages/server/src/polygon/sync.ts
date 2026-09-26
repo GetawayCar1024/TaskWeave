@@ -231,7 +231,23 @@ export class PolygonSync {
     let done = 0;
     const pushed: string[] = [];
     const pc = { client, problemId: polygonId, warn: (m: string) => warnings.push(m) };
+    // New manual tests and the script's "> $" numbering: Polygon numbers generated tests
+    // when the script is saved, so a manual test cannot take an index a generated one has.
+    const manual = todo.filter((it) => it.kind === 'test');
+    const script = items.find((it) => it.kind === 'script');
+    let resaveScript = false;
     try {
+      if (manual.length && script) {
+        const remote = await client.call<{ index: number; manual: boolean }[]>('problem.tests', { problemId: polygonId, testset: TESTSET, noInputs: true }).catch(() => []);
+        const generated = new Set(remote.filter((t) => !t.manual).map((t) => t.index));
+        if (manual.some((it) => generated.has(it.extra?.index))) {
+          job.progress(done, total, 'problem.saveScript (clear generated tests)');
+          await client.call('problem.saveScript', { problemId: polygonId, testset: TESTSET, source: '' });
+          // Polygon has no script now: make sure it is sent again, even after a failure.
+          delete sync.items[script.key];
+        }
+        resaveScript = true;
+      }
       for (const it of todo) {
         job.signal.throwIfAborted();
         job.progress(done, total, it.label);
@@ -254,6 +270,14 @@ export class PolygonSync {
         await dropBase(ctx, key);
         pushed.push(key);
         done++;
+      }
+      // Renumber the generated tests around the manual ones, also when the script text is unchanged.
+      if (resaveScript && script && !todo.includes(script)) {
+        job.progress(done, total, script.label);
+        await pushItem(pc, script);
+        sync.items[script.key] = itemHash(script);
+        await saveBase(ctx, script);
+        if (!pushed.includes(script.key)) pushed.push(script.key);
       }
     } finally {
       // Keep what made it, so a retry only sends the rest.

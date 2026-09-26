@@ -2,6 +2,7 @@ import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { DEFAULT_TESTSET, LANG_TO_POLYGON, STATEMENT_SECTIONS, STD_PREFIX, parseIndexList, testsetsOf, type SolutionTag, type TestsManifest } from '@polyforge/shared';
 import type { JobCtx } from '../jobs.js';
+import { defsForProblem } from '../defs.js';
 import { stdRefToPath } from '../sharedFiles.js';
 import { atomicWrite, exists, safeJoin } from '../util/fs.js';
 import { ZipWriter } from '../util/zip.js';
@@ -73,10 +74,19 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
   const resources: string[] = [];
   zip.add('files/testlib.h', await fsp.readFile(path.join(judge.global.sharedDir, 'testlib.h')));
   resources.push('<file path="files/testlib.h" type="h.g++"/>');
-  for (const f of (await fsp.readdir(path.join(ref.dir, 'files')).catch(() => [] as string[])).sort()) {
+  const ownFiles = (await fsp.readdir(path.join(ref.dir, 'files')).catch(() => [] as string[])).sort();
+  for (const f of ownFiles) {
     if (f.startsWith('.') || f === 'testlib.h') continue;
     zip.add(`files/${f}`, await read(`files/${f}`));
     resources.push(`<file path="files/${x(f)}"/>`);
+  }
+  // The statement macros (\Def…), like testlib.h: the shared defs.toml unless the problem has its own.
+  const defs = ownFiles.includes('defs.toml') ? null : await fsp.readFile(path.join(judge.global.sharedDir, 'defs.toml'), 'utf8').catch(() => null);
+  if (defs !== null) {
+    // With a Chinese statement the version with the Chinese macros, else the original one.
+    const zh = !!config.problem.title.zh?.trim() || (await fsp.stat(path.join(ref.dir, 'statement', 'zh')).then((s) => s.isDirectory()).catch(() => false));
+    zip.add('files/defs.toml', Buffer.from(defsForProblem(defs, zh), 'utf8'));
+    resources.push('<file path="files/defs.toml"/>');
   }
   const executables: string[] = [];
   for (const [, gsrc] of await judge.generators(ctx)) {

@@ -21,6 +21,7 @@ import {
 import { pickLanguage } from '../judge/compiler.js';
 import type { Judge, ProblemCtx } from '../judge/index.js';
 import { planTests, scriptStatementPaths, statementPaths } from '../judge/tests.js';
+import { defsForProblem } from '../defs.js';
 import { exists, isDir, looksBinary, sha1 } from '../util/fs.js';
 import { HIDDEN_DIRS } from '../workspace/files.js';
 import type { PolygonClient } from './client.js';
@@ -29,6 +30,8 @@ export const TESTSET = 'tests';
 
 /** Resource files every Polygon problem has; never synced. */
 const DEFAULT_RESOURCES = new Set(['olymp.sty', 'problem.tex', 'statements.ftl', 'testlib.h', 'tutorial.tex']);
+/** Statement macro definitions (Codeforces defs), shared by default. */
+const DEFS_FILE = 'defs.toml';
 
 const POLY_SECTIONS = ['name', ...STATEMENT_SECTIONS] as const;
 type PolySection = (typeof POLY_SECTIONS)[number];
@@ -75,8 +78,10 @@ export const PUSH_ORDER: SyncItemKind[] = [
   'solution',
   'statementResource',
   'statement',
-  'script',
+  // Manual tests before the script: "> $" in the script takes the next index that no
+  // manual test has (as in the local test plan), and Polygon numbers when it is saved.
   'test',
+  'script',
   'sample',
   'groups',
   'validatorTest',
@@ -236,6 +241,17 @@ export async function localItems(judge: Judge, ctx: ProblemCtx): Promise<LocalIt
     }
     if (DEFAULT_RESOURCES.has(rel) || rel === '.gitkeep') continue;
     items.push({ key: `resource:${rel}`, kind: 'resource', label: `resource: ${rel}`, path: `files/${rel}`, bytes: await fsp.readFile(path.join(dir, 'files', rel)), binary: true, extra: { name: rel } });
+  }
+  // Polygon gives every problem testlib.h but not defs.toml, which the statements' \Def…
+  // macros need: send the shared one unless the problem has its own files/defs.toml.
+  // With a Chinese statement the version with the Chinese macros, else the original one.
+  if (!(await exists(path.join(dir, 'files', DEFS_FILE)))) {
+    const text = await fsp.readFile(path.join(judge.global.sharedDir, DEFS_FILE), 'utf8').catch(() => null);
+    const zh = !!config.problem.title.zh?.trim() || (await isDir(path.join(dir, 'statement', 'zh')));
+    if (text !== null) {
+      const bytes = Buffer.from(defsForProblem(text, zh), 'utf8');
+      items.push({ key: `resource:${DEFS_FILE}`, kind: 'resource', label: `resource: ${DEFS_FILE} (shared)`, bytes, binary: true, extra: { name: DEFS_FILE } });
+    }
   }
 
   // ---- solutions ----
