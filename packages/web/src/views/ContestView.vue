@@ -12,7 +12,6 @@ import {
   NInput,
   NInputNumber,
   NModal,
-  NPopconfirm,
   NProgress,
   NSelect,
   NSpace,
@@ -35,7 +34,6 @@ import {
   Pencil,
   Play,
   Trash2,
-  Upload,
   X,
   RefreshCw,
 } from 'lucide-vue-next';
@@ -186,11 +184,10 @@ const job = ref<JobInfo | null>(null);
 const running = computed(() => job.value?.status === 'running');
 const result = ref<ContestBatchResult | null>(null);
 const resultByIndex = computed(() => new Map((result.value?.items ?? []).map((x) => [x.index, x])));
-const pushMessage = ref('');
-
 async function run(action: ContestAction) {
   try {
-    const started = await api.contestBatch(props.id, { action, message: action === 'polygon-push' ? pushMessage.value.trim() || undefined : undefined });
+    // Pushing to Polygon lives in the sync dialog (with its commit message).
+    const started = await api.contestBatch(props.id, { action });
     follow(started);
   } catch (e) {
     message.error(errorMessage(e));
@@ -337,7 +334,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
         <n-button size="small" quaternary :title="t('contest.delete')" @click="deleteContest"><trash2 :size="15" /></n-button>
       </template>
     </app-header>
-    <contest-sync-dialog v-model:show="showSync" :contest-id="id" :detail="detail" @push="run('polygon-push')" @changed="load" />
+    <contest-sync-dialog v-model:show="showSync" :contest-id="id" :detail="detail" @changed="load" />
     <ai-drawer v-model:show="showAi" :ai="ai" :problem-id="`contest:${id}`" />
 
     <main class="body">
@@ -349,19 +346,8 @@ const columns = computed<DataTableColumns<Row>>(() => [
             <n-button v-for="a in ACTIONS" :key="a.action" size="small" :disabled="running || !rows.length" @click="run(a.action)">
               <template #icon><component :is="a.icon" /></template>{{ t(`contest.action.${a.action}`) }}
             </n-button>
-            <n-popconfirm :show-icon="false" @positive-click="run('polygon-push')">
-              <template #trigger>
-                <n-button size="small" :disabled="running || !rows.length">
-                  <template #icon><upload /></template>{{ t('contest.action.polygon-push') }}
-                </n-button>
-              </template>
-              <div class="push-confirm">
-                <div>{{ t('contest.pushConfirm', { n: rows.length }) }}</div>
-                <n-input v-model:value="pushMessage" size="small" :placeholder="t('sync.commitMessage')" />
-              </div>
-            </n-popconfirm>
             <n-button size="small" :disabled="running || !rows.length" @click="showSync = true">
-              <template #icon><refresh-cw /></template>{{ t('csync.button') }}
+              <template #icon><refresh-cw /></template>{{ t('toolbar.sync') }}
             </n-button>
             <n-button v-if="running" size="small" type="warning" ghost @click="cancel">{{ t('common.cancel') }}</n-button>
           </n-space>
@@ -436,12 +422,6 @@ const columns = computed<DataTableColumns<Row>>(() => [
   flex-direction: column;
   gap: 2px;
   max-width: 600px;
-}
-.push-confirm {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-width: 320px;
 }
 .grow {
   flex: 1;

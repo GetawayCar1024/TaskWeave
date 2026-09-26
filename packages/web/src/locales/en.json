@@ -695,7 +695,6 @@
   },
   "csync": {
     "title": "Sync with Polygon (whole contest)",
-    "button": "Polygon sync",
     "boundTo": "Bound to Polygon contest #{id}",
     "notBound": "The contest is not bound to a Polygon contest (problems are compared, the problem list is not)",
     "cheap": "the status takes one or two requests; only problems changed on Polygon are fetched in full",
@@ -729,8 +728,12 @@
     "refresh": "Refresh",
     "checkAll": "Check all",
     "checkAllHint": "Fetch every bound problem from Polygon (many requests); finds uncommitted Polygon changes made after the last sync",
-    "push": "Push local changes…",
     "checkChanged": "Check changes on Polygon ({n})",
-    "pull": "Pull selected ({n})"
+    "pull": "Pull selected ({n})",
+    "willCreate": "creates a Polygon problem",
+    "pullFirst": "skipped by the push, pull first",
+    "pushN": "Push selected ({n})",
+    "pushedN": "{n} pushed",
+    "pushHint": "Pushes each problem’s local changes and commits; problems changed on Polygon are skipped."
   }
 }

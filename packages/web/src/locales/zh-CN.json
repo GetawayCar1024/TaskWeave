@@ -718,7 +718,6 @@
   },
   "csync": {
     "title": "与 Polygon 同步（整场比赛）",
-    "button": "Polygon 同步",
     "boundTo": "已绑定 Polygon 比赛 #{id}",
     "notBound": "比赛未绑定 Polygon 比赛（只比较各题，不检查题目列表）",
     "cheap": "状态只需一两次请求；只有 Polygon 上改过的题才会完整获取",
@@ -752,8 +751,12 @@
     "refresh": "刷新",
     "checkAll": "检查全部",
     "checkAllHint": "获取所有已绑定题目在 Polygon 上的内容（请求较多）；用于发现上次同步后 Polygon 上新的未提交修改",
-    "push": "推送本地改动…",
     "checkChanged": "检查 Polygon 上的改动（{n} 题）",
-    "pull": "拉取所选（{n} 项）"
+    "pull": "拉取所选（{n} 项）",
+    "willCreate": "将新建 Polygon 题目",
+    "pullFirst": "推送时会跳过，先拉取",
+    "pushN": "推送所选（{n} 题）",
+    "pushedN": "{n} 题已推送",
+    "pushHint": "逐题推送本地改动并 commit；Polygon 上改过的题会跳过。"
   }
 }
