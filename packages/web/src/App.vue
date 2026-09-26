@@ -41,6 +41,8 @@ onMounted(async () => {
   try {
     await loadSettings();
     startWs();
+    // Right away where the browser allows it; otherwise the first gesture does it.
+    if (settings.config?.ui.fullscreen !== false && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
   } catch (e) {
     if (!unauthorized.value) loadError.value = errorMessage(e);
   }

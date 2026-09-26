@@ -143,7 +143,7 @@
     "change": "Change",
     "useDefault": "Use default",
     "fullscreen": "Fullscreen on open",
-    "fullscreenHint": "Enters fullscreen on the first click or key press; in fullscreen with a file open, Ctrl+W closes the file (Chrome / Edge)"
+    "fullscreenHint": "Enters fullscreen when the page opens (on the first click or key press where the browser requires one); in fullscreen, Ctrl+W closes the current file and Ctrl+Shift+T reopens the last closed one (Chrome / Edge)"
   },
   "editor": {
     "changedOnDisk": "This file changed on disk while you have unsaved changes.",

@@ -143,7 +143,7 @@
     "change": "更改",
     "useDefault": "恢复默认",
     "fullscreen": "打开时自动全屏",
-    "fullscreenHint": "打开后第一次点击或按键时进入全屏；全屏且打开了文件时，Ctrl+W 关闭当前文件（Chrome / Edge）"
+    "fullscreenHint": "打开网页时进入全屏（浏览器要求先有一次点击或按键时，在第一次点击或按键时进入）；全屏且打开了文件时，Ctrl+W 关闭当前文件、Ctrl+Shift+T 重新打开刚关闭的文件（Chrome / Edge）"
   },
   "editor": {
     "changedOnDisk": "此文件已在磁盘上被修改，而你有未保存的更改。",

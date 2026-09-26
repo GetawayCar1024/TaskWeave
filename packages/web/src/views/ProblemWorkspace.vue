@@ -316,20 +316,48 @@ async function onAction(a: SidebarAction) {
 const quickOpen = ref(false);
 const allFiles = computed(() => ws.files.value.map((f) => f.path));
 
+/** Files closed in this session, newest last (Ctrl+Shift+T reopens them). */
+const closedTabs = ref<string[]>([]);
+watch(
+  () => ws.state.tabs.map((t) => t.path),
+  (now, before) => {
+    const gone = (before ?? []).filter((p) => !now.includes(p));
+    closedTabs.value = [...closedTabs.value.filter((p) => !now.includes(p) && !gone.includes(p)), ...gone].slice(-30);
+  },
+);
+async function reopenClosed() {
+  while (closedTabs.value.length) {
+    const path = closedTabs.value[closedTabs.value.length - 1];
+    closedTabs.value = closedTabs.value.slice(0, -1);
+    // Skip files deleted in the meantime.
+    if (!ws.files.value.some((f) => f.path === path) && !path.startsWith(SHARED_TAB)) continue;
+    try {
+      await ws.openFile(path);
+      return;
+    } catch {
+      /* try the one before */
+    }
+  }
+}
+
 /**
- * Ctrl+W normally closes the browser tab and a page cannot stop it; in fullscreen
- * (entered by the page) Chrome / Edge let it take the key with the Keyboard Lock API.
- * Locked while a file is open, so Ctrl+W closes the file; released otherwise.
+ * Ctrl+W / Ctrl+Shift+T normally go to the browser (close / reopen a browser tab) and a
+ * page cannot stop them; in fullscreen (entered by the page) Chrome / Edge let it take
+ * the keys with the Keyboard Lock API. W is locked while a file is open (close it), T
+ * while there is a closed file to reopen; otherwise the browser keeps them.
  */
 type KeyboardLock = { lock?: (keys: string[]) => Promise<void>; unlock?: () => void };
 const keyboard = (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
 const fullscreen = ref(!!document.fullscreenElement);
 const onFullscreen = () => (fullscreen.value = !!document.fullscreenElement);
 const wLocked = computed(() => fullscreen.value && ws.state.tabs.length > 0);
+const tLocked = computed(() => fullscreen.value && closedTabs.value.length > 0);
 watch(
-  wLocked,
-  (on) => {
-    if (on) keyboard?.lock?.(['KeyW']).catch(() => {});
+  () => [wLocked.value, tLocked.value] as const,
+  ([w, t]) => {
+    const keys = [...(w ? ['KeyW'] : []), ...(t ? ['KeyT'] : [])];
+    // lock() replaces the set locked before.
+    if (keys.length) keyboard?.lock?.(keys).catch(() => {});
     else keyboard?.unlock?.();
   },
   { immediate: true },
@@ -338,9 +366,12 @@ watch(
 function onKeydown(e: KeyboardEvent) {
   if (e.defaultPrevented || !(e.ctrlKey || e.metaKey)) return;
   const k = e.key.toLowerCase();
-  if (k === 'w' && wLocked.value && ws.state.active) {
+  if (k === 'w' && !e.shiftKey && wLocked.value && ws.state.active) {
     e.preventDefault();
     closeTab(ws.state.active);
+  } else if (k === 't' && e.shiftKey && tLocked.value) {
+    e.preventDefault();
+    void reopenClosed();
   } else if (k === 's') {
     e.preventDefault();
     if (ws.state.active) save(ws.state.active);
