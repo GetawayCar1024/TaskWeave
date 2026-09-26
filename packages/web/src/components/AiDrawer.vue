@@ -236,6 +236,24 @@ async function review(accept: boolean, paths = [...picked.value]) {
 
 const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } as const;
 
+/** Height limit of the change list, set by dragging its top edge (kept across sessions). */
+const changesHeight = ref(Number(localStorage.getItem('polyforge-ai-changes-height')) || 180);
+function startResize(e: PointerEvent) {
+  e.preventDefault();
+  const y0 = e.clientY;
+  const h0 = changesHeight.value;
+  const move = (ev: PointerEvent) => {
+    changesHeight.value = Math.round(Math.min(Math.max(h0 + (y0 - ev.clientY), 80), window.innerHeight * 0.8));
+  };
+  const up = () => {
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+    localStorage.setItem('polyforge-ai-changes-height', String(changesHeight.value));
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+}
+
 /** Token breakdown for the usage line tooltip. */
 const usageTitle = computed(() => {
   const u = s.value.current?.usage;
@@ -377,21 +395,24 @@ const usageTitle = computed(() => {
             <div v-if="ai.running.value" class="working"><n-spin :size="14" /> {{ t('ai.working') }}</div>
           </n-scrollbar>
 
-          <div v-if="tab === 'agent' && s.changes.length" class="changes">
-            <div class="changes-head">
-              <strong>{{ t('ai.changes', { n: s.changes.length }) }}</strong>
-              <n-space size="small">
-                <n-button size="tiny" type="primary" :disabled="!picked.size || ai.running.value" @click="review(true)">{{ t('ai.accept', { n: picked.size }) }}</n-button>
-                <n-button size="tiny" :disabled="!picked.size || ai.running.value" @click="review(false)">{{ t('ai.reject') }}</n-button>
-              </n-space>
-            </div>
-            <div v-for="c in s.changes" :key="c.path" class="change">
-              <n-checkbox
-                :checked="picked.has(c.path)"
-                @update:checked="(v: boolean) => { const n = new Set(picked); v ? n.add(c.path) : n.delete(c.path); picked = n; }"
-              />
-              <n-tag size="tiny" :type="STATUS_TYPE[c.status]" :bordered="false">{{ t(`ai.status.${c.status}`) }}</n-tag>
-              <a class="mono path" @click="openDiff(c.path)">{{ c.path }}</a>
+          <div v-if="tab === 'agent' && s.changes.length" class="changes-wrap">
+            <div class="changes-grip" :title="t('ai.resizeChanges')" @pointerdown="startResize" />
+            <div class="changes" :style="{ maxHeight: `${changesHeight}px` }">
+              <div class="changes-head">
+                <strong>{{ t('ai.changes', { n: s.changes.length }) }}</strong>
+                <n-space size="small">
+                  <n-button size="tiny" type="primary" :disabled="!picked.size || ai.running.value" @click="review(true)">{{ t('ai.accept', { n: picked.size }) }}</n-button>
+                  <n-button size="tiny" :disabled="!picked.size || ai.running.value" @click="review(false)">{{ t('ai.reject') }}</n-button>
+                </n-space>
+              </div>
+              <div v-for="c in s.changes" :key="c.path" class="change">
+                <n-checkbox
+                  :checked="picked.has(c.path)"
+                  @update:checked="(v: boolean) => { const n = new Set(picked); v ? n.add(c.path) : n.delete(c.path); picked = n; }"
+                />
+                <n-tag size="tiny" :type="STATUS_TYPE[c.status]" :bordered="false">{{ t(`ai.status.${c.status}`) }}</n-tag>
+                <a class="mono path" @click="openDiff(c.path)">{{ c.path }}</a>
+              </div>
             </div>
           </div>
 
@@ -671,11 +692,27 @@ const usageTitle = computed(() => {
   align-items: center;
   padding: 4px 0;
 }
+.changes-wrap {
+  position: relative;
+}
+/* Drag the top edge to make the list taller or shorter. */
+.changes-grip {
+  position: absolute;
+  top: -4px;
+  left: 0;
+  right: 0;
+  height: 8px;
+  cursor: ns-resize;
+  z-index: 1;
+}
+.changes-grip:hover {
+  border-top: 2px solid rgba(240, 160, 32, 0.8);
+  top: -1px;
+}
 .changes {
   border: 1px solid rgba(240, 160, 32, 0.45);
   border-radius: 4px;
   padding: 4px 8px;
-  max-height: 180px;
   overflow: auto;
 }
 .changes-head {

@@ -496,7 +496,8 @@
     },
     "presetLang": "Language",
     "contestIntro": "The AI here works on all problems of the contest at once, e.g. statements or tutorials in a language for every problem, a consistent style, verifying each problem. You accept the changes file by file.",
-    "contestReviewIntro": "The AI check goes through every problem and looks at the contest as a whole (languages, notation, difficulty order, …)."
+    "contestReviewIntro": "The AI check goes through every problem and looks at the contest as a whole (languages, notation, difficulty order, …).",
+    "resizeChanges": "Drag to resize"
   },
   "lint": {
     "title": "Statement check & auto-fix",
