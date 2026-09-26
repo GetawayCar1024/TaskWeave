@@ -2,17 +2,23 @@
 
 本地优先的 Polygon 造题平台。设计见 [DESIGN.md](DESIGN.md)。已完成 **M1 本地核心**、**M2 评测**、**M3 Polygon 同步**、**M4 AI**、**M5 打磨**，以及比赛管理。
 
-## 运行
+## 安装与运行
+
+PolyForge 是 Windows 桌面程序。从发行版下载 `PolyForge-<版本>-setup.exe` 安装（会建桌面和开始菜单快捷方式），之后双击快捷方式即可启动；也可以用免安装的 `PolyForge-<版本>-portable.exe`。需要 PATH 里有 g++（MinGW-w64）。
+
+窗口打开时最大化，F11 切换全屏，F12 打开开发者工具，F5 刷新。Ctrl+W 关闭当前文件，Ctrl+Shift+T 重新打开刚关闭的文件。环境变量 `POLYFORGE_HOME` 可指定另一个全局目录（默认 `~/.polyforge`）。
+
+### 开发
 
 ```bash
 pnpm install
-pnpm start        # 构建前端并启动，自动打开浏览器（http://127.0.0.1:4523/?token=...）
-pnpm dev          # 开发模式：API 在 4523（node --watch），Vite 在 5173；打开终端里打印的链接
+pnpm dev          # API 在 4523（node --watch），Vite 在 5173；在浏览器里打开终端打印的链接（Ctrl+W 等快捷键只在桌面版里有效）
+pnpm desktop:run  # 构建后用 Electron 直接运行桌面版（不打包）
+pnpm desktop      # 打包桌面版：packages/desktop/dist/ 下的安装包和免安装版
 pnpm typecheck
-pnpm release      # 打包成独立的 npm 包到 release/（无运行时依赖）：npx ./release，或在 release/ 里 npm pack 后 npx polyforge-<版本>.tgz
 ```
 
-服务端参数：`--port <n>`、`--home <dir>`（全局目录，默认 `~/.polyforge`，也可用环境变量 `POLYFORGE_HOME`）、`--no-open`。
+`packages/server` 的命令行（`--port <n>`、`--home <dir>`、`--dev`）只启动服务并打印地址，供开发和测试脚本使用。
 
 首次启动会初始化全局目录：`config.toml`、`languages.toml`、`secrets.toml`、`shared/`（testlib.h、defs.toml、标准 checker、validator/generator 模板）、`templates/`（新建题目骨架与题面模板）。已存在的文件不会被覆盖，可以随意修改。
 
@@ -41,7 +47,7 @@ pnpm release      # 打包成独立的 npm 包到 release/（无运行时依赖�
 - **Invocation**：选若干解 × 全部测试，矩阵显示结论 / 时间，按 tag 标出不符合预期的格子；点格子看输入和“答案 vs 输出”的 diff；保留历史记录。
 - **自测**：validator 自测、checker 自测（约定见下）。
 - **快速运行**（`Ctrl+Enter`）：当前文件在自定义输入或某个测试上运行，带 checker 结论。
-- **题面预览**：打开 `statement/<语言>/*.tex` 时右侧实时渲染（Polygon LaTeX 子集 + KaTeX + defs.toml 宏展开；defs.toml 有英文、俄文和中文三种版本，中文题面用中文版，缺少时用英文版），无法识别的命令标黄；输入 `\Def` 自动补全宏，悬停显示展开内容。也会补全 Codeforces / Polygon 支持的 TeX 命令与环境（`\textbf`、`\t`、`\epigraph`、`\includegraphics`、itemize / enumerate / tabular …，列表的 `\item` 缩进两个空格），公式里补全常用数学命令（`\le`、`\frac`、`\bmod` …），悬停显示说明。同名文件（如 `zh/input.tex` 与 `en/input.tex`）的标签页会附上区分它们的文件夹名。“设置 → 通用 → 打开时自动全屏”（默认开）：启动时用 Edge（其他系统用 Chrome）打开一个全屏的独立应用窗口（单独的浏览器配置，放在全局目录的 `browser/`，不影响平时的浏览器窗口）；第一次点击或按键后切换为页面全屏；关闭此项则用默认浏览器打开普通标签页。全屏且打开了文件时，Ctrl+W 关闭当前文件而不是浏览器标签页，Ctrl+Shift+T 重新打开刚关闭的文件（Chrome / Edge 的 Keyboard Lock；没有可关闭 / 可重开的文件时按键仍交给浏览器）。
+- **题面预览**：打开 `statement/<语言>/*.tex` 时右侧实时渲染（Polygon LaTeX 子集 + KaTeX + defs.toml 宏展开；defs.toml 有英文、俄文和中文三种版本，中文题面用中文版，缺少时用英文版），无法识别的命令标黄；输入 `\Def` 自动补全宏，悬停显示展开内容。也会补全 Codeforces / Polygon 支持的 TeX 命令与环境（`\textbf`、`\t`、`\epigraph`、`\includegraphics`、itemize / enumerate / tabular …，列表的 `\item` 缩进两个空格），公式里补全常用数学命令（`\le`、`\frac`、`\bmod` …），悬停显示说明。同名文件（如 `zh/input.tex` 与 `en/input.tex`）的标签页会附上区分它们的文件夹名。
 
 ### 约定
 
@@ -154,7 +160,7 @@ problem = "a-plus-b"
 - 点击题目所在的行（题号输入框、按钮除外）即可进入题目。
 - 批量操作，逐题执行，每题单独给出结果和详情：生成测试、运行 invocation（全部非 NR 的解，检查是否符合 tag）、本地检查、导出比赛包（`contest.xml` + `problems/<短名>/` 下的完整 package）。
 - **Polygon 同步（整场比赛）**：比赛页的“同步”和题目一样分为“推送”和“拉取”两页。推送页勾选要推送的题（默认勾选本地有改动、Polygon 上没改的题；未绑定的题勾选后会新建 Polygon 题目），填写 commit 说明后逐题推送并 commit，Polygon 上改过的题会跳过并提示先拉取。拉取页先用一两次请求（`problems.list` 取各题当前 revision，比赛绑定了 Polygon 比赛时再加 `contest.problems`）列出每题状态：已同步 / 本地有改动 / Polygon 有改动 / 两边都有改动 / 未绑定；本地改动在本地计算，不发请求。“检查 Polygon 上的改动”只完整获取 Polygon 上改过的题，列出将要拉取的条目确认后再拉取；两边都改过的题不在这里拉取，点“在题目中处理”打开该题的同步窗口（拉取页）合并。还会提示与 Polygon 比赛不同的题号（可一键按 Polygon 更新）和 Polygon 比赛中有、本地没有的题（可导入并加入）。Polygon 的 revision 只在 commit 时增加，自己在 Polygon 网页上改了但没 commit 的内容在上次同步后不一定能从状态看出，可用“检查全部”逐题获取。
-- 题面与题解（原“题面汇总”）：某一语言的全部题面或全部题解（两份文档分开生成），与预览相同的 Codeforces 样式，A4、20 mm 页边距、页脚为页码；用“打印”在浏览器里打印或另存为 PDF。缺少该语言题面或题解的题会标出来。
+- 题面与题解（原“题面汇总”）：某一语言的全部题面或全部题解（两份文档分开生成），与预览相同的 Codeforces 样式，A4、20 mm 页边距、页脚为页码；用“打印”打印或另存为 PDF。缺少该语言题面或题解的题会标出来。
 - 导出：题面与题解页的“导出”可以存为 HTML（与预览相同、自包含，图片内嵌，样例悬停高亮，公式字体从 KaTeX CDN 加载）、PDF（打开打印对话框，另存为 PDF）或 TeX（不依赖 olymp.sty 的独立 `.tex`，展开 defs 宏，中文用 ctex、需 XeLaTeX 编译；有图片时为含图片的 zip）。三种格式开头都有目录页（比赛标题和题目列表：题号、题目，题面文档还列出输入、输出与时间、空间限制；文字随文档语言），从下一页起是各题；HTML 中点击目录里的题目可跳转；工具栏的“目录页”开关可以关掉。
 
 ## 结构

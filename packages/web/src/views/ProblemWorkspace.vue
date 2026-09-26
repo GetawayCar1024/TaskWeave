@@ -20,7 +20,7 @@ import StatusBar from '../components/StatusBar.vue';
 import StressDialog from '../components/StressDialog.vue';
 import { waitJob } from '../lib/jobs';
 import { confirmDeleteProblem } from '../lib/deleteProblem';
-import { ArrowLeft, ChevronDown, Command as CommandIcon, Maximize, Minimize, Trash2 } from 'lucide-vue-next';
+import { ArrowLeft, ChevronDown, Command as CommandIcon, Trash2 } from 'lucide-vue-next';
 import { patchSettings } from '../lib/settings';
 import type { PackageResult } from '../lib/types';
 import { useAi } from '../lib/ai';
@@ -34,6 +34,7 @@ import { useJudge } from '../lib/judge';
 import { registerLatexMacros } from '../lib/latexEditor';
 import { onWs } from '../lib/ws';
 import { SHARED_TAB, useWorkspace } from '../lib/workspace';
+import { desktop } from '../lib/desktop';
 
 const props = defineProps<{ id: string }>();
 const { t, locale } = useI18n();
@@ -341,36 +342,11 @@ async function reopenClosed() {
 }
 
 /**
- * Ctrl+W / Ctrl+Shift+T normally go to the browser (close / reopen a browser tab) and a
- * page cannot stop them; in fullscreen (entered by the page) Chrome / Edge let it take
- * the keys with the Keyboard Lock API. W is locked while a file is open (close it), T
- * while there is a closed file to reopen; otherwise the browser keeps them.
+ * Ctrl+W closes the current file, Ctrl+Shift+T reopens the last closed one: desktop app
+ * only (in a browser these keys belong to the browser and a page cannot take them).
  */
-type KeyboardLock = { lock?: (keys: string[]) => Promise<void>; unlock?: () => void };
-const keyboard = (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
-const fullscreen = ref(!!document.fullscreenElement);
-const onFullscreen = () => (fullscreen.value = !!document.fullscreenElement);
-const wLocked = computed(() => fullscreen.value && ws.state.tabs.length > 0);
-const tLocked = computed(() => fullscreen.value && closedTabs.value.length > 0);
-watch(
-  () => [wLocked.value, tLocked.value] as const,
-  ([w, t]) => {
-    const keys = [...(w ? ['KeyW'] : []), ...(t ? ['KeyT'] : [])];
-    // lock() replaces the set locked before.
-    if (keys.length) keyboard?.lock?.(keys).catch(() => {});
-    else keyboard?.unlock?.();
-  },
-  { immediate: true },
-);
-
-/** Header button: page fullscreen on / off (only page fullscreen lets Ctrl+W close files). */
-function toggleFullscreen() {
-  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-  else document.documentElement.requestFullscreen().catch((e) => message.error(String(e?.message ?? e)));
-}
-const keysTitle = computed(() =>
-  fullscreen.value ? (keyboard?.lock ? t('keys.taken') : t('keys.noLockApi')) : t('keys.notFullscreen'),
-);
+const wLocked = computed(() => !!desktop && ws.state.tabs.length > 0);
+const tLocked = computed(() => !!desktop && closedTabs.value.length > 0);
 
 function onKeydown(e: KeyboardEvent) {
   if (e.defaultPrevented || !(e.ctrlKey || e.metaKey)) return;
@@ -378,6 +354,8 @@ function onKeydown(e: KeyboardEvent) {
   if (k === 'w' && !e.shiftKey && wLocked.value && ws.state.active) {
     e.preventDefault();
     closeTab(ws.state.active);
+  } else if (k === 'w' && !e.shiftKey && desktop) {
+    e.preventDefault();
   } else if (k === 't' && e.shiftKey && tLocked.value) {
     e.preventDefault();
     void reopenClosed();
@@ -434,7 +412,6 @@ const offWs = onWs((e) => {
 });
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown);
-  document.addEventListener('fullscreenchange', onFullscreen);
   window.addEventListener('beforeunload', onBeforeUnload);
   registerLatexMacros();
   await Promise.all([ws.init(), judge.init()]);
@@ -461,8 +438,6 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   offWs();
   window.removeEventListener('keydown', onKeydown);
-  document.removeEventListener('fullscreenchange', onFullscreen);
-  keyboard?.unlock?.();
   window.removeEventListener('beforeunload', onBeforeUnload);
   ws.dispose();
 });
@@ -495,9 +470,6 @@ onBeforeUnmount(() => {
           </template>
           Ctrl+Shift+U
         </n-tooltip>
-        <n-button size="small" quaternary :type="fullscreen ? 'primary' : 'default'" :title="keysTitle" @click="toggleFullscreen">
-          <template #icon><minimize v-if="fullscreen" /><maximize v-else /></template>
-        </n-button>
         <n-button size="small" :type="ai.running.value ? 'primary' : 'default'" @click="showAi = true">
           AI<template v-if="ai.state.changes.length"> · {{ ai.state.changes.length }}</template>
         </n-button>

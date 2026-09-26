@@ -141,9 +141,7 @@
     "parallelHint": "0 = auto ({auto})",
     "contestsDir": "Contests folder",
     "change": "Change",
-    "useDefault": "Use default",
-    "fullscreen": "Fullscreen on open",
-    "fullscreenHint": "PolyForge opens a separate fullscreen Edge window (own browser profile); after the first click or key press the page takes fullscreen, and with a file open Ctrl+W closes it and Ctrl+Shift+T reopens the last closed one. When off, the default browser opens a normal tab."
+    "useDefault": "Use default"
   },
   "editor": {
     "changedOnDisk": "This file changed on disk while you have unsaved changes.",
@@ -733,10 +731,5 @@
     "pushN": "Push selected ({n})",
     "pushedN": "{n} pushed",
     "openProblemSync": "Open this problem’s sync"
-  },
-  "keys": {
-    "taken": "Page fullscreen: with a file open Ctrl+W closes it, Ctrl+Shift+T reopens the last closed one. Click to leave",
-    "noLockApi": "Page fullscreen, but this browser cannot take Ctrl+W (Chrome / Edge can)",
-    "notFullscreen": "Enter page fullscreen: only then (F11 does not count) can Ctrl+W close files instead of the browser tab"
   }
 }

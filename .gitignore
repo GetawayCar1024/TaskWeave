@@ -6,3 +6,4 @@ dist/
 *.mhtml
 release/
 *.tgz
+packages/desktop/app/

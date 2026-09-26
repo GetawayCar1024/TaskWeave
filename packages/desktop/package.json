@@ -1,0 +1,16 @@
+{
+  "name": "@polyforge/desktop",
+  "version": "0.1.2",
+  "private": true,
+  "description": "PolyForge as a desktop app (Electron): the server and the UI in one window",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5.9.3"
+  }
+}

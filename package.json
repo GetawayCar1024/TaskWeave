@@ -8,7 +8,8 @@
     "build": "pnpm --filter @polyforge/web build",
     "start": "pnpm build && pnpm --filter @polyforge/server start",
     "typecheck": "pnpm -r typecheck",
-    "release": "pnpm build && node scripts/build-release.mjs"
+    "desktop": "pnpm build && node scripts/build-desktop.mjs",
+    "desktop:run": "pnpm build && node scripts/build-desktop.mjs --app-only && pnpm --filter @polyforge/desktop exec electron app"
   },
   "engines": {
     "node": ">=20"
