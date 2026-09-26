@@ -76,8 +76,18 @@ const problemsMissing = computed(() => rendered.value.filter((r) => !r.hasStatem
 const tutorialsMissing = computed(() => rendered.value.filter((r) => r.hasStatement && !r.hasTutorial).map((r) => r.s.index));
 
 const print = () => window.print();
-/** Contents link: the preview scrolls inside .print-page, so scroll the problem into view there. */
-const jump = (index: string) => document.getElementById(`problem-${index}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+/**
+ * Contents link: scroll the preview (.print-page) so the problem's title shows just
+ * below the sticky toolbar, which would otherwise cover it.
+ */
+function jump(index: string) {
+  const el = document.getElementById(`problem-${index}`);
+  const page = document.querySelector<HTMLElement>('.print-page');
+  if (!el || !page) return;
+  const bar = page.querySelector<HTMLElement>('.toolbar')?.offsetHeight ?? 0;
+  const top = el.getBoundingClientRect().top - page.getBoundingClientRect().top + page.scrollTop - bar - 12;
+  page.scrollTo({ top: Math.max(top, 0), behavior: 'smooth' });
+}
 
 // ---- export as HTML (this page, self-contained) or TeX (server) ----
 const exporting = ref(false);
