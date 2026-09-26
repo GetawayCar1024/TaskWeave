@@ -260,7 +260,6 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
             </div>
             <div class="diff-pane">
               <div class="labels"><span>{{ content?.remoteIsLastSync ? t('sync.lastSynced') : 'Polygon' }}</span><span>{{ t('sync.local') }}</span></div>
-              <div v-if="content?.remoteIsLastSync" class="small dim toml-note">{{ t('sync.tomlNote') }}</div>
               <div v-if="contentLoading" class="center"><n-spin /></div>
               <div v-else-if="!content" class="dim small center">{{ t('sync.pickItem') }}</div>
               <div v-else-if="content.binary" class="dim small center">{{ t('sync.binary') }}</div>

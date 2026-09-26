@@ -210,7 +210,7 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
     <n-alert v-else-if="error" type="error" :show-icon="false">{{ error }}</n-alert>
     <template v-else-if="status">
       <div class="small dim head">
-        {{ status.polygonId !== undefined ? t('csync.boundTo', { id: status.polygonId }) : t('csync.notBound') }} · {{ t('csync.cheap') }}
+        {{ status.polygonId !== undefined ? t('csync.boundTo', { id: status.polygonId }) : t('csync.notBound') }}
       </div>
       <n-alert v-for="(w, i) in status.warnings" :key="i" type="warning" :show-icon="false" class="alert small">{{ serverText(w) }}</n-alert>
 
@@ -257,7 +257,6 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
               <span v-for="(d, i) in it.details ?? []" :key="i" class="dim"> · {{ serverText(d) }}</span>
             </div>
           </div>
-          <div class="small dim hint">{{ t('csync.pushHint') }}</div>
         </n-tab-pane>
 
         <n-tab-pane name="pull" :tab="t('sync.pull')">
@@ -327,7 +326,6 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
             <n-button size="tiny" type="warning" @click="resolveIn(p.problem)">{{ t('csync.resolveIn') }}</n-button>
           </div>
         </div>
-        <div class="small dim">{{ t('csync.previewHint') }}</div>
       </div>
 
       <div v-if="result" class="small result">
@@ -433,9 +431,6 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
 .commit {
   margin-top: 10px;
   max-width: 480px;
-}
-.hint {
-  margin-top: 8px;
 }
 .warn {
   color: #e8b060;

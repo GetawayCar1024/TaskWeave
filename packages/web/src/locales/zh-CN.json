@@ -395,8 +395,7 @@
     "mergeWithConflicts": "有 {n} 处重叠改动，会写入冲突标记（<<<<<<< / >>>>>>>），需在编辑器里处理",
     "mergePreview": "合并结果",
     "mergeCount": "合并 {n} 项",
-    "lastSynced": "上次同步",
-    "tomlNote": "整个 problem.toml 与上次同步时相比；其中能同步到 Polygon 的内容在对应条目里推送 / 拉取，其余（注释、Polygon 没有的设置）只保存在本地。"
+    "lastSynced": "上次同步"
   },
   "ai": {
     "noEndpoint": "还没有配置 AI 端点",
@@ -717,10 +716,9 @@
     "list-indent": "列表按层级缩进（每层两个空格）"
   },
   "csync": {
-    "title": "与 Polygon 同步（整场比赛）",
+    "title": "与 Polygon 同步",
     "boundTo": "已绑定 Polygon 比赛 #{id}",
-    "notBound": "比赛未绑定 Polygon 比赛（只比较各题，不检查题目列表）",
-    "cheap": "状态只需一两次请求；只有 Polygon 上改过的题才会完整获取",
+    "notBound": "比赛未绑定 Polygon 比赛",
     "local": "本地",
     "state": "状态",
     "localChanges": "{n} 项改动",
@@ -742,10 +740,9 @@
     "addLocal": "加入比赛（本地已有 {id}）",
     "added": "已加入 {index}",
     "lettersUpdated": "题号已更新",
-    "nothingNew": "内容与本地一致（拉取只会记录 Polygon 的版本）",
-    "conflicts": "两边都改过：{list}，不在这里拉取",
+    "nothingNew": "内容与本地一致",
+    "conflicts": "两边都改过：{list}",
     "resolveIn": "在题目中处理",
-    "previewHint": "勾选的条目会用 Polygon 的版本覆盖本地；“仅本地”的条目勾选后删除本地文件。有冲突的题不会被拉取。",
     "appliedN": "拉取了 {n} 项",
     "pulled": "拉取了 {n} 项",
     "refresh": "刷新",
@@ -754,9 +751,8 @@
     "checkChanged": "检查 Polygon 上的改动（{n} 题）",
     "pull": "拉取所选（{n} 项）",
     "willCreate": "将新建 Polygon 题目",
-    "pullFirst": "推送时会跳过，先拉取",
+    "pullFirst": "先拉取",
     "pushN": "推送所选（{n} 题）",
-    "pushedN": "{n} 题已推送",
-    "pushHint": "逐题推送本地改动并 commit；Polygon 上改过的题会跳过。"
+    "pushedN": "{n} 题已推送"
   }
 }

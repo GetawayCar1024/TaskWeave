@@ -395,8 +395,7 @@
     "mergeWithConflicts": "{n} overlapping edit(s) will be written with conflict markers (<<<<<<< / >>>>>>>) to resolve in the editor",
     "mergePreview": "merged",
     "mergeCount": "{n} to merge",
-    "lastSynced": "Last sync",
-    "tomlNote": "The whole problem.toml against the last sync; what Polygon knows is pushed / pulled through the matching items, the rest (comments, settings Polygon has no place for) stays local."
+    "lastSynced": "Last sync"
   },
   "ai": {
     "noEndpoint": "No AI endpoint configured yet",
@@ -694,10 +693,9 @@
     "info": "info"
   },
   "csync": {
-    "title": "Sync with Polygon (whole contest)",
+    "title": "Sync with Polygon",
     "boundTo": "Bound to Polygon contest #{id}",
-    "notBound": "The contest is not bound to a Polygon contest (problems are compared, the problem list is not)",
-    "cheap": "the status takes one or two requests; only problems changed on Polygon are fetched in full",
+    "notBound": "Not bound to a Polygon contest",
     "local": "Local",
     "state": "State",
     "localChanges": "{n} change(s)",
@@ -719,10 +717,9 @@
     "addLocal": "Add ({id} is here already)",
     "added": "Added {index}",
     "lettersUpdated": "Letters updated",
-    "nothingNew": "Same as here (a pull only records the Polygon version)",
-    "conflicts": "Changed on both sides: {list}; not pulled here",
+    "nothingNew": "Same as here",
+    "conflicts": "Changed on both sides: {list}",
     "resolveIn": "Resolve in the problem",
-    "previewHint": "Checked items are replaced by the Polygon version; checked \"local only\" items are deleted locally. Problems with conflicts are not pulled.",
     "appliedN": "{n} item(s) pulled",
     "pulled": "{n} item(s) pulled",
     "refresh": "Refresh",
@@ -731,9 +728,8 @@
     "checkChanged": "Check changes on Polygon ({n})",
     "pull": "Pull selected ({n})",
     "willCreate": "creates a Polygon problem",
-    "pullFirst": "skipped by the push, pull first",
+    "pullFirst": "pull first",
     "pushN": "Push selected ({n})",
-    "pushedN": "{n} pushed",
-    "pushHint": "Pushes each problem’s local changes and commits; problems changed on Polygon are skipped."
+    "pushedN": "{n} pushed"
   }
 }
