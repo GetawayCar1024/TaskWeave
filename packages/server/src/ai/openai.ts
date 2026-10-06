@@ -11,7 +11,7 @@ type Msg = OpenAI.Chat.Completions.ChatCompletionMessageParam;
  * (DESIGN §4.4). Tool calls are streamed and reassembled from their deltas.
  */
 export class OpenAiProvider implements Provider {
-  private client: OpenAI;
+  protected client: OpenAI;
 
   constructor(ep: RawAiEndpoint) {
     this.client = new OpenAI({ apiKey: ep.apiKey || 'none', baseURL: ep.baseUrl || undefined, maxRetries: 3 });

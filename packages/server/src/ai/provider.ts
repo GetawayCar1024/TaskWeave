@@ -57,7 +57,11 @@ export interface Provider {
 export class ToolInputParseError extends Error {}
 
 export async function createProvider(ep: RawAiEndpoint): Promise<Provider> {
-  if (ep.protocol === 'openai') {
+  if (ep.protocol === 'openai-responses') {
+    const { ResponsesProvider } = await import('./responses.js');
+    return new ResponsesProvider(ep);
+  }
+  if (ep.protocol === 'openai-chat') {
     const { OpenAiProvider } = await import('./openai.js');
     return new OpenAiProvider(ep);
   }

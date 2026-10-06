@@ -25,6 +25,10 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps, jobs: Job
   });
 
   app.get<P>('/api/contests/:id', async (req) => contests.detail(req.params.id));
+  app.get<P>('/api/contests/:id/batch/latest', async req => {
+    const ref = await contests.get(req.params.id);
+    return JSON.parse(await fsp.readFile(path.join(ref.dir, '.polyforge', 'batches', 'latest.json'), 'utf8').catch(() => 'null'));
+  });
 
   app.put<P & { Body: UpdateContestRequest }>('/api/contests/:id', async (req) => {
     const d = await contests.update(req.params.id, req.body ?? {});

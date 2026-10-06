@@ -1,5 +1,9 @@
 # PolyForge
 
+本轮问题修复、验证命令和已知限制见 [FIXES.md](FIXES.md)。新增功能包括：生成测试只读编辑器、样例题面覆盖恢复默认、任意 TeX/Markdown 预览、AI 会话标签和可清理的 `scratch/` 实验区、源码语言选择、缓存清理、比赛结果持久化。Polygon 题目/比赛推送均支持提交后构建 Standard / Full 包。
+
+默认 C++ 配置加入 `-DONLINE_JUDGE`（已有用户 languages.toml 不自动覆盖，请手动补充），默认评测并发为 1。对拍反例需手动保存；普通快速运行会校验自定义输入并与 MA 比较。修改样例标记和题面覆盖只刷新元数据，不再重新生成测试。
+
 本地优先的 Polygon 造题平台。设计见 [DESIGN.md](DESIGN.md)。已完成 **M1 本地核心**、**M2 评测**、**M3 Polygon 同步**、**M4 AI**、**M5 打磨**，以及比赛管理。
 
 ## 安装与运行
@@ -67,7 +71,7 @@ pnpm typecheck
 - **设置 → Polygon**：填 API key / secret（只存在全局目录的 `secrets.toml`，接口返回时打码），“测试连接”。
 - **同步对话框**（工具栏“同步”或 `Ctrl+Shift+U`）：
   - **推送**：列出变更集（新增 / 修改 / 已删除），点条目看与 Polygon 当前版本的 diff，勾选后推送；可选 commit（附说明）和构建 package。未绑定时会用短名新建 Polygon 题目，也可以填已有 ID 绑定。推送逐项记录进度，中途失败后再推只会发剩下的。Polygon 远端 revision 与上次同步不一致时会提示先拉取。
-  - **拉取**：三方比较（本地 / Polygon / 上次同步），分为“Polygon 已改”“本地已改”“冲突”“仅一方有”；默认只取 Polygon 单方改动。“仅本地”的条目（包括没有登记在 problem.toml 里的多余文件，如未登记的解法）勾选后会删除本地文件；删除 generator / validator / checker 时一并从 problem.toml 去掉登记。problem.toml 里设了标题但还没有题面文件夹的语言，标题也会参与同步。problem.toml 自上次同步后有改动时，推送 / 拉取列表里会有一行“problem.toml”，可以查看整个文件与上次同步时的 diff（只作提示，能同步的字段仍通过各自的条目推送 / 拉取）。
+  - **拉取**：三方比较（本地 / Polygon / 上次同步），分为“Polygon 已改”“本地已改”“冲突”“仅一方有”；默认只取 Polygon 单方改动。“仅本地”的条目勾选后会删除本地文件；删除源文件时一并去掉角色登记。配置字段通过对应同步项处理，不再显示独立的 problem.toml 快照行。
   - **合并**：两边都改过的文本条目（代码、题面段落、script、测试……）可以按行三方合并，改动不重叠时默认勾选“合并”，可先看合并结果的 diff；重叠的部分写成 `<<<<<<< local` / `=======` / `>>>>>>> Polygon` 冲突标记，在编辑器里处理后再推送。合并所需的共同祖先保存在 `.polyforge/sync-base/`。从未同步过的本地题目绑定 Polygon 后拉取，没有共同祖先，差异项只能二选一。
 - **从 Polygon 导入**（题目列表）：浏览可访问的题目或填 ID，下载为本地题目并记录同步状态。
 - 同步内容：题目信息、validator / checker / interactor、generators、资源文件、解和 tag、各语言题面（`zh` ↔ `chinese`、`en` ↔ `english`）与图片、script、手写测试、样例标记、分组与分值、validator / checker 自测。
@@ -81,7 +85,7 @@ pnpm typecheck
 
 ## M4 包含
 
-- **设置 → AI**：可配置多个端点，协议为 `anthropic`（官方或兼容中转站）或 `openai`（Chat Completions，兼容各类中转站），base URL 与 key 自定义，保存在 `secrets.toml` 的 `[[ai.endpoints]]`；“测试连接”“拉取模型列表”；默认端点 / 模型存在 `config.toml` 的 `[ai]`。
+- **设置 → AI**：可配置多个端点，协议为 `anthropic`、`openai-chat`（Chat Completions）或 `openai-responses`（Responses API），旧 `openai` 自动迁移为 Chat。base URL 与 key 自定义，保存在 `secrets.toml` 的 `[[ai.endpoints]]`；支持测试连接、拉取模型列表。默认端点 / 模型存在 `config.toml` 的 `[ai]`。
 - **AI 面板**（工具栏“AI”）：一个可以修改整道题所有文件的 agent。它在题目副本（`.polyforge/ai/<会话>/work`）里工作，工具包括：列出 / 读取 / 写入 / 按片段修改 / 删除任意文件、读共享库（std checker、模板、testlib.h）、编译、运行、生成测试、查看测试、跑 invocation、validator / checker 自测、更新计划清单。它会自己编译和判题来检查改动；对 `problem.toml` 的修改必须保持合法。
 - **改动确认**：agent 的改动汇总成改动列表，逐个文件看 diff 后“接受”（写入题目，打开的编辑器会自动刷新）或“放弃”。AI 不会直接改动你的题目文件。
 - **快捷任务**：整题生成、分析题面、validator、标程、暴力、造数据、checker、错误解、全面验证、翻译题面、题面检查，以及“贴题面”（任意格式的题面 → Polygon LaTeX → 整题）。点击快捷任务会把指令填入输入框（替换原有内容），可以修改后再发送。任务可以随时重跑或接着对话调整。

@@ -93,6 +93,7 @@ export interface PushRequest {
   commit: boolean;
   message?: string;
   buildPackage: boolean;
+  packageType?: 'standard' | 'full';
 }
 
 export interface PullItem extends SyncItem {

@@ -97,6 +97,8 @@ export function parseDiagnostics(log: string, problemDir: string | null): Diagno
 }
 
 interface CacheRecord {
+  source?: string;
+  builtAt?: number;
   ok: boolean;
   log: string;
 }
@@ -106,6 +108,39 @@ interface CacheRecord {
  * source content + language + templates + testlib.h, so unchanged files never rebuild.
  */
 export class Compiler {
+  canPrune = () => false;
+  private maintenance: Promise<void> = Promise.resolve();
+  private pruneTimer?: NodeJS.Timeout;
+  private roots = new Set<string>();
+  async waitForMaintenance() { await this.maintenance; }
+
+  /** Prune only while all API requests, jobs and AI sessions are idle. */
+  private schedulePrune(root: string) {
+    this.roots.add(root);
+    clearTimeout(this.pruneTimer);
+    this.pruneTimer = setTimeout(() => {
+      if (!this.canPrune() || this.inflight.size) return this.schedulePrune(root);
+      this.maintenance = this.prune().catch(e => console.warn('[polyforge] cache cleanup:', e.message));
+    }, 1000);
+    this.pruneTimer.unref();
+  }
+
+  private async prune() {
+    for (const root of this.roots) {
+      const records: { dir: string; source: string; at: number }[] = [];
+      for (const name of await fsp.readdir(root).catch(() => [] as string[])) {
+        if (!/^[a-f0-9]{16}$/.test(name)) continue;
+        const dir = path.join(root, name);
+        const r: CacheRecord | null = await fsp.readFile(path.join(dir, 'compile.json'), 'utf8').then(JSON.parse).catch(() => null);
+        if (r?.source) records.push({ dir, source: r.source, at: r.builtAt ?? 0 });
+      }
+      const kept = new Set<string>();
+      for (const r of records.sort((a,b) => b.at - a.at)) {
+        if (!kept.has(r.source)) { kept.add(r.source); continue; }
+        await fsp.rm(r.dir, { recursive: true, force: true });
+      }
+    }
+  }
   private inflight = new Map<string, Promise<CompileOutcome>>();
 
   constructor(
@@ -125,6 +160,7 @@ export class Compiler {
   }
 
   async compile(problemDir: string, source: string, langOverride?: string, buildRootOverride?: string): Promise<CompileOutcome> {
+    await this.maintenance;
     const started = Date.now();
     const resolved = this.resolveSource(problemDir, source);
     const srcPath = resolved.srcPath;
@@ -193,7 +229,13 @@ export class Compiler {
         const rec = JSON.parse(await fsp.readFile(recordPath, 'utf8')) as CacheRecord;
         // A successful record is only trusted if its executable is still there.
         const needsExe = !!a.lang.compile?.includes('{exe}');
-        if (!rec.ok || !needsExe || (await exists(exe))) return done(rec, true);
+        if (!rec.ok || !needsExe || (await exists(exe))) {
+          rec.source = a.srcPath;
+          rec.builtAt = Date.now();
+          await atomicWrite(recordPath, JSON.stringify(rec));
+          this.schedulePrune(a.buildRoot);
+          return done(rec, true);
+        }
       } catch {
         /* corrupt record: rebuild */
       }
@@ -216,8 +258,11 @@ export class Compiler {
       );
     });
     const rec = this.pool ? await this.pool.use(compileOnce) : await compileOnce();
+    rec.source = a.srcPath;
+    rec.builtAt = Date.now();
     // A compiler missing from PATH is not a property of the source; don't cache it.
     if (!rec.log.startsWith('Compiler not found')) await atomicWrite(recordPath, JSON.stringify(rec));
+    this.schedulePrune(a.buildRoot);
     return done(rec, false);
   }
 }

@@ -1,7 +1,7 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import type { FileContent, FileNode } from '@polyforge/shared';
-import { atomicWrite, exists, HttpError, looksBinary, safeJoin, sha1, TMP_MARKER, toPosix } from '../util/fs.js';
+import { atomicWrite, exists, HttpError, looksBinary, safeJoin, sha1, TMP_MARKER, toPosix, validateFileName } from '../util/fs.js';
 
 /** Directories never shown in the tree nor watched. */
 export const HIDDEN_DIRS = new Set(['.polyforge', '.git', 'node_modules']);
@@ -110,6 +110,7 @@ export class FileService {
   }
 
   async write(base: string, rel: string, content: string, baseHash?: string): Promise<string> {
+    validateFileName(rel);
     const abs = safeJoin(base, rel);
     if (abs === path.resolve(base)) throw new HttpError(400, 'bad_path', 'Empty path');
     if (baseHash !== undefined) {
@@ -133,6 +134,7 @@ export class FileService {
   }
 
   async move(base: string, from: string, to: string): Promise<void> {
+    validateFileName(to);
     const a = safeJoin(base, from);
     const b = safeJoin(base, to);
     const root = path.resolve(base);
@@ -144,6 +146,7 @@ export class FileService {
   }
 
   async mkdir(base: string, rel: string): Promise<void> {
+    validateFileName(rel);
     await fsp.mkdir(safeJoin(base, rel), { recursive: true });
   }
 }

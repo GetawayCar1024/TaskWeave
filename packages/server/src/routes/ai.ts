@@ -42,6 +42,10 @@ export function aiRoutes(app: FastifyInstance, global: GlobalStore, agent: Agent
     ['/api/contests/:id', contestOwner],
   ];
   for (const [base, own] of owners) {
+    app.delete<S>(`${base}/ai/sessions/:sid/scratch`, async req => {
+      await agent.clearScratch(own(req.params.id), req.params.sid);
+      return { ok: true };
+    });
     app.get<P>(`${base}/ai/sessions`, async (req) => agent.list(own(req.params.id)));
     app.post<P & { Body: CreateAiSessionRequest }>(`${base}/ai/sessions`, async (req) => agent.create(own(req.params.id), req.body ?? {}));
     app.post<P & { Body: CreateAiSessionRequest }>(`${base}/ai/review`, async (req) => agent.startReview(own(req.params.id), req.body ?? {}));

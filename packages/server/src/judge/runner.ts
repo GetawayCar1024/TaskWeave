@@ -21,8 +21,8 @@ export interface ProcSpec {
   processLimit?: number;
 }
 
-/** Default number of parallel runs: half the logical CPUs, so the machine stays responsive. */
-export const defaultParallel = () => Math.max(1, Math.floor(os.availableParallelism() / 2));
+/** Serialize measured runs by default to avoid competing for CPU time. */
+export const defaultParallel = () => 1;
 
 /** Counting semaphore bounding concurrent runs (DESIGN §4.2: CPU cores − 1 workers). */
 export class Semaphore {

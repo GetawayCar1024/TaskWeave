@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { NProgress, NTooltip } from 'naive-ui';
+import { NProgress, NTooltip, NSelect, useMessage } from 'naive-ui';
+import { errorMessage } from '../lib/api';
+import { isSourceFile } from '@polyforge/shared';
 import type { Ai } from '../lib/ai';
 import type { Judge } from '../lib/judge';
 import { wsConnected } from '../lib/ws';
@@ -12,6 +14,12 @@ import type { Workspace } from '../lib/workspace';
 const props = defineProps<{ ws: Workspace; judge: Judge; ai: Ai }>();
 const emit = defineEmits<{ open: ['tests' | 'sync' | 'ai' | 'invocation'] }>();
 const { t } = useI18n();
+const message = useMessage();
+async function setLanguage(lang: string) {
+  if (!props.ws.state.active) return;
+  try { await props.ws.patch({ language: { source: props.ws.state.active, lang } }); }
+  catch (e) { message.error(errorMessage(e)); }
+}
 
 const summary = computed(() => props.ws.state.detail?.summary);
 const manifest = computed(() => props.judge.state.manifest);
@@ -38,7 +46,7 @@ const activeLang = computed(() => {
 
 <template>
   <footer class="status">
-    <n-tooltip>
+    <n-tooltip v-if="!wsConnected">
       <template #trigger>
         <span class="item"><span class="dot" :class="{ on: wsConnected }" /></span>
       </template>
@@ -70,8 +78,9 @@ const activeLang = computed(() => {
       <template v-if="ai.state.changes.length"> · {{ t('status.aiChanges', { n: ai.state.changes.length }) }}</template>
     </span>
     <span class="spacer" />
-    <span v-if="activeLang" class="item">{{ activeLang }}</span>
-    <span v-if="cursor && ws.state.active" class="item">{{ t('status.cursor', cursor) }}</span>
+    <n-select v-if="ws.state.active && isSourceFile(ws.state.active)" size="tiny" style="width: 150px" :value="ws.languageFor(ws.state.active)?.id" :options="Object.entries(ws.state.languages).map(([value, l]) => ({value, label:l.name}))" @update:value="setLanguage" />
+    <span v-else-if="activeLang" class="item">{{ activeLang }}</span>
+    <span v-if="cursor && ws.state.active" class="item link" @click="ws.editorRef.value?.trigger('status', 'editor.action.gotoLine', null)">{{ t('status.cursor', cursor) }}</span>
     <span class="item">LF</span>
   </footer>
 </template>

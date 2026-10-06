@@ -18,7 +18,7 @@ import {
 } from '@polyforge/shared';
 import type { JobCtx } from '../jobs.js';
 import type { Judge, ProblemCtx } from '../judge/index.js';
-import { atomicWrite, exists, HttpError } from '../util/fs.js';
+import { atomicWrite, exists, HttpError, looksBinary } from '../util/fs.js';
 import { PROBLEM_FILE } from '../workspace/problems.js';
 import { PolygonClient } from './client.js';
 import { merge3, mergeMeta } from './merge.js';
@@ -90,30 +90,6 @@ async function dropBase(ctx: ProblemCtx, key: string) {
   await fsp.rm(baseFile(ctx, key), { force: true });
 }
 
-/**
- * problem.toml as of the last push / pull. Its fields sync through other items; the
- * copy only lets the dialogs show that the file itself changed (the "problem.toml" row).
- */
-const tomlSnapshot = (ctx: ProblemCtx) => path.join(ctx.work, 'sync-problem.toml');
-const TOML_KEY = 'problemToml';
-const readText = (file: string) =>
-  fsp
-    .readFile(file, 'utf8')
-    .then((t) => t.replace(/\r\n/g, '\n'))
-    .catch(() => null);
-
-async function saveTomlSnapshot(ctx: ProblemCtx) {
-  const text = await readText(path.join(ctx.ref.dir, PROBLEM_FILE));
-  if (text !== null) await atomicWrite(tomlSnapshot(ctx), text);
-}
-
-/** The problem.toml row, when the file differs from the last sync (none before the first). */
-async function tomlRow(ctx: ProblemCtx): Promise<Omit<PushItem, 'status'> | null> {
-  const [now, then] = await Promise.all([readText(path.join(ctx.ref.dir, PROBLEM_FILE)), readText(tomlSnapshot(ctx))]);
-  if (now === null || then === null || now.trimEnd() === then.trimEnd()) return null;
-  return { key: TOML_KEY, kind: 'toml', label: 'problem.toml (changed since the last sync)', path: PROBLEM_FILE };
-}
-
 /** The merge of local and remote against the recorded base, if one is possible. */
 function mergeItems(l: Item, r: Item, base: BaseSnapshot): Item | null {
   // Testsets are structured data: take one side instead of merging lines.
@@ -128,7 +104,7 @@ const byOrder = (a: { kind: string; key: string }, b: { kind: string; key: strin
 
 const extraTestsets = (ctx: ProblemCtx) => testsetsOf(ctx.config).map((t) => t.name).filter((n) => n !== TESTSET);
 
-const strip = ({ text: _t, bytes: _b, meta: _m, extra: _e, ...rest }: Item) => rest;
+const strip = ({ text: _t, bytes, meta: _m, extra: _e, ...rest }: Item) => ({ ...rest, binary: bytes ? looksBinary(bytes) : false });
 
 export class PolygonSync {
   /** Last fetched remote items per problem, for diffs and pull. */
@@ -143,7 +119,9 @@ export class PolygonSync {
 
   async problemInfo(client: PolygonClient, id: number): Promise<PolygonProblem | undefined> {
     const list = await client.call<PolygonProblem[]>('problems.list', { id });
-    return list.find((p) => p.id === id);
+    const found = list.find((p) => p.id === id);
+    if (!found) throw new HttpError(404, 'polygon_not_found', `Polygon problem #${id} was deleted or you no longer have access. Unbind it or choose another problem.`);
+    return found;
   }
 
   async listProblems(): Promise<PolygonProblem[]> {
@@ -162,7 +140,7 @@ export class PolygonSync {
     const sync = await readSync(ctx);
     const keys = new Set(items.map((i) => i.key));
     const changes = items.filter((it) => sync.items[it.key] !== itemHash(it)).length + Object.keys(sync.items).filter((k) => !keys.has(k)).length;
-    return { changes, syncedRevision: sync.revision, syncedUncommitted: !!sync.uncommitted, tomlChanged: !!(await tomlRow(ctx)) };
+    return { changes, syncedRevision: sync.revision, syncedUncommitted: !!sync.uncommitted, tomlChanged: false };
   }
 
   // ---- push ----
@@ -182,8 +160,6 @@ export class PolygonSync {
       out.push({ key, kind, label: key, status: 'deleted' });
       if (!DELETABLE_KINDS.has(kind)) warnings.push(`${key} was removed locally; Polygon has no delete API, remove it there by hand if needed`);
     }
-    const row = await tomlRow(ctx);
-    if (row) out.push({ ...row, status: 'modified' });
     out.sort(byOrder);
     const preview: PushPreview = {
       polygonId: ctx.config.polygon.id,
@@ -208,9 +184,11 @@ export class PolygonSync {
   }
 
   async push(ctx: ProblemCtx, req: PushRequest, job: JobCtx): Promise<{ pushed: string[]; warnings: string[]; revision?: number; polygonId: number }> {
+    if (req.buildPackage && !req.commit) throw new HttpError(400, 'commit_required', 'Commit changes before building a package');
     const client = await this.client();
     const warnings: string[] = [];
     let polygonId = ctx.config.polygon.id;
+    if (polygonId !== undefined) await this.problemInfo(client, polygonId);
     const sync = await readSync(ctx);
 
     if (polygonId === undefined) {
@@ -236,6 +214,7 @@ export class PolygonSync {
     const manual = todo.filter((it) => it.kind === 'test');
     const script = items.find((it) => it.kind === 'script');
     let resaveScript = false;
+    const failures: string[] = [];
     try {
       if (manual.length && script) {
         const remote = await client.call<{ index: number; manual: boolean }[]>('problem.tests', { problemId: polygonId, testset: TESTSET, noInputs: true }).catch(() => []);
@@ -251,7 +230,13 @@ export class PolygonSync {
       for (const it of todo) {
         job.signal.throwIfAborted();
         job.progress(done, total, it.label);
-        await pushItem(pc, it);
+        try {
+          await pushItem(pc, it);
+        } catch (e) {
+          failures.push(`${it.label}: ${(e as Error).message}`);
+          done++;
+          continue;
+        }
         sync.items[it.key] = itemHash(it);
         await saveBase(ctx, it);
         pushed.push(it.key);
@@ -284,19 +269,19 @@ export class PolygonSync {
       sync.lastSync = new Date().toISOString();
       await writeSync(ctx, sync);
     }
+    if (failures.length) throw new HttpError(502, 'partial_push', `Pushed ${pushed.length} items; ${failures.length} failed. Successful items are saved for retry. Check Polygon source language and compiler diagnostics; local compilation does not guarantee remote compatibility.\n${failures.join('\n')}`);
     if (req.commit) {
       job.progress(done++, total, 'problem.commitChanges');
       await client.call('problem.commitChanges', { problemId: polygonId, minorChanges: false, message: req.message?.trim() || 'PolyForge sync' });
     }
     if (req.buildPackage) {
       job.progress(done++, total, 'problem.buildPackage');
-      await client.call('problem.buildPackage', { problemId: polygonId, full: false, verify: true }).catch((e: Error) => warnings.push(`buildPackage: ${e.message}`));
+      await client.call('problem.buildPackage', { problemId: polygonId, full: req.packageType === 'full', verify: true }).catch((e: Error) => warnings.push(`buildPackage: ${e.message}`));
     }
     const info = await this.problemInfo(client, polygonId).catch(() => undefined);
     sync.revision = info?.revision;
     sync.uncommitted = info?.modified || undefined;
     await writeSync(ctx, sync);
-    if (pushed.length) await saveTomlSnapshot(ctx);
     return { pushed, warnings, revision: sync.revision, polygonId };
   }
 
@@ -305,6 +290,7 @@ export class PolygonSync {
   async pullPreview(ctx: ProblemCtx): Promise<PullPreview> {
     const polygonId = ctx.config.polygon.id;
     if (polygonId === undefined) throw new HttpError(400, 'not_bound', 'This problem is not bound to a Polygon problem');
+    await this.problemInfo(await this.client(), polygonId);
     const remote = await remoteItems(await this.client(), polygonId, extraTestsets(ctx));
     this.remoteCache.set(ctx.ref.id, { polygonId, items: remote });
     const { items: local, warnings } = await this.pullLocal(ctx);
@@ -335,17 +321,11 @@ export class PolygonSync {
         out.push({ ...it, status: 'local-only', takeRemote: false });
       }
     }
-    const row = await tomlRow(ctx);
-    if (row) out.push({ ...row, status: 'local', takeRemote: false });
     out.sort(byOrder);
     return { polygonId, items: out, warnings };
   }
 
   async itemContent(ctx: ProblemCtx, key: string): Promise<ItemContent> {
-    if (key === TOML_KEY) {
-      const [now, then] = await Promise.all([readText(path.join(ctx.ref.dir, PROBLEM_FILE)), readText(tomlSnapshot(ctx))]);
-      return { key, local: now, remote: then, remoteIsLastSync: true };
-    }
     const { items } = key.startsWith('file:') ? await this.pullLocal(ctx) : await localItems(this.judge, ctx);
     const l = items.find((i) => i.key === key);
     const id = ctx.config.polygon.id;
@@ -356,7 +336,7 @@ export class PolygonSync {
       this.remoteCache.set(ctx.ref.id, cached);
     }
     const r = cached?.items.find((i) => i.key === key);
-    const out: ItemContent = { key, local: l ? itemDisplay(l) : null, remote: r ? itemDisplay(r) : null, binary: (l ?? r)?.binary };
+    const out: ItemContent = { key, local: l ? itemDisplay(l) : null, remote: r ? itemDisplay(r) : null, binary: [l, r].some(i => i?.bytes && looksBinary(i.bytes)) };
     const base = l && r && itemHash(l) !== itemHash(r) ? await loadBase(ctx, key) : null;
     const m = base && mergeItems(l!, r!, base);
     if (m) {
@@ -385,7 +365,9 @@ export class PolygonSync {
     const problemFile = path.join(ctx.ref.dir, PROBLEM_FILE);
     const doc = parse(await fsp.readFile(problemFile, 'utf8')) as Record<string, any>;
     const remoteConfig = R.get('config')?.meta;
-    const ac = { dir: ctx.ref.dir, doc, remoteConfig, written: new Set<string>() };
+    const languages = (await this.judge.global.readLanguages()).languages;
+    const sourceLanguages = Object.fromEntries(Object.entries(languages).filter(([, lang]) => lang.polygon).map(([id, lang]) => [lang.polygon!, id]));
+    const ac = { dir: ctx.ref.dir, doc, remoteConfig, sourceLanguages, written: new Set<string>() };
     const applied: string[] = [];
     // Sources before config, so role paths resolve to files that exist.
     const keys = [...take].sort((a, b) => byOrder({ kind: a.split(':')[0], key: a }, { kind: b.split(':')[0], key: b }));
@@ -409,6 +391,7 @@ export class PolygonSync {
       merged.push(key);
       if ((m.extra?.mergeConflicts as number) > 0) conflicts.push(key);
     }
+    if (doc.solutions?.length && !doc.solutions.some((s: any) => s.tag === 'MA')) doc.solutions[0].tag = 'MA';
     // Rewriting drops comments: only when something was actually applied.
     if (applied.length || merged.length) await atomicWrite(problemFile, stringify(doc) + '\n');
     // Polygon's state is now the common ancestor for every key it has.
@@ -431,7 +414,6 @@ export class PolygonSync {
       /* keep the old revision */
     }
     await writeSync(ctx, sync);
-    await saveTomlSnapshot(ctx);
 
     // Items whose local form differs from Polygon's after writing reveal a lossy mapping.
     const fresh = await this.judge.ctx(ctx.ref.id);

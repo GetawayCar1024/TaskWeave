@@ -63,6 +63,9 @@ export const CONTEST_ACTIONS = ['generate', 'invocation', 'checks', 'export', 'p
 export type ContestAction = (typeof CONTEST_ACTIONS)[number];
 
 export interface ContestBatchRequest {
+  commit?: boolean;
+  buildPackage?: boolean;
+  packageType?: 'standard' | 'full';
   action: ContestAction;
   /** Limit to these indices; all problems when omitted. */
   indices?: string[];
@@ -71,6 +74,7 @@ export interface ContestBatchRequest {
 }
 
 export interface ContestBatchItem {
+  invocationId?: string;
   index: string;
   problem: string;
   ok: boolean;

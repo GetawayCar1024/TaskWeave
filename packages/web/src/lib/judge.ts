@@ -1,4 +1,4 @@
-import { reactive } from 'vue';
+import { reactive, watch, onBeforeUnmount } from 'vue';
 import type {
   CheckerTestResult,
   CompileResult,
@@ -8,6 +8,7 @@ import type {
   TestsManifest,
   ValidatorTestResult,
   WsEvent,
+  ProblemToml,
 } from '@polyforge/shared';
 import { api } from './api';
 import { monaco } from './monaco';
@@ -129,7 +130,20 @@ export function useJudge(problemId: string, ws: Workspace) {
    * testsets that were generated before. Generation is incremental, so this is cheap.
    */
   let regenTimer: ReturnType<typeof setTimeout> | undefined;
+  let disposed = false;
+  onBeforeUnmount(() => { disposed = true; clearTimeout(regenTimer); });
+  const generationConfig = (c: ProblemToml | null | undefined) => c ? JSON.stringify({
+    problem: { ...c.problem, title: undefined }, tests: { ...c.tests, samples: undefined },
+    testsets: c.testsets, solutions: c.solutions, validator: c.validator, interactor: c.interactor,
+    generators: c.generators, source_languages: c.source_languages,
+  }) : '';
+  watch(() => ws.state.detail?.config, (next, prev) => {
+    if (!next || !prev) return;
+    if (generationConfig(next) !== generationConfig(prev)) scheduleRegenerate();
+    else void reloadManifests();
+  });
   function scheduleRegenerate() {
+    if (disposed) return;
     clearTimeout(regenTimer);
     regenTimer = setTimeout(async () => {
       if (running('generate')) return scheduleRegenerate();
@@ -137,13 +151,15 @@ export function useJudge(problemId: string, ws: Workspace) {
         if (!state.manifests[ts]) continue;
         await generate(ts).catch(() => {});
         // One job at a time: wait for it before starting the next testset.
-        while (running('generate')) await new Promise((r) => setTimeout(r, 200));
+        while (!disposed && running('generate')) await new Promise((r) => setTimeout(r, 200));
+        if (disposed) return;
       }
     }, 800);
   }
 
   function onWsEvent(e: WsEvent) {
-    if (e.type === 'file:changed' && e.problemId === problemId && (e.path.startsWith('tests/') || e.path === 'problem.toml')) {
+    if (e.type === 'file:changed' && e.problemId === problemId && e.path.startsWith('tests/')) {
+      if (/\.statement\.(in|out)$/.test(e.path) || e.path.startsWith('tests/_statement/')) { void reloadManifests(); return; }
       if (Object.values(state.manifests).some(Boolean)) scheduleRegenerate();
     }
     if (e.type === 'build:done' && e.problemId === problemId) {

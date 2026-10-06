@@ -39,6 +39,7 @@ export function useWorkspace(problemId: string) {
     loadError: '',
     tabs: [] as Tab[],
     active: null as string | null,
+    fileOpenRevision: 0,
     languages: {} as LanguagesConfig,
     shared: null as SharedListResponse | null,
   });
@@ -79,6 +80,7 @@ export function useWorkspace(problemId: string) {
   }
 
   async function openFile(path: string) {
+    state.fileOpenRevision++;
     const existing = findTab(path);
     if (existing) {
       state.active = path;
@@ -100,7 +102,7 @@ export function useWorkspace(problemId: string) {
       savedVersion: model.getAlternativeVersionId(),
       savedHash: fc.hash,
       dirty: false,
-      readOnly: shared || !!fc.binary || !!fc.truncated,
+      readOnly: shared || path.startsWith('.polyforge/') || !!fc.binary || !!fc.truncated,
       binary: fc.binary,
       truncated: fc.truncated,
       disk: 'ok',
@@ -252,6 +254,9 @@ export function useWorkspace(problemId: string) {
 
   /** First language in languages.toml whose extensions match (DESIGN §5). */
   function languageFor(path: string) {
+    const c = state.detail?.config;
+    const override = c?.source_languages?.[path] ?? [c?.validator, c?.checker, c?.interactor, ...(c?.solutions ?? []), ...(c?.generators ?? [])].find(e => e?.source === path)?.lang;
+    if (override && state.languages[override]) return { id: override, ...state.languages[override] };
     const ext = '.' + (path.split('.').pop() ?? '').toLowerCase();
     for (const [id, l] of Object.entries(state.languages)) if (l.extensions.includes(ext)) return { id, ...l };
     return null;

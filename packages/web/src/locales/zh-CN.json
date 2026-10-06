@@ -1,4 +1,13 @@
 {
+  "fix": {
+    "resetStatement": "关闭题面覆盖，恢复使用测试数据",
+    "syncScroll": "同步滚动",
+    "clearScratch": "清理 AI 临时工作区",
+    "scratchCleared": "AI 临时工作区已清理",
+    "clearCache": "清除生成缓存",
+    "cacheCleared": "缓存已清除",
+    "clearCacheHint": "删除编译、测试生成和导出缓存；保留题目源文件、评测历史、AI 会话和同步状态。"
+  },
   "app": {
     "unauthorized": "未授权",
     "unauthorizedHint": "请使用启动 PolyForge 时终端里打印的链接（带 token）打开本页面。",

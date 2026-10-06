@@ -78,7 +78,7 @@ watch(() => props.lang, async () => {
   await loadDisk();
   watchModels();
 });
-watch(() => props.judge.state.manifest?.generatedAt, loadSamples);
+watch(() => props.judge.state.manifest?.tests, loadSamples);
 // Sections created or deleted on disk.
 watch(() => props.ws.files.value.filter((f) => f.path.startsWith(`statement/${props.lang}/`)).length, loadDisk);
 onBeforeUnmount(() => {

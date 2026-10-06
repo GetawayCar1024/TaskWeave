@@ -34,6 +34,7 @@ const message = useMessage();
 
 const solutions = computed(() => props.ws.state.detail?.config?.solutions ?? []);
 const picked = ref<string[]>([]);
+watch(solutions, list => { picked.value = picked.value.filter(p => list.some(s => s.source === p)); });
 const history = ref<InvocationSummary[]>([]);
 const inv = ref<Invocation | null>(null);
 const job = computed(() => props.judge.state.jobs.invocation);

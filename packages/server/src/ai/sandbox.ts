@@ -41,6 +41,7 @@ export class Sandbox {
     const real = await walk(this.realDir);
     const mine = await walk(this.dir);
     for (const [rel, abs] of real) {
+      if (rel.startsWith('scratch/')) continue;
       if (this.touched.has(rel)) continue;
       const target = path.join(this.dir, rel);
       const [a, b] = await Promise.all([fsp.readFile(abs), readOrNull(target)]);
@@ -49,7 +50,7 @@ export class Sandbox {
         await fsp.writeFile(target, a);
       }
     }
-    for (const [rel, abs] of mine) if (!real.has(rel) && !this.touched.has(rel)) await fsp.rm(abs, { force: true });
+    for (const [rel, abs] of mine) if (!rel.startsWith('scratch/') && !real.has(rel) && !this.touched.has(rel)) await fsp.rm(abs, { force: true });
   }
 
   /** Resolve a model-supplied path inside the sandbox; the cache folders are off limits. */
@@ -71,20 +72,25 @@ export class Sandbox {
     const r = this.resolve(rel);
     await fsp.mkdir(path.dirname(r.abs), { recursive: true });
     await fsp.writeFile(r.abs, content);
-    this.touched.add(r.rel);
+    if (!r.rel.startsWith('scratch/')) this.touched.add(r.rel);
     return r.rel;
   }
 
   async remove(rel: string): Promise<string> {
     const r = this.resolve(rel);
     if (!(await exists(r.abs))) throw new HttpError(404, 'file_not_found', `File not found: ${rel}`);
+    const children = (await fsp.stat(r.abs)).isDirectory() ? [...(await this.files()).keys()].filter(p => p.startsWith(r.rel + '/')) : [r.rel];
     await fsp.rm(r.abs, { recursive: true, force: true });
-    this.touched.add(r.rel);
+    for (const child of children) if (!child.startsWith('scratch/')) this.touched.add(child);
     return r.rel;
   }
 
   async files(): Promise<Map<string, string>> {
     return walk(this.dir);
+  }
+
+  async clearScratch(): Promise<void> {
+    await fsp.rm(safeJoin(this.dir, 'scratch'), { recursive: true, force: true });
   }
 
   /** Differences between the sandbox and the real problem, for touched paths. */
@@ -147,6 +153,7 @@ export class Sandbox {
 
 /** What the agent service needs from a working copy (one problem, or a whole contest). */
 export interface SandboxLike {
+  clearScratch(): Promise<void>;
   readonly touched: ReadonlySet<string>;
   sync(): Promise<void>;
   changes(): Promise<AiChange[]>;
@@ -169,6 +176,10 @@ export interface ContestPart {
  * <work>/<problem id>/. Paths are "<problem id>/<path in the problem>".
  */
 export class ContestSandbox implements SandboxLike {
+  async clearScratch(): Promise<void> {
+    await this.ready();
+    for (const { sandbox } of this.parts.values()) await sandbox.clearScratch();
+  }
   private parts = new Map<string, { part: ContestPart; sandbox: Sandbox }>();
   /** Touched paths of problems not loaded yet (split by prefix on first use). */
   private pending: string[];

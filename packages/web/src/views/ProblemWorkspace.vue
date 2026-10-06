@@ -57,6 +57,7 @@ const ws = useWorkspace(props.id);
 const judge = useJudge(props.id, ws);
 const ai = useAi(props.id);
 const showAi = ref(false);
+watch(() => ws.state.fileOpenRevision, () => { showAi.value = false; });
 const summary = computed(() => ws.state.detail?.summary);
 
 // ---- right panel / judge actions ----
@@ -95,6 +96,7 @@ function openAiReview() {
 }
 
 const moreOptions = computed(() => [
+  { key: 'clear-cache', label: t('fix.clearCache') },
   { key: 'lint', label: `${t('toolbar.lint')}  (Ctrl+Shift+L)` },
   { key: 'export', label: t('toolbar.export'), disabled: exporting.value },
   { key: 'selftest', label: t('panel.selftest') },
@@ -104,6 +106,12 @@ const moreOptions = computed(() => [
 ]);
 
 function onMore(key: string) {
+  if (key === 'clear-cache') {
+    dialog.warning({ title: t('fix.clearCache'), content: t('fix.clearCacheHint'), positiveText: t('common.ok'), negativeText: t('common.cancel'), onPositiveClick: async () => {
+      try { await api.clearCache(props.id); await judge.loadManifest(); message.success(t('fix.cacheCleared')); }
+      catch (e) { message.error(errorMessage(e)); }
+    } });
+  }
   if (key === 'lint') showLint.value = true;
   else if (key === 'export') exportPackage();
   else if (key === 'selftest') rightTab.value = 'selftest';
@@ -284,10 +292,11 @@ async function onAction(a: SidebarAction) {
         message.success(t('tree.copied'));
         break;
       case 'copyStd': {
-        const to = await ask(t('tree.copyStd'), 'checker.cpp');
+        const checker = a.ref.startsWith('checkers/');
+        const to = await ask(t('tree.copyStd'), checker ? 'checker.cpp' : `files/${a.ref}`);
         if (!to) break;
         await ws.copyShared(a.ref, to);
-        await ws.patch({ checker: to });
+        if (checker) await ws.patch({ checker: to });
         const shared = ws.state.tabs.find((x) => x.path.startsWith(SHARED_TAB));
         if (shared) ws.closeTab(shared.path);
         await ws.openFile(to);
@@ -351,7 +360,10 @@ const tLocked = computed(() => !!desktop && closedTabs.value.length > 0);
 function onKeydown(e: KeyboardEvent) {
   if (e.defaultPrevented || !(e.ctrlKey || e.metaKey)) return;
   const k = e.key.toLowerCase();
-  if (k === 'w' && !e.shiftKey && wLocked.value && ws.state.active) {
+  if (k === 'w' && !e.shiftKey && desktop && showAi.value) {
+    e.preventDefault();
+    showAi.value = false;
+  } else if (k === 'w' && !e.shiftKey && wLocked.value && ws.state.active) {
     e.preventDefault();
     closeTab(ws.state.active);
   } else if (k === 'w' && !e.shiftKey && desktop) {
@@ -502,6 +514,9 @@ onBeforeUnmount(() => {
         <n-split direction="horizontal" :default-size="0.76" :min="0.4" :max="0.9" class="split">
           <template #1>
             <editor-pane
+              :ai="ai"
+              :ai-visible="showAi"
+              @show-ai="showAi = $event"
               :ws="ws"
               :judge="judge"
               :problem-id="id"
@@ -514,7 +529,9 @@ onBeforeUnmount(() => {
               @action="onAction"
               @lint="showLint = true"
               @palette="showPalette = true"
-            />
+            >
+              <template #ai><ai-drawer ref="aiDrawer" embedded v-model:show="showAi" :ai="ai" :problem-id="id" :ws="ws" /></template>
+            </editor-pane>
           </template>
           <template #2>
             <n-tabs v-model:value="rightTab" type="line" size="small" class="right-tabs" pane-class="right-pane">
@@ -550,7 +567,6 @@ onBeforeUnmount(() => {
     <stress-dialog v-model:show="showStress" :ws="ws" :problem-id="id" />
     <invocation-drawer v-model:show="showInvocation" :ws="ws" :judge="judge" :problem-id="id" />
     <sync-dialog v-model:show="showSync" :ws="ws" :problem-id="id" :initial-tab="syncTab" />
-    <ai-drawer ref="aiDrawer" v-model:show="showAi" :ai="ai" :problem-id="id" :ws="ws" />
     <diff-dialog v-model:show="diff.show" :path="diff.path" :disk="diff.disk" :mine="diff.mine" @keep-mine="keepMine" @use-disk="useDisk" />
 
     <n-modal v-model:show="prompt.show" preset="card" :title="prompt.title" style="width: 480px" @after-leave="prompt.resolve(null)">

@@ -103,6 +103,9 @@ const aiBase = (owner: string) => (owner.startsWith('contest:') ? `/contests/${p
 const tsq = (ts?: string) => (ts && ts !== 'tests' ? `?testset=${encodeURIComponent(ts)}` : '');
 
 export const api = {
+  clearAiScratch: (owner: string, sid: string) => request('DELETE', `${aiBase(owner)}/ai/sessions/${encodeURIComponent(sid)}/scratch`),
+  clearCache: (id: string) => request('DELETE', `/problems/${pid(id)}/cache`),
+  contestLastResult: (id: string) => request<import('@polyforge/shared').ContestBatchResult | null>('GET', `/contests/${pid(id)}/batch/latest`),
   settings: () => request<SettingsResponse>('GET', '/settings'),
   saveSettings: (config: GlobalConfig) => request<SettingsResponse>('PUT', '/settings', config),
   languages: () => request<LanguagesResponse>('GET', '/languages'),

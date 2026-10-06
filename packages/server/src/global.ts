@@ -1,4 +1,4 @@
-import { promises as fsp } from 'node:fs';
+import { promises as fsp, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parse, stringify } from 'smol-toml';
@@ -104,6 +104,7 @@ export class GlobalStore {
     }
     const parsed = globalConfigSchema.safeParse(raw);
     this.config = parsed.success ? parsed.data : globalConfigSchema.parse({});
+    this.config.problems.roots = this.config.problems.roots.map(canonicalRoot);
     return this.config;
   }
 
@@ -113,7 +114,7 @@ export class GlobalStore {
     const roots: string[] = [];
     for (const r of parsed.data.problems.roots) {
       if (!path.isAbsolute(r)) throw new HttpError(400, 'invalid_root', `Root must be an absolute path: ${r}`);
-      const norm = path.resolve(r);
+      const norm = canonicalRoot(r);
       if (!roots.some((x) => samePath(x, norm))) roots.push(norm);
     }
     parsed.data.problems.roots = roots;
@@ -169,7 +170,7 @@ export class GlobalStore {
       .filter((e) => e && typeof e.name === 'string')
       .map((e) => ({
         name: String(e.name),
-        protocol: e.protocol === 'openai' ? 'openai' : 'anthropic',
+        protocol: e.protocol === 'openai' || e.protocol === 'openai-chat' ? 'openai-chat' : e.protocol === 'openai-responses' ? 'openai-responses' : 'anthropic',
         baseUrl: String(e.base_url ?? ''),
         apiKey: String(e.api_key ?? ''),
         models: Array.isArray(e.models) ? e.models.map(String) : [],
@@ -194,6 +195,8 @@ export class GlobalStore {
     const old = await this.aiEndpointsRaw();
     const names = new Set<string>();
     const endpoints = next.map((e) => {
+      // Accept older clients as well as migrating stored configurations.
+      if ((e.protocol as string) === 'openai') e = { ...e, protocol: 'openai-chat' };
       const name = e.name.trim();
       if (!name) throw new HttpError(400, 'bad_endpoint', 'Endpoint name is required');
       if (names.has(name)) throw new HttpError(400, 'bad_endpoint', `Duplicate endpoint name: ${name}`);
@@ -227,6 +230,16 @@ export class GlobalStore {
     }
     await atomicWrite(this.languagesPath, text);
     return { text, languages };
+  }
+}
+
+/** Expand Windows 8.3 aliases before fs.watch (libuv can abort on mixed long/short paths). */
+function canonicalRoot(value: string): string {
+  const abs = path.resolve(value);
+  try { return realpathSync.native(abs); }
+  catch {
+    const parent = path.dirname(abs);
+    return parent === abs ? abs : path.join(canonicalRoot(parent), path.basename(abs));
   }
 }
 

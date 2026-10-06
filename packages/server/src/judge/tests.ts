@@ -307,7 +307,7 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
     if (validator) {
       // Samples also get the validator's test markup (which lines belong to which test
       // case, from setTestCase), for the per-test-case highlighting of the statement.
-      const markup = !!e.sample;
+      const markup = true;
       const key = sha1(JSON.stringify([e.inputHash, validator.hash, e.group ?? '', ts.name, markup]));
       const ov = overviewPath(ctx, p.index);
       if (old?.validKey === key && old.valid !== undefined) {

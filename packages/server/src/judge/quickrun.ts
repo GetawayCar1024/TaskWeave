@@ -2,17 +2,17 @@ import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import type { QuickRunRequest, QuickRunResponse } from '@polyforge/shared';
 import { exists, HttpError } from '../util/fs.js';
-import { readHead, runChecker, runSolution, withTmp } from './execute.js';
+import { readHead, runChecker, runHelper, runSolution, withTmp } from './execute.js';
 import type { Judge, ProblemCtx } from './index.js';
 import { answerPath, inputPath } from './tests.js';
 
 const OUTPUT_PREVIEW = 64 * 1024;
 
 /** "Run" button in the editor: compile the current file and run it on custom input or a test. */
-export async function quickRun(judge: Judge, ctx: ProblemCtx, req: QuickRunRequest): Promise<QuickRunResponse> {
+export async function quickRun(judge: Judge, ctx: ProblemCtx, req: QuickRunRequest, options: { experiment?: boolean } = {}): Promise<QuickRunResponse> {
   const out = await judge.compile(ctx, req.source);
   if (!out.program) return { compile: out.result, stdout: '', stderr: '' };
-  const interactive = ctx.config.problem.interactive;
+  const interactive = !options.experiment && ctx.config.problem.interactive;
   const interactor = interactive && ctx.config.interactor ? await judge.require(ctx, ctx.config.interactor.source, 'Interactor') : undefined;
 
   return withTmp(ctx.ref.dir, async (tmp) => {
@@ -23,6 +23,12 @@ export async function quickRun(judge: Judge, ctx: ProblemCtx, req: QuickRunReque
     } else {
       inFile = path.join(tmp, 'input.txt');
       await fsp.writeFile(inFile, req.input ?? '');
+      if (!options.experiment && ctx.config.validator) {
+        const validator = await judge.require(ctx, ctx.config.validator.source, 'Validator');
+        const err = path.join(tmp, 'validator.err');
+        const v = await runHelper(judge.runner, validator, ['--testset', req.testset ?? 'tests'], { cwd: tmp, stdin: inFile, stderr: err });
+        if (v.status !== 'OK' || v.exitCode !== 0) throw new HttpError(400, 'invalid_test', `Invalid custom input: ${await readHead(err)}`);
+      }
     }
     const stderrFile = path.join(tmp, 'stderr.txt');
     const r = await runSolution(judge.runner, out.program!, inFile, ctx.limits, tmp, { interactor, stderrFile });
@@ -37,7 +43,18 @@ export async function quickRun(judge: Judge, ctx: ProblemCtx, req: QuickRunReque
       stderr: (await readHead(stderrFile, OUTPUT_PREVIEW)).replace(/\r\n/g, '\n'),
     };
     if (r.message && r.verdict !== 'OK') res.checker = { verdict: r.verdict, message: r.message };
-    const ans = req.test !== undefined ? answerPath(ctx, req.test, req.testset) : null;
+    let ans = req.test !== undefined ? answerPath(ctx, req.test, req.testset) : null;
+    if (!options.experiment && req.test === undefined && !interactive && r.verdict === 'OK' && ctx.config.checker) {
+      const main = judge.mainSolution(ctx.config);
+      if (main) {
+        const reference = await judge.require(ctx, main, 'Main solution');
+        const refDir = path.join(tmp, 'reference');
+        await fsp.mkdir(refDir);
+        const expected = await runSolution(judge.runner, reference, inFile, ctx.limits, refDir);
+        if (expected.verdict !== 'OK') throw new HttpError(400, 'reference_failed', `Main solution got ${expected.verdict}`);
+        ans = expected.outputFile;
+      }
+    }
     if (r.verdict === 'OK' && ans && (await exists(ans)) && ctx.config.checker) {
       const checker = await judge.require(ctx, ctx.config.checker.source, 'Checker');
       res.checker = await runChecker(judge.runner, checker, { input: inFile, output: r.outputFile, answer: ans }, tmp);

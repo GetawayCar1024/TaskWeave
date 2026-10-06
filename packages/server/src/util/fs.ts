@@ -97,3 +97,12 @@ export function safeJoin(base: string, rel: string): string {
   }
   return abs;
 }
+
+/** Validate portable relative names before Windows normalizes reserved names. */
+export function validateFileName(rel: string): void {
+  if (typeof rel !== 'string' || !rel || rel.split(/[\\/]/).some(s =>
+    !s || s === '.' || s === '..' || /[<>:"|?*\x00-\x1f]/.test(s) || /[. ]$/.test(s) ||
+    /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(s))) {
+    throw new HttpError(400, 'invalid_name', 'Invalid file name: use a relative path without reserved Windows names or characters');
+  }
+}

@@ -1,7 +1,7 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { isSourceFile, type CompileResult, type QuickRunRequest, type StressRequest, type TestFileResponse } from '@polyforge/shared';
+import { isSourceFile, parseIndexList, type CompileResult, type QuickRunRequest, type StressRequest, type TestFileResponse } from '@polyforge/shared';
 import type { JobManager } from '../jobs.js';
 import type { Judge } from '../judge/index.js';
 import { listInvocations, outputPath, readInvocation, runInvocation } from '../judge/invocation.js';
@@ -10,8 +10,8 @@ import { runStress } from '../judge/stress.js';
 import { exportDir, exportPackage } from '../judge/package.js';
 import { localChecks } from '../judge/checks.js';
 import { runCheckerTests, runValidatorTests } from '../judge/selftest.js';
-import { addManualTest, removeTest, answerPath, generateTests, inputPath, overviewPath, publicManifest, readManifest, requireTestset } from '../judge/tests.js';
-import { HttpError, safeJoin } from '../util/fs.js';
+import { addManualTest, removeTest, answerPath, generateTests, inputPath, overviewPath, publicManifest, readManifest, requireTestset, sampleStatementPaths } from '../judge/tests.js';
+import { HttpError, safeJoin, exists } from '../util/fs.js';
 
 const PREVIEW = 64 * 1024;
 
@@ -83,6 +83,15 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
   app.get<P & TS>('/api/problems/:id/tests', async (req) => {
     const ctx = await judge.ctx(req.params.id);
     const m = await readManifest(ctx, requireTestset(ctx, req.query.testset).name);
+    if (m && (!req.query.testset || req.query.testset === 'tests')) {
+      const samples = new Set(parseIndexList(ctx.config.tests.samples ?? ''));
+      await Promise.all(m.tests.map(async t => {
+        t.sample = samples.has(t.index) || undefined;
+        const sp = sampleStatementPaths(t);
+        t.statementInput = t.sample && await exists(safeJoin(ctx.ref.dir, sp.input)) ? sp.input : undefined;
+        t.statementOutput = t.sample && await exists(safeJoin(ctx.ref.dir, sp.output)) ? sp.output : undefined;
+      }));
+    }
     return m ? publicManifest(m) : null;
   });
 
@@ -93,7 +102,8 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     // What the statement shows (custom NN.statement.in / .out, else the test itself).
     if (req.params.kind === 'statement-in' || req.params.kind === 'statement-out') {
       const t = (await readManifest(ctx))?.tests.find((x) => x.index === n);
-      const rel = req.params.kind === 'statement-in' ? t?.statementInput : t?.statementOutput;
+      const candidate = t ? sampleStatementPaths(t)[req.params.kind === 'statement-in' ? 'input' : 'output'] : undefined;
+      const rel = candidate && await exists(safeJoin(ctx.ref.dir, candidate)) ? candidate : undefined;
       return preview(rel ? safeJoin(ctx.ref.dir, rel) : req.params.kind === 'statement-in' ? inputPath(ctx, n) : answerPath(ctx, n));
     }
     const file = { in: inputPath, ans: answerPath, overview: overviewPath }[req.params.kind];

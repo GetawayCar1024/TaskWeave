@@ -61,6 +61,19 @@ async function start() {
 async function cancel() {
   if (job.value) await api.cancelJob(job.value.id).catch((e) => message.error(errorMessage(e)));
 }
+
+const saving = ref(false);
+async function saveCounterexample() {
+  const c = result.value?.counterexample;
+  if (!c || c.savedAs) return;
+  saving.value = true;
+  try {
+    const saved = await api.addManualTest(props.problemId, { input: c.input });
+    c.savedAs = saved.path;
+    await props.ws.loadDetail();
+  } catch (e) { message.error(errorMessage(e)); }
+  finally { saving.value = false; }
+}
 </script>
 
 <template>
@@ -102,6 +115,7 @@ async function cancel() {
           <span>{{ t('stress.found', { n: result.iterations }) }}</span>
           <span class="mono hint">{{ form.generator }} {{ result.counterexample.args }}</span>
           <n-button v-if="result.counterexample.savedAs" size="tiny" @click="ws.openFile(result.counterexample.savedAs!)">{{ t('stress.saved', { path: result.counterexample.savedAs }) }}</n-button>
+          <n-button v-else size="tiny" :loading="saving" @click="saveCounterexample">{{ t('tests.addTest') }}</n-button>
         </n-space>
         <div v-if="result.counterexample.message" class="hint mono">{{ result.counterexample.message }}</div>
         <div class="three">

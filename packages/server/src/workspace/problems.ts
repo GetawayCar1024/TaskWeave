@@ -3,6 +3,8 @@ import path from 'node:path';
 import { parse, stringify } from 'smol-toml';
 import {
   DEFAULT_TESTSET,
+  isSourceFile,
+  STATEMENT_SECTIONS,
   PROBLEM_NAME_RE,
   TESTSET_NAME_RE,
   parseIndexList,
@@ -100,6 +102,9 @@ export class ProblemRegistry {
       const msg = r.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
       return { config: null, raw, error: `problem.toml: ${msg}` };
     }
+    // External deletions must not leave phantom entries in run selectors.
+    r.data.solutions = (await Promise.all(r.data.solutions.map(async s => (await this.sourceExists(ref, s.source)) ? s : null))).filter(s => s !== null);
+    if (r.data.solutions.length && !r.data.solutions.some(s => s.tag === 'MA')) r.data.solutions[0].tag = 'MA';
     return { config: r.data, raw };
   }
 
@@ -256,6 +261,19 @@ export class ProblemRegistry {
     const doc = structuredClone(raw) as Record<string, any>;
     doc.problem ??= {};
     const p = doc.problem;
+    if (req.language) {
+      const { source, lang } = req.language;
+      const languages = (await this.global.readLanguages()).languages;
+      if (lang !== null && !languages[lang]) throw new HttpError(400, 'unknown_language', `Unknown language: ${lang}`);
+      doc.source_languages ??= {};
+      if (doc.polygon_source_types) delete doc.polygon_source_types[source];
+      if (lang === null) delete doc.source_languages[source];
+      else doc.source_languages[source] = lang;
+      for (const entry of [doc.validator, doc.checker, doc.interactor, ...(doc.solutions ?? []), ...(doc.generators ?? [])]) {
+        if (entry?.source !== source) continue;
+        if (lang === null) delete entry.lang; else entry.lang = lang;
+      }
+    }
     if (req.title) p.title = req.title;
     if (req.timeLimit !== undefined) p.time_limit = req.timeLimit;
     if (req.memoryLimit !== undefined) p.memory_limit = req.memoryLimit;
@@ -274,6 +292,10 @@ export class ProblemRegistry {
         if (i >= 0) list.splice(i, 1);
       } else if (i >= 0) list[i].tag = req.solution.tag;
       else list.push({ source: req.solution.source, tag: req.solution.tag });
+      if (req.solution.tag === 'MA') for (const s of list) {
+        if (s.source !== req.solution.source && s.tag === 'MA') s.tag = 'OK';
+      }
+      if (list.length && !list.some(s => s.tag === 'MA')) (list.find(s => s.source !== req.solution!.source) ?? list[0]).tag = 'MA';
       doc.solutions = list;
     }
     if (req.polygonId !== undefined) {
@@ -326,6 +348,53 @@ export class ProblemRegistry {
     if (!check.success) throw new HttpError(400, 'invalid_patch', check.error.message);
     await atomicWrite(path.join(ref.dir, PROBLEM_FILE), stringify(doc) + '\n');
     return this.detail(id);
+  }
+
+  /** Keep role registrations in step with file creation, deletion and rename. */
+  async fileChanged(id: string, rel: string, to?: string, removed = false): Promise<void> {
+    const ref = await this.get(id);
+    const { raw } = await this.readConfig(ref);
+    if (!raw.problem) return;
+    const doc = structuredClone(raw) as Record<string, any>;
+    const before = JSON.stringify(doc);
+    const matches = (s: string) => s === rel || s.startsWith(rel + '/');
+    for (const key of ['source_languages', 'polygon_source_types']) {
+      for (const [source, value] of Object.entries(doc[key] ?? {})) {
+        if (!matches(source)) continue;
+        if (removed || to) delete doc[key][source];
+        if (to) doc[key][to + source.slice(rel.length)] = value;
+      }
+    }
+    for (const role of ['solutions', 'generators']) {
+      const list = (doc[role] ?? []) as { source: string; tag?: string }[];
+      doc[role] = list.filter(e => !removed || !matches(e.source));
+      if (to) for (const e of doc[role]) if (matches(e.source)) e.source = to + e.source.slice(rel.length);
+    }
+    for (const role of ['validator', 'checker', 'interactor']) {
+      if (!doc[role]?.source || !matches(doc[role].source)) continue;
+      if (removed) delete doc[role];
+      else if (to) doc[role].source = to + doc[role].source.slice(rel.length);
+    }
+    const target = to ?? rel;
+    if (!removed && /^solutions?\//.test(target) && isSourceFile(target) && !doc.solutions.some((s: any) => s.source === target)) {
+      doc.solutions.push({ source: target, tag: 'OK' });
+    }
+    if (doc.solutions.length && !doc.solutions.some((s: any) => s.tag === 'MA')) doc.solutions[0].tag = 'MA';
+    if (JSON.stringify(doc) !== before) await atomicWrite(path.join(ref.dir, PROBLEM_FILE), stringify(doc) + '\n');
+  }
+
+  async createStatementLanguage(id: string, rel: string): Promise<void> {
+    const match = /^statement\/([a-z]{2,8})\/?$/.exec(rel);
+    if (!match || match[1] === 'images') return;
+    const ref = await this.get(id);
+    const { config } = await this.readConfig(ref);
+    for (const section of STATEMENT_SECTIONS) {
+      if (section === 'interaction' && !config?.problem.interactive) continue;
+      const dest = safeJoin(ref.dir, `${rel}/${section}.tex`);
+      if (await exists(dest)) continue;
+      const template = await fsp.readFile(path.join(this.global.templatesDir, 'statement', match[1], `${section}.tex`), 'utf8').catch(() => '');
+      await atomicWrite(dest, template);
+    }
   }
 }
 

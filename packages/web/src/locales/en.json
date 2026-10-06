@@ -1,4 +1,13 @@
 {
+  "fix": {
+    "resetStatement": "Remove statement override and use the test data",
+    "syncScroll": "Sync scroll",
+    "clearScratch": "Clear AI scratch workspace",
+    "scratchCleared": "AI scratch workspace cleared",
+    "clearCache": "Clear generated caches",
+    "cacheCleared": "Caches cleared",
+    "clearCacheHint": "Remove build, generated test and export caches. Keep source files, invocation history, AI sessions and sync state."
+  },
   "app": {
     "unauthorized": "Unauthorized",
     "unauthorizedHint": "Open this page with the link (including the token) printed in the terminal when PolyForge started.",

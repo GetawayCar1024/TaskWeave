@@ -8,7 +8,7 @@ import { existsSync, promises as fsp } from 'node:fs';
 import path from 'node:path';
 
 const HOME = process.argv[2];
-const H = { 'x-polyforge-token': 'tok', 'content-type': 'application/json' };
+const H = { 'x-polyforge-token': process.env.POLYFORGE_TOKEN ?? 'tok', 'content-type': 'application/json' };
 const api = async (method: string, p: string, body?: unknown): Promise<any> => {
   const res = await fetch(`http://127.0.0.1:4600/api${p}`, { method, headers: H, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = await res.json();

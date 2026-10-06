@@ -63,8 +63,13 @@ export const problemTomlSchema = z.object({
   checker: sourceEntry.optional(),
   validator: sourceEntry.optional(),
   interactor: sourceEntry.optional(),
-  solutions: z.array(sourceEntry.extend({ tag: z.enum(SOLUTION_TAGS) })).default([]),
+  solutions: z.array(sourceEntry.extend({ tag: z.enum(SOLUTION_TAGS) })).refine(
+    list => !list.length || list.filter(s => s.tag === 'MA').length === 1,
+    'Solutions must have exactly one MA',
+  ).default([]),
   generators: z.array(sourceEntry).default([]),
+  source_languages: z.record(z.string(), z.string()).default({}),
+  polygon_source_types: z.record(z.string(), z.string()).default({}),
   /** The Polygon testset "tests" (also used for statements and answers). */
   tests: testsetSchema
     .extend({
@@ -169,6 +174,7 @@ export interface CreateProblemRequest {
 
 /** Partial update of problem.toml. `null` removes the section. */
 export interface PatchProblemRequest {
+  language?: { source: string; lang: string | null };
   title?: Record<string, string>;
   timeLimit?: number;
   memoryLimit?: number;

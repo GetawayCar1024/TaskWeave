@@ -72,9 +72,10 @@ async function editStatementFile(t: TestInfo, which: 'in' | 'out') {
   try {
     if (!existing) {
       const from = interactive.value && which === 'out' ? null : await api.testFile(props.problemId, t.index, which === 'in' ? 'in' : 'ans').catch(() => null);
+      if (from?.truncated) throw new Error('Test preview is truncated; write the statement override explicitly instead of copying a partial test');
       await api.writeFile(props.problemId, rel, from?.content ?? '');
       selectAfterGenerate = t.index;
-      props.judge.generate('tests');
+      await props.judge.loadManifest();
     }
     await props.ws.openFile(rel);
   } catch (e) {
@@ -116,12 +117,26 @@ async function setSample(index: number, on: boolean) {
   try {
     await props.ws.patch({ samples: compressRanges(next) });
     selectAfterGenerate = index;
-    await props.judge.generate('tests');
+    await props.judge.loadManifest();
   } catch (e) {
     message.error(serverText(errorMessage(e)));
   }
 }
 const selected = ref<number | null>(null);
+
+async function resetStatementFile(test: TestInfo, which: 'in' | 'out') {
+  const rel = which === 'in' ? test.statementInput : test.statementOutput;
+  if (!rel) return;
+  try {
+    await props.ws.remove(rel);
+    await props.judge.loadManifest();
+  } catch (e) { message.error(errorMessage(e)); }
+}
+function openGenerated(kind: 'in' | 'ans' | 'overview') {
+  const dir = testset.value === 'tests' ? 'tests' : `testsets/${testset.value}`;
+  const suffix = kind === 'overview' ? 'overview.txt' : kind;
+  props.ws.openFile(`.polyforge/${dir}/${selected.value}.${suffix}`).catch(e => message.error(errorMessage(e)));
+}
 
 async function generate() {
   try {
@@ -184,13 +199,14 @@ const tab = ref<'in' | 'ans' | 'overview'>('in');
 async function loadFiles() {
   files.value = {};
   const n = selected.value;
+  const ts = testset.value;
   if (n === null) return;
   const kinds: ('in' | 'ans' | 'overview')[] = ['in', 'ans', 'overview'];
   const res = await Promise.all(kinds.map((k) => api.testFile(props.problemId, n, k, testset.value).catch(() => null)));
-  if (selected.value !== n) return;
+  if (selected.value !== n || testset.value !== ts) return;
   files.value = Object.fromEntries(kinds.map((k, i) => [k, res[i]]));
 }
-watch([selected, () => manifest.value?.generatedAt], loadFiles);
+watch([selected, testset, () => manifest.value?.generatedAt], loadFiles);
 // Keep a test selected so the detail area is never blank: the first one by default.
 watch(
   () => manifest.value?.tests,
@@ -265,7 +281,9 @@ watch(
           </label>
           <template v-if="testset === 'tests' && current.sample">
             <n-button size="tiny" :type="current.statementInput ? 'info' : 'default'" :title="current.statementInput ?? ''" @click="editStatementFile(current, 'in')">{{ t('tests.statementInputBtn') }}</n-button>
+            <n-button v-if="current.statementInput" size="tiny" :title="t('fix.resetStatement')" @click="resetStatementFile(current, 'in')"><x :size="12" /></n-button>
             <n-button size="tiny" :type="current.statementOutput ? 'info' : 'default'" :title="current.statementOutput ?? ''" @click="editStatementFile(current, 'out')">{{ t('tests.statementOutputBtn') }}</n-button>
+            <n-button v-if="current.statementOutput" size="tiny" :title="t('fix.resetStatement')" @click="resetStatementFile(current, 'out')"><x :size="12" /></n-button>
           </template>
           <n-button v-if="testset === 'tests'" size="tiny" @click="emit('runOnTest', current.index)">{{ t('tests.runHere') }}</n-button>
           <n-button size="tiny" quaternary :disabled="running" :title="t('tests.remove')" @click="removeTest(current)"><trash2 :size="13" /></n-button>
@@ -275,6 +293,7 @@ watch(
       <div v-if="current.error" class="bad small">{{ serverText(current.error) }}</div>
       <n-tabs v-model:value="tab" size="small" type="segment">
         <n-tab-pane v-for="k in ['in', 'ans', 'overview'] as const" :key="k" :name="k" :tab="t(`tests.file.${k}`)">
+          <n-button v-if="files[k]" size="tiny" @click="openGenerated(k)">{{ t('tree.open') }}</n-button>
           <n-scrollbar style="max-height: 240px">
             <pre v-if="files[k]" class="content mono">{{ files[k]!.content }}<span v-if="files[k]!.truncated" class="dim">
 … ({{ formatSize(files[k]!.size) }})</span></pre>

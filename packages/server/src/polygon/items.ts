@@ -49,7 +49,8 @@ const normalize = (s: string) => s.replace(/\r\n/g, '\n').replace(/\s+$/, '');
 
 export function itemHash(it: Item): string {
   const body = it.bytes ?? Buffer.from(normalize(it.text ?? ''), 'utf8');
-  return sha1(Buffer.concat([Buffer.from(JSON.stringify(sortKeys(it.meta ?? {})) + '\0'), body]));
+  const meta = it.kind === 'source' || it.kind === 'solution' ? { ...it.meta, sourceType: it.extra?.sourceType ?? '' } : it.meta ?? {};
+  return sha1(Buffer.concat([Buffer.from(JSON.stringify(sortKeys(meta)) + '\0'), body]));
 }
 
 function sortKeys(v: unknown): unknown {
@@ -170,6 +171,7 @@ export async function localItems(judge: Judge, ctx: ProblemCtx): Promise<LocalIt
   const languages = (await judge.global.readLanguages()).languages;
   const readText = async (rel: string) => (await fsp.readFile(path.join(dir, rel), 'utf8')).replace(/\r\n/g, '\n');
   const sourceType = (rel: string) => {
+    if (config.polygon_source_types[rel]) return config.polygon_source_types[rel];
     try {
       return pickLanguage(languages, rel, judge.langOf(config, rel))?.lang.polygon;
     } catch {
@@ -605,7 +607,6 @@ export async function pushItem(pc: PushContext, it: Item, deleted = false): Prom
     case 'test':
       {
         const m = (it.meta ?? {}) as { sample?: boolean; statementInput?: string; statementOutput?: string };
-        const custom = m.statementInput !== undefined || m.statementOutput !== undefined;
         await client.call('problem.saveTest', {
           ...pid,
           testset: TESTSET,
@@ -613,7 +614,7 @@ export async function pushItem(pc: PushContext, it: Item, deleted = false): Prom
           testInput: it.text ?? '',
           testUseInStatements: !!m.sample,
           // Statement input / output shown instead of the test (any problem); not verified by Polygon.
-          ...(custom ? { testInputForStatements: m.statementInput, testOutputForStatements: m.statementOutput, verifyInputOutputForStatements: false } : {}),
+          testInputForStatements: m.statementInput ?? '', testOutputForStatements: m.statementOutput ?? '', verifyInputOutputForStatements: false,
         });
       }
       return;
@@ -626,7 +627,7 @@ export async function pushItem(pc: PushContext, it: Item, deleted = false): Prom
         testset: TESTSET,
         testIndex: e.index,
         testUseInStatements: !deleted,
-        ...(custom ? { testInputForStatements: m.statementInput ?? '', testOutputForStatements: m.statementOutput ?? '', verifyInputOutputForStatements: false } : {}),
+        testInputForStatements: custom ? m.statementInput ?? '' : '', testOutputForStatements: custom ? m.statementOutput ?? '' : '', verifyInputOutputForStatements: false,
       });
       return;
     }
@@ -674,6 +675,7 @@ export interface ApplyContext {
   local?: Item;
   /** Remote config (for placing role sources). */
   remoteConfig?: Record<string, any>;
+  sourceLanguages?: Record<string, string>;
   written: Set<string>;
 }
 
@@ -756,6 +758,7 @@ export async function applyItem(ac: ApplyContext, it: Item): Promise<void> {
     case 'source': {
       const rel = ac.local?.path ?? sourcePlacement(e.name, ac.remoteConfig);
       await writeRel(ac, rel, it.text ?? '');
+      applySourceType(ac, rel, e.sourceType);
       if (rel.startsWith('generators/')) {
         const gens: any[] = Array.isArray(doc.generators) ? doc.generators : [];
         if (!gens.some((g) => g.source === rel)) gens.push({ source: rel });
@@ -769,8 +772,10 @@ export async function applyItem(ac: ApplyContext, it: Item): Promise<void> {
     case 'solution': {
       const rel = ac.local?.path ?? `solutions/${e.name}`;
       await writeRel(ac, rel, it.text ?? '');
+      applySourceType(ac, rel, e.sourceType);
       const tag: SolutionTag = TAG_FROM_POLYGON[String((it.meta as any)?.tag)] ?? 'RJ';
       const sols: any[] = Array.isArray(doc.solutions) ? doc.solutions : [];
+      if (tag === 'MA') for (const entry of sols) if (entry.source !== rel && entry.tag === 'MA') entry.tag = 'OK';
       const s = sols.find((x) => x.source === rel);
       if (s) s.tag = tag;
       else sols.push({ source: rel, tag });
@@ -875,6 +880,13 @@ export async function applyItem(ac: ApplyContext, it: Item): Promise<void> {
       return;
     }
   }
+}
+
+function applySourceType(ac: ApplyContext, rel: string, sourceType?: string) {
+  if (!sourceType) return;
+  (ac.doc.polygon_source_types ??= {})[rel] = sourceType;
+  const lang = ac.sourceLanguages?.[sourceType];
+  if (lang) (ac.doc.source_languages ??= {})[rel] = lang;
 }
 
 /** Remove the local counterpart of an item that no longer exists on Polygon. */

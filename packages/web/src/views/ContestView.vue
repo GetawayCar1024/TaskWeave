@@ -83,6 +83,7 @@ const off = onWs((e) => {
 });
 onMounted(async () => {
   await load();
+  result.value = await api.contestLastResult(props.id).catch(() => null);
   // Re-attach to a batch that is still running (e.g. after a reload).
   const running = (await api.jobs(`contest:${props.id}`).catch(() => [])).find((j) => j.status === 'running');
   if (running) follow(running);
@@ -118,7 +119,7 @@ function move(i: number, d: number) {
   const list = entries();
   const j = i + d;
   if (j < 0 || j >= list.length) return;
-  [list[i].problem, list[j].problem] = [list[j].problem, list[i].problem];
+  [list[i], list[j]] = [list[j], list[i]];
   saveProblems(list);
 }
 const remove = (i: number) => saveProblems(entries().filter((_, k) => k !== i));

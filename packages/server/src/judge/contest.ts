@@ -86,6 +86,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
           }
           const id = await runInvocation(judge, ctx, sources, undefined, sub, () => {});
           const inv = await readInvocation(ctx, id);
+          item.invocationId = id;
           const bad = inv.solutions.filter((s) => s.compile?.ok === false || s.expectation?.ok === false);
           item.ok = !bad.length && !inv.error && inv.status === 'done';
           item.message = item.ok ? `${sources.length} × ${plural(inv.tests.length, 'test')}` : inv.error ? inv.error.split('\n')[0] : `${plural(bad.length, 'solution')} not as tagged`;
@@ -123,14 +124,13 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
             item.message = `changed on Polygon (revision ${preview.remoteRevision}); pull it first`;
             break;
           }
-          // The problem.toml row is information only: nothing of its own to push.
           const keys = preview.items.filter((it) => it.status !== 'unchanged' && it.kind !== 'toml').map((it) => it.key);
-          if (!keys.length && preview.polygonId !== undefined) {
+          if (!keys.length && preview.polygonId !== undefined && !req.buildPackage) {
             item.ok = true;
             item.message = 'up to date';
             break;
           }
-          const r = await sync.push(ctx, { keys, commit: true, message: req.message, buildPackage: false }, sub);
+          const r = await sync.push(ctx, { keys, commit: req.commit !== false, message: req.message, buildPackage: !!req.buildPackage, packageType: req.packageType }, sub);
           item.ok = true;
           item.message = `${plural(r.pushed.length, 'item')} → #${r.polygonId}${r.revision !== undefined ? ` r${r.revision}` : ''}`;
           item.details = r.warnings;
@@ -141,6 +141,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
       if (job.signal.aborted) throw e;
       item.ok = false;
       item.message = (e as Error).message.split('\n')[0];
+      item.details = (e as Error).message.split('\n').slice(1);
     }
   }
 
@@ -156,6 +157,10 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
     result.size = data.length;
   }
   job.progress(list.length, list.length, 'done');
+  const history = path.join(ref.dir, '.polyforge', 'batches');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  await atomicWrite(path.join(history, `${stamp}-${req.action}.json`), JSON.stringify(result, null, 2));
+  await atomicWrite(path.join(history, 'latest.json'), JSON.stringify(result, null, 2));
   return result;
 }
 

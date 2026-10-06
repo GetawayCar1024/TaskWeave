@@ -85,6 +85,10 @@ const tagOf = (path: string) => config.value?.solutions.find((s) => s.source ===
 
 const roleTree = computed<Node[]>(() => {
   const groups = new Map<FileRole, Node[]>();
+  if (!props.ws.files.value.some(f => f.path === 'files/defs.toml')) {
+    const path = `${SHARED_TAB}defs.toml`;
+    groups.set('resource', [{key: path, label: 'defs.toml (shared)', path, role: 'resource', isLeaf: true}]);
+  }
   for (const f of props.ws.files.value) {
     const role = props.ws.roleOf(f.path);
     const strip = STRIP[role];
@@ -322,7 +326,7 @@ function onMenu(key: string, option: DropdownOption) {
   if (key === 'newFile' || key === 'newDir') return act({ kind: key, dir: (option as { dir: string }).dir });
   if (key === 'open') return props.ws.openFile(path);
   if (key === 'rename' || key === 'delete' || key === 'copyPath') return act({ kind: key, path });
-  if (key === 'copyStd') return act({ kind: 'copyStd', ref: config.value?.checker?.source ?? '' });
+  if (key === 'copyStd') return act({ kind: 'copyStd', ref: path.slice(SHARED_TAB.length) });
   if (key.startsWith('tag:')) return act({ kind: 'patch', req: { solution: { source: path, tag: key.slice(4) as SolutionTag } } });
   if (key === 'unsolution') return act({ kind: 'patch', req: { solution: { source: path, tag: null } } });
   if (key.startsWith('set:')) return act({ kind: 'patch', req: { [key.slice(4)]: path } });

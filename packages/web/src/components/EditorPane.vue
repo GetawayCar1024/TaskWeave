@@ -1,23 +1,44 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { NAlert, NButton, NEmpty, NSpace } from 'naive-ui';
+import { NAlert, NButton, NEmpty, NSpace, useMessage } from 'naive-ui';
+import { errorMessage } from '../lib/api';
 import type { Judge } from '../lib/judge';
 import { monaco } from '../lib/monaco';
 import { settings } from '../lib/settings';
 import { SHARED_TAB, type Tab, type Workspace } from '../lib/workspace';
 import StatementPreview from './StatementPreview.vue';
+import FilePreview from './FilePreview.vue';
+import type { Ai } from '../lib/ai';
+import { isSourceFile } from '@polyforge/shared';
 import { Lock, X } from 'lucide-vue-next';
 import type { SidebarAction } from './FileSidebar.vue';
 
-const props = defineProps<{ ws: Workspace; judge: Judge; problemId: string }>();
-const emit = defineEmits<{ save: [path: string]; close: [path: string]; quickOpen: []; showDiff: [path: string]; run: []; generate: []; action: [SidebarAction]; lint: []; palette: [] }>();
+const props = defineProps<{ ws: Workspace; judge: Judge; problemId: string; ai?: Ai; aiVisible?: boolean }>();
+const emit = defineEmits<{ save: [path: string]; close: [path: string]; quickOpen: []; showDiff: [path: string]; run: []; generate: []; action: [SidebarAction]; lint: []; palette: []; showAi: [boolean] }>();
 
 // Statement tabs get a live preview next to the source (DESIGN §6.1).
-const statementLang = computed(() => props.ws.activeTab.value?.path.match(/^statement\/([^/]+)\/[^/]+\.tex$/)?.[1] ?? null);
+const statementLang = computed(() => props.ws.activeTab.value?.path.match(/^statement\/([^/]+)\/(legend|input|output|interaction|scoring|notes|tutorial)\.tex$/)?.[1] ?? null);
+const previewable = computed(() => /\.(tex|md)$/i.test(props.ws.activeTab.value?.path ?? ''));
+const previewHost = ref<HTMLDivElement>();
+const syncScroll = ref(true);
 const showPreview = ref(localStorage.getItem('polyforge-preview') !== 'off');
 watch(showPreview, (v) => localStorage.setItem('polyforge-preview', v ? 'on' : 'off'));
 const { t } = useI18n();
+const message = useMessage();
+const openedSessions = ref(new Set<string>());
+const aiTabs = computed(() => props.ai?.state.sessions.filter(s => openedSessions.value.has(s.id)) ?? []);
+watch(() => [props.aiVisible, props.ai?.state.current?.id] as const, ([visible, id]) => {
+  if (visible && id) openedSessions.value = new Set([...openedSessions.value, id]);
+}, { immediate: true });
+async function openSession(id: string) {
+  try { await props.ai?.open(id); emit('showAi', true); }
+  catch (e) { message.error(errorMessage(e)); }
+}
+function closeSession(id: string) {
+  openedSessions.value = new Set([...openedSessions.value].filter(x => x !== id));
+  if (props.ai?.state.current?.id === id) emit('showAi', false);
+}
 
 const host = ref<HTMLDivElement>();
 let editor: monaco.editor.IStandaloneCodeEditor | null = null;
@@ -28,7 +49,7 @@ function editorOptions(): monaco.editor.IEditorOptions & monaco.editor.IGlobalEd
   return {
     fontSize: ed.font_size,
     tabSize: ed.tab_size,
-    wordWrap: ed.word_wrap ? 'on' : 'off',
+    wordWrap: ed.word_wrap || !isSourceFile(props.ws.activeTab.value?.path ?? '') ? 'on' : 'off',
     minimap: { enabled: ed.minimap },
     theme: settings.config!.ui.theme === 'light' ? 'vs' : 'vs-dark',
   };
@@ -51,8 +72,23 @@ onMounted(() => {
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyL, () => emit('lint'));
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyG, () => emit('generate'));
   props.ws.editorRef.value = editor;
+  editor.onDidScrollChange(() => {
+    const p = previewHost.value;
+    if (!syncScroll.value || !p || !editor) return;
+    const height = editor.getScrollHeight() - editor.getLayoutInfo().height;
+    const top = height > 0 ? editor.getScrollTop() / height * (p.scrollHeight - p.clientHeight) : 0;
+    if (Math.abs(p.scrollTop - top) > 1) p.scrollTop = top;
+  });
   show(props.ws.activeTab.value);
 });
+
+function scrollPreview() {
+  const p = previewHost.value;
+  if (!syncScroll.value || !p || !editor) return;
+  const height = p.scrollHeight - p.clientHeight;
+  const top = height > 0 ? p.scrollTop / height * (editor.getScrollHeight() - editor.getLayoutInfo().height) : 0;
+  if (Math.abs(editor.getScrollTop() - top) > 1) editor.setScrollTop(top);
+}
 
 function show(tab: Tab | null) {
   if (!editor) return;
@@ -60,7 +96,7 @@ function show(tab: Tab | null) {
   current = tab;
   editor.setModel(tab && !tab.model.isDisposed() ? tab.model : null);
   if (tab) {
-    editor.updateOptions({ readOnly: tab.readOnly });
+    editor.updateOptions({ ...editorOptions(), readOnly: tab.readOnly });
     if (tab.viewState) editor.restoreViewState(tab.viewState);
     editor.focus();
   }
@@ -116,14 +152,19 @@ function onTabMouse(e: MouseEvent, path: string) {
 
 <template>
   <div class="pane">
-    <div class="tabs" v-if="ws.state.tabs.length">
+    <div class="tabs" v-if="ws.state.tabs.length || aiVisible || ai?.state.sessions.length">
+      <div v-for="session in aiTabs" :key="session.id" class="tab" :class="{active: aiVisible && ai?.state.current?.id === session.id}" @click="openSession(session.id)">
+        AI · {{ session.title }}
+        <x :size="12" @click.stop="closeSession(session.id)" />
+      </div>
+      <div v-if="aiVisible && !ai?.state.sessions.length" class="tab active">AI</div>
       <div
         v-for="tab in ws.state.tabs"
         :key="tab.path"
         class="tab"
-        :class="{ active: tab.path === ws.state.active }"
+        :class="{ active: !aiVisible && tab.path === ws.state.active }"
         :title="tab.path"
-        @click="ws.state.active = tab.path"
+        @click="ws.state.active = tab.path; emit('showAi', false)"
         @mousedown="onTabMouse($event, tab.path)"
       >
         <span class="name" :class="{ gone: tab.disk === 'deleted' }">{{ label(tab.path) }}</span>
@@ -135,7 +176,8 @@ function onTabMouse(e: MouseEvent, path: string) {
       </div>
     </div>
 
-    <template v-if="ws.activeTab.value">
+    <div v-show="aiVisible" class="ai-tab"><slot name="ai" /></div>
+    <template v-if="!aiVisible && ws.activeTab.value">
       <n-alert v-if="ws.activeTab.value.disk === 'changed'" type="warning" :show-icon="false" class="banner">
         <n-space align="center" justify="space-between">
           <span>{{ t('editor.changedOnDisk') }}</span>
@@ -155,10 +197,11 @@ function onTabMouse(e: MouseEvent, path: string) {
       </n-alert>
     </template>
 
-    <div v-show="ws.activeTab.value" class="body">
+    <div v-show="!aiVisible && ws.activeTab.value" class="body">
       <div ref="host" class="host" />
-      <div v-if="statementLang && showPreview" class="preview">
+      <div v-if="previewable && showPreview" ref="previewHost" class="preview" @scroll="scrollPreview">
         <statement-preview
+          v-if="statementLang"
           :ws="ws"
           :judge="judge"
           :problem-id="problemId"
@@ -166,15 +209,17 @@ function onTabMouse(e: MouseEvent, path: string) {
           :mode="ws.activeTab.value?.path.endsWith('/tutorial.tex') ? 'tutorial' : 'statement'"
           @create-tutorial="(lang: string) => emit('action', { kind: 'createTutorials', langs: [lang] })"
         />
+        <file-preview v-else-if="ws.activeTab.value" :tab="ws.activeTab.value" :problem-id="problemId" />
       </div>
-      <div v-if="statementLang" class="preview-toggle">
+      <div v-if="previewable" class="preview-toggle">
+        <n-button size="tiny" :type="syncScroll ? 'primary' : 'default'" @click="syncScroll = !syncScroll">{{ t('fix.syncScroll') }}</n-button>
         <n-button size="tiny" secondary @click="emit('lint')">{{ t('toolbar.lint') }}</n-button>
         <n-button size="tiny" secondary @click="showPreview = !showPreview">
           {{ showPreview ? t('preview.hide') : t('preview.show') }}
         </n-button>
       </div>
     </div>
-    <div v-if="!ws.activeTab.value" class="empty">
+    <div v-if="!aiVisible && !ws.activeTab.value" class="empty">
       <n-empty :description="t('editor.noFile')">
         <template #extra><span class="hint">Ctrl+P {{ t('editor.quickOpen') }} · Ctrl+S {{ t('common.save') }}</span></template>
       </n-empty>
@@ -183,6 +228,7 @@ function onTabMouse(e: MouseEvent, path: string) {
 </template>
 
 <style scoped>
+.ai-tab { flex: 1; min-height: 0; overflow: hidden; }
 .pane {
   height: 100%;
   display: flex;

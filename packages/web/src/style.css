@@ -14,3 +14,7 @@ body {
 .mono {
   font-family: Consolas, 'Cascadia Code', 'Courier New', monospace;
 }
+/* Markdown in both AI sessions and document previews. */
+.md-code { white-space: pre; overflow: auto; padding: 10px; background: #8882; }
+.file-preview table, .msg.assistant table { border-collapse: collapse; margin: 12px 0; }
+.file-preview th, .file-preview td, .msg.assistant th, .msg.assistant td { border: 1px solid #8886; padding: 5px 10px; }

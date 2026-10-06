@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { NAlert, NButton, NCheckbox, NInput, NModal, NSpace, NSpin, NTabPane, NTabs, NTag, useMessage } from 'naive-ui';
+import { NAlert, NButton, NCheckbox, NInput, NModal, NSpace, NSpin, NTabPane, NTabs, NTag, NSelect, useMessage } from 'naive-ui';
 import type { ContestBatchResult, ContestDetail, ContestPullPreview, ContestPullResult, ContestSyncRow, ContestSyncState, ContestSyncStatus, JobInfo } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 import { waitJob } from '../lib/jobs';
@@ -137,6 +137,10 @@ async function pull() {
 // ---- push ----
 const pushPick = ref(new Set<string>());
 const commitMessage = ref('');
+const commit = ref(true);
+const buildPackage = ref(false);
+const packageType = ref<'standard' | 'full'>('standard');
+watch(commit, v => { if (!v) buildPackage.value = false; });
 const pushResult = ref<ContestBatchResult | null>(null);
 const pushable = (r: ContestSyncRow) => r.state !== 'missing' && r.state !== 'unreachable';
 function setPush(problem: string, on: boolean) {
@@ -159,7 +163,7 @@ async function push() {
   if (!indices.length) return;
   pushResult.value = null;
   try {
-    const started = await api.contestBatch(props.contestId, { action: 'polygon-push', indices, message: commitMessage.value.trim() || undefined });
+    const started = await api.contestBatch(props.contestId, { action: 'polygon-push', indices, message: commitMessage.value.trim() || undefined, commit: commit.value, buildPackage: commit.value && buildPackage.value, packageType: packageType.value });
     job.value = started;
     const done = await waitJob(started, (j) => (job.value = j));
     job.value = done;
@@ -229,6 +233,10 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
 
 <template>
   <n-modal :show="show" preset="card" :title="t('csync.title')" style="width: min(980px, 96vw)" @update:show="emit('update:show', $event)">
+    <n-space v-if="!status">
+      <n-button :type="tab === 'push' ? 'primary' : 'default'" @click="tab = 'push'">{{ t('sync.push') }}</n-button>
+      <n-button :type="tab === 'pull' ? 'primary' : 'default'" @click="tab = 'pull'">{{ t('sync.pull') }}</n-button>
+    </n-space>
     <div v-if="loading && !status" class="center"><n-spin /></div>
     <n-alert v-else-if="error" type="error" :show-icon="false">{{ error }}</n-alert>
     <template v-else-if="status">
@@ -280,6 +288,9 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
             </tbody>
           </table>
           <div class="commit">
+            <n-checkbox v-model:checked="commit">{{ t('sync.commit') }}</n-checkbox>
+            <n-checkbox v-model:checked="buildPackage" :disabled="!commit">{{ t('sync.buildPackage') }}</n-checkbox>
+            <n-select v-if="buildPackage" v-model:value="packageType" :options="[{label:'Standard',value:'standard'},{label:'Full',value:'full'}]" size="small" style="width:120px" />
             <n-input v-model:value="commitMessage" size="small" :placeholder="t('sync.commitMessage')" :disabled="busy" />
           </div>
           <div v-if="pushResult" class="small result">

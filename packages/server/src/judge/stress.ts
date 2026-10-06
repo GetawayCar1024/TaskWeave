@@ -16,7 +16,7 @@ export function stressArgs(template: string, seed: number): string[] {
 
 /**
  * Stress testing (对拍, DESIGN §4.2): generate random tests until a solution disagrees
- * with the reference, then keep the counterexample as a manual test.
+ * with the reference. Saving a counterexample as a manual test is opt-in.
  */
 export async function runStress(judge: Judge, ctx: ProblemCtx, req: StressRequest, job: JobCtx): Promise<StressResult> {
   const maxIterations = Math.min(Math.max(req.maxIterations ?? 1000, 1), 100_000);
@@ -102,7 +102,7 @@ export async function runStress(judge: Judge, ctx: ProblemCtx, req: StressReques
     }
   }
 
-  if (found && req.saveCounterexample !== false) {
+  if (found && req.saveCounterexample === true) {
     const dir = path.join(ctx.ref.dir, 'tests', 'manual');
     await fsp.mkdir(dir, { recursive: true });
     let n = 1;

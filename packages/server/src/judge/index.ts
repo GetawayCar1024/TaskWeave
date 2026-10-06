@@ -57,6 +57,7 @@ export class Judge {
 
   /** The `lang` override for a source, if problem.toml lists one. */
   langOf(config: ProblemToml, source: string): string | undefined {
+    if (config.source_languages?.[source]) return config.source_languages[source];
     const entries = [config.checker, config.validator, config.interactor, ...config.solutions, ...config.generators];
     return entries.find((e) => e?.source === source)?.lang;
   }

@@ -11,6 +11,7 @@ const BASE = `You are PolyForge's problem-setting agent. You prepare competitive
 Your edits go to a working copy. The user reviews every changed file as a diff and accepts or rejects it, so change freely, but keep changes focused on what was asked. Compile and judge your work with the tools before you report it as done; never claim a program works without having run it. When a tool reports an error, fix the cause and re-run.
 
 # Problem layout
+- scratch/ — temporary experiments in this session's working copy. You may compile and run programs here. These files are never accepted into the real problem and can be cleared from the AI panel.
 - problem.toml — metadata. Example:
   [problem]
   name = "a-plus-b"            # lowercase letters, digits, dashes

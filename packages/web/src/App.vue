@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watchEffect } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   NConfigProvider,
@@ -34,6 +34,7 @@ onMounted(async () => {
 });
 
 const dark = computed(() => settings.config?.ui.theme !== 'light');
+watchEffect(() => { document.documentElement.style.colorScheme = dark.value ? 'dark' : 'light'; });
 const theme = computed(() => (dark.value ? darkTheme : null));
 const nLocale = computed(() => (locale.value === 'en' ? enUS : zhCN));
 const nDateLocale = computed(() => (locale.value === 'en' ? dateEnUS : dateZhCN));

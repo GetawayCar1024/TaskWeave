@@ -465,7 +465,8 @@ onMounted(() => {
             </div>
             <n-space>
               <n-button size="small" dashed @click="addEndpoint('anthropic')">+ Anthropic</n-button>
-              <n-button size="small" dashed @click="addEndpoint('openai')">+ OpenAI {{ t('settings.aiCompatible') }}</n-button>
+              <n-button size="small" dashed @click="addEndpoint('openai-chat')">+ OpenAI Chat</n-button>
+              <n-button size="small" dashed @click="addEndpoint('openai-responses')">+ OpenAI Responses</n-button>
             </n-space>
             <n-form label-placement="left" label-width="160" style="margin-top: 16px">
               <n-form-item :label="t('settings.aiDefault')">

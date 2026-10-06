@@ -92,6 +92,12 @@ interface Scope {
  * rejects the resulting changes file by file.
  */
 export class AgentService {
+  get running() { return [...this.live.values()].some(l => l.state === 'running'); }
+  async clearScratch(owner: string, sid: string) {
+    const l = await this.load(owner, sid);
+    if (l.state === 'running') throw new HttpError(409, 'busy', 'Stop the agent before clearing its workspace');
+    await l.sandbox.clearScratch();
+  }
   private live = new Map<string, Live>();
   readonly usageLog: UsageLog;
 

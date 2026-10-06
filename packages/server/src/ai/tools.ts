@@ -1,4 +1,5 @@
 import { promises as fsp } from 'node:fs';
+import path from 'node:path';
 import { parse as parseToml } from 'smol-toml';
 import { z } from 'zod';
 import { classifyFile, FINDING_CATEGORIES, problemTomlSchema, type AiFinding, type AiPlanStep, type AiSessionMode } from '@polyforge/shared';
@@ -96,7 +97,7 @@ const TOOLS = [
   }),
   tool({
     name: 'write_file',
-    description: 'Create or overwrite a file with the full content. Use for new files or complete rewrites; prefer edit_file for small changes.',
+    description: 'Create or overwrite a file. Use scratch/ for temporary experiments and test programs: these persist across turns and can be compiled/run but are never offered for acceptance into the problem. Prefer edit_file for small changes.',
     schema: z.object({ path: z.string(), content: z.string() }),
     async run(i, env) {
       const rel = await guardedWrite(env, i.path, i.content);
@@ -158,10 +159,11 @@ const TOOLS = [
   }),
   tool({
     name: 'run',
-    description: 'Compile and run a program under the problem limits, on custom stdin or on a generated test (then the checker judges the output).',
+    description: 'Compile and run a program under the problem limits, on custom stdin or on a generated test. Custom input is validated and compared with MA. Programs in scratch/ with custom stdin are standalone experiments without validator, interactor or checker.',
     schema: z.object({ path: z.string(), input: z.string().optional(), test: z.number().int().min(1).optional() }),
     async run(i, env) {
-      const r = await quickRun(env.judge, await env.ctx(), { source: i.path, input: i.input, test: i.test });
+      const experiment = i.test === undefined && path.posix.normalize(i.path.replace(/\\/g, '/')).startsWith('scratch/');
+      const r = await quickRun(env.judge, await env.ctx(), { source: i.path, input: i.input, test: i.test }, { experiment });
       if (!r.compile.ok) return `COMPILATION FAILED\n${clip(r.compile.log, 8000)}`;
       const head = `verdict ${r.verdict ?? '?'}; ${r.run?.timeMs ?? '?'} ms; ${Math.round((r.run?.memoryKb ?? 0) / 1024)} MB; exit ${r.run?.exitCode ?? '?'}`;
       return [head, r.checker?.message ? `checker: ${r.checker.message}` : '', `stdout${r.stdoutTruncated ? ' (truncated)' : ''}:\n${clip(r.stdout, 6000)}`, r.stderr ? `stderr:\n${clip(r.stderr, 3000)}` : '']

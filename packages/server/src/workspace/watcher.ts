@@ -49,6 +49,8 @@ export class ProblemWatcher {
   }
 
   async stop(): Promise<void> {
+    if (this.rescanTimer) clearTimeout(this.rescanTimer);
+    this.rescanTimer = null;
     await this.watcher?.close();
     this.watcher = null;
   }

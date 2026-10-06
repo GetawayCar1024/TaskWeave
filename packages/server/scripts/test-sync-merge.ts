@@ -10,7 +10,7 @@ import { PolygonClient } from '../src/polygon/client.js';
 
 const HOME = process.argv[2];
 const PROBS = path.join(HOME, 'probs');
-const H = { 'x-polyforge-token': 'tok', 'content-type': 'application/json' };
+const H = { 'x-polyforge-token': process.env.POLYFORGE_TOKEN ?? 'tok', 'content-type': 'application/json' };
 const api = async (method: string, p: string, body?: unknown): Promise<any> => {
   const res = await fetch(`http://127.0.0.1:4600/api${p}`, { method, headers: H, body: body === undefined ? undefined : JSON.stringify(body) });
   let data = await res.json();

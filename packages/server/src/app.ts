@@ -53,6 +53,16 @@ const ALLOWED_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const { global, registry, files, watcher, hub, token } = deps;
   const app = Fastify({ logger: false, bodyLimit: 64 * 1024 * 1024 });
+  const agent = new AgentService(deps.judge, hub, deps.contests);
+  let requests = 0;
+  let clearingCache = false;
+  app.addHook('onRequest', async req => {
+    if (!req.url.startsWith('/ws')) requests++;
+    if (clearingCache && req.url.startsWith('/api/')) throw new HttpError(409, 'busy', 'Cache maintenance in progress');
+  });
+  app.addHook('onResponse', async req => { if (!req.url.startsWith('/ws')) requests--; });
+  const idle = () => !agent.running && !deps.jobs.list().some(j => j.status === 'running');
+  deps.judge.compiler.canPrune = () => requests === 0 && idle();
 
   await app.register(fastifyWebsocket);
 
@@ -212,12 +222,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const ref = await registry.get(req.params.id);
     if (typeof req.body?.content !== 'string') throw new HttpError(400, 'bad_request', 'content required');
     const hash = await files.write(ref.dir, req.params['*'], req.body.content, req.body.baseHash);
+    if (req.params['*'] !== 'problem.toml') await registry.fileChanged(ref.id, req.params['*']);
     return { hash };
   });
 
   app.delete<FileParams>('/api/problems/:id/files/*', async (req) => {
     const ref = await registry.get(req.params.id);
     await files.remove(ref.dir, req.params['*']);
+    await registry.fileChanged(ref.id, req.params['*'], undefined, true);
     return { ok: true };
   });
 
@@ -237,17 +249,33 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const sync = new PolygonSync(deps.judge);
   polygonRoutes(app, deps.judge, sync, deps.jobs, hub);
   contestRoutes(app, { judge: deps.judge, contests: deps.contests, sync }, deps.jobs, hub);
-  aiRoutes(app, global, new AgentService(deps.judge, hub, deps.contests));
+  aiRoutes(app, global, agent);
+
+  app.delete<{ Params: { id: string } }>('/api/problems/:id/cache', async req => {
+    if (requests > 1 || !idle()) throw new HttpError(409, 'busy', 'Wait for running operations before clearing caches');
+    clearingCache = true;
+    try {
+    await deps.judge.compiler.waitForMaintenance();
+    const ref = await registry.get(req.params.id);
+    for (const name of ['build', 'tests', 'testsets', 'tmp', 'export']) {
+      await fsp.rm(safeJoin(ref.dir, `.polyforge/${name}`), { recursive: true, force: true });
+    }
+    hub.broadcast({ type: 'problem:changed', problemId: ref.id });
+    return { ok: true };
+    } finally { clearingCache = false; }
+  });
 
   app.post<{ Params: { id: string }; Body: MoveFileRequest }>('/api/problems/:id/move', async (req) => {
     const ref = await registry.get(req.params.id);
     await files.move(ref.dir, req.body.from, req.body.to);
+    await registry.fileChanged(ref.id, req.body.from, req.body.to);
     return { ok: true };
   });
 
   app.post<{ Params: { id: string }; Body: { path: string } }>('/api/problems/:id/mkdir', async (req) => {
     const ref = await registry.get(req.params.id);
     await files.mkdir(ref.dir, req.body.path);
+    await registry.createStatementLanguage(ref.id, req.body.path);
     return { ok: true };
   });
 

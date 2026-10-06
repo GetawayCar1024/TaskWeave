@@ -8,6 +8,7 @@ import {
   NCheckbox,
   NInput,
   NInputNumber,
+  NSelect,
   NModal,
   NProgress,
   NScrollbar,
@@ -44,6 +45,8 @@ const showUnchanged = ref(false);
 const commit = ref(true);
 const commitMessage = ref('');
 const buildPackage = ref(false);
+const packageType = ref<'standard' | 'full'>('standard');
+watch(commit, v => { if (!v) buildPackage.value = false; });
 const pushJob = ref<JobInfo | null>(null);
 const pushResult = ref<{ pushed: string[]; warnings: string[] } | null>(null);
 const bindId = ref<number | null>(null);
@@ -76,7 +79,7 @@ async function doPush() {
   if (!preview.value) return;
   pushResult.value = null;
   try {
-    const job = await api.push(props.problemId, { keys: [...selected.value], commit: commit.value, message: commitMessage.value, buildPackage: buildPackage.value });
+    const job = await api.push(props.problemId, { keys: [...selected.value], commit: commit.value, message: commitMessage.value, buildPackage: commit.value && buildPackage.value, packageType: packageType.value });
     pushJob.value = job;
     const done = await waitJob(job, (j) => (pushJob.value = j));
     pushJob.value = done;
@@ -299,9 +302,10 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
             <n-space align="center">
               <n-checkbox v-model:checked="commit">{{ t('sync.commit') }}</n-checkbox>
               <n-input v-model:value="commitMessage" size="small" :disabled="!commit" :placeholder="t('sync.commitMessage')" style="width: 280px" />
-              <n-checkbox v-model:checked="buildPackage">{{ t('sync.buildPackage') }}</n-checkbox>
+              <n-checkbox v-model:checked="buildPackage" :disabled="!commit">{{ t('sync.buildPackage') }}</n-checkbox>
+              <n-select v-if="buildPackage" v-model:value="packageType" :options="[{label:'Standard',value:'standard'},{label:'Full',value:'full'}]" size="small" style="width: 120px" />
             </n-space>
-            <n-button type="primary" :loading="pushJob?.status === 'running'" :disabled="!selected.size" @click="doPush">
+            <n-button type="primary" :loading="pushJob?.status === 'running'" :disabled="!selected.size && !buildPackage && !commit" @click="doPush">
               {{ bound ? t('sync.pushN', { n: selected.size }) : t('sync.createAndPush', { n: selected.size }) }}
             </n-button>
           </div>

@@ -1,6 +1,6 @@
 import type { CheckCode, CheckParams } from './checks.js';
 import type { AiUsage, EndpointPricing } from './usage.js';
-export const AI_PROTOCOLS = ['anthropic', 'openai'] as const;
+export const AI_PROTOCOLS = ['anthropic', 'openai-chat', 'openai-responses'] as const;
 export type AiProtocol = (typeof AI_PROTOCOLS)[number];
 
 /** An AI endpoint as returned to the client (key masked). DESIGN §4.4. */

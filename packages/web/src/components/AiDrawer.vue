@@ -35,7 +35,7 @@ import { fmtMoney, fmtTokens } from '../lib/usageFormat';
 import type { Workspace } from '../lib/workspace';
 
 /** problemId: the owner of the sessions — a problem id, or "contest:<id>" for the contest AI. */
-const props = defineProps<{ show: boolean; ai: Ai; problemId: string; ws?: Workspace }>();
+const props = defineProps<{ show: boolean; ai: Ai; problemId: string; ws?: Workspace; embedded?: boolean }>();
 const emit = defineEmits<{ 'update:show': [boolean] }>();
 const { t } = useI18n();
 const router = useRouter();
@@ -48,6 +48,7 @@ const scroller = ref<InstanceType<typeof NScrollbar>>();
 const expanded = ref(new Set<string>());
 
 const tab = ref<AiSessionMode>('agent');
+watch(() => props.ai.state.current?.mode, mode => { if (mode) tab.value = mode; });
 const checks = ref<LocalCheck[] | null>(null);
 const isContest = computed(() => props.problemId.startsWith('contest:'));
 
@@ -268,12 +269,13 @@ const usageTitle = computed(() => {
 </script>
 
 <template>
-  <n-drawer :show="show" placement="right" :default-width="620" resizable :mask-closable="true" @update:show="emit('update:show', $event)">
-    <n-drawer-content :native-scrollbar="false" body-content-style="padding: 0; height: 100%" closable>
+  <component :is="embedded ? 'div' : NDrawer" v-show="!embedded || show" :show="show" placement="right" :default-width="620" resizable :mask-closable="true" style="height: 100%" @update:show="emit('update:show', $event)">
+    <component :is="embedded ? 'div' : NDrawerContent" :native-scrollbar="false" body-content-style="padding: 0; height: 100%" style="height: 100%" closable>
       <template #header>
         <span>AI</span>
       </template>
       <div class="ai">
+        <n-button v-if="ai.state.current" size="tiny" :disabled="ai.running.value" @click="api.clearAiScratch(problemId, ai.state.current.id).then(() => message.success(t('fix.scratchCleared'))).catch(e => message.error(errorMessage(e)))">{{ t('fix.clearScratch') }}</n-button>
         <n-radio-group v-model:value="tab" size="small" class="mode-tabs">
           <n-radio-button value="agent">{{ t('ai.tabChat') }}</n-radio-button>
           <n-radio-button value="review">{{ t('ai.tabReview') }}</n-radio-button>
@@ -441,8 +443,8 @@ const usageTitle = computed(() => {
           </div>
         </template>
       </div>
-    </n-drawer-content>
-  </n-drawer>
+    </component>
+  </component>
 
   <n-modal :show="!!diff" preset="card" :title="diff?.path" style="width: 90vw" @update:show="(v: boolean) => !v && (diff = null)">
     <template v-if="diff">
