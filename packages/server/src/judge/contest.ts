@@ -3,6 +3,7 @@ import path from 'node:path';
 import {
   LANG_TO_POLYGON,
   STATEMENT_SECTIONS,
+  parseIndexList,
   testsetsOf,
   type ContestBatchItem,
   type ContestBatchRequest,
@@ -14,14 +15,14 @@ import {
 } from '@polyforge/shared';
 import type { JobCtx } from '../jobs.js';
 import type { PolygonSync } from '../polygon/sync.js';
-import { atomicWrite, safeJoin } from '../util/fs.js';
+import { atomicWrite, exists, safeJoin, HttpError } from '../util/fs.js';
 import { ZipWriter } from '../util/zip.js';
 import type { ContestRegistry, ContestRef } from '../workspace/contests.js';
 import { localChecks } from './checks.js';
 import type { Judge, ProblemCtx } from './index.js';
 import { readInvocation, runInvocation } from './invocation.js';
 import { exportPackage } from './package.js';
-import { answerPath, generateTests, inputPath, readManifest } from './tests.js';
+import { answerPath, generateTests, inputPath, readManifest, sampleStatementPaths } from './tests.js';
 
 export const contestExportDir = (ref: ContestRef) => path.join(ref.dir, '.polyforge', 'export');
 
@@ -39,6 +40,7 @@ export interface ContestDeps {
 export async function runContestBatch(deps: ContestDeps, contestId: string, req: ContestBatchRequest, job: JobCtx): Promise<ContestBatchResult> {
   const { judge, contests, sync } = deps;
   const { ref, config } = await contests.config(contestId);
+  if (req.action === 'polygon-push' && config.contest.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI contests cannot sync with Polygon');
   const want = req.indices?.length ? new Set(req.indices) : null;
   const list = config.problems.filter((p) => !want || want.has(p.index));
   const items: ContestBatchItem[] = [];
@@ -57,6 +59,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
     let ctx: ProblemCtx;
     try {
       ctx = await judge.ctx(p.problem);
+      if (config.contest.type === 'cf' && ctx.config.problem.type === 'oi') throw new HttpError(400, 'incompatible_problem_type', `CF contests cannot import OI problem: ${p.problem}`);
     } catch (e) {
       item.message = (e as Error).message;
       continue;
@@ -148,7 +151,8 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
   const result: ContestBatchResult = { action: req.action, items };
   if (zip) {
     job.progress(list.length, list.length, 'writing');
-    zip.add('contest.xml', contestXml(config.contest.title, config.contest.name, exported));
+    if (config.contest.type === 'cf') zip.add('contest.xml', contestXml(config.contest.title, config.contest.name, exported));
+    else zip.add('contest.toml', await fsp.readFile(path.join(ref.dir, 'contest.toml')));
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
     const file = `${config.contest.name}-${stamp}.zip`;
     const data = zip.finish();
@@ -190,6 +194,8 @@ export async function contestStatements(judge: Judge, contests: ContestRegistry,
       continue;
     }
     const c = ctx.config;
+    if (config.contest.type === 'cf' && c.problem.type === 'oi') throw new HttpError(400, 'incompatible_problem_type', `CF contests cannot import OI problem: ${p.problem}`);
+    if (config.contest.type === 'oi' && c.problem.type === 'cf') throw new HttpError(400, 'conversion_required', 'Convert CF problems to OI before exporting this contest');
     const sections: Record<string, string> = {};
     for (const s of STATEMENT_SECTIONS) {
       const text = await fsp.readFile(path.join(ctx.ref.dir, 'statement', lang, `${s}.tex`), 'utf8').catch(() => '');
@@ -197,7 +203,11 @@ export async function contestStatements(judge: Judge, contests: ContestRegistry,
     }
     const manifest = await readManifest(ctx);
     const samples: ContestStatement['samples'] = [];
-    for (const t of manifest?.tests.filter((t) => t.sample) ?? []) {
+    const sampleIndices = new Set(parseIndexList(c.tests.samples ?? ''));
+    for (const t of manifest?.tests.filter((t) => sampleIndices.has(t.index)) ?? []) {
+      const overrides = sampleStatementPaths(t);
+      t.statementInput = await exists(safeJoin(ctx.ref.dir, overrides.input)) ? overrides.input : undefined;
+      t.statementOutput = await exists(safeJoin(ctx.ref.dir, overrides.output)) ? overrides.output : undefined;
       const read = (f: string) =>
         fsp
           .readFile(f)
@@ -212,13 +222,18 @@ export async function contestStatements(judge: Judge, contests: ContestRegistry,
       index: p.index,
       problem: p.problem,
       title: c.problem.title[lang] || c.problem.title.en || c.problem.name,
+      name: c.problem.name,
+      testCount: manifest?.tests.length,
+      equalPoints: manifest?.tests.length ? new Set(manifest.tests.map(t => t.points ?? 1)).size === 1 : undefined,
       timeLimit: c.problem.time_limit,
       memoryLimit: c.problem.memory_limit,
       interactive: c.problem.interactive,
       input: c.problem.input,
       output: c.problem.output,
+      type: c.problem.type,
+      body: c.problem.type === 'oi' ? await fsp.readFile(safeJoin(ctx.ref.dir, `statement/${lang}/statement.tex`), 'utf8').catch(() => '') : undefined,
       sections,
-      samples,
+      samples: c.problem.type === 'oi' ? [] : samples,
     });
   }
   return out;
@@ -243,7 +258,7 @@ export async function importContest(deps: ContestDeps, req: ContestImportRequest
     job.signal.throwIfAborted();
     const letter = index.toUpperCase();
     job.progress(i, entries.length, `${letter} · ${p.name}`);
-    const bound = local.find((l) => l.status.polygonId === p.id);
+    const bound = local.find((l) => l.type === 'cf' && l.status.polygonId === p.id);
     if (bound) {
       problems.push({ index: letter, problem: bound.id });
       continue;
@@ -257,8 +272,8 @@ export async function importContest(deps: ContestDeps, req: ContestImportRequest
       warnings.push(`${letter} (${p.name}, #${p.id}): ${(e as Error).message}`);
     }
   }
-  const contest = await contests.create({ name, problems });
-  await contests.update(contest.id, { polygonId: req.contestId });
+  const contest = await contests.create({ name, problems, type: req.type });
+  if (contest.type === 'cf') await contests.update(contest.id, { polygonId: req.contestId });
   job.progress(entries.length, entries.length, 'done');
-  return { contest: { ...contest, polygonId: req.contestId }, warnings };
+  return { contest: { ...contest, polygonId: contest.type === 'cf' ? req.contestId : undefined }, warnings };
 }

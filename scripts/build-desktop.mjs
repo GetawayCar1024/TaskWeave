@@ -70,6 +70,8 @@ const require = createRequire(path.join(desk, 'package.json'));
 const electronPkg = JSON.parse(readFileSync(require.resolve('electron/package.json'), 'utf8'));
 const { build } = require('electron-builder');
 const files = await build({
+  // Packaging is local; releases are published separately after review.
+  publish: 'never',
   projectDir: desk,
   config: {
     appId: 'dev.polyforge.desktop',

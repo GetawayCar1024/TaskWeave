@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n';
 import { NButton, NButtonGroup, NTooltip } from 'naive-ui';
 import { settings, patchSettings } from '../lib/settings';
 import { wsConnected } from '../lib/ws';
+import { Sun, Moon } from 'lucide-vue-next';
 
 const { t } = useI18n();
 
@@ -17,6 +18,9 @@ function switchLocale(l: 'zh-CN' | 'en') {
     <div class="center"><slot /></div>
     <div class="right">
       <slot name="right" />
+      <n-button quaternary size="small" :aria-label="t('palette.toggleTheme')" :title="t('palette.toggleTheme')" @click="patchSettings(c => c.ui.theme = c.ui.theme === 'light' ? 'dark' : 'light')">
+        <template #icon><sun v-if="settings.config?.ui.theme !== 'light'" /><moon v-else /></template>
+      </n-button>
       <n-tooltip>
         <template #trigger>
           <span class="dot" :class="{ on: wsConnected }" />
@@ -33,12 +37,14 @@ function switchLocale(l: 'zh-CN' | 'en') {
 
 <style scoped>
 .header {
-  height: 44px;
+  min-height: 52px;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 12px;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--pf-border);
+  background: var(--pf-toolbar-bg);
+  backdrop-filter: blur(18px);
   flex-shrink: 0;
 }
 .left,
@@ -47,6 +53,7 @@ function switchLocale(l: 'zh-CN' | 'en') {
   align-items: center;
   gap: 8px;
 }
+.right { flex-wrap: wrap; justify-content: flex-end; }
 .center {
   flex: 1;
   display: flex;

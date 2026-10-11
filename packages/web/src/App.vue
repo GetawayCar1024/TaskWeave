@@ -17,6 +17,8 @@ import {
 import { onUnauthorized, errorMessage } from './lib/api';
 import { settings, loadSettings } from './lib/settings';
 import { startWs } from './lib/ws';
+import { desktop } from './lib/desktop';
+import type { GlobalThemeOverrides } from 'naive-ui';
 
 const { t, locale } = useI18n();
 const unauthorized = ref(false);
@@ -34,14 +36,37 @@ onMounted(async () => {
 });
 
 const dark = computed(() => settings.config?.ui.theme !== 'light');
-watchEffect(() => { document.documentElement.style.colorScheme = dark.value ? 'dark' : 'light'; });
+watchEffect(() => {
+  const mode = dark.value ? 'dark' : 'light';
+  document.documentElement.style.colorScheme = mode;
+  document.documentElement.dataset.theme = mode;
+  desktop?.setTheme(mode);
+});
+const overrides = computed<GlobalThemeOverrides>(() => ({
+  common: {
+    primaryColor: dark.value ? '#409cff' : '#007aff',
+    primaryColorHover: dark.value ? '#70b5ff' : '#0062cc',
+    primaryColorPressed: dark.value ? '#0a84ff' : '#0054b0',
+    primaryColorSuppl: '#007aff',
+    borderRadius: '7px',
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif",
+    bodyColor: dark.value ? '#1c1c1e' : '#f2f2f7',
+    cardColor: dark.value ? '#2c2c2e' : '#ffffff',
+    modalColor: dark.value ? '#2c2c2e' : '#ffffff',
+    popoverColor: dark.value ? '#2c2c2e' : '#ffffff',
+    tableColor: dark.value ? '#242426' : '#ffffff',
+    borderColor: dark.value ? '#3a3a3c' : '#dcdce2',
+  },
+  Card: { borderRadius: '10px' },
+  Dialog: { borderRadius: '12px' },
+}));
 const theme = computed(() => (dark.value ? darkTheme : null));
 const nLocale = computed(() => (locale.value === 'en' ? enUS : zhCN));
 const nDateLocale = computed(() => (locale.value === 'en' ? dateEnUS : dateZhCN));
 </script>
 
 <template>
-  <n-config-provider :theme="theme" :locale="nLocale" :date-locale="nDateLocale" style="height: 100%">
+  <n-config-provider :theme="theme" :theme-overrides="overrides" :locale="nLocale" :date-locale="nDateLocale" style="height: 100%">
     <n-global-style />
     <n-message-provider>
       <n-dialog-provider>

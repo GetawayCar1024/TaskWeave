@@ -9,12 +9,19 @@ import electron from 'electron';
 import { startServer, type RunningServer } from '../../server/src/server.js';
 
 // The 'electron' module has no ESM named exports for a bundled main: take them from the default.
-const { app, BrowserWindow, dialog, Menu, shell } = electron;
+const { app, BrowserWindow, dialog, Menu, shell, nativeTheme, ipcMain } = electron;
 type BrowserWindow = InstanceType<typeof electron.BrowserWindow>;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 let win: BrowserWindow | null = null;
 let server: RunningServer | null = null;
+
+ipcMain.on('polyforge:theme', (event, theme: unknown) => {
+  if (event.sender !== win?.webContents || event.senderFrame !== win.webContents.mainFrame) return;
+  if (theme !== 'light' && theme !== 'dark') return;
+  nativeTheme.themeSource = theme;
+  win.setBackgroundColor(theme === 'light' ? '#f2f2f7' : '#1c1c1e');
+});
 
 // One PolyForge at a time: a second start focuses the running window.
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -35,13 +42,14 @@ async function createWindow() {
     app.quit();
     return;
   }
+  nativeTheme.themeSource = server.global.config.ui?.theme === 'light' ? 'light' : 'dark';
   const w = new BrowserWindow({
     width: 1440,
     height: 900,
     show: false,
     title: 'PolyForge',
     icon: path.join(here, 'icon.png'),
-    backgroundColor: server.global.config.ui?.theme === 'light' ? '#ffffff' : '#101014',
+    backgroundColor: nativeTheme.themeSource === 'light' ? '#f2f2f7' : '#1c1c1e',
     webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true },
   });
   win = w;

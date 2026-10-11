@@ -28,7 +28,7 @@ import { PolygonSync } from './polygon/sync.js';
 import { samePath } from './global.js';
 import { listShared, stdRefToPath } from './sharedFiles.js';
 import { detectTools, listDirs } from './tools.js';
-import { HttpError, exists, safeJoin } from './util/fs.js';
+import { HttpError, exists, safeJoin, validateFileName } from './util/fs.js';
 import { FileService } from './workspace/files.js';
 import { ProblemRegistry } from './workspace/problems.js';
 import type { ProblemWatcher } from './workspace/watcher.js';
@@ -156,6 +156,38 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get<{ Params: { '*': string } }>('/api/shared/file/*', async (req) => files.read(global.sharedDir, req.params['*']));
 
   // ---- problems ----
+  app.post<{ Params: { id: string } }>('/api/problems/:id/convert-oi', async (req, reply) => {
+    const summary = await registry.convertToOi(req.params.id);
+    hub.broadcast({ type: 'problems:changed' });
+    return reply.code(201).send(summary);
+  });
+
+  app.get<{ Params: { id: string } }>('/api/problems/:id/attachments', async (req, reply) => {
+    const ref = await registry.get(req.params.id);
+    const { config } = await registry.readConfig(ref);
+    if (config?.problem.type !== 'oi') throw new HttpError(400, 'oi_only', 'Attachments are only available for OI problems');
+    const { ZipWriter } = await import('./util/zip.js');
+    const { addAttachments } = await import('./workspace/attachments.js');
+    const zip = new ZipWriter();
+    await addAttachments(zip, ref.dir);
+    return reply.type('application/zip').header('content-disposition', `attachment; filename="${config.problem.name}-attachments.zip"`).send(zip.finish());
+  });
+
+  app.post<{ Params: { id: string }; Body: { name: string; base64: string } }>('/api/problems/:id/attachments', { bodyLimit: 32 * 1024 * 1024 }, async (req) => {
+    const ref = await registry.get(req.params.id);
+    const { config } = await registry.readConfig(ref);
+    if (config?.problem.type !== 'oi') throw new HttpError(400, 'oi_only', 'Attachments are only available for OI problems');
+    const { name, base64 } = req.body ?? {};
+    if (typeof name !== 'string' || !/^[^\\/<>:"|?*\x00-\x1f]+$/.test(name) || name.startsWith('.') || /[. ]$/.test(name) || typeof base64 !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(base64)) throw new HttpError(400, 'bad_request', 'Invalid attachment');
+    const dest = safeJoin(ref.dir, `attachments/${name}`);
+    validateFileName(name);
+    if ((await fsp.lstat(path.dirname(dest)).catch(() => null))?.isSymbolicLink()) throw new HttpError(400, 'bad_path', 'Attachments directory must not be a symbolic link');
+    await fsp.mkdir(path.dirname(dest), { recursive: true });
+    try { await fsp.writeFile(dest, Buffer.from(base64, 'base64'), { flag: 'wx' }); }
+    catch (e) { if ((e as NodeJS.ErrnoException).code === 'EEXIST') throw new HttpError(409, 'exists', `Attachment already exists: ${name}`); throw e; }
+    hub.broadcast({ type: 'problem:changed', problemId: ref.id });
+    return { ok: true };
+  });
   app.get('/api/problems', async () => ({ roots: registry.roots, problems: await registry.list() }));
 
   app.post<{ Body: CreateProblemRequest }>('/api/problems', async (req, reply) => {

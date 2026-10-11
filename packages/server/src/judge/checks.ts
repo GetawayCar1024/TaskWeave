@@ -41,11 +41,11 @@ export async function localChecks(_judge: Judge, ctx: ProblemCtx): Promise<Local
   const langs = statementLanguages(files);
   if (!langs.statement.length) add('error', 'statement', 'noStatement');
   for (const lang of langs.statement) {
-    for (const section of ['legend', 'input', 'output']) {
+    for (const section of (config.problem.type === 'oi' ? ['statement'] : ['legend', 'input', 'output'])) {
       const file = `statement/${lang}/${section}.tex`;
       if (!files.some((f) => f.path === file && f.size)) add('warning', 'statement', 'missingSection', { lang, section }, { file });
     }
-    if (config.problem.interactive && !files.some((f) => f.path === `statement/${lang}/interaction.tex` && f.size)) {
+    if (config.problem.type !== 'oi' && config.problem.interactive && !files.some((f) => f.path === `statement/${lang}/interaction.tex` && f.size)) {
       add('warning', 'statement', 'noInteraction', { lang }, { file: `statement/${lang}/interaction.tex` });
     }
     if (!config.problem.title[lang]) add('warning', 'statement', 'noTitle', { lang }, { file: 'problem.toml' });
@@ -64,7 +64,7 @@ export async function localChecks(_judge: Judge, ctx: ProblemCtx): Promise<Local
   // ---- programs ----
   if (!config.validator || !(await has(config.validator.source))) add('error', 'validator', 'noValidator');
   if (!config.checker || !(await has(config.checker.source))) add('error', 'checker', 'noChecker');
-  if (config.problem.interactive && (!config.interactor || !(await has(config.interactor.source)))) add('error', 'interactor', 'noInteractor');
+  if (config.problem.type !== 'oi' && config.problem.interactive && (!config.interactor || !(await has(config.interactor.source)))) add('error', 'interactor', 'noInteractor');
   const ma = config.solutions.filter((s) => s.tag === 'MA');
   if (ma.length !== 1) add('error', 'solutions', ma.length ? 'severalMain' : 'noMain', {}, { file: 'problem.toml' });
   for (const s of config.solutions) if (!(await has(s.source))) add('error', 'solutions', 'solutionMissing', { file: s.source }, { file: 'problem.toml' });

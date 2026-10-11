@@ -205,7 +205,7 @@ watch(
   () => [docTitle.value, lang.value],
   () => {
     const page = lang.value === 'zh' ? '"第 " counter(page) " 页，共 " counter(pages) " 页"' : '"Page " counter(page) " of " counter(pages)';
-    pageStyle.textContent = `@page { @bottom-center { content: ${page}; font: 9pt Verdana, 'Microsoft YaHei', sans-serif; color: #666; } }`;
+    pageStyle.textContent = `@page { background: #fff; color: #111; @bottom-center { content: ${page}; font: 9pt Verdana, 'Microsoft YaHei', sans-serif; color: #666; } }`;
   },
   { immediate: true },
 );
@@ -442,6 +442,8 @@ onBeforeUnmount(() => {
 @page {
   size: A4;
   margin: 20mm;
+  background: #fff;
+  color: #111;
 }
 @media print {
   /* Menus, messages and tooltips are teleported to <body>; one still open at the screen's
@@ -452,6 +454,8 @@ onBeforeUnmount(() => {
   html,
   body,
   #app {
+    color-scheme: light !important;
+    color: #111 !important;
     background: #fff !important;
     height: auto !important;
     overflow: visible !important;

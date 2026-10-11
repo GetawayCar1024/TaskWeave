@@ -25,6 +25,18 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps, jobs: Job
   });
 
   app.get<P>('/api/contests/:id', async (req) => contests.detail(req.params.id));
+  app.get<P>('/api/contests/:id/attachments', async (req, reply) => {
+    const { config } = await contests.config(req.params.id);
+    if (config.contest.type !== 'oi') throw new HttpError(400, 'oi_only', 'Attachments are only available for OI contests');
+    const { ZipWriter } = await import('../util/zip.js');
+    const { addAttachments } = await import('../workspace/attachments.js');
+    const zip = new ZipWriter();
+    for (const p of config.problems) {
+      const ctx = await judge.ctx(p.problem);
+      await addAttachments(zip, ctx.ref.dir, `${p.index}/${ctx.config.problem.name}/`);
+    }
+    return reply.type('application/zip').header('content-disposition', `attachment; filename="${config.contest.name}-attachments.zip"`).send(zip.finish());
+  });
   app.get<P>('/api/contests/:id/batch/latest', async req => {
     const ref = await contests.get(req.params.id);
     return JSON.parse(await fsp.readFile(path.join(ref.dir, '.polyforge', 'batches', 'latest.json'), 'utf8').catch(() => 'null'));

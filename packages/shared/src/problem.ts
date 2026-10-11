@@ -9,6 +9,9 @@ export type StatementLang = (typeof STATEMENT_LANGS)[number];
 export const STATEMENT_SECTIONS = ['legend', 'input', 'output', 'interaction', 'scoring', 'notes', 'tutorial'] as const;
 export type StatementSection = (typeof STATEMENT_SECTIONS)[number];
 
+export const problemTypeSchema = z.enum(['cf', 'oi']);
+export type ProblemType = z.infer<typeof problemTypeSchema>;
+
 /** Prefix for references to files in the global `shared/` directory, e.g. `std:ncmp`. */
 export const STD_PREFIX = 'std:';
 
@@ -51,6 +54,7 @@ export const problemTomlSchema = z.object({
   problem: z
     .object({
       name: z.string(),
+      type: problemTypeSchema.default('cf'),
       title: localized.default({}),
       time_limit: z.number().int().positive().default(1000),
       memory_limit: z.number().int().positive().default(256),
@@ -130,6 +134,7 @@ export interface ProblemStatus {
 }
 
 export interface ProblemSummary {
+  type: ProblemType;
   /** URL-safe identifier (folder name, disambiguated across roots). */
   id: string;
   name: string;
@@ -164,6 +169,7 @@ export interface ProblemDetail {
 }
 
 export interface CreateProblemRequest {
+  type?: ProblemType;
   name: string;
   root?: string;
   title?: Record<string, string>;

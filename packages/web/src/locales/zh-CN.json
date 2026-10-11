@@ -586,6 +586,12 @@
     }
   },
   "contest": {
+    "lineup": "题目编排",
+    "problemCount": "道题目",
+    "readyCount": "{n} 道已就绪",
+    "ready": "已就绪",
+    "preparing": "准备中",
+    "addHint": "从下方选择已有题目，开始编排比赛。",
     "new": "新建比赛",
     "none": "还没有比赛",
     "importTitle": "从 Polygon 导入比赛",

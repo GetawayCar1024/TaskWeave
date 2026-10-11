@@ -57,11 +57,20 @@ const ws = useWorkspace(props.id);
 const judge = useJudge(props.id, ws);
 const ai = useAi(props.id);
 const showAi = ref(false);
-watch(() => ws.state.fileOpenRevision, () => { showAi.value = false; });
 const summary = computed(() => ws.state.detail?.summary);
 
 // ---- right panel / judge actions ----
 const rightTab = ref<'info' | 'tests' | 'run' | 'selftest'>('info');
+const aiSplitSize = ref(0.62);
+const toolsSplitSize = ref(0.76);
+const rightSplitSize = computed({
+  get: () => showAi.value ? aiSplitSize.value : toolsSplitSize.value,
+  set: (value: number) => { if (showAi.value) aiSplitSize.value = value; else toolsSplitSize.value = value; },
+});
+function showTools(tab: typeof rightTab.value) {
+  rightTab.value = tab;
+  showAi.value = false;
+}
 const runPanel = ref<InstanceType<typeof RunPanel>>();
 const showInvocation = ref(false);
 const showSync = ref(false);
@@ -114,7 +123,7 @@ function onMore(key: string) {
   }
   if (key === 'lint') showLint.value = true;
   else if (key === 'export') exportPackage();
-  else if (key === 'selftest') rightTab.value = 'selftest';
+  else if (key === 'selftest') showTools('selftest');
   else if (key === 'palette') showPalette.value = true;
   else if (key === 'shortcuts') showShortcuts.value = true;
 }
@@ -133,8 +142,8 @@ const commands = computed<Command[]>(() => {
     { id: 'invocation', label: t('toolbar.invocation'), group: g.judge, run: () => void (showInvocation.value = true) },
     { id: 'stress', label: t('toolbar.stress'), group: g.judge, run: () => void (showStress.value = true) },
     { id: 'run', label: t('run.run'), shortcut: 'Ctrl+Enter', group: g.judge, run: runCurrent },
-    { id: 'selftest', label: t('panel.selftest'), group: g.judge, run: () => void (rightTab.value = 'selftest') },
-    { id: 'tests', label: t('panel.tests'), group: g.view, run: () => void (rightTab.value = 'tests') },
+    { id: 'selftest', label: t('panel.selftest'), group: g.judge, run: () => void (showTools('selftest')) },
+    { id: 'tests', label: t('panel.tests'), group: g.view, run: () => void (showTools('tests')) },
     { id: 'sync', label: t('sync.title'), shortcut: 'Ctrl+Shift+U', group: g.sync, run: () => void (showSync.value = true) },
     { id: 'export', label: t('toolbar.export'), group: g.sync, run: exportPackage },
     { id: 'ai', label: t('palette.aiChat'), group: g.ai, run: () => void (showAi.value = true) },
@@ -169,7 +178,7 @@ const commands = computed<Command[]>(() => {
 });
 
 async function generate() {
-  rightTab.value = 'tests';
+  showTools('tests');
   try {
     await judge.generate();
   } catch (e) {
@@ -178,13 +187,13 @@ async function generate() {
 }
 
 function runCurrent() {
-  rightTab.value = 'run';
+  showTools('run');
   // The panel may mount on this tick; wait for it.
   setTimeout(() => runPanel.value?.run(), 0);
 }
 
 function runOnTest(n: number) {
-  rightTab.value = 'run';
+  showTools('run');
   setTimeout(() => runPanel.value?.runOnTest(n), 0);
 }
 
@@ -360,7 +369,7 @@ const tLocked = computed(() => !!desktop && closedTabs.value.length > 0);
 function onKeydown(e: KeyboardEvent) {
   if (e.defaultPrevented || !(e.ctrlKey || e.metaKey)) return;
   const k = e.key.toLowerCase();
-  if (k === 'w' && !e.shiftKey && desktop && showAi.value) {
+  if (k === 'w' && !e.shiftKey && desktop && showAi.value && (e.target as HTMLElement).closest?.('.ai-sidebar')) {
     e.preventDefault();
     showAi.value = false;
   } else if (k === 'w' && !e.shiftKey && wLocked.value && ws.state.active) {
@@ -482,7 +491,7 @@ onBeforeUnmount(() => {
           </template>
           Ctrl+Shift+U
         </n-tooltip>
-        <n-button size="small" :type="ai.running.value ? 'primary' : 'default'" @click="showAi = true">
+        <n-button size="small" :type="showAi || ai.running.value ? 'primary' : 'default'" :aria-pressed="showAi" @click="showAi = !showAi">
           AI<template v-if="ai.state.changes.length"> · {{ ai.state.changes.length }}</template>
         </n-button>
         <n-dropdown trigger="click" :options="moreOptions" @select="onMore">
@@ -511,12 +520,9 @@ onBeforeUnmount(() => {
         <file-sidebar :ws="ws" @action="onAction" />
       </template>
       <template #2>
-        <n-split direction="horizontal" :default-size="0.76" :min="0.4" :max="0.9" class="split">
+        <n-split direction="horizontal" v-model:size="rightSplitSize" :min="0.35" :max="0.9" class="split">
           <template #1>
             <editor-pane
-              :ai="ai"
-              :ai-visible="showAi"
-              @show-ai="showAi = $event"
               :ws="ws"
               :judge="judge"
               :problem-id="id"
@@ -529,12 +535,13 @@ onBeforeUnmount(() => {
               @action="onAction"
               @lint="showLint = true"
               @palette="showPalette = true"
-            >
-              <template #ai><ai-drawer ref="aiDrawer" embedded v-model:show="showAi" :ai="ai" :problem-id="id" :ws="ws" /></template>
-            </editor-pane>
+            />
           </template>
           <template #2>
-            <n-tabs v-model:value="rightTab" type="line" size="small" class="right-tabs" pane-class="right-pane">
+            <aside v-show="showAi" class="ai-sidebar" :aria-label="t('palette.aiChat')">
+              <ai-drawer ref="aiDrawer" embedded v-model:show="showAi" :ai="ai" :problem-id="id" :ws="ws" />
+            </aside>
+            <n-tabs v-show="!showAi" v-model:value="rightTab" type="line" size="small" class="right-tabs" pane-class="right-pane">
               <n-tab-pane name="info" :tab="t('panel.info')">
                 <info-panel :ws="ws" :judge="judge" />
               </n-tab-pane>
@@ -558,7 +565,7 @@ onBeforeUnmount(() => {
       :ws="ws"
       :judge="judge"
       :ai="ai"
-      @open="(w) => (w === 'sync' ? (showSync = true) : w === 'ai' ? (showAi = true) : (rightTab = 'tests'))"
+      @open="(w) => (w === 'sync' ? (showSync = true) : w === 'ai' ? (showAi = true) : showTools('tests'))"
     />
     <quick-open v-model:show="quickOpen" :files="allFiles" @open="(p: string) => ws.openFile(p)" />
     <command-palette v-model:show="showPalette" :commands="commands" />
@@ -591,7 +598,16 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
 }
+.ai-sidebar {
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--pf-border);
+  background: var(--pf-surface);
+}
 .right-tabs {
+  background: var(--pf-surface);
+  border-left: 1px solid var(--pf-border);
   height: 100%;
   display: flex;
   flex-direction: column;

@@ -5,9 +5,11 @@ import path from 'node:path';
 import { RUNNER_SRC } from '../paths.js';
 import type { RunStats, RunStatus } from '@polyforge/shared';
 import { exists, HttpError, sha1 } from '../util/fs.js';
+import { withBuildLocks, verifyBuild, type BuildIdentity } from './buildLock.js';
 
 
 export interface ProcSpec {
+  build?: BuildIdentity;
   /** argv; argv[0] is resolved by CreateProcess (absolute path or on PATH). */
   argv: string[];
   cwd: string;
@@ -190,7 +192,11 @@ export class Runner {
     const exe = await this.ensure();
     return this.pool.use(async () => {
       signal?.throwIfAborted();
-      const out = await this.exec(exe, [], specText(spec) + this.tsc(), signal);
+      const out = await withBuildLocks(spec.build ? [spec.build.dir] : [], async () => {
+        signal?.throwIfAborted();
+        await verifyBuild(spec.build);
+        return this.exec(exe, [], specText(spec) + this.tsc(), signal);
+      }, 'read');
       return toStats(JSON.parse(out) as RawResult);
     });
   }
@@ -201,7 +207,13 @@ export class Runner {
     return this.pool.use(async () => {
       signal?.throwIfAborted();
       const text = specText(sol) + this.tsc() + '\n[interactor]\n' + specText(inter);
-      const r = JSON.parse(await this.exec(exe, [], text, signal)) as { solution: RawResult; interactor: RawResult };
+      const out = await withBuildLocks([sol.build?.dir, inter.build?.dir].filter((x): x is string => !!x), async () => {
+        signal?.throwIfAborted();
+        await verifyBuild(sol.build);
+        await verifyBuild(inter.build);
+        return this.exec(exe, [], text, signal);
+      }, 'read');
+      const r = JSON.parse(out) as { solution: RawResult; interactor: RawResult };
       return { solution: toStats(r.solution), interactor: toStats(r.interactor) };
     });
   }

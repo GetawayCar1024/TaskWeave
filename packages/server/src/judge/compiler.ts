@@ -6,6 +6,7 @@ import { STD_PREFIX, type CompileResult, type Diagnostic, type Language, type La
 import type { GlobalStore } from '../global.js';
 import { stdRefToPath } from '../sharedFiles.js';
 import { atomicWrite, exists, HttpError, safeJoin, sha1, toPosix } from '../util/fs.js';
+import { withBuildLocks, type BuildIdentity } from './buildLock.js';
 
 /** A compiled (or interpreted) program ready to be run. */
 export interface Program {
@@ -18,6 +19,7 @@ export interface Program {
   argv: string[];
   /** Identifies source + language + toolchain; used as a cache key for derived results. */
   hash: string;
+  build?: BuildIdentity;
 }
 
 export interface CompileOutcome {
@@ -97,6 +99,7 @@ export function parseDiagnostics(log: string, problemDir: string | null): Diagno
 }
 
 interface CacheRecord {
+  hash?: string;
   source?: string;
   builtAt?: number;
   ok: boolean;
@@ -104,8 +107,8 @@ interface CacheRecord {
 }
 
 /**
- * Compiles sources with the templates from languages.toml. Builds are cached by
- * source content + language + templates + testlib.h, so unchanged files never rebuild.
+ * One executable slot per canonical source path. Content, language, templates and
+ * testlib.h invalidate the record without creating another executable directory.
  */
 export class Compiler {
   canPrune = () => false;
@@ -132,7 +135,10 @@ export class Compiler {
         if (!/^[a-f0-9]{16}$/.test(name)) continue;
         const dir = path.join(root, name);
         const r: CacheRecord | null = await fsp.readFile(path.join(dir, 'compile.json'), 'utf8').then(JSON.parse).catch(() => null);
-        if (r?.source) records.push({ dir, source: r.source, at: r.builtAt ?? 0 });
+        // Old content-addressed slots are disposable once the source has a stable slot.
+        if (!r?.source || await exists(path.join(root, `source-${sha1(this.sourceKey(r.source)).slice(0, 16)}`, 'compile.json'))) {
+          await fsp.rm(dir, { recursive: true, force: true });
+        } else records.push({ dir, source: this.sourceKey(r.source), at: r.builtAt ?? 0 });
       }
       const kept = new Set<string>();
       for (const r of records.sort((a,b) => b.at - a.at)) {
@@ -142,6 +148,10 @@ export class Compiler {
     }
   }
   private inflight = new Map<string, Promise<CompileOutcome>>();
+  private sourceKey(file: string) {
+    const resolved = path.resolve(file);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  }
 
   constructor(
     private global: GlobalStore,
@@ -163,7 +173,7 @@ export class Compiler {
     await this.maintenance;
     const started = Date.now();
     const resolved = this.resolveSource(problemDir, source);
-    const srcPath = resolved.srcPath;
+    const srcPath = await fsp.realpath(resolved.srcPath).catch(() => resolved.srcPath);
     // Shared std checkers keep their global cache; problem sources may use an override.
     const buildRoot = source.startsWith(STD_PREFIX) || !buildRootOverride ? resolved.buildRoot : buildRootOverride;
     const fail = (log: string, lang?: string): CompileOutcome => ({
@@ -183,12 +193,13 @@ export class Compiler {
     const usesShared = `${lang.compile ?? ''} ${lang.run}`.includes('{shared}');
     const testlib = usesShared ? await fsp.readFile(path.join(this.global.sharedDir, 'testlib.h')).catch(() => '') : '';
     const base = path.basename(srcPath, path.extname(srcPath));
-    const hash = sha1(JSON.stringify([id, lang.compile ?? '', lang.run, base, sha1(content), sha1(testlib)]));
+    const hash = sha1(JSON.stringify([this.sourceKey(srcPath), id, lang.compile ?? '', lang.run, base, sha1(content), sha1(testlib)]));
+    const dir = path.join(buildRoot, `source-${sha1(this.sourceKey(srcPath)).slice(0, 16)}`);
 
     const key = `${buildRoot}|${hash}`;
     let p = this.inflight.get(key);
     if (!p) {
-      p = this.build({ source, srcPath, problemDir, buildRoot, hash, id, lang, base, started }).finally(() => this.inflight.delete(key));
+      p = withBuildLocks([dir], () => this.build({ source, srcPath, problemDir, buildRoot, dir, contentHash: sha1(content), hash, id, lang, base, started })).finally(() => this.inflight.delete(key));
       this.inflight.set(key, p);
     }
     return p;
@@ -199,16 +210,18 @@ export class Compiler {
     srcPath: string;
     problemDir: string;
     buildRoot: string;
+    dir: string;
+    contentHash: string;
     hash: string;
     id: string;
     lang: Language;
     base: string;
     started: number;
   }): Promise<CompileOutcome> {
-    const dir = path.join(a.buildRoot, a.hash.slice(0, 16));
+    const dir = a.dir;
     const exe = path.join(dir, process.platform === 'win32' ? `${a.base}.exe` : a.base);
     const vars = { src: a.srcPath, exe, dir, class: a.base, shared: this.global.sharedDir };
-    const program: Program = { source: a.source, srcPath: a.srcPath, lang: a.id, argv: substitute(splitCommand(a.lang.run), vars), hash: a.hash };
+    const program: Program = { source: a.source, srcPath: a.srcPath, lang: a.id, argv: substitute(splitCommand(a.lang.run), vars), hash: a.hash, build: a.lang.compile ? { dir, hash: a.hash } : undefined };
     const recordPath = path.join(dir, 'compile.json');
     const problemDir = a.source.startsWith(STD_PREFIX) ? null : a.problemDir;
     const done = (rec: CacheRecord, cached: boolean): CompileOutcome => ({
@@ -229,7 +242,7 @@ export class Compiler {
         const rec = JSON.parse(await fsp.readFile(recordPath, 'utf8')) as CacheRecord;
         // A successful record is only trusted if its executable is still there.
         const needsExe = !!a.lang.compile?.includes('{exe}');
-        if (!rec.ok || !needsExe || (await exists(exe))) {
+        if (rec.hash === a.hash && (!rec.ok || !needsExe || (await exists(exe)))) {
           rec.source = a.srcPath;
           rec.builtAt = Date.now();
           await atomicWrite(recordPath, JSON.stringify(rec));
@@ -243,6 +256,9 @@ export class Compiler {
     if (!a.lang.compile) return done({ ok: true, log: '' }, false);
 
     await fsp.mkdir(dir, { recursive: true });
+    // Invalidate first; a failed compile must never leave a runnable old binary.
+    await fsp.rm(recordPath, { force: true });
+    await fsp.rm(exe, { force: true });
     const [cmd, ...args] = substitute(splitCommand(a.lang.compile), vars);
     const compileOnce = () => new Promise<CacheRecord>((resolve) => {
       execFile(
@@ -258,10 +274,17 @@ export class Compiler {
       );
     });
     const rec = this.pool ? await this.pool.use(compileOnce) : await compileOnce();
+    const sourceChanged = sha1(await fsp.readFile(a.srcPath).catch(() => '')) !== a.contentHash;
+    if (sourceChanged) {
+      rec.ok = false;
+      rec.log = 'Source changed during compilation; save or run again.';
+    }
+    if (!rec.ok) await fsp.rm(exe, { force: true });
+    rec.hash = a.hash;
     rec.source = a.srcPath;
     rec.builtAt = Date.now();
     // A compiler missing from PATH is not a property of the source; don't cache it.
-    if (!rec.log.startsWith('Compiler not found')) await atomicWrite(recordPath, JSON.stringify(rec));
+    if (!sourceChanged && !rec.log.startsWith('Compiler not found')) await atomicWrite(recordPath, JSON.stringify(rec));
     this.schedulePrune(a.buildRoot);
     return done(rec, false);
   }

@@ -12,6 +12,8 @@ import {
   STD_PREFIX,
   statementLanguages,
   problemTomlSchema,
+  problemTypeSchema,
+  flattenFiles,
   type CreateProblemRequest,
   type PatchProblemRequest,
   type ProblemDetail,
@@ -22,6 +24,7 @@ import type { GlobalStore } from '../global.js';
 import { samePath } from '../global.js';
 import { atomicWrite, exists, HttpError, isDir, safeJoin, toPosix } from '../util/fs.js';
 import { buildTree } from './files.js';
+import { cfToOi, oiTemplate } from './oiStatement.js';
 
 export interface ProblemRef {
   id: string;
@@ -141,6 +144,7 @@ export class ProblemRegistry {
     ]);
     return {
       id: ref.id,
+      type: config?.problem.type ?? 'cf',
       name: config?.problem.name ?? path.basename(ref.dir),
       title: config?.problem.title ?? {},
       dir: ref.dir,
@@ -198,6 +202,9 @@ export class ProblemRegistry {
   }
 
   async create(req: CreateProblemRequest): Promise<ProblemSummary> {
+    const parsedType = problemTypeSchema.safeParse(req.type ?? 'cf');
+    if (!parsedType.success) throw new HttpError(400, 'invalid_type', 'Problem type must be cf or oi');
+    const type = parsedType.data;
     const name = req.name?.trim() ?? '';
     if (!PROBLEM_NAME_RE.test(name)) {
       throw new HttpError(400, 'invalid_name', 'Name must be lowercase letters, digits and dashes');
@@ -225,7 +232,7 @@ export class ProblemRegistry {
     const stmtTpl = path.join(this.global.templatesDir, 'statement');
     try {
       await copyTemplate(tpl, dir, vars);
-      if (await isDir(stmtTpl)) {
+      if (type === 'cf' && await isDir(stmtTpl)) {
         for (const lang of await fsp.readdir(stmtTpl)) {
           if (await isDir(path.join(stmtTpl, lang))) {
             await copyTemplate(path.join(stmtTpl, lang), path.join(dir, 'statement', lang), vars);
@@ -239,6 +246,13 @@ export class ProblemRegistry {
       }
       if (!(await exists(path.join(dir, PROBLEM_FILE)))) {
         await atomicWrite(path.join(dir, PROBLEM_FILE), stringify({ problem: { name, time_limit: tl, memory_limit: ml, input: 'stdin', output: 'stdout', interactive } }));
+      }
+      const doc = parse(await fsp.readFile(path.join(dir, PROBLEM_FILE), 'utf8')) as Record<string, any>;
+      doc.problem.type = type;
+      await atomicWrite(path.join(dir, PROBLEM_FILE), stringify(doc));
+      if (type === 'oi') {
+        for (const lang of ['zh', 'en']) await atomicWrite(path.join(dir, 'statement', lang, 'statement.tex'), oiTemplate(lang));
+        await fsp.mkdir(path.join(dir, 'attachments'), { recursive: true });
       }
     } catch (e) {
       await fsp.rm(dir, { recursive: true, force: true });
@@ -299,6 +313,7 @@ export class ProblemRegistry {
       doc.solutions = list;
     }
     if (req.polygonId !== undefined) {
+      if (p.type === 'oi' && req.polygonId !== null) throw new HttpError(400, 'oi_polygon', 'OI problems cannot sync with Polygon');
       doc.polygon ??= {};
       if (req.polygonId === null) delete doc.polygon.id;
       else doc.polygon.id = req.polygonId;
@@ -388,6 +403,11 @@ export class ProblemRegistry {
     if (!match || match[1] === 'images') return;
     const ref = await this.get(id);
     const { config } = await this.readConfig(ref);
+    if (config?.problem.type === 'oi') {
+      const dest = safeJoin(ref.dir, `${rel}/statement.tex`);
+      if (!(await exists(dest))) await atomicWrite(dest, oiTemplate(match[1]));
+      return;
+    }
     for (const section of STATEMENT_SECTIONS) {
       if (section === 'interaction' && !config?.problem.interactive) continue;
       const dest = safeJoin(ref.dir, `${rel}/${section}.tex`);
@@ -395,6 +415,47 @@ export class ProblemRegistry {
       const template = await fsp.readFile(path.join(this.global.templatesDir, 'statement', match[1], `${section}.tex`), 'utf8').catch(() => '');
       await atomicWrite(dest, template);
     }
+  }
+
+  /** A separate, unbound OI copy. The source and its Polygon sync history stay intact. */
+  async convertToOi(id: string): Promise<ProblemSummary> {
+    const ref = await this.get(id);
+    const { config, raw, error } = await this.readConfig(ref);
+    if (!config) throw new HttpError(400, 'invalid_problem_toml', error ?? 'Invalid problem.toml');
+    if (config.problem.type === 'oi') return this.summary(ref);
+    if (!PROBLEM_NAME_RE.test(config.problem.name)) throw new HttpError(400, 'invalid_name', 'Name must be lowercase letters, digits and dashes');
+    const langs = (await this.summary(ref)).status.statementLangs;
+    const bodies = await Promise.all(langs.map(async lang => [lang, await cfToOi(ref.dir, config, lang)] as const));
+    let name = `${config.problem.name.slice(0, 56)}-oi`;
+    let dir = path.join(ref.root, name);
+    // Exclusive mkdir reserves the destination even for concurrent conversions.
+    for (let n = 2; ; n++) {
+      try { await fsp.mkdir(dir); break; }
+      catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+        name = `${config.problem.name.slice(0, 50)}-oi-${n}`;
+        dir = path.join(ref.root, name);
+      }
+    }
+    try {
+      for (const file of flattenFiles(await buildTree(ref.dir))) {
+        if (file.path === PROBLEM_FILE || /^statement\/[^/]+\/(legend|input|output|interaction|scoring|notes|statement)\.tex$/.test(file.path)) continue;
+        await atomicWrite(safeJoin(dir, file.path), await fsp.readFile(safeJoin(ref.dir, file.path)));
+      }
+      for (const [lang, body] of bodies) await atomicWrite(path.join(dir, 'statement', lang, 'statement.tex'), body);
+      await fsp.mkdir(path.join(dir, 'attachments'), { recursive: true });
+      const doc = structuredClone(raw) as Record<string, any>;
+      doc.problem = { ...doc.problem, type: 'oi', name };
+      delete doc.polygon;
+      delete doc.polygon_source_types;
+      // Publish last: incomplete copies are never registered as problems.
+      await atomicWrite(path.join(dir, PROBLEM_FILE), stringify(doc));
+    } catch (e) {
+      await fsp.rm(dir, { recursive: true, force: true });
+      throw e;
+    }
+    await this.scan();
+    return this.summary([...this.byId.values()].find(r => samePath(r.dir, dir))!);
   }
 }
 

@@ -1,0 +1,156 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { parse, stringify } from 'smol-toml';
+import { problemTomlSchema, contestTomlSchema } from '@polyforge/shared';
+import { GlobalStore } from '../src/global.js';
+import { ProblemRegistry } from '../src/workspace/problems.js';
+import { ContestRegistry } from '../src/workspace/contests.js';
+import { Judge } from '../src/judge/index.js';
+import { WsHub } from '../src/ws.js';
+import { PolygonSync } from '../src/polygon/sync.js';
+import { contestStatements } from '../src/judge/contest.js';
+import { contestTex } from '../src/judge/statementTex.js';
+import { FileService, SelfWrites } from '../src/workspace/files.js';
+import { ProblemWatcher } from '../src/workspace/watcher.js';
+import { JobManager } from '../src/jobs.js';
+import { buildApp } from '../src/app.js';
+import { localChecks } from '../src/judge/checks.js';
+import { exportPackage } from '../src/judge/package.js';
+
+test('old TOML defaults to CF; unknown types are rejected', () => {
+  assert.equal(problemTomlSchema.parse({ problem: { name: 'old' } }).problem.type, 'cf');
+  assert.equal(contestTomlSchema.parse({ contest: { name: 'old' } }).contest.type, 'cf');
+  assert.equal(problemTomlSchema.safeParse({ problem: { name: 'bad', type: 'other' } }).success, false);
+});
+
+test('CF → OI preserves sources, samples and originals; contests enforce type and export one body', async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'pf-types-'));
+  try {
+    const global = new GlobalStore(home);
+    await global.init();
+    global.config.problems.roots = [path.join(home, 'problems')];
+    const registry = new ProblemRegistry(global);
+    const contests = new ContestRegistry(registry, global);
+    const judge = new Judge(global, registry, new WsHub());
+    const cf = await registry.create({ name: 'sum', title: { zh: '求和' } });
+    assert.equal(cf.type, 'cf');
+    await fs.writeFile(path.join(cf.dir, 'statement/zh/legend.tex'), '给定 $a,b$，求 $a+b$。');
+    await fs.writeFile(path.join(cf.dir, 'statement/zh/notes.tex'), '解释：$1+2=3$。');
+    await fs.writeFile(path.join(cf.dir, 'statement/zh/tutorial.tex'), '直接相加。');
+    await fs.writeFile(path.join(cf.dir, 'tests/manual/01.in'), '1 2\n');
+    await fs.writeFile(path.join(cf.dir, 'tests/manual/01.statement.out'), '3\n');
+    await registry.patch(cf.id, { samples: '1', polygonId: 123 });
+    await fs.mkdir(path.join(cf.dir, '.polyforge'), { recursive: true });
+    await fs.writeFile(path.join(cf.dir, '.polyforge/sync.json'), '{"keep":true}');
+    const original = await fs.readFile(path.join(cf.dir, 'problem.toml'), 'utf8');
+    const oi = await registry.convertToOi(cf.id);
+    assert.equal(oi.type, 'oi');
+    assert.equal(oi.status.polygonId, undefined);
+    assert.equal(await fs.readFile(path.join(cf.dir, 'problem.toml'), 'utf8'), original);
+    assert.equal(await fs.readFile(path.join(cf.dir, '.polyforge/sync.json'), 'utf8'), '{"keep":true}');
+    await assert.rejects(fs.access(path.join(oi.dir, '.polyforge/sync.json')));
+    assert.deepEqual(await fs.readdir(path.join(oi.dir, 'statement/zh')), ['statement.tex', 'tutorial.tex']);
+    const body = await fs.readFile(path.join(oi.dir, 'statement/zh/statement.tex'), 'utf8');
+    assert.match(body, /\\section\*\{题目描述\}/);
+    assert.match(body, /给定 \$a,b\$/);
+    assert.match(body, /样例 1 输入[\s\S]*1 2/);
+    assert.match(body, /样例 1 输出[\s\S]*3/);
+    assert.match(body, /解释：/);
+    assert.equal(await fs.readFile(path.join(oi.dir, 'solutions/std.cpp'), 'utf8'), await fs.readFile(path.join(cf.dir, 'solutions/std.cpp'), 'utf8'));
+    assert.equal((await registry.convertToOi(oi.id)).id, oi.id);
+    assert.notEqual((await registry.convertToOi(cf.id)).id, oi.id);
+    await registry.createStatementLanguage(oi.id, 'statement/ja');
+    assert.deepEqual(await fs.readdir(path.join(oi.dir, 'statement/ja')), ['statement.tex']);
+    const checks = await localChecks(judge, await judge.ctx(oi.id));
+    assert.ok(!checks.some(c => c.code === 'missingSection' && c.params?.section !== 'statement'));
+    const sync = new PolygonSync(judge);
+    const ctx = await judge.ctx(oi.id);
+    await assert.rejects(sync.pushPreview(ctx), /cannot sync/);
+    await assert.rejects(sync.pullPreview(ctx), /cannot sync/);
+    await assert.rejects(registry.patch(oi.id, { polygonId: 999 }), /cannot sync/);
+    await assert.rejects(contests.create({ name: 'bad-cf', problems: [{ index: 'A', problem: oi.id }] }), /cannot import OI/);
+    const contest = await contests.create({ name: 'oi-round', type: 'oi', problems: [{ index: 'A', problem: cf.id }] });
+    assert.notEqual(contest.problems[0].problem, cf.id);
+    assert.equal((await registry.detail(contest.problems[0].problem)).summary.type, 'oi');
+    await assert.rejects(contests.update(contest.id, { type: 'cf' }), /cannot import OI/);
+    assert.equal((await contests.detail(contest.id)).summary.type, 'oi');
+    const statements = await contestStatements(judge, contests, contest.id, 'zh');
+    assert.equal(statements[0].body, body);
+    assert.deepEqual(statements[0].samples, []);
+    const tex = (await contestTex(judge, contests, contest.id, 'zh', 'statements', true)).data.toString();
+    assert.match(tex, /margin=25mm/);
+    assert.match(tex, /样例 1 输入/);
+    assert.match(tex, /RecustomVerbatimEnvironment\{verbatim\}/);
+    assert.equal(tex.split('给定 $a,b$').length, 2, 'single-file description must not be duplicated');
+    // Direct TOML edits must not bypass the read/export boundary.
+    const cfile = path.join(contest.dir, 'contest.toml');
+    const doc = parse(await fs.readFile(cfile, 'utf8')) as any;
+    doc.contest.type = 'cf';
+    await fs.writeFile(cfile, stringify(doc));
+    await assert.rejects(contestStatements(judge, contests, contest.id, 'zh'), /cannot import OI/);
+    await registry.patch(cf.id, { samples: '1-2' });
+    const before = (await registry.list()).map(p => p.id);
+    await assert.rejects(registry.convertToOi(cf.id), /Sample 2 is incomplete/);
+    assert.deepEqual((await registry.list()).map(p => p.id), before);
+    await fs.mkdir(path.join(cf.dir, 'tests/_statement'), { recursive: true });
+    await fs.writeFile(path.join(cf.dir, 'tests/_statement/02.in'), '7 8\n');
+    await fs.writeFile(path.join(cf.dir, 'tests/_statement/02.out'), '15\n');
+    const scripted = await registry.convertToOi(cf.id);
+    assert.match(await fs.readFile(path.join(scripted.dir, 'statement/zh/statement.tex'), 'utf8'), /样例 2 输入[\s\S]*7 8[\s\S]*样例 2 输出[\s\S]*15/);
+  } finally { await fs.rm(home, { recursive: true, force: true }); }
+});
+
+test('OI attachments API preserves bytes, prevents overwrite/path escapes, and excludes private files', async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), 'pf-attachments-'));
+  const global = new GlobalStore(home);
+  await global.init();
+  global.config.problems.roots = [path.join(home, 'problems')];
+  const registry = new ProblemRegistry(global);
+  const contests = new ContestRegistry(registry, global);
+  const hub = new WsHub();
+  const files = new FileService(new SelfWrites());
+  const watcher = new ProblemWatcher(registry, files, hub);
+  const judge = new Judge(global, registry, hub);
+  const jobs = new JobManager(hub);
+  const app = await buildApp({ global, registry, contests, files, watcher, hub, judge, jobs, token: 'types-test' });
+  const headers = { host: 'localhost', 'x-polyforge-token': 'types-test' };
+  try {
+    const oi = await registry.create({ name: 'handout', type: 'oi' });
+    const cf = await registry.create({ name: 'cf' });
+    assert.deepEqual(await fs.readdir(path.join(oi.dir, 'statement/zh')), ['statement.tex']);
+    const url = `/api/problems/${oi.id}/attachments`;
+    const bytes = Buffer.from([0, 255, 13, 10, 35]);
+    const payload = { name: 'sample.bin', base64: bytes.toString('base64') };
+    assert.equal((await app.inject({ method: 'POST', url, headers, payload })).statusCode, 200);
+    assert.deepEqual(await fs.readFile(path.join(oi.dir, 'attachments/sample.bin')), bytes);
+    assert.equal((await app.inject({ method: 'POST', url, headers, payload })).statusCode, 409);
+    for (const name of ['../problem.toml', 'a/b', 'a\\b', '.secret', 'con.txt', 'bad:stream']) {
+      assert.equal((await app.inject({ method: 'POST', url, headers, payload: { ...payload, name } })).statusCode, 400);
+    }
+    assert.equal((await app.inject({ method: 'POST', url: `/api/problems/${cf.id}/attachments`, headers, payload })).statusCode, 400);
+    const response = await app.inject({ method: 'GET', url, headers });
+    assert.equal(response.statusCode, 200);
+    assert.match(response.rawPayload.toString('latin1'), /sample.bin/);
+    assert.ok(!response.rawPayload.includes(Buffer.from('std.cpp')));
+    assert.ok(!response.rawPayload.includes(Buffer.from('problem.toml')));
+    const contest = await contests.create({ name: 'handout-round', type: 'oi', problems: [{ index: 'A', problem: oi.id }] });
+    const contestZip = await app.inject({ method: 'GET', url: `/api/contests/${contest.id}/attachments`, headers });
+    assert.equal(contestZip.statusCode, 200);
+    assert.ok(contestZip.rawPayload.includes(Buffer.from('A/handout/sample.bin')));
+    assert.equal((await app.inject({ method: 'GET', url: `/api/contests/${contest.id}/polygon/status`, headers })).statusCode, 400);
+    // An author package retains OI sources and handouts, and is not labelled a Polygon package.
+    const ctx = await judge.ctx(oi.id);
+    ctx.config.solutions = [];
+    ctx.config.generators = [];
+    delete ctx.config.validator;
+    ctx.config.tests = {};
+    const pack = await exportPackage(judge, ctx, { signal: new AbortController().signal, progress() {} });
+    const packed = await fs.readFile(path.join(ctx.work, 'export', pack.file));
+    for (const name of ['problem.toml', 'statement/zh/statement.tex', 'attachments/sample.bin', 'solutions/std.cpp']) assert.ok(packed.includes(Buffer.from(name)), name);
+    assert.ok(!packed.includes(Buffer.from('problem.xml')));
+    assert.ok(!packed.includes(Buffer.from('statement-sections/')));
+  } finally { await app.close(); await fs.rm(home, { recursive: true, force: true }); }
+});

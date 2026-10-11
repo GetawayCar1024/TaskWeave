@@ -18,6 +18,7 @@ import { quickRun } from '../src/judge/quickrun.js';
 import { applyItem, itemHash, pushItem } from '../src/polygon/items.js';
 import { runStress } from '../src/judge/stress.js';
 import { renderMarkdown } from '../../web/src/lib/markdown.js';
+import { verifyBuild, withBuildLocks } from '../src/judge/buildLock.js';
 
 test('Markdown renders tables and links while escaping untrusted HTML', () => {
   const html = renderMarkdown('| A | B |\n| --- | --- |\n| 1 | 2 |\n\n[docs](https://example.com)\n<script>alert(1)</script>\n[x](javascript:alert(1))');
@@ -46,7 +47,7 @@ test('root paths are canonical before starting the Windows watcher', async () =>
   } finally { await watcher?.stop(); await fs.rm(dir, { recursive: true, force: true }); }
 });
 
-test('idle compiler cleanup retains the last used version of each source', { timeout: 30_000 }, async () => {
+test('one executable per source across edits, failures, concurrent requests and legacy migration', { timeout: 60_000 }, async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pf-cache-'));
   try {
     const global = new GlobalStore(dir);
@@ -63,15 +64,55 @@ test('idle compiler cleanup retains the last used version of each source', { tim
       return result.program!;
     };
     const first = await compile(0);
-    await compile(1);
+    const second = await compile(1);
+    assert.equal(first.argv[0], second.argv[0], 'edits must reuse the same executable path');
+    assert.notEqual(first.hash, second.hash);
+    await assert.rejects(verifyBuild(first.build), /source changed/);
+    await verifyBuild(second.build);
+    const build = path.join(p.dir, '.polyforge', 'build');
+    assert.deepEqual(await fs.readdir(build), [path.basename(first.build!.dir)]);
+    const concurrent = await Promise.all(Array.from({ length: 4 }, async () => judge.compile(await judge.ctx(p.id), source)));
+    assert.ok(concurrent.every(r => r.result.cached && r.program?.hash === second.hash));
+    const languageChange = await judge.compiler.compile(p.dir, source, 'cpp20');
+    assert.ok(languageChange.program, languageChange.result.log);
+    assert.equal(languageChange.program.argv[0], second.argv[0]);
+    assert.deepEqual(await fs.readdir(build), [path.basename(first.build!.dir)]);
+    // An identically named source in another folder must not alias this slot.
+    await fs.writeFile(path.join(p.dir, 'generators/cache.cpp'), 'int main(){return 1;}');
+    const other = await judge.compile(await judge.ctx(p.id), 'generators/cache.cpp');
+    assert.notEqual(other.program?.argv[0], second.argv[0]);
+    await fs.writeFile(path.join(p.dir, source), 'this does not compile');
+    const failed = await judge.compile(await judge.ctx(p.id), source);
+    assert.equal(failed.result.ok, false);
+    assert.equal(failed.program, undefined);
+    await assert.rejects(fs.access(second.argv[0]));
     await compile(0);
+    // Simulate a content-addressed directory left by an older PolyForge version.
+    const legacy = path.join(build, '0123456789abcdef');
+    await fs.mkdir(legacy);
+    await fs.writeFile(path.join(legacy, 'compile.json'), JSON.stringify({ source: first.srcPath, ok: true, log: '' }));
+    await fs.writeFile(path.join(legacy, 'cache.exe'), 'legacy');
     judge.compiler.canPrune = () => true;
     await new Promise(r => setTimeout(r, 1300));
     await judge.compiler.waitForMaintenance();
-    const build = path.join(p.dir, '.polyforge', 'build');
     const dirs = await fs.readdir(build);
-    assert.deepEqual(dirs, [first.hash.slice(0, 16)]);
+    assert.deepEqual(dirs.sort(), [path.basename(first.build!.dir), path.basename(other.program!.build!.dir)].sort());
   } finally { await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+test('rebuilding a slot waits for a running executable to finish', async () => {
+  const dir = path.join(os.tmpdir(), 'pf-lock-test');
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const order: string[] = [];
+  const run = withBuildLocks([dir], async () => { order.push('run'); await held; order.push('finished'); }, 'read');
+  const run2 = withBuildLocks([dir], async () => { order.push('run2'); await held; }, 'read');
+  const compile = withBuildLocks([dir], async () => { order.push('compile'); });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(order, ['run', 'run2']);
+  release();
+  await Promise.all([run, run2, compile]);
+  assert.deepEqual(order, ['run', 'run2', 'finished', 'compile']);
 });
 
 test('AI directory deletion reviews every child; scratch persists but never enters change set', async () => {
@@ -191,6 +232,15 @@ test('workspace API maintains roles, language folders, samples and validates cus
     await sync.push(await judge.ctx(p.id), { keys: ['solution:std.cpp'], commit: true, buildPackage: true, packageType: 'full' }, syncJob);
     assert.equal(calls.find(c => c.method === 'problem.buildPackage')?.params.full, true);
     const contest = await contests.create({ name: 'regression-round', problems: [{ index: 'A', problem: p.id }] });
+    await call('PUT', `/api/contests/${contest.id}`, { statement: { subtitle: '第二轮认证', session: '提高级', schedule: '14:30–18:30', compileOptions: '-O2 -std=c++17', instructions: '1. 请检查文件名。\n2. 使用标准输入输出。' } });
+    await registry.patch(p.id, { samples: '1' });
+    for (const style of ['oi', 'cf']) {
+      const tex = await app.inject({ method: 'GET', url: `/api/contests/${contest.id}/tex?lang=zh&style=${style}`, headers: { host: 'localhost', 'x-polyforge-token': 'test-only' } });
+      assert.equal(tex.statusCode, 200, tex.body);
+      assert.match(tex.body, /\\begin\{document\}/);
+      assert.match(tex.body, /margin=20mm/);
+      assert.ok(!tex.body.includes('fancyhead'));
+    }
     const batch = await call('POST', `/api/contests/${contest.id}/batch`, { action: 'checks' });
     while (jobs.get(batch.id).status === 'running') await new Promise(r => setTimeout(r, 10));
     assert.equal((await call('GET', `/api/contests/${contest.id}/batch/latest`)).items[0].problem, p.id);
@@ -213,6 +263,35 @@ test('workspace API maintains roles, language folders, samples and validates cus
     assert.ok(await fs.readFile(path.join(p.dir, '.polyforge', 'sync.json')));
     await assert.rejects(fs.access(path.join(p.dir, '.polyforge', 'tests')));
   } finally { await app.close(); await fs.rm(dir, { recursive: true, force: true }); }
+});
+
+test('contest short name can change without moving its identity or losing settings and history', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pf-contest-name-'));
+  try {
+    const global = new GlobalStore(dir);
+    await global.init();
+    const registry = new ProblemRegistry(global);
+    const contests = new ContestRegistry(registry, global);
+    global.config.problems.roots = [path.join(dir, 'problems')];
+    await registry.create({ name: 'existing-problem' });
+    const first = await contests.create({ name: 'round-one', title: { zh: '模拟赛' }, problems: [{ index: 'A', problem: 'existing-problem' }] });
+    await contests.create({ name: 'round-two' });
+    const history = path.join(first.dir, '.polyforge', 'batches');
+    await fs.mkdir(history, { recursive: true });
+    await fs.writeFile(path.join(history, 'latest.json'), '{"items":[]}');
+    const renamed = await contests.update(first.id, { name: ' round-renamed ' });
+    assert.equal(renamed.summary.name, 'round-renamed');
+    assert.equal(renamed.summary.id, first.id);
+    assert.equal(renamed.summary.dir, first.dir);
+    assert.equal(renamed.summary.title.zh, '模拟赛');
+    assert.equal(renamed.problems[0].problem, 'existing-problem');
+    assert.equal(await fs.readFile(path.join(history, 'latest.json'), 'utf8'), '{"items":[]}');
+    await assert.rejects(contests.update(first.id, { name: 'round-two' }), /already exists/);
+    await assert.rejects(contests.create({ name: 'round-renamed' }), /already exists/);
+    for (const name of ['', '../escape', 'MixedCase', 'two words']) await assert.rejects(contests.update(first.id, { name }), /lowercase/);
+    await contests.scan();
+    assert.equal((await contests.detail(first.id)).summary.name, 'round-renamed');
+  } finally { await fs.rm(dir, { recursive: true, force: true }); }
 });
 
 test('file creation rejects Windows-invalid names, but accepts nested numeric filenames', async () => {

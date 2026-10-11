@@ -300,7 +300,7 @@ function openContest(c: ContestSummary) {
 .body {
   flex: 1;
   overflow: auto;
-  padding: 16px;
+  padding: 24px;
 }
 .center {
   display: flex;
@@ -310,11 +310,15 @@ function openContest(c: ContestSummary) {
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 12px;
+  gap: 16px;
 }
 .card {
   cursor: pointer;
+  box-shadow: var(--pf-shadow);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
+.card:hover { border-color: var(--pf-accent); box-shadow: 0 4px 20px #007aff12; }
+.card:focus-within .card-del { opacity: 1; }
 .rows {
   display: flex;
   flex-direction: column;

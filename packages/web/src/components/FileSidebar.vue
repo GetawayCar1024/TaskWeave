@@ -385,6 +385,8 @@ function onMenu(key: string, option: DropdownOption) {
 
 <style scoped>
 .sidebar {
+  background: var(--pf-toolbar-bg);
+  border-right: 1px solid var(--pf-border);
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -403,7 +405,7 @@ function onMenu(key: string, option: DropdownOption) {
 .tree {
   flex: 1;
   min-height: 0;
-  padding: 4px 0;
+  padding: 8px 4px;
   font-size: 13px;
 }
 .tree :deep(.group) {
@@ -439,27 +441,27 @@ function onMenu(key: string, option: DropdownOption) {
 }
 .tree :deep(.b-cpp) {
   background: rgba(80, 140, 230, 0.25);
-  color: #7fb0ff;
+  color: var(--pf-accent);
 }
 .tree :deep(.b-py) {
   background: rgba(230, 200, 60, 0.22);
-  color: #e8cc60;
+  color: light-dark(#846400, #e8cc60);
 }
 .tree :deep(.b-java) {
   background: rgba(230, 120, 60, 0.22);
-  color: #f0a070;
+  color: light-dark(#a44f12, #f0a070);
 }
 .tree :deep(.b-tex) {
   background: rgba(80, 200, 140, 0.22);
-  color: #63e2b7;
+  color: light-dark(#14734b, #63e2b7);
 }
 .tree :deep(.b-cfg) {
   background: rgba(170, 120, 230, 0.22);
-  color: #c09cf0;
+  color: light-dark(#7743a8, #c09cf0);
 }
 .tree :deep(.b-img) {
   background: rgba(230, 100, 160, 0.22);
-  color: #f090c0;
+  color: light-dark(#ac326e, #f090c0);
 }
 .tree :deep(.b-txt),
 .tree :deep(.b-data) {

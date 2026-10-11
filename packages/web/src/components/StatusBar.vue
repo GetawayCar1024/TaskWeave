@@ -87,15 +87,15 @@ const activeLang = computed(() => {
 
 <style scoped>
 .status {
-  height: 24px;
+  height: 28px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 2px;
   padding: 0 8px;
   font-size: 12px;
-  border-top: 1px solid rgba(128, 128, 128, 0.25);
-  background: rgba(128, 128, 128, 0.06);
+  border-top: 1px solid var(--pf-border);
+  background: var(--pf-toolbar-bg);
   user-select: none;
 }
 .item {

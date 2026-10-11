@@ -275,6 +275,10 @@ const usageTitle = computed(() => {
         <span>AI</span>
       </template>
       <div class="ai">
+        <div v-if="embedded" class="sidebar-header">
+          <strong>AI</strong>
+          <n-button size="tiny" quaternary :aria-label="t('common.close')" :title="t('common.close')" @click="emit('update:show', false)"><x :size="16" /></n-button>
+        </div>
         <n-button v-if="ai.state.current" size="tiny" :disabled="ai.running.value" @click="api.clearAiScratch(problemId, ai.state.current.id).then(() => message.success(t('fix.scratchCleared'))).catch(e => message.error(errorMessage(e)))">{{ t('fix.clearScratch') }}</n-button>
         <n-radio-group v-model:value="tab" size="small" class="mode-tabs">
           <n-radio-button value="agent">{{ t('ai.tabChat') }}</n-radio-button>
@@ -480,7 +484,10 @@ const usageTitle = computed(() => {
   flex-direction: column;
   gap: 6px;
   padding: 8px 12px;
+  min-width: 0;
+  overflow: hidden;
 }
+.sidebar-header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; min-height: 28px; padding-bottom: 6px; border-bottom: 1px solid var(--pf-border); }
 .empty {
   flex: 1;
   display: flex;

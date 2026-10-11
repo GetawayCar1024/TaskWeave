@@ -576,7 +576,7 @@ onMounted(() => {
 .body {
   flex: 1;
   overflow: auto;
-  padding: 12px 20px;
+  padding: 24px;
 }
 .roots {
   display: flex;

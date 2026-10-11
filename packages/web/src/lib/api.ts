@@ -117,9 +117,16 @@ export const api = {
   shared: () => request<SharedListResponse>('GET', '/shared'),
   sharedFile: (path: string) => request<FileContent>('GET', `/shared/file/${encPath(path)}`),
 
-  problems: () => request<{ roots: string[]; problems: ProblemSummary[] }>('GET', '/problems'),
+  problems: async () => {
+    const result = await request<{ roots: string[]; problems: ProblemSummary[] }>('GET', '/problems');
+    return { ...result, problems: result.problems.filter(p => (p.type ?? 'cf') === 'cf') };
+  },
   createProblem: (req: CreateProblemRequest) => request<ProblemSummary>('POST', '/problems', req),
-  problem: (id: string) => request<ProblemDetail>('GET', `/problems/${pid(id)}`),
+  problem: async (id: string) => {
+    const detail = await request<ProblemDetail>('GET', `/problems/${pid(id)}`);
+    if ((detail.summary.type ?? 'cf') !== 'cf') throw new ApiError(404, 'problem_not_found', 'Problem not available in this version');
+    return detail;
+  },
   patchProblem: (id: string, req: PatchProblemRequest) => request<ProblemDetail>('PATCH', `/problems/${pid(id)}`, req),
   /** Moves the problem folder to the global trash. */
   deleteProblem: (id: string) => request<{ ok: true; trash: string }>('DELETE', `/problems/${pid(id)}`),
@@ -183,9 +190,13 @@ export const api = {
   downloadExport: (id: string, file: string) => download(`/api/problems/${pid(id)}/export/${encodeURIComponent(file)}`, file),
 
   // ---- contests ----
-  contests: () => request<ContestSummary[]>('GET', '/contests'),
+  contests: async () => (await request<ContestSummary[]>('GET', '/contests')).filter(c => (c.type ?? 'cf') === 'cf'),
   createContest: (req: CreateContestRequest) => request<ContestSummary>('POST', '/contests', req),
-  contest: (id: string) => request<ContestDetail>('GET', `/contests/${pid(id)}`),
+  contest: async (id: string) => {
+    const detail = await request<ContestDetail>('GET', `/contests/${pid(id)}`);
+    if ((detail.summary.type ?? 'cf') !== 'cf') throw new ApiError(404, 'contest_not_found', 'Contest not available in this version');
+    return detail;
+  },
   updateContest: (id: string, req: UpdateContestRequest) => request<ContestDetail>('PUT', `/contests/${pid(id)}`, req),
   deleteContest: (id: string) => request<{ ok: true }>('DELETE', `/contests/${pid(id)}`),
   contestStatements: (id: string, lang: string) => request<ContestStatement[]>('GET', `/contests/${pid(id)}/statements?lang=${encodeURIComponent(lang)}`),

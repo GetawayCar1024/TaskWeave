@@ -95,7 +95,7 @@ export function runHelper(
   io: { cwd: string; stdin?: string; stdout?: string; stderr?: string },
   signal?: AbortSignal,
 ): Promise<RunStats> {
-  return runner.run({ argv: [...prog.argv, ...args], ...io, ...HELPER_LIMITS }, signal);
+  return runner.run({ build: prog.build, argv: [...prog.argv, ...args], ...io, ...HELPER_LIMITS }, signal);
 }
 
 /** testlib exit codes → verdict. */
@@ -120,7 +120,7 @@ export async function runChecker(
 ): Promise<CheckerOutcome> {
   const stderr = path.join(cwd, `checker-${randomBytes(3).toString('hex')}.txt`);
   const r = await runner.run(
-    { argv: [...checker.argv, files.input, files.output, files.answer], cwd, stderr, ...HELPER_LIMITS },
+    { build: checker.build, argv: [...checker.argv, files.input, files.output, files.answer], cwd, stderr, ...HELPER_LIMITS },
     signal,
   );
   const message = (await readHead(stderr, 2000)).trim();
@@ -155,6 +155,7 @@ export async function runSolution(
 ): Promise<SolutionRun> {
   const spec = {
     argv: sol.argv,
+    build: sol.build,
     cwd: dir,
     stderr: opts.stderrFile ?? path.join(dir, 'stderr.txt'),
     timeLimitMs: limits.timeLimitMs,
@@ -169,6 +170,7 @@ export async function runSolution(
       spec,
       {
         argv: [...opts.interactor.argv, inputFile, tout],
+        build: opts.interactor.build,
         cwd: dir,
         stderr: path.join(dir, 'interactor-stderr.txt'),
         timeLimitMs: HELPER_LIMITS.timeLimitMs,

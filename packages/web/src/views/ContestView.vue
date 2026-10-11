@@ -7,6 +7,7 @@ import {
   NAlert,
   NButton,
   NDataTable,
+  NEmpty,
   NForm,
   NFormItem,
   NInput,
@@ -15,6 +16,7 @@ import {
   NProgress,
   NSelect,
   NSpace,
+  NSplit,
   NTag,
   NTooltip,
   useDialog,
@@ -36,8 +38,12 @@ import {
   Trash2,
   X,
   RefreshCw,
+  Plus,
+  Clock3,
+  MemoryStick,
+  ListOrdered,
 } from 'lucide-vue-next';
-import type { ContestAction, ContestBatchItem, ContestBatchResult, ContestDetail, JobInfo, ProblemSummary } from '@polyforge/shared';
+import { PROBLEM_NAME_RE, type ContestAction, type ContestBatchItem, type ContestBatchResult, type ContestDetail, type JobInfo, type ProblemSummary } from '@polyforge/shared';
 import AppHeader from '../components/AppHeader.vue';
 import AiDrawer from '../components/AiDrawer.vue';
 import ContestSyncDialog from '../components/ContestSyncDialog.vue';
@@ -48,6 +54,7 @@ import { waitJob } from '../lib/jobs';
 import { confirmDeleteContest } from '../lib/deleteProblem';
 import { checklist, progress } from '../lib/progress';
 import { onWs } from '../lib/ws';
+import { desktop } from '../lib/desktop';
 
 const props = defineProps<{ id: string }>();
 const { t, locale } = useI18n();
@@ -73,6 +80,17 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 /** The contest AI: sessions over all problems of the contest. */
 const ai = useAi(`contest:${props.id}`);
 const showAi = ref(false);
+const aiSplitSize = ref(0.66);
+const contentSplitSize = computed({
+  get: () => showAi.value ? aiSplitSize.value : 1,
+  set: (value: number) => { if (showAi.value) aiSplitSize.value = value; },
+});
+function onAiKeydown(e: KeyboardEvent) {
+  if (desktop && (e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'w') {
+    e.preventDefault();
+    showAi.value = false;
+  }
+}
 const showSync = ref(false);
 
 const off = onWs((e) => {
@@ -101,7 +119,10 @@ const title = computed(() => (summary.value ? problemTitle(summary.value.title, 
 // in place and swaps the problems; "renumber" assigns A, B, C… by position.
 const letter = (i: number) => (i < 26 ? String.fromCharCode(65 + i) : `Z${i - 25}`);
 type Entry = { index: string; problem: string };
+const saving = ref(false);
 async function saveProblems(list: Entry[]): Promise<boolean> {
+  if (saving.value) return false;
+  saving.value = true;
   try {
     detail.value = await api.updateContest(props.id, { problems: list });
     version.value++;
@@ -109,6 +130,8 @@ async function saveProblems(list: Entry[]): Promise<boolean> {
   } catch (e) {
     message.error(serverText(errorMessage(e)));
     return false;
+  } finally {
+    saving.value = false;
   }
 }
 /** Bumped on every save / reload so the letter inputs drop unsaved text. */
@@ -153,18 +176,24 @@ async function addProblems() {
 
 // ---- contest settings ----
 const showEdit = ref(false);
-const edit = reactive({ zh: '', en: '', polygonId: null as number | null });
+const edit = reactive({ name: '', zh: '', en: '', polygonId: null as number | null });
+const savingEdit = ref(false);
+const editNameValid = computed(() => PROBLEM_NAME_RE.test(edit.name.trim()));
 function openEdit() {
   const s = summary.value!;
-  Object.assign(edit, { zh: s.title.zh ?? '', en: s.title.en ?? '', polygonId: s.polygonId ?? null });
+  Object.assign(edit, { name: s.name, zh: s.title.zh ?? '', en: s.title.en ?? '', polygonId: s.polygonId ?? null });
   showEdit.value = true;
 }
 async function saveEdit() {
+  if (!editNameValid.value || savingEdit.value) return;
+  savingEdit.value = true;
   try {
-    detail.value = await api.updateContest(props.id, { title: { ...summary.value!.title, zh: edit.zh, en: edit.en }, polygonId: edit.polygonId });
+    detail.value = await api.updateContest(props.id, { name: edit.name.trim(), title: { ...summary.value!.title, zh: edit.zh, en: edit.en }, polygonId: edit.polygonId });
     showEdit.value = false;
   } catch (e) {
-    message.error(errorMessage(e));
+    message.error(serverText(errorMessage(e)));
+  } finally {
+    savingEdit.value = false;
   }
 }
 const dialog = useDialog();
@@ -214,6 +243,7 @@ const cancel = () => job.value && api.cancelJob(job.value.id).catch(() => {});
 // ---- table ----
 type Row = ContestDetail['problems'][number] & { pos: number };
 const rows = computed<Row[]>(() => (detail.value?.problems ?? []).map((p, pos) => ({ ...p, pos })));
+const readyCount = computed(() => rows.value.filter(r => r.summary && progress(r.summary) === 100).length);
 const expanded = ref<string[]>([]);
 
 /** Result details in the UI language: local checks by code, other lines by pattern. */
@@ -240,20 +270,21 @@ const rowProps = (r: Row) => ({
 });
 
 const columns = computed<DataTableColumns<Row>>(() => [
-  {
+  ...(result.value ? [{
     type: 'expand',
-    expandable: (r) => detailLines(resultByIndex.value.get(r.index)).length > 0,
-    renderExpand: (r) =>
+    width: 36,
+    expandable: (r: Row) => detailLines(resultByIndex.value.get(r.index)).length > 0,
+    renderExpand: (r: Row) =>
       h(
         'div',
         { class: 'details' },
         detailLines(resultByIndex.value.get(r.index)).map((d) => h('div', { class: d.bad ? 'bad' : '' }, d.text)),
       ),
-  },
+  } as const] : []),
   {
     title: '#',
     key: 'index',
-    width: 70,
+    width: 84,
     render: (r) =>
       h(NInput, {
         // Uncontrolled: starts from the saved letter, saved on Enter / blur, remounted after a save.
@@ -261,7 +292,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
         size: 'small',
         defaultValue: r.index,
         class: 'index-input',
-        disabled: running.value,
+        disabled: running.value || saving.value,
         title: t('contest.editIndex'),
         onChange: (v: string) => setIndex(r.pos, v),
       }),
@@ -269,25 +300,32 @@ const columns = computed<DataTableColumns<Row>>(() => [
   {
     title: t('contest.problem'),
     key: 'problem',
+    minWidth: 240,
     render: (r) =>
       r.summary
-        ? h('a', { class: 'link', onClick: () => openProblem(r) }, [
-            h('span', problemTitle(r.summary.title, locale.value) || r.summary.name),
-            h('span', { class: 'mono sub' }, ` ${r.problem}`),
+        ? h('a', { class: 'problem-link', href: router.resolve({ name: 'problem', params: { id: r.problem }, query: { from: `contest:${props.id}` } }).href, onClick: (e: MouseEvent) => { if (!e.ctrlKey && !e.metaKey && !e.shiftKey && e.button === 0) { e.preventDefault(); openProblem(r); } } }, [
+            h('span', { class: 'problem-name' }, problemTitle(r.summary.title, locale.value) || r.summary.name),
+            h('span', { class: 'problem-meta mono' }, r.summary.name),
           ])
         : h('span', { class: 'bad' }, `${r.problem} — ${t('contest.missing')}`),
   },
-  { title: t('contest.limits'), key: 'limits', width: 110, render: (r) => (r.summary ? `${r.summary.timeLimit / 1000}s / ${r.summary.memoryLimit}MB` : '') },
+  { title: t('contest.limits'), key: 'limits', width: 132, render: (r) => r.summary ? h('div', { class: 'limit-stack' }, [
+    h('span', [h(Clock3, { size: 13 }), `${r.summary.timeLimit / 1000} s`]),
+    h('span', [h(MemoryStick, { size: 13 }), `${r.summary.memoryLimit} MB`]),
+  ]) : '—' },
   {
     title: t('contest.progress'),
     key: 'progress',
-    width: 150,
+    width: 190,
     render: (r) => {
       if (!r.summary) return null;
       const missing = checklist(r.summary).filter((c) => !c.ok).map((c) => t(c.key === 'synced' ? 'check.syncTodo' : `check.${c.key}`));
       const pct = progress(r.summary);
       return h(NTooltip, { disabled: !missing.length }, {
-        trigger: () => h(NProgress, { type: 'line', percentage: pct, height: 6, showIndicator: false, status: pct === 100 ? 'success' : 'default' }),
+        trigger: () => h('div', { class: 'readiness', tabindex: 0 }, [
+          h('div', { class: 'readiness-label' }, [h('span', pct === 100 ? t('contest.ready') : t('contest.preparing')), h('span', { class: 'readiness-value' }, `${pct}%`)]),
+          h(NProgress, { type: 'line', percentage: pct, height: 4, showIndicator: false, status: pct === 100 ? 'success' : 'default' }),
+        ]),
         default: () => `${t('contest.todo')}: ${missing.join(', ')}`,
       });
     },
@@ -295,19 +333,19 @@ const columns = computed<DataTableColumns<Row>>(() => [
   {
     title: 'Polygon',
     key: 'polygon',
-    width: 90,
-    render: (r) => (r.summary?.status.polygonId !== undefined ? h('span', { class: 'mono sub' }, `#${r.summary.status.polygonId}`) : h('span', { class: 'sub' }, '—')),
+    width: 116,
+    render: (r: Row) => (r.summary?.status.polygonId !== undefined ? h(NTag, { size: 'small', bordered: false, class: 'polygon-tag' }, () => `#${r.summary!.status.polygonId}`) : h('span', { class: 'muted' }, t('status.unbound'))),
   },
-  { title: t('contest.result'), key: 'result', minWidth: 160, render: (r) => resultCell(resultByIndex.value.get(r.index)) },
+  ...(result.value ? [{ title: t('contest.result'), key: 'result', minWidth: 180, render: (r: Row) => resultCell(resultByIndex.value.get(r.index)) }] : []),
   {
     title: '',
     key: 'actions',
-    width: 110,
+    width: 128,
     render: (r) =>
       h('span', { class: 'row-actions' }, [
-        h(NButton, { size: 'tiny', quaternary: true, disabled: r.pos === 0 || running.value, onClick: () => move(r.pos, -1), title: t('contest.moveUp') }, () => h(ArrowUp, { size: 13 })),
-        h(NButton, { size: 'tiny', quaternary: true, disabled: r.pos === rows.value.length - 1 || running.value, onClick: () => move(r.pos, 1), title: t('contest.moveDown') }, () => h(ArrowDown, { size: 13 })),
-        h(NButton, { size: 'tiny', quaternary: true, disabled: running.value, onClick: () => remove(r.pos), title: t('common.remove') }, () => h(X, { size: 13 })),
+        h(NButton, { size: 'small', quaternary: true, disabled: r.pos === 0 || running.value || saving.value, onClick: () => move(r.pos, -1), title: t('contest.moveUp'), 'aria-label': t('contest.moveUp') }, () => h(ArrowUp, { size: 15 })),
+        h(NButton, { size: 'small', quaternary: true, disabled: r.pos === rows.value.length - 1 || running.value || saving.value, onClick: () => move(r.pos, 1), title: t('contest.moveDown'), 'aria-label': t('contest.moveDown') }, () => h(ArrowDown, { size: 15 })),
+        h(NButton, { size: 'small', quaternary: true, type: 'error', disabled: running.value || saving.value, onClick: () => remove(r.pos), title: t('common.remove'), 'aria-label': t('common.remove') }, () => h(X, { size: 15 })),
       ]),
   },
 ]);
@@ -328,7 +366,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
         <n-button size="small" :disabled="!summary" @click="router.push({ name: 'contest-print', params: { id } })">
           <template #icon><file-text /></template>{{ t('contest.statements') }}
         </n-button>
-        <n-button size="small" :disabled="!summary" :type="ai.running.value ? 'primary' : 'default'" @click="showAi = true">
+        <n-button size="small" :disabled="!summary" :type="showAi || ai.running.value ? 'primary' : 'default'" :aria-pressed="showAi" @click="showAi = !showAi">
           AI<template v-if="ai.state.changes.length"> · {{ ai.state.changes.length }}</template>
         </n-button>
         <n-button size="small" quaternary :disabled="!summary" :title="t('contest.edit')" @click="openEdit"><pencil :size="15" /></n-button>
@@ -336,50 +374,70 @@ const columns = computed<DataTableColumns<Row>>(() => [
       </template>
     </app-header>
     <contest-sync-dialog v-model:show="showSync" :contest-id="id" :detail="detail" @changed="load" />
-    <ai-drawer v-model:show="showAi" :ai="ai" :problem-id="`contest:${id}`" />
 
-    <main class="body">
-      <n-alert v-if="loadError" type="error" :show-icon="false">{{ loadError }}</n-alert>
-      <n-alert v-if="summary?.error" type="error" :show-icon="false">{{ summary.error }}</n-alert>
-      <template v-if="detail">
-        <div class="toolbar">
-          <n-space size="small">
-            <n-button v-for="a in ACTIONS" :key="a.action" size="small" :disabled="running || !rows.length" @click="run(a.action)">
-              <template #icon><component :is="a.icon" /></template>{{ t(`contest.action.${a.action}`) }}
-            </n-button>
-            <n-button size="small" :disabled="running || !rows.length" @click="showSync = true">
-              <template #icon><refresh-cw /></template>{{ t('toolbar.sync') }}
-            </n-button>
-            <n-button v-if="running" size="small" type="warning" ghost @click="cancel">{{ t('common.cancel') }}</n-button>
-          </n-space>
-          <div v-if="running && job" class="progress">
-            <n-progress type="line" :percentage="job.progress.total ? Math.round((job.progress.done / job.progress.total) * 100) : 0" :height="4" :show-indicator="false" />
-            <span class="sub">{{ serverText(job.progress.message) }}</span>
-          </div>
-        </div>
+    <n-split v-model:size="contentSplitSize" direction="horizontal" :min="0.35" :max="showAi ? 0.8 : 1" :disabled="!showAi" :resize-trigger-size="showAi ? 3 : 0" class="content-split">
+      <template #1>
+        <main class="body">
+          <n-alert v-if="loadError" type="error" :show-icon="false">{{ loadError }}</n-alert>
+          <n-alert v-if="summary?.error" type="error" :show-icon="false">{{ summary.error }}</n-alert>
+          <template v-if="detail">
+            <section class="contest-overview">
+              <div><div class="eyebrow"><list-ordered :size="15" />{{ t('contest.lineup') }}</div><h1>{{ title }}</h1></div>
+              <div class="contest-count"><strong>{{ rows.length }}</strong><span>{{ t('contest.problemCount') }}</span><span class="count-divider" /><span>{{ t('contest.readyCount', { n: readyCount }) }}</span></div>
+            </section>
+            <section class="problem-list">
+            <div class="toolbar">
+              <n-space size="small">
+                <n-button v-for="a in ACTIONS" :key="a.action" size="small" :disabled="running || !rows.length" @click="run(a.action)">
+                  <template #icon><component :is="a.icon" /></template>{{ t(`contest.action.${a.action}`) }}
+                </n-button>
+                <n-button size="small" :disabled="running || !rows.length" @click="showSync = true">
+                  <template #icon><refresh-cw /></template>{{ t('toolbar.sync') }}
+                </n-button>
+                <n-button v-if="running" size="small" type="warning" ghost @click="cancel">{{ t('common.cancel') }}</n-button>
+              </n-space>
+              <div v-if="running && job" class="progress">
+                <n-progress type="line" :percentage="job.progress.total ? Math.round((job.progress.done / job.progress.total) * 100) : 0" :height="4" :show-indicator="false" />
+                <span class="sub">{{ serverText(job.progress.message) }}</span>
+              </div>
+            </div>
 
-        <n-data-table
-          size="small"
-          :columns="columns"
-          :data="rows"
-          :row-key="(r: Row) => r.index"
-          :row-props="rowProps"
-          :expanded-row-keys="expanded"
-          :bordered="false"
-          @update:expanded-row-keys="(k: (string | number)[]) => (expanded = k.map(String))"
-        />
+            <n-data-table
+              v-if="rows.length"
+              class="contest-table"
+              size="small"
+              :columns="columns"
+              :data="rows"
+              :row-key="(r: Row) => r.index"
+              :row-props="rowProps"
+              :expanded-row-keys="expanded"
+              :bordered="false"
+              :single-line="true"
+              :scroll-x="result ? 1070 : 890"
+              @update:expanded-row-keys="(k: (string | number)[]) => (expanded = k.map(String))"
+            />
+            <n-empty v-else class="empty-list" :description="t('contest.noProblems')"><template #extra>{{ t('contest.addHint') }}</template></n-empty>
 
-        <div class="add">
-          <n-select v-model:value="adding" multiple filterable size="small" :options="addOptions" :placeholder="t('contest.addPlaceholder')" style="max-width: 480px" />
-          <n-button size="small" :disabled="!adding.length" @click="addProblems">{{ t('contest.add') }}</n-button>
-          <span class="grow" />
-          <n-button size="small" quaternary :disabled="running || rows.length < 2" :title="t('contest.renumberHint')" @click="renumber">{{ t('contest.renumber') }}</n-button>
-        </div>
+            <div class="add">
+              <n-select v-model:value="adding" multiple filterable size="small" :disabled="running || saving" :options="addOptions" :placeholder="t('contest.addPlaceholder')" class="add-select" />
+              <n-button size="small" type="primary" :disabled="!adding.length || running || saving" @click="addProblems"><template #icon><plus /></template>{{ t('contest.add') }}</n-button>
+              <span class="grow" />
+              <n-button size="small" quaternary :disabled="running || saving || rows.length < 2" :title="t('contest.renumberHint')" @click="renumber">{{ t('contest.renumber') }}</n-button>
+            </div>
+            </section>
+          </template>
+        </main>
       </template>
-    </main>
+      <template #2>
+        <aside v-show="showAi" class="ai-sidebar" :aria-label="t('palette.aiChat')" @keydown="onAiKeydown">
+          <ai-drawer embedded v-model:show="showAi" :ai="ai" :problem-id="`contest:${id}`" />
+        </aside>
+      </template>
+    </n-split>
 
     <n-modal v-model:show="showEdit" preset="card" :title="t('contest.edit')" style="width: 460px">
       <n-form label-placement="left" label-width="auto">
+        <n-form-item :label="t('create.name')" :feedback="editNameValid ? undefined : t('create.nameRule')" :validation-status="editNameValid ? undefined : 'error'"><n-input v-model:value="edit.name" :disabled="savingEdit" /></n-form-item>
         <n-form-item :label="t('create.titleZh')"><n-input v-model:value="edit.zh" /></n-form-item>
         <n-form-item :label="t('create.titleEn')"><n-input v-model:value="edit.en" /></n-form-item>
         <n-form-item :label="t('contest.polygonId')">
@@ -389,7 +447,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
       <template #footer>
         <n-space justify="end">
           <n-button @click="showEdit = false">{{ t('common.cancel') }}</n-button>
-          <n-button type="primary" @click="saveEdit">{{ t('common.save') }}</n-button>
+          <n-button type="primary" :loading="savingEdit" :disabled="!editNameValid" @click="saveEdit">{{ t('common.save') }}</n-button>
         </n-space>
       </template>
     </n-modal>
@@ -406,17 +464,29 @@ const columns = computed<DataTableColumns<Row>>(() => [
   flex-direction: column;
 }
 .body {
-  flex: 1;
+  height: 100%;
+  box-sizing: border-box;
+  min-width: 0;
   overflow: auto;
-  padding: 12px 20px;
+  padding: 22px 26px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
+}
+.content-split { flex: 1; min-height: 0; }
+.ai-sidebar {
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--pf-border);
+  background: var(--pf-surface);
 }
 .toolbar {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--pf-border);
 }
 .progress {
   display: flex;
@@ -435,6 +505,38 @@ const columns = computed<DataTableColumns<Row>>(() => [
   display: flex;
   gap: 8px;
   align-items: center;
+  padding: 12px 16px;
+  border-top: 1px solid var(--pf-border);
+  background: var(--pf-toolbar-bg);
+  flex-wrap: wrap;
+}
+.add-select { flex: 1; min-width: 220px; max-width: 460px; }
+.contest-overview { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; }
+.eyebrow { display: flex; align-items: center; gap: 7px; color: var(--pf-accent); font-size: 12px; font-weight: 600; }
+h1 { margin: 6px 0 0; font-size: 22px; font-weight: 650; letter-spacing: -0.5px; overflow-wrap: anywhere; }
+.contest-count { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; font-size: 13px; color: var(--pf-text-secondary); }
+.contest-count strong { color: var(--pf-text); font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.count-divider { align-self: center; height: 18px; border-left: 1px solid var(--pf-border); margin: 0 6px; }
+.problem-list { background: var(--pf-surface); border: 1px solid var(--pf-border); border-radius: 10px; overflow: hidden; box-shadow: var(--pf-shadow); flex-shrink: 0; }
+.empty-list { padding: 64px 24px; }
+.contest-table :deep(.n-data-table-th) { background: var(--pf-toolbar-bg); color: var(--pf-text-secondary); font-size: 12px; font-weight: 500; padding: 9px 14px; }
+.contest-table :deep(.n-data-table-td) { padding: 12px 14px; background: var(--pf-surface); transition: background 150ms; }
+.contest-table :deep(.n-data-table-tr:hover .n-data-table-td) { background: var(--pf-selected); }
+:deep(.problem-link) { display: flex; flex-direction: column; gap: 3px; color: inherit; text-decoration: none; min-width: 0; }
+:deep(.problem-name) { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+:deep(.problem-link:hover .problem-name) { color: var(--pf-accent); }
+:deep(.problem-meta), :deep(.muted) { color: var(--pf-text-secondary); font-size: 12px; }
+:deep(.index-input) { --n-color: var(--pf-selected) !important; --n-border: 1px solid transparent !important; --n-text-color: var(--pf-accent) !important; }
+:deep(.limit-stack) { display: flex; flex-direction: column; gap: 3px; color: var(--pf-text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+:deep(.limit-stack span) { display: flex; align-items: center; gap: 7px; }
+:deep(.readiness) { max-width: 160px; }
+:deep(.readiness-label) { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px; color: var(--pf-text-secondary); }
+:deep(.readiness-value) { color: var(--pf-text); font-variant-numeric: tabular-nums; }
+:deep(.row-actions) { gap: 2px; opacity: 0.65; }
+:deep(.clickable-row:hover .row-actions), :deep(.row-actions:focus-within) { opacity: 1; }
+@media (max-width: 900px) {
+  .body { padding: 20px 16px; }
+  .contest-overview { align-items: flex-start; flex-direction: column; gap: 12px; }
 }
 .sub {
   font-size: 12px;
@@ -466,12 +568,12 @@ const columns = computed<DataTableColumns<Row>>(() => [
   white-space: pre-wrap;
 }
 :deep(.good) {
-  color: #63e2b7;
+  color: light-dark(#16804a, #63e2b7);
 }
 :deep(.warn) {
-  color: #e8b060;
+  color: light-dark(#986415, #e8b060);
 }
 :deep(.bad) {
-  color: #e88080;
+  color: light-dark(#c53b3b, #e88080);
 }
 </style>

@@ -1,21 +1,19 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { NAlert, NButton, NEmpty, NSpace, useMessage } from 'naive-ui';
-import { errorMessage } from '../lib/api';
+import { NAlert, NButton, NEmpty, NSpace } from 'naive-ui';
 import type { Judge } from '../lib/judge';
 import { monaco } from '../lib/monaco';
 import { settings } from '../lib/settings';
 import { SHARED_TAB, type Tab, type Workspace } from '../lib/workspace';
 import StatementPreview from './StatementPreview.vue';
 import FilePreview from './FilePreview.vue';
-import type { Ai } from '../lib/ai';
 import { isSourceFile } from '@polyforge/shared';
 import { Lock, X } from 'lucide-vue-next';
 import type { SidebarAction } from './FileSidebar.vue';
 
-const props = defineProps<{ ws: Workspace; judge: Judge; problemId: string; ai?: Ai; aiVisible?: boolean }>();
-const emit = defineEmits<{ save: [path: string]; close: [path: string]; quickOpen: []; showDiff: [path: string]; run: []; generate: []; action: [SidebarAction]; lint: []; palette: []; showAi: [boolean] }>();
+const props = defineProps<{ ws: Workspace; judge: Judge; problemId: string }>();
+const emit = defineEmits<{ save: [path: string]; close: [path: string]; quickOpen: []; showDiff: [path: string]; run: []; generate: []; action: [SidebarAction]; lint: []; palette: [] }>();
 
 // Statement tabs get a live preview next to the source (DESIGN §6.1).
 const statementLang = computed(() => props.ws.activeTab.value?.path.match(/^statement\/([^/]+)\/(legend|input|output|interaction|scoring|notes|tutorial)\.tex$/)?.[1] ?? null);
@@ -25,21 +23,6 @@ const syncScroll = ref(true);
 const showPreview = ref(localStorage.getItem('polyforge-preview') !== 'off');
 watch(showPreview, (v) => localStorage.setItem('polyforge-preview', v ? 'on' : 'off'));
 const { t } = useI18n();
-const message = useMessage();
-const openedSessions = ref(new Set<string>());
-const aiTabs = computed(() => props.ai?.state.sessions.filter(s => openedSessions.value.has(s.id)) ?? []);
-watch(() => [props.aiVisible, props.ai?.state.current?.id] as const, ([visible, id]) => {
-  if (visible && id) openedSessions.value = new Set([...openedSessions.value, id]);
-}, { immediate: true });
-async function openSession(id: string) {
-  try { await props.ai?.open(id); emit('showAi', true); }
-  catch (e) { message.error(errorMessage(e)); }
-}
-function closeSession(id: string) {
-  openedSessions.value = new Set([...openedSessions.value].filter(x => x !== id));
-  if (props.ai?.state.current?.id === id) emit('showAi', false);
-}
-
 const host = ref<HTMLDivElement>();
 let editor: monaco.editor.IStandaloneCodeEditor | null = null;
 let current: Tab | null = null;
@@ -142,7 +125,7 @@ const hints = computed(() => {
   return out;
 });
 
-function onTabMouse(e: MouseEvent, path: string) {
+function onTabAuxClick(e: MouseEvent, path: string) {
   if (e.button === 1) {
     e.preventDefault();
     emit('close', path);
@@ -152,20 +135,16 @@ function onTabMouse(e: MouseEvent, path: string) {
 
 <template>
   <div class="pane">
-    <div class="tabs" v-if="ws.state.tabs.length || aiVisible || ai?.state.sessions.length">
-      <div v-for="session in aiTabs" :key="session.id" class="tab" :class="{active: aiVisible && ai?.state.current?.id === session.id}" @click="openSession(session.id)">
-        AI · {{ session.title }}
-        <x :size="12" @click.stop="closeSession(session.id)" />
-      </div>
-      <div v-if="aiVisible && !ai?.state.sessions.length" class="tab active">AI</div>
+    <div class="tabs" v-if="ws.state.tabs.length">
       <div
         v-for="tab in ws.state.tabs"
         :key="tab.path"
         class="tab"
-        :class="{ active: !aiVisible && tab.path === ws.state.active }"
+        :class="{ active: tab.path === ws.state.active }"
         :title="tab.path"
-        @click="ws.state.active = tab.path; emit('showAi', false)"
-        @mousedown="onTabMouse($event, tab.path)"
+        @click="ws.state.active = tab.path"
+        @mousedown.middle.prevent
+        @auxclick="onTabAuxClick($event, tab.path)"
       >
         <span class="name" :class="{ gone: tab.disk === 'deleted' }">{{ label(tab.path) }}</span>
         <span v-if="hints.get(tab.path)" class="hint">{{ hints.get(tab.path) }}</span>
@@ -176,8 +155,7 @@ function onTabMouse(e: MouseEvent, path: string) {
       </div>
     </div>
 
-    <div v-show="aiVisible" class="ai-tab"><slot name="ai" /></div>
-    <template v-if="!aiVisible && ws.activeTab.value">
+    <template v-if="ws.activeTab.value">
       <n-alert v-if="ws.activeTab.value.disk === 'changed'" type="warning" :show-icon="false" class="banner">
         <n-space align="center" justify="space-between">
           <span>{{ t('editor.changedOnDisk') }}</span>
@@ -197,7 +175,7 @@ function onTabMouse(e: MouseEvent, path: string) {
       </n-alert>
     </template>
 
-    <div v-show="!aiVisible && ws.activeTab.value" class="body">
+    <div v-show="ws.activeTab.value" class="body">
       <div ref="host" class="host" />
       <div v-if="previewable && showPreview" ref="previewHost" class="preview" @scroll="scrollPreview">
         <statement-preview
@@ -219,7 +197,7 @@ function onTabMouse(e: MouseEvent, path: string) {
         </n-button>
       </div>
     </div>
-    <div v-if="!aiVisible && !ws.activeTab.value" class="empty">
+    <div v-if="!ws.activeTab.value" class="empty">
       <n-empty :description="t('editor.noFile')">
         <template #extra><span class="hint">Ctrl+P {{ t('editor.quickOpen') }} · Ctrl+S {{ t('common.save') }}</span></template>
       </n-empty>
@@ -228,7 +206,6 @@ function onTabMouse(e: MouseEvent, path: string) {
 </template>
 
 <style scoped>
-.ai-tab { flex: 1; min-height: 0; overflow: hidden; }
 .pane {
   height: 100%;
   display: flex;
@@ -239,7 +216,10 @@ function onTabMouse(e: MouseEvent, path: string) {
   display: flex;
   overflow-x: auto;
   flex-shrink: 0;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+  border-bottom: 1px solid var(--pf-border);
+  background: var(--pf-toolbar-bg);
+  padding: 5px 6px 0;
+  gap: 3px;
   scrollbar-width: thin;
 }
 .tab {
@@ -250,15 +230,16 @@ function onTabMouse(e: MouseEvent, path: string) {
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
-  border-right: 1px solid rgba(128, 128, 128, 0.15);
+  border-radius: 7px 7px 0 0;
   opacity: 0.7;
   user-select: none;
 }
 .tab.active {
   opacity: 1;
-  background: rgba(128, 128, 128, 0.14);
-  box-shadow: inset 0 -2px 0 #63e2b7;
+  background: var(--pf-selected);
+  box-shadow: inset 0 -2px 0 var(--pf-accent);
 }
+.tab:hover { background: var(--pf-selected); opacity: 1; }
 .name.gone {
   text-decoration: line-through;
 }
@@ -271,6 +252,11 @@ function onTabMouse(e: MouseEvent, path: string) {
   opacity: 0.6;
 }
 .close {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
   width: 16px;
   height: 16px;
   display: inline-flex;

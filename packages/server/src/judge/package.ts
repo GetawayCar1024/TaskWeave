@@ -10,6 +10,9 @@ import { pickLanguage } from './compiler.js';
 import type { Judge, ProblemCtx } from './index.js';
 import { parseScript } from './script.js';
 import { answerPath, generateTests, inputPath } from './tests.js';
+import { flattenFiles } from '@polyforge/shared';
+import { buildTree } from '../workspace/files.js';
+import { addAttachments } from '../workspace/attachments.js';
 
 /** problem.xml solution tags. RE has no dedicated tag in the package format; "rejected" covers it. */
 const XML_TAG: Record<SolutionTag, string> = {
@@ -59,6 +62,27 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
   job.progress(1, 3, 'packing');
 
   const zip = into ? { add: (name: string, data: Buffer | string) => into.zip.add(into.prefix + name, data) } : new ZipWriter();
+  if (config.problem.type === 'oi') {
+    for (const f of flattenFiles(await buildTree(ref.dir))) {
+      if (f.path.startsWith('attachments/') || f.path === 'files/testlib.h') continue;
+      zip.add(f.path, await fsp.readFile(safeJoin(ref.dir, f.path)));
+    }
+    await addAttachments(zip, ref.dir, 'attachments/');
+    zip.add('files/testlib.h', await fsp.readFile(path.join(judge.global.sharedDir, 'testlib.h')));
+    if (!(await exists(path.join(ref.dir, 'files/defs.toml')))) zip.add('files/defs.toml', await fsp.readFile(path.join(judge.global.sharedDir, 'defs.toml')));
+    let count = 0;
+    for (const [name, m] of manifests) for (const test of m.tests) {
+      count++;
+      for (const [ext, file] of [['in', inputPath(ctx, test.index, name)], ['ans', answerPath(ctx, test.index, name)]]) {
+        if (await exists(file)) zip.add(`data/${name}/${test.index}.${ext}`, await fsp.readFile(file));
+      }
+    }
+    if (into) return { file: '', size: 0, tests: count, warnings };
+    const file = `${config.problem.name}-oi-${Date.now()}.zip`;
+    const data = (zip as ZipWriter).finish();
+    await atomicWrite(path.join(exportDir(ctx), file), data);
+    return { file, size: data.length, tests: count, warnings };
+  }
   const languages = (await judge.global.readLanguages()).languages;
   const typeOf = (rel: string) => {
     try {

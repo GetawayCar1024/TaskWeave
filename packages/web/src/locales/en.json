@@ -586,6 +586,12 @@
     }
   },
   "contest": {
+    "lineup": "Problem lineup",
+    "problemCount": "problems",
+    "readyCount": "{n} ready",
+    "ready": "Ready",
+    "preparing": "In progress",
+    "addHint": "Select existing problems below to start building this contest.",
     "new": "New contest",
     "none": "No contests yet",
     "importTitle": "Import a Polygon contest",

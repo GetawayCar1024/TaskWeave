@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { LocalCheck } from './ai.js';
 import type { ProblemSummary } from './problem.js';
+import { problemTypeSchema, type ProblemType } from './problem.js';
 
 /**
  * A contest is a folder in a problem root holding `contest.toml`: a title and an
@@ -12,14 +13,25 @@ export const CONTEST_FILE = 'contest.toml';
 /** Problem letters: A, B, …, A1, A2. */
 export const CONTEST_INDEX_RE = /^[A-Z][A-Z0-9]{0,3}$/;
 
+export const contestStatementOptionsSchema = z.object({
+  subtitle: z.string().default(''),
+  session: z.string().default(''),
+  schedule: z.string().default(''),
+  compileOptions: z.string().default(''),
+  instructions: z.string().default(''),
+});
+export type ContestStatementOptions = z.infer<typeof contestStatementOptionsSchema>;
+
 export const contestTomlSchema = z.object({
   contest: z
     .object({
       name: z.string(),
+      type: problemTypeSchema.default('cf'),
       title: z.record(z.string(), z.string()).default({}),
     })
     .loose(),
   polygon: z.object({ id: z.number().int().optional() }).loose().default({}),
+  statement: contestStatementOptionsSchema.default(() => contestStatementOptionsSchema.parse({})),
   problems: z.array(z.object({ index: z.string().regex(CONTEST_INDEX_RE), problem: z.string() }).loose()).default([]),
 });
 export type ContestToml = z.infer<typeof contestTomlSchema>;
@@ -30,6 +42,8 @@ export interface ContestProblemRef {
 }
 
 export interface ContestSummary {
+  type: ProblemType;
+  statement?: ContestStatementOptions;
   id: string;
   name: string;
   title: Record<string, string>;
@@ -46,6 +60,7 @@ export interface ContestDetail {
 }
 
 export interface CreateContestRequest {
+  type?: ProblemType;
   name: string;
   title?: Record<string, string>;
   root?: string;
@@ -53,6 +68,9 @@ export interface CreateContestRequest {
 }
 
 export interface UpdateContestRequest {
+  type?: ProblemType;
+  name?: string;
+  statement?: ContestStatementOptions;
   title?: Record<string, string>;
   problems?: ContestProblemRef[];
   polygonId?: number | null;
@@ -94,6 +112,7 @@ export interface ContestBatchResult {
 }
 
 export interface ContestImportRequest {
+  type?: ProblemType;
   contestId: number;
   name: string;
   root?: string;
@@ -101,8 +120,14 @@ export interface ContestImportRequest {
 
 /** Statement sources of one problem for the combined contest view. */
 export interface ContestStatement {
+  type?: ProblemType;
+  /** OI: the complete statement, including sample descriptions, in one LaTeX file. */
+  body?: string;
   index: string;
   problem: string;
+  name?: string;
+  testCount?: number;
+  equalPoints?: boolean;
   title: string;
   timeLimit: number;
   memoryLimit: number;
@@ -112,6 +137,24 @@ export interface ContestStatement {
   /** Raw LaTeX per section (empty sections omitted). */
   sections: Record<string, string>;
   samples: { input: string; output: string; inputCases?: number[] }[];
+}
+
+/** OI cover matrix; shared by the paper preview and TeX export. */
+export function oiOverview(problems: ContestStatement[], lang: string) {
+  const zh = lang === 'zh';
+  const row = (key: string, label: string, value: (p: ContestStatement) => string, mono = false) => ({ key, label, values: problems.map(value), mono });
+  return [
+    row('title', zh ? '题目名称' : 'Problem', p => p.title),
+    row('type', zh ? '题目类型' : 'Type', p => p.interactive ? (zh ? '交互型' : 'Interactive') : (zh ? '传统型' : 'Batch')),
+    row('dir', zh ? '目录' : 'Directory', p => p.name ?? p.problem, true),
+    row('exe', zh ? '可执行文件名' : 'Executable', p => p.name ?? p.problem, true),
+    row('input', zh ? '输入文件名' : 'Input file', p => !p.input || p.input === 'stdin' ? (zh ? '标准输入' : 'standard input') : p.input, true),
+    row('output', zh ? '输出文件名' : 'Output file', p => !p.output || p.output === 'stdout' ? (zh ? '标准输出' : 'standard output') : p.output, true),
+    row('time', zh ? '每个测试点时限' : 'Time limit', p => `${(p.timeLimit / 1000).toFixed(1)} ${zh ? '秒' : 's'}`),
+    row('memory', zh ? '内存限制' : 'Memory limit', p => `${p.memoryLimit} MiB`),
+    row('tests', zh ? '测试点数目' : 'Test cases', p => p.testCount === undefined ? '—' : String(p.testCount)),
+    row('points', zh ? '测试点是否等分' : 'Equal points', p => p.equalPoints === undefined ? '—' : p.equalPoints ? (zh ? '是' : 'Yes') : (zh ? '否' : 'No')),
+  ];
 }
 
 // ---------------------------------------------------------------------------
