@@ -1,6 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
 import { promises as fsp } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { RUNNER_SRC } from '../paths.js';
 import type { RunStats, RunStatus } from '@polyforge/shared';
@@ -26,7 +25,7 @@ export interface ProcSpec {
 /** Serialize measured runs by default to avoid competing for CPU time. */
 export const defaultParallel = () => 1;
 
-/** Counting semaphore bounding concurrent runs (DESIGN §4.2: CPU cores − 1 workers). */
+/** Counting semaphore bounding concurrent runs and compilations. */
 export class Semaphore {
   private waiters: (() => void)[] = [];
   private active = 0;
@@ -117,14 +116,13 @@ const toStats = (r: RawResult): RunStats => ({
 export class Runner {
   private exe: string | null = null;
   private building: Promise<string> | null = null;
-  private tscHz = 0;
   readonly pool: Semaphore;
-  /** Compilations (g++ is heavy): half the run slots. */
+  /** Share slots so compilation cannot contend with measured runs in serial mode. */
   readonly compilePool: Semaphore;
 
   constructor(private binDir: string) {
     this.pool = new Semaphore(defaultParallel());
-    this.compilePool = new Semaphore(Math.max(1, Math.floor(defaultParallel() / 2)));
+    this.compilePool = this.pool;
   }
 
   get workers() {
@@ -135,7 +133,7 @@ export class Runner {
   setParallel(n: number) {
     const runs = n > 0 ? n : defaultParallel();
     this.pool.resize(runs);
-    this.compilePool.resize(Math.max(1, Math.floor(runs / 2)));
+
   }
 
   /** Compile the runner with the local g++ on first use; cached by source hash. */
@@ -166,7 +164,6 @@ export class Runner {
         if (/^runner-[0-9a-f]+\.exe$/.test(f) && f !== path.basename(exe)) await fsp.rm(path.join(this.binDir, f), { force: true }).catch(() => {});
       }
     }
-    this.tscHz = Number((await this.exec(exe, ['--calibrate'], '')).trim()) || 0;
     return exe;
   }
 
@@ -183,38 +180,25 @@ export class Runner {
     });
   }
 
-  private tsc() {
-    return this.tscHz ? `\ntsc_hz=${this.tscHz}` : '';
-  }
-
   /** Run one program. Holds a worker slot for the duration. */
   async run(spec: ProcSpec, signal?: AbortSignal): Promise<RunStats> {
     const exe = await this.ensure();
-    return this.pool.use(async () => {
+    return withBuildLocks(spec.build ? [spec.build.dir] : [], () => this.pool.use(async () => {
       signal?.throwIfAborted();
-      const out = await withBuildLocks(spec.build ? [spec.build.dir] : [], async () => {
-        signal?.throwIfAborted();
-        await verifyBuild(spec.build);
-        return this.exec(exe, [], specText(spec) + this.tsc(), signal);
-      }, 'read');
+      await verifyBuild(spec.build);
+      const out = await this.exec(exe, [], specText(spec), signal);
       return toStats(JSON.parse(out) as RawResult);
-    });
+    }), 'read');
   }
 
-  /** Run a solution wired to an interactor (stdin/stdout of each are ignored). */
   async runInteractive(sol: ProcSpec, inter: ProcSpec, signal?: AbortSignal): Promise<{ solution: RunStats; interactor: RunStats }> {
     const exe = await this.ensure();
-    return this.pool.use(async () => {
+    return withBuildLocks([sol.build?.dir, inter.build?.dir].filter((x): x is string => !!x), () => this.pool.use(async () => {
       signal?.throwIfAborted();
-      const text = specText(sol) + this.tsc() + '\n[interactor]\n' + specText(inter);
-      const out = await withBuildLocks([sol.build?.dir, inter.build?.dir].filter((x): x is string => !!x), async () => {
-        signal?.throwIfAborted();
-        await verifyBuild(sol.build);
-        await verifyBuild(inter.build);
-        return this.exec(exe, [], text, signal);
-      }, 'read');
+      await verifyBuild(sol.build); await verifyBuild(inter.build);
+      const out = await this.exec(exe, [], specText(sol) + '\n[interactor]\n' + specText(inter), signal);
       const r = JSON.parse(out) as { solution: RawResult; interactor: RawResult };
       return { solution: toStats(r.solution), interactor: toStats(r.interactor) };
-    });
+    }), 'read');
   }
 }

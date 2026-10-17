@@ -35,7 +35,7 @@ import { fmtMoney, fmtTokens } from '../lib/usageFormat';
 import type { Workspace } from '../lib/workspace';
 
 /** problemId: the owner of the sessions — a problem id, or "contest:<id>" for the contest AI. */
-const props = defineProps<{ show: boolean; ai: Ai; problemId: string; ws?: Workspace; embedded?: boolean }>();
+const props = defineProps<{ show: boolean; ai: Ai; problemId: string; ws?: Workspace; embedded?: boolean; embeddedHeader?: boolean }>();
 const emit = defineEmits<{ 'update:show': [boolean] }>();
 const { t } = useI18n();
 const router = useRouter();
@@ -51,6 +51,21 @@ const tab = ref<AiSessionMode>('agent');
 watch(() => props.ai.state.current?.mode, mode => { if (mode) tab.value = mode; });
 const checks = ref<LocalCheck[] | null>(null);
 const isContest = computed(() => props.problemId.startsWith('contest:'));
+const checksBox = ref<HTMLElement>();
+const findingsBox = ref<HTMLElement>();
+for (const [element, name] of [[checksBox, 'checks'], [findingsBox, 'findings']] as const) {
+  watch(element, (box, _, cleanup) => {
+    if (!box) return;
+    const key = `polyforge-ai-${isContest.value ? 'contest' : 'problem'}-${name}-height`;
+    const saved = Number(localStorage.getItem(key));
+    if (saved >= 60) box.style.height = `${saved}px`;
+    const observer = new ResizeObserver(() => {
+      if (box.offsetHeight >= 60) localStorage.setItem(key, String(box.offsetHeight));
+    });
+    observer.observe(box);
+    cleanup(() => observer.disconnect());
+  });
+}
 
 async function loadChecks() {
   // A contest check gets every problem's local checks in its first message instead.
@@ -71,6 +86,7 @@ watch(
     await props.ai.init().catch((e) => message.error(errorMessage(e)));
     if (tab.value === 'review') loadChecks();
   },
+  { immediate: true },
 );
 watch(tab, async (m) => {
   if (props.ai.state.current?.mode !== m) await props.ai.openLatest(m).catch(() => {});
@@ -275,7 +291,7 @@ const usageTitle = computed(() => {
         <span>AI</span>
       </template>
       <div class="ai">
-        <div v-if="embedded" class="sidebar-header">
+        <div v-if="embedded && embeddedHeader" class="sidebar-header">
           <strong>AI</strong>
           <n-button size="tiny" quaternary :aria-label="t('common.close')" :title="t('common.close')" @click="emit('update:show', false)"><x :size="16" /></n-button>
         </div>
@@ -284,7 +300,7 @@ const usageTitle = computed(() => {
           <n-radio-button value="agent">{{ t('ai.tabChat') }}</n-radio-button>
           <n-radio-button value="review">{{ t('ai.tabReview') }}</n-radio-button>
         </n-radio-group>
-        <div v-if="tab === 'review' && !isContest" class="checks">
+        <div v-if="tab === 'review' && !isContest" ref="checksBox" class="checks" :title="t('improve.resize')">
           <div class="checks-head">
             <strong>{{ t('ai.localChecks') }}</strong>
             <n-button size="tiny" quaternary @click="loadChecks"><rotate-cw :size="13" /></n-button>
@@ -361,7 +377,7 @@ const usageTitle = computed(() => {
             </div>
           </div>
 
-          <div v-if="tab === 'review' && findings.length" class="findings">
+          <div v-if="tab === 'review' && findings.length" ref="findingsBox" class="findings" :title="t('improve.resize')">
             <div v-for="f in findings" :key="f.id" class="finding" :class="f.severity">
               <div class="finding-head">
                 <n-tag size="tiny" :type="SEV_TYPE[f.severity]" :bordered="false">{{ t(`ai.sev.${f.severity}`) }}</n-tag>
@@ -470,6 +486,7 @@ const usageTitle = computed(() => {
 </template>
 
 <style scoped>
+.sidebar-header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; min-height: 28px; padding-bottom: 6px; border-bottom: 1px solid var(--pf-border); }
 .usage-line {
   display: flex;
   gap: 10px;
@@ -487,7 +504,6 @@ const usageTitle = computed(() => {
   min-width: 0;
   overflow: hidden;
 }
-.sidebar-header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; min-height: 28px; padding-bottom: 6px; border-bottom: 1px solid var(--pf-border); }
 .empty {
   flex: 1;
   display: flex;
@@ -501,7 +517,10 @@ const usageTitle = computed(() => {
   border: 1px solid rgba(128, 128, 128, 0.25);
   border-radius: 4px;
   padding: 4px 8px;
-  max-height: 170px;
+  height: 170px;
+  min-height: 60px;
+  max-height: 45%;
+  resize: vertical;
   overflow: auto;
   flex-shrink: 0;
 }
@@ -519,7 +538,10 @@ const usageTitle = computed(() => {
   padding: 1px 0;
 }
 .findings {
-  max-height: 38%;
+  height: 180px;
+  min-height: 60px;
+  max-height: 50%;
+  resize: vertical;
   overflow: auto;
   display: flex;
   flex-direction: column;

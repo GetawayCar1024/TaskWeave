@@ -1,3 +1,4 @@
+import { codeHtml } from './codeHighlight';
 /**
  * Minimal Markdown for agent replies: fenced code, inline code, bold, italics,
  * headings and bullet lists. Everything is escaped first, so model output cannot
@@ -16,10 +17,17 @@ function inline(s: string): string {
 
 export function renderMarkdown(src: string): string {
   const out: string[] = [];
-  const parts = src.split(/```[\w+-]*\n?/);
+  const parts: string[] = [''];
+  let fence = '', fenceLength = 0;
+  for (const line of src.split('\n')) {
+    const opening = line.match(/^\s{0,3}(`{3,}|~{3,})[^\n]*$/);
+    if (!fence && opening) { fence = opening[1][0]; fenceLength = opening[1].length; parts.push(''); }
+    else if (fence && new RegExp('^\\s{0,3}' + fence + '{' + fenceLength + ',}\\s*$').test(line)) { fence = ''; parts.push(''); }
+    else parts[parts.length - 1] += line + '\n';
+  }
   parts.forEach((part, i) => {
     if (i % 2 === 1) {
-      out.push(`<pre class="md-code">${esc(part.replace(/\n$/, ''))}</pre>`);
+      out.push(`<pre class="md-code">${codeHtml(part.replace(/\n$/, ''))}</pre>`);
       return;
     }
     let list = false;

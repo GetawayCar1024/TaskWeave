@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref } from 'vue';
+import { computed, h, onMounted, ref, watch } from 'vue';
 import { ArrowLeft, Check, X } from 'lucide-vue-next';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
@@ -22,9 +22,12 @@ import {
   NTabs,
   NTag,
   useMessage,
+  useDialog,
   type DataTableColumns,
 } from 'naive-ui';
 import { AI_PROTOCOLS, CURRENCIES, type AiProtocol, type Currency, type EndpointPricing, type GlobalConfig, type LanguagesConfig, type SecretsResponse, type ToolProbe, type UsageGroup, type UsageStats } from '@polyforge/shared';
+import { registerExitGuard } from '../lib/exitGuards';
+import { unsavedChoice } from '../lib/confirmUnsaved';
 import AppHeader from '../components/AppHeader.vue';
 import CodeEditor from '../components/CodeEditor.vue';
 import DirPicker from '../components/DirPicker.vue';
@@ -37,9 +40,12 @@ const router = useRouter();
 const route = useRoute();
 const initialTab = typeof route.query.tab === 'string' ? route.query.tab : 'general';
 const message = useMessage();
+const dialog = useDialog();
 
 // ---- general ----
 const draft = ref<GlobalConfig>(JSON.parse(JSON.stringify(settings.config)));
+watch(() => settings.config?.ui.theme, theme => { if (theme) draft.value.ui.theme = theme; });
+watch(() => settings.config?.ui.locale, locale => { if (locale) draft.value.ui.locale = locale; });
 const saving = ref(false);
 const showPicker = ref(false);
 const showContestPicker = ref(false);
@@ -319,6 +325,18 @@ onMounted(() => {
   loadEndpoints().catch((e) => message.error(errorMessage(e)));
   loadUsage();
 });
+registerExitGuard(async () => {
+  for (const item of [
+    { dirty: () => JSON.stringify(draft.value) !== JSON.stringify(settings.config), name: t('improve.unsavedSettings'), save: saveGeneral },
+    { dirty: () => langDirty.value, name: 'languages.toml', save: saveLanguages },
+  ]) {
+    if (!item.dirty()) continue;
+    const choice = await unsavedChoice(dialog, t('editor.unsavedTitle'), item.name, { save: t('common.save'), discard: t('editor.discard'), cancel: t('improve.cancelExit') });
+    if (choice === 'cancel') return false;
+    if (choice === 'save') { await item.save(); if (item.dirty()) return false; }
+  }
+  return true;
+});
 </script>
 
 <template>
@@ -376,6 +394,7 @@ onMounted(() => {
               <n-form-item :label="t('settings.minimap')"><n-switch v-model:value="draft.editor.minimap" /></n-form-item>
               <n-form-item :label="t('settings.parallel')">
                 <n-space align="center">
+                  <n-select :value="(draft.judge.parallel ?? 0) <= 1 ? 'stable' : 'throughput'" :options="[{ label: t('improve.stable'), value: 'stable' }, { label: t('improve.throughput'), value: 'throughput' }]" @update:value="v => draft.judge.parallel = v === 'stable' ? 1 : Math.max(2, Math.min(4, (settings.cpus ?? 4) - 1))" style="width: 160px" />
                   <n-input-number v-model:value="draft.judge.parallel" :min="0" :max="64" style="width: 120px" />
                   <span class="small dim">{{ t('settings.parallelHint', { auto: settings.defaultParallel ?? '?', cpus: settings.cpus ?? '?' }) }}</span>
                 </n-space>

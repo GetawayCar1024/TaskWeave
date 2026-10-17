@@ -85,7 +85,8 @@ async function doPush() {
     pushJob.value = done;
     if (done.status === 'done') {
       pushResult.value = done.result as { pushed: string[]; warnings: string[] };
-      message.success(t('sync.pushed', { n: pushResult.value.pushed.length }));
+      if (pushResult.value.warnings.length) message.warning(pushResult.value.warnings.map(serverText).join('\n'), { duration: 10000 });
+      else message.success(t('sync.pushed', { n: pushResult.value.pushed.length }));
     } else {
       error.value = done.error ?? done.status;
     }

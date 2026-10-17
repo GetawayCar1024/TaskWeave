@@ -88,6 +88,9 @@ importers:
       '@polyforge/shared':
         specifier: workspace:*
         version: link:../shared
+      highlight.js:
+        specifier: 11.12.0
+        version: 11.12.0
       katex:
         specifier: ^0.18.9
         version: 0.18.9

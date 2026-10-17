@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { NAlert, NButton, NDropdown, NRadioButton, NRadioGroup, NSpin, NSwitch, NTag, useMessage } from 'naive-ui';
 import 'katex/dist/katex.min.css';
 import { ArrowLeft, FileDown, Printer } from 'lucide-vue-next';
 import katex from 'katex';
+import { exportMarkdown } from '../lib/markdownExport';
+import { fitPrintMath } from '../lib/printMath';
 import { serverText } from '../lib/serverText';
 import { STATEMENT_SECTIONS, type ContestDetail, type ContestStatement, type StatementSection } from '@polyforge/shared';
 import StatementDoc from '../components/StatementDoc.vue';
@@ -75,7 +77,25 @@ const rendered = computed(() =>
 const problemsMissing = computed(() => rendered.value.filter((r) => !r.hasStatement).map((r) => r.s.index));
 const tutorialsMissing = computed(() => rendered.value.filter((r) => r.hasStatement && !r.hasTutorial).map((r) => r.s.index));
 
-const print = () => window.print();
+const formulaOverflow = ref(0);
+async function fitMath() {
+  await nextTick(); await document.fonts.ready;
+  const sheet = document.querySelector<HTMLElement>('.sheet');
+  if (sheet) formulaOverflow.value = fitPrintMath(sheet);
+}
+watch([rendered, doc], fitMath, { flush: 'post' });
+const print = async () => { await fitMath(); window.print(); };
+async function markdown() {
+  const fragment = document.createElement('article');
+  document.querySelectorAll<HTMLElement>('.sheet .problem').forEach(problem => {
+    const doc = problem.querySelector('.statement-doc')?.cloneNode(true) as HTMLElement | undefined;
+    if (!doc) return;
+    doc.querySelector('.title')?.setAttribute('id', problem.id);
+    fragment.append(doc);
+  });
+  const contentsTable = withToc.value ? document.querySelector<HTMLElement>('.sheet .toc table') ?? undefined : undefined;
+  if (await exportMarkdown(fragment, baseName(), { contestTitle: docTitle.value, contentsTable })) message.warning(t('improve.markdownWarnings'));
+}
 /**
  * Contents link: scroll the preview (.print-page) so the problem's title shows just
  * below the sticky toolbar, which would otherwise cover it.
@@ -92,6 +112,7 @@ function jump(index: string) {
 // ---- export as HTML (this page, self-contained) or TeX (server) ----
 const exporting = ref(false);
 const exportOptions = computed(() => [
+  { key: 'markdown', label: 'Markdown' },
   { key: 'html', label: 'HTML' },
   { key: 'tex', label: 'TeX' },
   // PDF: the browser's print dialog ("Save as PDF"), which matches this page.
@@ -102,7 +123,8 @@ async function onExport(key: string) {
   exporting.value = true;
   try {
     if (key === 'tex') await api.contestTex(props.id, lang.value, doc.value, pageBreaks.value, withToc.value);
-    else if (key === 'pdf') print();
+    else if (key === 'pdf') await print();
+    else if (key === 'markdown') await markdown();
     else await exportHtml();
   } catch (e) {
     message.error(serverText(errorMessage(e)));
@@ -241,6 +263,7 @@ onBeforeUnmount(() => {
       <n-button size="small" type="primary" @click="print"><template #icon><printer /></template>{{ t('contest.print') }}</n-button>
     </div>
 
+    <n-alert v-if="formulaOverflow" type="warning" class="no-print">{{ t('improve.formulaOverflow') }}</n-alert>
     <div v-if="loading && !statements.length" class="center no-print"><n-spin /></div>
     <n-alert v-else-if="!statements.length" type="info" :show-icon="false" class="no-print empty">{{ t('contest.noProblems') }}</n-alert>
     <div v-else class="sheet" :class="{ breaks: pageBreaks, 'with-toc': withToc }">

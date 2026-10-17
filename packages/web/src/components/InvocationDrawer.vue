@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ignoreWhitespace } from '../lib/diffOptions';
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
@@ -168,7 +169,7 @@ function scoreClass(score: number, max: number) {
 
 function cellTitle(c: InvocationCell | null): string {
   if (!c) return '';
-  return [`${c.verdict}  ${c.timeMs} ms  ${fmtMem(c.memoryKb)}`, serverText(c.message)].filter(Boolean).join('\n');
+  return [`${c.verdict}  CPU: ${c.timeMs} ms  Wall: ${c.wallMs ?? '?'} ms  ${fmtMem(c.memoryKb)}`, serverText(c.message)].filter(Boolean).join('\n');
 }
 
 function cellClass(si: number, ti: number): string[] {
@@ -216,7 +217,8 @@ function showDiff(answer: string, output: string) {
     automaticLayout: true,
     readOnly: true,
     originalEditable: false,
-    ignoreTrimWhitespace: true,
+    ignoreTrimWhitespace: ignoreWhitespace.value,
+    renderWhitespace: 'all',
     renderSideBySide: true,
     minimap: { enabled: false },
     scrollBeyondLastLine: false,
@@ -225,6 +227,7 @@ function showDiff(answer: string, output: string) {
 }
 watch(detail, (d) => !d && disposeDiff());
 onBeforeUnmount(disposeDiff);
+watch(ignoreWhitespace, value => diffEditor?.updateOptions({ ignoreTrimWhitespace: value }));
 </script>
 
 <template>
@@ -403,7 +406,7 @@ onBeforeUnmount(disposeDiff);
             <span>{{ t('inv.answer') }}</span>
             <span>{{ t('inv.output') }}<span v-if="!detail.cell.hasOutput" class="dim"> — {{ t('inv.noOutput') }}</span></span>
           </div>
-          <div ref="diffHost" class="box diff" />
+          <label class="diff-options"><input type="checkbox" v-model="ignoreWhitespace" />{{ t('improve.ignoreWhitespace') }}</label><div ref="diffHost" class="box diff" />
         </div>
       </div>
     </template>

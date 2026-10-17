@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { NTag, NTooltip } from 'naive-ui';
+import { NButton, NTag, NTooltip, useMessage } from 'naive-ui';
 import 'katex/dist/katex.min.css';
 import { STATEMENT_SECTIONS, statementLanguages, type StatementSection } from '@polyforge/shared';
+import { exportMarkdown } from '../lib/markdownExport';
 import { api, rawUrl } from '../lib/api';
 import type { Judge } from '../lib/judge';
 import { buildMacros, renderLatex, type MacroTable } from '../lib/latex';
@@ -15,6 +16,16 @@ import type { Workspace } from '../lib/workspace';
 const props = defineProps<{ ws: Workspace; judge: Judge; problemId: string; lang: string; mode?: 'statement' | 'tutorial' }>();
 const emit = defineEmits<{ createTutorial: [lang: string] }>();
 const { t } = useI18n();
+const host = ref<HTMLElement>();
+const message = useMessage();
+async function markdown() {
+  try {
+    const doc = host.value?.querySelector<HTMLElement>('.statement-doc')?.cloneNode(true) as HTMLElement | undefined;
+    if (!doc) return;
+    if (await exportMarkdown(doc, `${props.ws.state.detail?.summary.name ?? props.problemId}-${props.lang}`)) message.warning(t('improve.markdownWarnings'));
+  } catch (e) { message.error(String(e)); }
+}
+
 
 const disk = ref<Partial<Record<StatementSection, string>>>({});
 const macros = shallowRef<MacroTable>(new Map());
@@ -23,13 +34,16 @@ const samples = ref<{ index: number; input: string; output: string; inputCases?:
 
 const pathOf = (s: StatementSection) => `statement/${props.lang}/${s}.tex`;
 
+let diskRequest = 0;
 async function loadDisk() {
+  const request = ++diskRequest;
   const present = new Set(props.ws.files.value.map((f) => f.path));
   const entries = await Promise.all(
     STATEMENT_SECTIONS.filter((s) => present.has(pathOf(s))).map(
       async (s) => [s, await api.readFile(props.problemId, pathOf(s)).then((f) => f.content).catch(() => undefined)] as const,
     ),
   );
+  if (request !== diskRequest) return;
   disk.value = Object.fromEntries(entries.filter(([, v]) => v !== undefined));
 }
 
@@ -46,24 +60,9 @@ async function loadSamples() {
   );
 }
 
-// Open tabs provide live (unsaved) content; re-render on edits, debounced.
-let timer: ReturnType<typeof setTimeout> | undefined;
-const subs: { dispose(): void }[] = [];
-function watchModels() {
-  subs.splice(0).forEach((d) => d.dispose());
-  for (const tab of props.ws.state.tabs) {
-    if (!tab.path.startsWith(`statement/${props.lang}/`)) continue;
-    subs.push(
-      tab.model.onDidChangeContent(() => {
-        clearTimeout(timer);
-        timer = setTimeout(() => tick.value++, 150);
-      }),
-    );
-  }
-  tick.value++;
-}
-watch(() => props.ws.state.tabs.map((x) => x.path).join('|'), watchModels);
-
+// A workspace revision includes edits made while another section is active.
+watch(() => props.ws.state.contentRevision, () => tick.value++);
+watch(() => props.ws.state.tabs.map(x => x.path).join('|'), () => tick.value++);
 const off = onWs((e) => {
   if (e.type === 'file:changed' && e.problemId === props.problemId && e.path.startsWith(`statement/${props.lang}/`)) loadDisk();
 });
@@ -71,20 +70,19 @@ const off = onWs((e) => {
 onMounted(async () => {
   macros.value = buildMacros(await getDefs(), props.lang);
   await Promise.all([loadDisk(), loadSamples()]);
-  watchModels();
+  tick.value++;
 });
 watch(() => props.lang, async () => {
   macros.value = buildMacros(await getDefs(), props.lang);
   await loadDisk();
-  watchModels();
+  tick.value++;
 });
 watch(() => props.judge.state.manifest?.tests, loadSamples);
 // Sections created or deleted on disk.
 watch(() => props.ws.files.value.filter((f) => f.path.startsWith(`statement/${props.lang}/`)).length, loadDisk);
 onBeforeUnmount(() => {
   off();
-  clearTimeout(timer);
-  subs.forEach((d) => d.dispose());
+
 });
 
 const rendered = computed(() => {
@@ -114,7 +112,8 @@ const otherTutorials = computed(() => langs.value.tutorial.filter((l) => l !== p
 </script>
 
 <template>
-  <div class="statement">
+  <div ref="host" class="statement">
+    <div class="export-tools"><n-button size="tiny" @click="markdown">{{ t('improve.markdown') }}</n-button></div>
     <div v-if="rendered.unknown.length" class="lint">
       <n-tooltip>
         <template #trigger>
@@ -144,6 +143,7 @@ const otherTutorials = computed(() => langs.value.tutorial.filter((l) => l !== p
 </template>
 
 <style scoped>
+.export-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .statement {
   padding: 16px 20px;
   max-width: 900px;

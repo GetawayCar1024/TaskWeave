@@ -17,6 +17,8 @@ import {
   NSelect,
   NSpace,
   NSplit,
+  NTabs,
+  NTabPane,
   NTag,
   NTooltip,
   useDialog,
@@ -43,7 +45,7 @@ import {
   MemoryStick,
   ListOrdered,
 } from 'lucide-vue-next';
-import { PROBLEM_NAME_RE, type ContestAction, type ContestBatchItem, type ContestBatchResult, type ContestDetail, type JobInfo, type ProblemSummary } from '@polyforge/shared';
+import { CONTEST_INDEX_RE, PROBLEM_NAME_RE, type ContestAction, type ContestBatchItem, type ContestBatchResult, type ContestDetail, type JobInfo, type ProblemSummary } from '@polyforge/shared';
 import AppHeader from '../components/AppHeader.vue';
 import AiDrawer from '../components/AiDrawer.vue';
 import ContestSyncDialog from '../components/ContestSyncDialog.vue';
@@ -80,6 +82,7 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 /** The contest AI: sessions over all problems of the contest. */
 const ai = useAi(`contest:${props.id}`);
 const showAi = ref(false);
+const sidebarTab = ref('ai');
 const aiSplitSize = ref(0.66);
 const contentSplitSize = computed({
   get: () => showAi.value ? aiSplitSize.value : 1,
@@ -115,8 +118,7 @@ const summary = computed(() => detail.value?.summary);
 const title = computed(() => (summary.value ? problemTitle(summary.value.title, locale.value) || summary.value.name : ''));
 
 // ---- problem list editing ----
-// Letters are edited directly (A, B, …, or A1, A2); moving a problem keeps the letters
-// in place and swaps the problems; "renumber" assigns A, B, C… by position.
+// Numbering is edited as one draft; moving rows keeps each problem's identity.
 const letter = (i: number) => (i < 26 ? String.fromCharCode(65 + i) : `Z${i - 25}`);
 type Entry = { index: string; problem: string };
 const saving = ref(false);
@@ -125,7 +127,6 @@ async function saveProblems(list: Entry[]): Promise<boolean> {
   saving.value = true;
   try {
     detail.value = await api.updateContest(props.id, { problems: list });
-    version.value++;
     return true;
   } catch (e) {
     message.error(serverText(errorMessage(e)));
@@ -134,8 +135,6 @@ async function saveProblems(list: Entry[]): Promise<boolean> {
     saving.value = false;
   }
 }
-/** Bumped on every save / reload so the letter inputs drop unsaved text. */
-const version = ref(0);
 const entries = (): Entry[] => detail.value?.problems.map((p) => ({ index: p.index, problem: p.problem })) ?? [];
 const ids = () => entries().map((e) => e.problem);
 function move(i: number, d: number) {
@@ -146,17 +145,19 @@ function move(i: number, d: number) {
   saveProblems(list);
 }
 const remove = (i: number) => saveProblems(entries().filter((_, k) => k !== i));
-const renumber = () => saveProblems(entries().map((e, i) => ({ index: letter(i), problem: e.problem })));
 /** The next letter after the ones in use: A, B, … then A1-style suffixes are left to the user. */
 function nextIndex(used: Set<string>): string {
   for (let i = 0; ; i++) if (!used.has(letter(i))) return letter(i);
 }
-async function setIndex(pos: number, value: string) {
-  const index = value.trim().toUpperCase();
-  const list = entries();
-  if (!index || index === list[pos].index) return;
-  list[pos].index = index;
-  if (!(await saveProblems(list))) version.value++;
+const showNumbering = ref(false);
+const numberDraft = ref<Entry[]>([]);
+const numberingSubmitted = ref(false);
+const numberError = computed(() => numberDraft.value.some(e => !CONTEST_INDEX_RE.test(e.index.trim().toUpperCase())) || new Set(numberDraft.value.map(e => e.index.trim().toUpperCase())).size !== numberDraft.value.length);
+function openNumbering() { numberDraft.value = entries(); numberingSubmitted.value = false; showNumbering.value = true; }
+async function saveNumbering() {
+  numberingSubmitted.value = true;
+  if (numberError.value) return;
+  if (await saveProblems(numberDraft.value.map(e => ({ ...e, index: e.index.trim().toUpperCase() })))) showNumbering.value = false;
 }
 const adding = ref<string[]>([]);
 const addOptions = computed(() => {
@@ -213,7 +214,7 @@ const ACTIONS: { action: ContestAction; icon: typeof Play }[] = [
 const job = ref<JobInfo | null>(null);
 const running = computed(() => job.value?.status === 'running');
 const result = ref<ContestBatchResult | null>(null);
-const resultByIndex = computed(() => new Map((result.value?.items ?? []).map((x) => [x.index, x])));
+const resultByProblem = computed(() => new Map((result.value?.items ?? []).map((x) => [x.problem, x])));
 async function run(action: ContestAction) {
   try {
     // Pushing to Polygon lives in the sync dialog (with its commit message).
@@ -273,29 +274,19 @@ const columns = computed<DataTableColumns<Row>>(() => [
   ...(result.value ? [{
     type: 'expand',
     width: 36,
-    expandable: (r: Row) => detailLines(resultByIndex.value.get(r.index)).length > 0,
+    expandable: (r: Row) => detailLines(resultByProblem.value.get(r.problem)).length > 0,
     renderExpand: (r: Row) =>
       h(
         'div',
         { class: 'details' },
-        detailLines(resultByIndex.value.get(r.index)).map((d) => h('div', { class: d.bad ? 'bad' : '' }, d.text)),
+        detailLines(resultByProblem.value.get(r.problem)).map((d) => h('div', { class: d.bad ? 'bad' : '' }, d.text)),
       ),
   } as const] : []),
   {
     title: '#',
     key: 'index',
     width: 84,
-    render: (r) =>
-      h(NInput, {
-        // Uncontrolled: starts from the saved letter, saved on Enter / blur, remounted after a save.
-        key: `${r.index}|${r.problem}|${version.value}`,
-        size: 'small',
-        defaultValue: r.index,
-        class: 'index-input',
-        disabled: running.value || saving.value,
-        title: t('contest.editIndex'),
-        onChange: (v: string) => setIndex(r.pos, v),
-      }),
+    render: (r) => h('strong', { class: 'index-label' }, r.index),
   },
   {
     title: t('contest.problem'),
@@ -336,7 +327,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
     width: 116,
     render: (r: Row) => (r.summary?.status.polygonId !== undefined ? h(NTag, { size: 'small', bordered: false, class: 'polygon-tag' }, () => `#${r.summary!.status.polygonId}`) : h('span', { class: 'muted' }, t('status.unbound'))),
   },
-  ...(result.value ? [{ title: t('contest.result'), key: 'result', minWidth: 180, render: (r: Row) => resultCell(resultByIndex.value.get(r.index)) }] : []),
+  ...(result.value ? [{ title: t('contest.result'), key: 'result', minWidth: 180, render: (r: Row) => resultCell(resultByProblem.value.get(r.problem)) }] : []),
   {
     title: '',
     key: 'actions',
@@ -408,7 +399,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
               size="small"
               :columns="columns"
               :data="rows"
-              :row-key="(r: Row) => r.index"
+              :row-key="(r: Row) => r.problem"
               :row-props="rowProps"
               :expanded-row-keys="expanded"
               :bordered="false"
@@ -422,7 +413,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
               <n-select v-model:value="adding" multiple filterable size="small" :disabled="running || saving" :options="addOptions" :placeholder="t('contest.addPlaceholder')" class="add-select" />
               <n-button size="small" type="primary" :disabled="!adding.length || running || saving" @click="addProblems"><template #icon><plus /></template>{{ t('contest.add') }}</n-button>
               <span class="grow" />
-              <n-button size="small" quaternary :disabled="running || saving || rows.length < 2" :title="t('contest.renumberHint')" @click="renumber">{{ t('contest.renumber') }}</n-button>
+              <n-button size="small" quaternary :disabled="running || saving || rows.length < 1 || showSync" :title="t('contest.renumberHint')" @click="openNumbering">{{ t('improve.numbering') }}</n-button>
             </div>
             </section>
           </template>
@@ -430,11 +421,29 @@ const columns = computed<DataTableColumns<Row>>(() => [
       </template>
       <template #2>
         <aside v-show="showAi" class="ai-sidebar" :aria-label="t('palette.aiChat')" @keydown="onAiKeydown">
-          <ai-drawer embedded v-model:show="showAi" :ai="ai" :problem-id="`contest:${id}`" />
+          <n-tabs v-model:value="sidebarTab" class="contest-side-tabs" pane-class="contest-side-pane" type="line" size="small">
+            <n-tab-pane name="ai" tab="AI" display-directive="show"><ai-drawer embedded embedded-header :show="showAi && sidebarTab === 'ai'" @update:show="showAi = $event" :ai="ai" :problem-id="`contest:${id}`" /></n-tab-pane>
+            <n-tab-pane name="results" :tab="t('improve.results')" display-directive="show">
+              <div class="check-results"><div v-for="item in result?.items ?? []" :key="item.problem"><strong>{{ rows.find(r => r.problem === item.problem)?.index ?? item.index }} · {{ item.problem }}</strong><div v-for="(line, i) in detailLines(item)" :key="i" :class="{ bad: line.bad }">{{ line.text }}</div></div></div>
+            </n-tab-pane>
+          </n-tabs>
         </aside>
       </template>
     </n-split>
 
+    <n-modal v-model:show="showNumbering" preset="card" :title="t('improve.numbering')" style="width: 560px">
+      <div style="max-height: 60vh; overflow: auto">
+        <n-form-item v-for="entry in numberDraft" :key="entry.problem" :label="entry.problem">
+          <n-input v-model:value="entry.index" :disabled="saving" />
+        </n-form-item>
+      </div>
+      <n-alert v-if="numberingSubmitted && numberError" type="warning">{{ t('improve.numberError') }}</n-alert>
+      <template #footer><n-space justify="end">
+        <n-button :disabled="saving" @click="numberDraft = numberDraft.map((e, i) => ({ ...e, index: letter(i) }))">{{ t('contest.renumber') }}</n-button>
+        <n-button @click="showNumbering = false">{{ t('common.cancel') }}</n-button>
+        <n-button type="primary" :disabled="running" :loading="saving" @click="saveNumbering">{{ t('common.save') }}</n-button>
+      </n-space></template>
+    </n-modal>
     <n-modal v-model:show="showEdit" preset="card" :title="t('contest.edit')" style="width: 460px">
       <n-form label-placement="left" label-width="auto">
         <n-form-item :label="t('create.name')" :feedback="editNameValid ? undefined : t('create.nameRule')" :validation-status="editNameValid ? undefined : 'error'"><n-input v-model:value="edit.name" :disabled="savingEdit" /></n-form-item>
@@ -473,6 +482,11 @@ const columns = computed<DataTableColumns<Row>>(() => [
   flex-direction: column;
   gap: 16px;
 }
+.contest-side-tabs { height: 100%; display: flex; flex-direction: column; }
+.contest-side-tabs :deep(.n-tabs-nav) { padding: 0 12px; }
+.contest-side-tabs :deep(.n-tabs-pane-wrapper) { flex: 1; min-height: 0; }
+.contest-side-tabs :deep(.contest-side-pane) { height: 100%; padding: 0; }
+.check-results { height: 100%; overflow: auto; padding: 12px; box-sizing: border-box; white-space: pre-wrap; }
 .content-split { flex: 1; min-height: 0; }
 .ai-sidebar {
   height: 100%;

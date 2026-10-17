@@ -81,7 +81,7 @@ function hover(e: MouseEvent, on: boolean) {
 .statement-doc {
   font-family: Verdana, 'Microsoft YaHei', 'PingFang SC', serif;
   font-size: 14px;
-  line-height: 1.5em;
+  line-height: 1.65;
   --pf-sample-bg: rgba(128, 128, 128, 0.12);
   --pf-rule: rgb(136, 136, 136);
   --pf-line-even: rgba(128, 128, 128, 0.22);
@@ -108,7 +108,7 @@ function hover(e: MouseEvent, on: boolean) {
   margin-bottom: 1em;
 }
 .section :deep(.p) {
-  margin: 0 0 1em;
+  margin: 0 0 1.25em;
 }
 .section :deep(.p:last-child) {
   margin-bottom: 0;
@@ -140,7 +140,7 @@ function hover(e: MouseEvent, on: boolean) {
   color: #e88080;
 }
 .statement-doc :deep(.math-display) {
-  margin: 0.6em 0;
+  margin: 0.85em 0;
   overflow-x: auto;
 }
 .statement-doc :deep(table.tabular) {
@@ -158,9 +158,14 @@ function hover(e: MouseEvent, on: boolean) {
   max-width: 95%;
 }
 .statement-doc :deep(pre.verbatim) {
-  font-size: 110%;
-  white-space: pre-wrap;
-  padding: 0.5em;
+  font-size: 0.95em;
+  line-height: 1.5;
+  tab-size: 4;
+  white-space: pre;
+  overflow-x: auto;
+  border: 1px solid var(--pf-rule);
+  border-radius: 6px;
+  padding: 0.8em 1em;
   background: var(--pf-sample-bg);
 }
 .statement-doc :deep(.sc) {

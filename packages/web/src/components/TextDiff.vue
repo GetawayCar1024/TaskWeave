@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { ignoreWhitespace } from '../lib/diffOptions';
+import { useI18n } from 'vue-i18n';
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { monaco } from '../lib/monaco';
 import { settings } from '../lib/settings';
 
 /** Read-only side-by-side diff of two texts. */
 const props = defineProps<{ original: string; modified: string; language?: string }>();
+const { t } = useI18n();
 const host = ref<HTMLDivElement>();
 let editor: monaco.editor.IStandaloneDiffEditor | null = null;
 let models: monaco.editor.ITextModel[] = [];
@@ -20,6 +23,8 @@ onMounted(() => {
     automaticLayout: true,
     readOnly: true,
     originalEditable: false,
+    ignoreTrimWhitespace: ignoreWhitespace.value,
+    renderWhitespace: 'all',
     minimap: { enabled: false },
     scrollBeyondLastLine: false,
     wordWrap: 'on',
@@ -32,9 +37,11 @@ onBeforeUnmount(() => {
   editor?.dispose();
   models.forEach((m) => m.dispose());
 });
+watch(ignoreWhitespace, value => editor?.updateOptions({ ignoreTrimWhitespace: value }));
 </script>
 
 <template>
+  <label class="diff-options"><input type="checkbox" v-model="ignoreWhitespace" />{{ t('improve.ignoreWhitespace') }}</label>
   <div ref="host" class="diff" />
 </template>
 

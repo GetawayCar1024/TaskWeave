@@ -1,3 +1,4 @@
+import { codeHtml } from './codeHighlight';
 import katex from 'katex';
 
 /**
@@ -273,7 +274,7 @@ class Parser {
 
   private math(tex: string, display: boolean): string {
     try {
-      return katex.renderToString(tex, { displayMode: display, throwOnError: false, strict: 'ignore', output: 'html' });
+      return katex.renderToString(tex, { displayMode: display, throwOnError: false, strict: 'ignore', output: 'htmlAndMathml' });
     } catch (e) {
       return `<span class="tex-error" title="${esc((e as Error).message)}">${esc(tex)}</span>`;
     }
@@ -509,7 +510,7 @@ class Parser {
       case 'lstlisting': {
         let body = this.envBodyRaw(name);
         if (name === 'lstlisting') body = body.replace(/^\[[^\]]*\]/, '');
-        return `${PAR}<pre class="verbatim">${esc(body.replace(/^\n/, ''))}</pre>${PAR}`;
+        return `${PAR}<pre class="verbatim">${codeHtml(body.replace(/^\n/, ''))}</pre>${PAR}`;
       }
       case 'tabular': {
         const spec = this.readGroupRaw() ?? '';

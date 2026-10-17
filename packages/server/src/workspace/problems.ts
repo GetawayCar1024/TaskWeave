@@ -44,27 +44,53 @@ export class ProblemRegistry {
   }
 
   /** Rescan all roots. Each direct subfolder containing problem.toml is a problem. */
+  private scanning?: Promise<ProblemRef[]>;
   async scan(): Promise<ProblemRef[]> {
-    const next = new Map<string, ProblemRef>();
+    return this.scanning ??= this.scanRoots().finally(() => { this.scanning = undefined; });
+  }
+  private async scanRoots(): Promise<ProblemRef[]> {
+    const found: { dir: string; root: string; name: string; identity?: string }[] = [];
     for (const root of this.roots) {
-      let entries;
-      try {
-        entries = await fsp.readdir(root, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      entries.sort((a, b) => a.name.localeCompare(b.name));
-      for (const ent of entries) {
+      const entries = await fsp.readdir(root, { withFileTypes: true }).catch(() => []);
+      for (const ent of entries.sort((a, b) => a.name.localeCompare(b.name))) {
         if (!ent.isDirectory() || ent.name.startsWith('.')) continue;
         const dir = path.join(root, ent.name);
         if (!(await exists(path.join(dir, PROBLEM_FILE)))) continue;
-        let id = ent.name;
-        for (let i = 2; next.has(id); i++) id = `${ent.name}~${i}`;
-        next.set(id, { id, dir, root });
+        const identity = await fsp.readFile(path.join(dir, '.polyforge', 'identity'), 'utf8').catch(() => '');
+        found.push({ dir, root, name: ent.name, identity: /^[a-zA-Z0-9_-]+(?:~[0-9]+)?$/.test(identity.trim()) ? identity.trim() : undefined });
       }
+    }
+    const next = new Map<string, ProblemRef>();
+    const reserved = new Set(found.map(p => p.identity).filter(Boolean));
+    for (const p of found) {
+      let id = p.identity;
+      if (!id || next.has(id)) {
+        id = p.name;
+        for (let i = 2; next.has(id) || reserved.has(id); i++) id = `${p.name}~${i}`;
+      }
+      if (id !== p.identity) await atomicWrite(path.join(p.dir, '.polyforge', 'identity'), id);
+      next.set(id, { id, dir: p.dir, root: p.root });
     }
     this.byId = next;
     return [...next.values()];
+  }
+
+  async ensureRoot(root: string): Promise<string> {
+    if (!path.isAbsolute(root)) throw new HttpError(400, 'invalid_root', 'Choose an absolute directory');
+    root = path.resolve(root);
+    await this.scan();
+    if ([...this.byId.values()].some(p => samePath(p.dir, root) || root.toLowerCase().startsWith(p.dir.toLowerCase() + path.sep))) throw new HttpError(400, 'invalid_root', 'A problem folder cannot be a problem root');
+    await fsp.mkdir(root, { recursive: true });
+    root = await fsp.realpath(root);
+    for (const p of this.byId.values()) {
+      const dir = await fsp.realpath(p.dir);
+      const rel = path.relative(dir, root);
+      if (rel === '' || (rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel))) throw new HttpError(400, 'invalid_root', 'A problem folder cannot be a problem root');
+    }
+    if (!this.roots.some(r => samePath(r, root))) {
+      await this.global.saveConfig({ ...this.global.config, problems: { ...this.global.config.problems, roots: [...this.roots, root] } });
+    }
+    return root;
   }
 
   async get(id: string): Promise<ProblemRef> {

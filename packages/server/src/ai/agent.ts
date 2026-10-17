@@ -92,7 +92,15 @@ interface Scope {
  * rejects the resulting changes file by file.
  */
 export class AgentService {
+  private shuttingDown = false;
   get running() { return [...this.live.values()].some(l => l.state === 'running'); }
+  forgetIdle() { if (!this.running) this.live.clear(); }
+  async stopAll(shutdown = false) {
+    if (shutdown) this.shuttingDown = true;
+    const live = [...this.live.values()];
+    live.forEach(l => l.abort?.abort());
+    await Promise.all(live.map(l => l.running));
+  }
   async clearScratch(owner: string, sid: string) {
     const l = await this.load(owner, sid);
     if (l.state === 'running') throw new HttpError(409, 'busy', 'Stop the agent before clearing its workspace');
@@ -384,6 +392,7 @@ export class AgentService {
   /** Start the agent on a user message; progress arrives as `ai:event`s. */
   async send(problemId: string, sid: string, text: string): Promise<AiSessionDetail> {
     const l = await this.load(problemId, sid);
+    if (this.shuttingDown) throw new HttpError(409, 'shutting_down', 'The application is shutting down');
     if (l.state === 'running') throw new HttpError(409, 'busy', 'The agent is still working on the previous message');
     if (!text.trim()) throw new HttpError(400, 'empty', 'Message is empty');
     if (l.data.messages.length === 0 && l.data.title === 'New session') l.data.title = text.trim().split('\n')[0].slice(0, 60);
@@ -391,9 +400,13 @@ export class AgentService {
     l.state = 'running';
     l.error = undefined;
     l.abort = new AbortController();
-    await this.save(l);
-    this.emit(l, { type: 'state', state: 'running' });
-    l.running = this.loop(l, l.abort.signal).finally(() => (l.running = undefined));
+    const prepared = this.save(l);
+    const signal = l.abort.signal;
+    l.running = prepared.then(async () => {
+      this.emit(l, { type: 'state', state: 'running' });
+      await this.loop(l, signal);
+    }).catch(e => { l.state = 'error'; l.error = cleanApiError(e); this.emit(l, { type: 'state', state: l.state, error: l.error }); }).finally(() => (l.running = undefined));
+    await prepared;
     return this.detail(l);
   }
 
@@ -431,6 +444,8 @@ export class AgentService {
       for (let step = 0; step < MAX_STEPS; step++) {
         signal.throwIfAborted();
         let res;
+        let partial = '';
+        let thinking = '';
         try {
           res = await provider.chat({
             model: d.model,
@@ -438,9 +453,10 @@ export class AgentService {
             messages: d.messages,
             tools,
             signal,
-            onText: (delta) => this.emit(l, { type: 'text', delta }),
-            onThinking: (delta) => this.emit(l, { type: 'thinking', delta }),
+            onText: (delta) => { partial += delta; this.emit(l, { type: 'text', delta }); },
+            onThinking: (delta) => { thinking += delta; this.emit(l, { type: 'thinking', delta }); },
           });
+          signal.throwIfAborted();
           parseRetries = 0;
           if (res.usage) await this.recordUsage(l, ep, res.usage);
         } catch (e) {
@@ -448,6 +464,7 @@ export class AgentService {
             this.notice(l, 'warning', 'The model produced an unreadable tool call; retrying the step.');
             continue;
           }
+          if (partial || thinking) d.messages.push({ role: 'assistant', content: [...(thinking ? [{ type: 'thinking' as const, text: thinking }] : []), ...(partial ? [{ type: 'text' as const, text: partial }] : [])] });
           throw e;
         }
         const toolUses = res.message.content.filter((b): b is Extract<Block, { type: 'tool_use' }> => b.type === 'tool_use');
@@ -470,32 +487,42 @@ export class AgentService {
 
         // All results of one assistant turn go back in a single user message.
         const results: Block[] = [];
+        d.messages.push({ role: 'user', content: results });
         let wrote = false;
         for (const tu of toolUses) {
+          if (signal.aborted) {
+            results.push({ type: 'tool_result', tool_use_id: tu.id, content: 'Cancelled by the user.', is_error: true });
+            continue;
+          }
           this.emit(l, { type: 'tool_call', id: tu.id, name: tu.name, input: tu.input });
           const r = await sc.run(tu.name, tu.input, env, l.sandbox, mode);
           results.push({ type: 'tool_result', tool_use_id: tu.id, content: clip(r.content), is_error: r.isError || undefined });
           this.emit(l, { type: 'tool_result', id: tu.id, result: clip(r.content, 4000), isError: r.isError });
           if (WRITE_TOOLS.has(tu.name) && !r.isError) wrote = true;
         }
-        d.messages.push({ role: 'user', content: results });
+        signal.throwIfAborted();
         if (wrote) this.emit(l, { type: 'changes', changes: await l.sandbox.changes() });
         await this.save(l);
         if (step === MAX_STEPS - 1) this.notice(l, 'warning', `Stopped after ${MAX_STEPS} steps; send a message to continue.`);
       }
       l.state = 'idle';
     } catch (e) {
+      // Preserve completed tool results and fill only the missing ones, including
+      // unexpected tool failures, so the next message can resume this session.
+      const last = d.messages.at(-1);
+      const assistant = last?.role === 'assistant' ? last : d.messages.at(-2);
+      if (assistant?.role === 'assistant') {
+        const uses = assistant.content.filter((b): b is Extract<Block, { type: 'tool_use' }> => b.type === 'tool_use');
+        if (uses.length) {
+          const results = last?.role === 'user' ? last.content : [];
+          const completed = new Set(results.flatMap(b => b.type === 'tool_result' ? [b.tool_use_id] : []));
+          for (const use of uses) if (!completed.has(use.id)) results.push({ type: 'tool_result', tool_use_id: use.id, content: signal.aborted ? 'Cancelled by the user.' : 'Tool execution interrupted.', is_error: true });
+          if (last?.role !== 'user') d.messages.push({ role: 'user', content: results });
+        }
+      }
       if (signal.aborted) {
         l.state = 'idle';
         this.notice(l, 'info', 'Stopped.');
-        // A dangling tool_use without results would break the next request.
-        const last = d.messages[d.messages.length - 1];
-        if (last?.role === 'assistant' && last.content.some((b) => b.type === 'tool_use')) {
-          d.messages.push({
-            role: 'user',
-            content: last.content.flatMap((b) => (b.type === 'tool_use' ? [{ type: 'tool_result' as const, tool_use_id: b.id, content: 'Cancelled by the user.', is_error: true }] : [])),
-          });
-        }
       } else {
         l.state = 'error';
         l.error = cleanApiError(e);

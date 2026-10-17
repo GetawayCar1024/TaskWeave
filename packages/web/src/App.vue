@@ -17,6 +17,8 @@ import {
 import { onUnauthorized, errorMessage } from './lib/api';
 import { settings, loadSettings } from './lib/settings';
 import { startWs } from './lib/ws';
+import { monaco } from './lib/monaco';
+import ExitGuard from './components/ExitGuard.vue';
 import { desktop } from './lib/desktop';
 import type { GlobalThemeOverrides } from 'naive-ui';
 
@@ -41,6 +43,7 @@ watchEffect(() => {
   document.documentElement.style.colorScheme = mode;
   document.documentElement.dataset.theme = mode;
   desktop?.setTheme(mode);
+  monaco.editor.setTheme(dark.value ? 'vs-dark' : 'vs');
 });
 const overrides = computed<GlobalThemeOverrides>(() => ({
   common: {
@@ -70,6 +73,7 @@ const nDateLocale = computed(() => (locale.value === 'en' ? dateEnUS : dateZhCN)
     <n-global-style />
     <n-message-provider>
       <n-dialog-provider>
+        <exit-guard />
         <div v-if="unauthorized" class="center">
           <n-result status="403" :title="t('app.unauthorized')" :description="t('app.unauthorizedHint')" />
         </div>

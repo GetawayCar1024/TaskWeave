@@ -46,6 +46,17 @@ function segment(src: string, issues: LintIssue[], pos: (o: number) => { line: n
   };
   while (i < src.length) {
     const c = src[i];
+    if ((i === 0 || src[i - 1] === '\n') && /^[ \t]*`{3,}/.test(src.slice(i))) {
+      const opening = src.slice(i).match(/^[ \t]*(`{3,})[^\n]*\n/);
+      if (opening) {
+        const close = new RegExp('^[ \\t]*`{' + opening[1].length + ',}[ \\t]*(?:\\n|$)', 'gm');
+        close.lastIndex = i + opening[0].length;
+        const ending = close.exec(src);
+        issues.push({ ...pos(i), rule: 'md-code-block', message: ending ? 'Markdown code fence → verbatim' : 'Code fence is not closed', fixable: !!ending });
+        push('verbatim', i, ending ? ending.index + ending[0].length : src.length);
+        continue;
+      }
+    }
     if (c === '\\') {
       const env = src.slice(i).match(/^\\begin\{([^}]+)\}/);
       if (env && (VERBATIM_ENVS.includes(env[1]) || MATH_ENVS.includes(env[1]))) {
@@ -278,6 +289,7 @@ export const LINT_RULE_IDS = [
   ...TEXT_RULES.map((r) => r.id),
   ...MATH_RULES.map((r) => r.id),
   'md-list',
+  'md-code-block',
   'list-indent',
   'cjk-math-space',
   'cjk-punct-space',
@@ -304,7 +316,7 @@ export function lintStatement(src: string, opts: { lang: string }): LintResult {
   };
 
   const segs = segment(text, issues, pos);
-  const out = segs.map((s) => (s.kind === 'text' ? applyRules(s.text, TEXT_RULES, s.start, issues, pos) : s.kind === 'math' ? applyRules(s.text, MATH_RULES, s.start, issues, pos) : s.text));
+  const out = segs.map((s) => (s.kind === 'text' ? applyRules(s.text, TEXT_RULES, s.start, issues, pos) : s.kind === 'math' ? applyRules(s.text, MATH_RULES, s.start, issues, pos) : s.kind === 'verbatim' && /^[ \t]*`{3,}/.test(s.text) && /\n[ \t]*`{3,}[ \t]*\n?$/.test(s.text) ? s.text.replace(/^[ \t]*`{3,}[^\n]*\n/, '\\begin{verbatim}\n').replace(/\n[ \t]*`{3,}[ \t]*(\n?)$/, '\n\\end{verbatim}$1') : s.text));
   if (opts.lang === 'zh') cjkRules(segs, out, issues, pos);
 
   // Brace balance in text (report only).
@@ -330,7 +342,7 @@ export function lintStatement(src: string, opts: { lang: string }): LintResult {
     for (let l = a; l <= b; l++) verbatimLines.add(l);
   }
   let fixed = indentLists(convertLists(out.join(''), issues, verbatimLines), issues);
-  const collapsed = fixed.replace(/\n{3,}/g, '\n\n');
+  const collapsed = segment(fixed, [], () => ({ line: 1, col: 1 })).map(s => s.kind === 'verbatim' ? s.text : s.text.replace(/\n{3,}/g, '\n\n')).join('');
   if (collapsed !== fixed) issues.push({ line: 1, col: 1, rule: 'blank-lines', message: 'More than one blank line in a row', fixable: true });
   fixed = collapsed;
   issues.sort((a, b) => a.line - b.line || a.col - b.col);

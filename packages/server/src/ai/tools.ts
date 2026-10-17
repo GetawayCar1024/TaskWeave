@@ -120,7 +120,7 @@ const TOOLS = [
   }),
   tool({
     name: 'delete_file',
-    description: 'Delete a file of the problem.',
+    description: 'Delete a file or directory recursively, including a statement language folder such as statement/en. Directory deletions are reviewed as individual file changes before acceptance. Never delete the problem root or problem.toml.',
     schema: z.object({ path: z.string() }),
     async run(i, env) {
       if (env.sandbox.resolve(i.path).rel === 'problem.toml') throw new Error('problem.toml cannot be deleted');

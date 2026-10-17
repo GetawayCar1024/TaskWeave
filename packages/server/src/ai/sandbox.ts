@@ -58,6 +58,7 @@ export class Sandbox {
     const clean = rel.replace(/\\/g, '/').replace(/^\.?\//, '');
     if (!clean || clean.split('/').some((seg) => HIDDEN_DIRS.has(seg))) throw new HttpError(400, 'bad_path', `Path not allowed: ${rel}`);
     const abs = safeJoin(this.dir, clean);
+    if (path.resolve(abs) === path.resolve(this.dir)) throw new HttpError(400, 'bad_path', 'The problem root cannot be modified');
     return { abs, rel: toPosix(path.relative(this.dir, abs)) };
   }
 
@@ -126,7 +127,18 @@ export class Sandbox {
       const mine = await readOrNull(path.join(this.dir, rel));
       const target = safeJoin(this.realDir, rel);
       if (mine) await atomicWrite(target, mine);
-      else await fsp.rm(target, { force: true });
+      else {
+        await fsp.rm(target, { force: true });
+        // Only prune empty parents inside the statement tree, never other user folders.
+        if (/^statement\/[a-z]{2,8}\//.test(rel)) {
+          let parent = path.dirname(target);
+          const boundary = path.join(this.realDir, 'statement');
+          while (parent !== boundary && parent.startsWith(boundary + path.sep)) {
+            try { await fsp.rmdir(parent); } catch { break; }
+            parent = path.dirname(parent);
+          }
+        }
+      }
       this.touched.delete(rel);
       done.push(rel);
     }

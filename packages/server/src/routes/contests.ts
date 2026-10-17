@@ -43,6 +43,11 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps, jobs: Job
   });
 
   app.put<P & { Body: UpdateContestRequest }>('/api/contests/:id', async (req) => {
+    if (req.body?.problems) {
+      const current = await contests.detail(req.params.id);
+      const owners = new Set([contestJobOwner(req.params.id), ...current.problems.map(p => p.problem)]);
+      if (jobs.list().some(j => j.status === 'running' && owners.has(j.problemId))) throw new HttpError(409, 'busy', 'Wait for running contest/problem tasks before changing indices');
+    }
     const d = await contests.update(req.params.id, req.body ?? {});
     hub.broadcast({ type: 'contests:changed' });
     return d;
@@ -125,10 +130,12 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps, jobs: Job
     const body = req.body;
     if (!body || !Number.isInteger(body.contestId) || !body.name) throw new HttpError(400, 'bad_request', 'contestId and name required');
     return jobs.start('contest-import', '', async (job) => {
-      const r = await importContest(deps, body, job);
-      hub.broadcast({ type: 'problems:changed' });
-      hub.broadcast({ type: 'contests:changed' });
-      return r;
+      try { return await importContest(deps, body, job); }
+      finally {
+        await deps.afterImport?.();
+        hub.broadcast({ type: 'problems:changed' });
+        hub.broadcast({ type: 'contests:changed' });
+      }
     });
   });
 }

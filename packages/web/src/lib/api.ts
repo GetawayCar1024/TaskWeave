@@ -103,6 +103,15 @@ const aiBase = (owner: string) => (owner.startsWith('contest:') ? `/contests/${p
 const tsq = (ts?: string) => (ts && ts !== 'tests' ? `?testset=${encodeURIComponent(ts)}` : '');
 
 export const api = {
+  exportMarkdown: async (name: string, markdown: string, images: { problem: string; path: string; name: string }[]) => {
+    const res = await fetch('/api/export/markdown', { method: 'POST', headers: { [TOKEN_HEADER]: token, 'Content-Type': 'application/json' }, body: JSON.stringify({ name, markdown, images }) });
+    if (!res.ok) throw new Error((await res.json()).message ?? res.statusText);
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a'); a.href = url; a.download = `${name}.${images.length ? 'zip' : 'md'}`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
+  },
+  shutdownStatus: () => request<{ runningAi: boolean }>('GET', '/shutdown/status'),
+  moveProblem: (id: string, root: string) => request<ProblemSummary>('POST', `/problems/${pid(id)}/relocate`, { root }),
+  stopAllAi: () => request<{ ok: boolean }>('POST', '/shutdown/stop-ai'),
   clearAiScratch: (owner: string, sid: string) => request('DELETE', `${aiBase(owner)}/ai/sessions/${encodeURIComponent(sid)}/scratch`),
   clearCache: (id: string) => request('DELETE', `/problems/${pid(id)}/cache`),
   contestLastResult: (id: string) => request<import('@polyforge/shared').ContestBatchResult | null>('GET', `/contests/${pid(id)}/batch/latest`),

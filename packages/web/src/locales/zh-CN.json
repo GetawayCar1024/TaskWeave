@@ -1,4 +1,7 @@
 {
+  "improve": {
+    "language": "新增语言", "languageCode": "语言代码", "numbering": "修改题号", "numberError": "题号不能为空、格式必须正确且不能重复", "results": "检查结果", "move": "移动题目", "moveTarget": "目标题库目录", "ignoreWhitespace": "忽略空白差异", "markdown": "导出 Markdown", "shutdownAi": "AI 任务仍在运行", "shutdownAiBody": "是否停止所有 AI 任务并关闭程序？已输出的内容会保留。", "stopClose": "停止 AI 并关闭", "cancelExit": "取消退出", "resize": "拖动调整区域高度", "formulaOverflow": "部分公式过长，请检查分页预览；复杂公式可使用 aligned 手动分行。", "stable": "稳定计时", "throughput": "并行吞吐", "judgingMode": "评测模式", "markdownWarnings": "部分 LaTeX 内容未能完整转换，已在导出文件中保留。", "languageExists": "该语言已存在", "selectLanguage": "选择或输入语言代码", "moveBusy": "请先保存文件并等待题目相关任务结束", "moveDone": "题目已移动", "unsavedSettings": "设置中有未保存的修改", "saveFailed": "保存失败，已取消退出"
+  },
   "fix": {
     "resetStatement": "关闭题面覆盖，恢复使用测试数据",
     "syncScroll": "同步滚动",
@@ -717,6 +720,7 @@
     "md-bold": "Markdown **粗体** 应改为 \\textbf{'{'}{'}'}",
     "md-italic": "Markdown *斜体* 应改为 \\textit{'{'}{'}'}",
     "md-code": "Markdown `代码` 应改为 \\t{'{'}{'}'}",
+    "md-code-block": "Markdown 代码块应改为 verbatim；请检查围栏是否完整闭合",
     "md-heading": "Markdown 标题应改为 \\textbf{'{'}{'}'}",
     "ascii-operator": "公式外的比较符号应写成 $\\le$ / $\\ge$ / $\\ne$",
     "straight-quotes": "直引号 \"…\" 应改为 ``…''",

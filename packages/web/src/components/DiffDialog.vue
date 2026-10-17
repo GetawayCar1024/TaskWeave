@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ignoreWhitespace } from '../lib/diffOptions';
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NButton, NModal, NSpace, NSpin } from 'naive-ui';
@@ -34,6 +35,8 @@ watch(
       automaticLayout: true,
       readOnly: true,
       originalEditable: false,
+      ignoreTrimWhitespace: ignoreWhitespace.value,
+      renderWhitespace: 'all',
       theme: settings.config?.ui.theme === 'light' ? 'vs' : 'vs-dark',
     });
     diff.setModel({ original: models[0], modified: models[1] });
@@ -41,10 +44,12 @@ watch(
 );
 
 onBeforeUnmount(cleanup);
+watch(ignoreWhitespace, value => diff?.updateOptions({ ignoreTrimWhitespace: value }));
 </script>
 
 <template>
   <n-modal :show="show" preset="card" :title="`${t('diff.title')} — ${path}`" style="width: 90vw" @update:show="emit('update:show', $event)">
+    <label class="diff-options"><input type="checkbox" v-model="ignoreWhitespace" />{{ t('improve.ignoreWhitespace') }}</label>
     <div class="labels">
       <span>{{ t('diff.disk') }}</span>
       <span>{{ t('diff.mine') }}</span>

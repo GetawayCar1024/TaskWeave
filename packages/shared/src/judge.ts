@@ -84,6 +84,7 @@ export interface CheckerOutcome {
 }
 
 export interface InvocationCell {
+  wallMs?: number;
   verdict: Verdict;
   timeMs: number;
   memoryKb: number;

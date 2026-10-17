@@ -99,6 +99,8 @@ export async function runInvocation(
     const tests = manifest.tests.filter((t) => !wanted || wanted.has(t.index));
     inv.tests = tests.map((t) => t.index);
     inv.cells = sources.map(() => tests.map(() => null));
+    await save();
+    job.progress(0, sources.length, 'compiling solutions');
 
     const checkerSrc = ctx.config.checker?.source;
     if (!checkerSrc) throw new HttpError(400, 'no_checker', 'No checker configured');
@@ -112,6 +114,8 @@ export async function runInvocation(
       sources.map(async (src, i) => {
         const out = await judge.compile(ctx, src);
         inv.solutions[i].compile = out.result;
+        dirty = true;
+        job.progress(inv.solutions.filter(s => s.compile).length, sources.length, `compiled ${src}`);
         return out.program;
       }),
     );
@@ -121,7 +125,7 @@ export async function runInvocation(
     let done = 0;
     job.progress(0, total, 'running');
 
-    const tasks: Promise<void>[] = [];
+    const tasks: (() => Promise<void>)[] = [];
     tests.forEach((t, ti) => {
       programs.forEach((prog, si) => {
         const setCell = (c: InvocationCell) => {
@@ -130,7 +134,8 @@ export async function runInvocation(
         };
         if (!prog) return setCell({ verdict: 'SKIP', timeMs: 0, memoryKb: 0, message: 'compilation error' });
         tasks.push(
-          (async () => {
+          async () => {
+            job.signal.throwIfAborted();
             const inFile = inputPath(ctx, t.index, ts.name);
             const ansFile = answerPath(ctx, t.index, ts.name);
             if (t.error || t.valid === false || !(await exists(inFile)) || !(await exists(ansFile))) {
@@ -142,6 +147,7 @@ export async function runInvocation(
               const cell: InvocationCell = {
                 verdict: r.verdict,
                 timeMs: r.run.timeMs,
+                wallMs: r.run.wallMs,
                 memoryKb: r.run.memoryKb,
                 exitCode: r.run.exitCode,
                 message: r.message,
@@ -162,11 +168,14 @@ export async function runInvocation(
               setCell(cell);
             });
             job.progress(++done, total, 'running');
-          })(),
+          },
         );
       });
     });
-    const settled = await Promise.allSettled(tasks);
+    let next = 0;
+    const settled = await Promise.allSettled(Array.from({ length: Math.min(judge.runner.workers, tasks.length) }, async () => {
+      while (next < tasks.length) { job.signal.throwIfAborted(); await tasks[next++](); }
+    }));
     job.signal.throwIfAborted();
     const failed = settled.find((s) => s.status === 'rejected') as PromiseRejectedResult | undefined;
     if (failed) throw failed.reason;

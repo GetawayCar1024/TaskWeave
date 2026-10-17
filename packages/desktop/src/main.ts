@@ -15,6 +15,14 @@ type BrowserWindow = InstanceType<typeof electron.BrowserWindow>;
 const here = path.dirname(fileURLToPath(import.meta.url));
 let win: BrowserWindow | null = null;
 let server: RunningServer | null = null;
+let closeApproved = false;
+let rendererReady = false;
+ipcMain.on('polyforge:close-ready', event => { if (event.sender === win?.webContents && event.senderFrame === win.webContents.mainFrame) rendererReady = true; });
+ipcMain.on('polyforge:confirm-close', event => {
+  if (event.sender !== win?.webContents || event.senderFrame !== win.webContents.mainFrame) return;
+  closeApproved = true;
+  win.close();
+});
 
 ipcMain.on('polyforge:theme', (event, theme: unknown) => {
   if (event.sender !== win?.webContents || event.senderFrame !== win.webContents.mainFrame) return;
@@ -50,7 +58,7 @@ async function createWindow() {
     title: 'PolyForge',
     icon: path.join(here, 'icon.png'),
     backgroundColor: nativeTheme.themeSource === 'light' ? '#f2f2f7' : '#1c1c1e',
-    webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true },
+    webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, devTools: !app.isPackaged },
   });
   win = w;
   w.maximize();
@@ -74,13 +82,18 @@ async function createWindow() {
     if (input.type !== 'keyDown') return;
     const key = input.key.toLowerCase();
     if (input.key === 'F11') w.setFullScreen(!w.isFullScreen());
-    else if (input.key === 'F12' || (input.control && input.shift && key === 'i')) w.webContents.toggleDevTools();
+    else if (input.key === 'F12' || (input.control && input.shift && key === 'i')) { if (!app.isPackaged) w.webContents.toggleDevTools(); }
     else if (input.key === 'F5') w.webContents.reload();
     else return;
     e.preventDefault();
   });
   w.on('page-title-updated', (e) => e.preventDefault());
   w.on('closed', () => (win = null));
+  w.on('close', e => {
+    if (closeApproved || !rendererReady || w.webContents.isCrashed()) return;
+    e.preventDefault();
+    w.webContents.send('polyforge:request-close');
+  });
 
   await w.loadURL(server.url);
 }

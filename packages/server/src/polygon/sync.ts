@@ -21,6 +21,7 @@ import type { Judge, ProblemCtx } from '../judge/index.js';
 import { atomicWrite, exists, HttpError, looksBinary } from '../util/fs.js';
 import { PROBLEM_FILE } from '../workspace/problems.js';
 import { PolygonClient } from './client.js';
+import { buildAndVerify } from './buildPackage.js';
 import { merge3, mergeMeta } from './merge.js';
 import {
   applyItem,
@@ -279,7 +280,8 @@ export class PolygonSync {
     }
     if (req.buildPackage) {
       job.progress(done++, total, 'problem.buildPackage');
-      await client.call('problem.buildPackage', { problemId: polygonId, full: req.packageType === 'full', verify: true }).catch((e: Error) => warnings.push(`buildPackage: ${e.message}`));
+      try { warnings.push(...await buildAndVerify(client, polygonId, req.packageType === 'full', job)); }
+      catch (e) { if (job.signal.aborted) throw e; warnings.push(`buildPackage: ${(e as Error).message}. Check Polygon compiler configuration and build diagnostics (including __int128 support).`); }
     }
     const info = await this.problemInfo(client, polygonId).catch(() => undefined);
     sync.revision = info?.revision;
@@ -436,10 +438,10 @@ export class PolygonSync {
 
   // ---- import ----
 
-  async importProblem(req: ImportRequest, job: JobCtx): Promise<ProblemSummary> {
+  async importProblem(req: ImportRequest, job: JobCtx, known?: PolygonProblem): Promise<ProblemSummary> {
     const client = await this.client();
     job.progress(0, 3, 'problems.list');
-    const info = await this.problemInfo(client, req.polygonId);
+    const info = known ?? await this.problemInfo(client, req.polygonId);
     if (!info) throw new HttpError(404, 'polygon_not_found', `Polygon problem ${req.polygonId} not found or not accessible`);
     const name = (req.name?.trim() || info.name).toLowerCase();
     if (!PROBLEM_NAME_RE.test(name)) throw new HttpError(400, 'invalid_name', `Invalid local name: ${name}`);

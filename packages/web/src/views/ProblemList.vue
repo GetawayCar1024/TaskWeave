@@ -143,7 +143,7 @@ function openContest(c: ContestSummary) {
         </template>
         <template v-else>
           <n-button size="small" type="primary" :disabled="roots.length === 0" @click="contestDialog = 'create'">{{ t('contest.new') }}</n-button>
-          <n-button size="small" :disabled="roots.length === 0" @click="contestDialog = 'import'">{{ t('list.import') }}</n-button>
+          <n-button size="small" @click="contestDialog = 'import'">{{ t('list.import') }}</n-button>
         </template>
         <n-button size="small" @click="router.push({ name: 'settings' })">{{ t('nav.settings') }}</n-button>
       </template>

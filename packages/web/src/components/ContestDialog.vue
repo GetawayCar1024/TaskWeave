@@ -6,6 +6,8 @@ import { NAlert, NButton, NForm, NFormItem, NInput, NInputNumber, NModal, NProgr
 import { PROBLEM_NAME_RE, type ContestSummary, type JobInfo, type ProblemSummary } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 import { problemTitle } from '../lib/format';
+import DirPicker from './DirPicker.vue';
+import { loadSettings } from '../lib/settings';
 import { waitJob } from '../lib/jobs';
 
 const props = defineProps<{ show: boolean; mode: 'create' | 'import'; roots: string[]; problems: ProblemSummary[] }>();
@@ -16,6 +18,8 @@ const message = useMessage();
 const blank = () => ({ name: '', titleZh: '', titleEn: '', root: props.roots[0] ?? '', problems: [] as string[], contestId: null as number | null });
 const form = reactive(blank());
 const busy = ref(false);
+const showRootPicker = ref(false);
+const importError = ref('');
 const job = ref<JobInfo | null>(null);
 const warnings = ref<string[]>([]);
 
@@ -26,11 +30,12 @@ watch(
     Object.assign(form, blank());
     job.value = null;
     warnings.value = [];
+    importError.value = "";
   },
 );
 
 const nameValid = computed(() => PROBLEM_NAME_RE.test(form.name));
-const canSubmit = computed(() => nameValid.value && (props.mode === 'create' || !!form.contestId));
+const canSubmit = computed(() => nameValid.value && (props.mode === 'create' || (!!form.contestId && !!form.root.trim())));
 const rootOptions = computed(() => props.roots.map((r) => ({ label: r, value: r })));
 const problemOptions = computed(() => props.problems.map((p) => ({ label: `${problemTitle(p.title, locale.value) || p.name} (${p.id})`, value: p.id })));
 const letter = (i: number) => String.fromCharCode(65 + i);
@@ -38,6 +43,7 @@ const letter = (i: number) => String.fromCharCode(65 + i);
 async function submit() {
   if (!canSubmit.value) return;
   busy.value = true;
+  importError.value = '';
   try {
     if (props.mode === 'create') {
       const c = await api.createContest({
@@ -53,6 +59,7 @@ async function submit() {
     job.value = started;
     const done = await waitJob(started, (j) => (job.value = j));
     job.value = done;
+    await loadSettings();
     if (done.status !== 'done') throw new Error(done.error ?? done.status);
     const r = done.result as { contest: ContestSummary; warnings: string[] };
     if (r.warnings.length) {
@@ -64,7 +71,7 @@ async function submit() {
     emit('update:show', false);
     emit('created', r.contest);
   } catch (e) {
-    message.error(serverText(errorMessage(e)));
+    importError.value = serverText(errorMessage(e));
   } finally {
     busy.value = false;
   }
@@ -100,14 +107,16 @@ async function submit() {
           <span v-for="(p, i) in form.problems" :key="p" class="mono">{{ letter(i) }}: {{ p }}</span>
         </div>
       </template>
-      <n-form-item v-if="mode === 'import' && roots.length > 1" :label="t('contest.problemsRoot')">
-        <n-select v-model:value="form.root" :options="rootOptions" />
+      <n-form-item v-if="mode === 'import'" :label="t('contest.problemsRoot')">
+        <n-space vertical style="width: 100%"><n-select v-model:value="form.root" filterable tag :options="rootOptions" :disabled="busy" /><n-button size="small" :disabled="busy" @click="showRootPicker = true">{{ t('dirPicker.title') }}</n-button></n-space>
       </n-form-item>
     </n-form>
     <div v-if="job && job.status === 'running'" class="progress">
       <n-progress type="line" :percentage="job.progress.total ? Math.round((job.progress.done / job.progress.total) * 100) : 0" :height="4" :show-indicator="false" />
       <span class="small dim">{{ serverText(job.progress.message) }}</span>
     </div>
+    <dir-picker v-model:show="showRootPicker" :initial="form.root" @pick="p => form.root = p" />
+    <n-alert v-if="importError" type="error" style="white-space: pre-wrap">{{ importError }}</n-alert>
     <n-alert v-if="warnings.length" type="warning" :show-icon="false">
       <div v-for="w in warnings" :key="w" class="small">{{ serverText(w) }}</div>
     </n-alert>

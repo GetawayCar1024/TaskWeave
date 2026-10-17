@@ -34,6 +34,7 @@ export interface ContestDeps {
   judge: Judge;
   contests: ContestRegistry;
   sync: PolygonSync;
+  afterImport?: () => Promise<void>;
 }
 
 /** Run one action over the contest's problems, one after another; failures are per problem. */
@@ -251,6 +252,7 @@ export async function importContest(deps: ContestDeps, req: ContestImportRequest
   job.progress(0, 0, 'contest.problems');
   const map = await client.call<Record<string, PolygonProblem>>('contest.problems', { contestId: req.contestId });
   const entries = Object.entries(map).sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true }));
+  const root = await judge.registry.ensureRoot(req.root ?? judge.registry.roots[0] ?? '');
   const local = await judge.registry.list();
   const warnings: string[] = [];
   const problems: { index: string; problem: string }[] = [];
@@ -258,20 +260,25 @@ export async function importContest(deps: ContestDeps, req: ContestImportRequest
     job.signal.throwIfAborted();
     const letter = index.toUpperCase();
     job.progress(i, entries.length, `${letter} · ${p.name}`);
-    const bound = local.find((l) => l.type === 'cf' && l.status.polygonId === p.id);
+    const bound = local.find((l) => l.type === 'cf' && l.status.polygonId === p.id && path.resolve(l.root).toLowerCase() === root.toLowerCase());
     if (bound) {
       problems.push({ index: letter, problem: bound.id });
       continue;
     }
     try {
       const sub: JobCtx = { signal: job.signal, progress: (_d, _t, m) => job.progress(i, entries.length, `${letter} · ${p.name}${m ? ` · ${m}` : ''}`) };
-      const s = await sync.importProblem({ polygonId: p.id, root: req.root }, sub);
+      const stem = (p.name || `problem-${p.id}`).toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '') || `problem-${p.id}`;
+      let localName = stem;
+      for (let n = 0; await exists(path.join(root, localName)); n++) localName = `${stem}-${p.id}${n ? `-${n}` : ''}`;
+      const s = await sync.importProblem({ polygonId: p.id, root, name: localName }, sub, p);
+      local.push(s);
       problems.push({ index: letter, problem: s.id });
     } catch (e) {
       if (job.signal.aborted) throw e;
       warnings.push(`${letter} (${p.name}, #${p.id}): ${(e as Error).message}`);
     }
   }
+  if (warnings.length) throw new HttpError(502, 'incomplete_import', `Imported ${problems.length}/${entries.length} problems. The contest was not created. Retry to reuse successful imports.\n${warnings.join('\n')}`);
   const contest = await contests.create({ name, problems, type: req.type });
   if (contest.type === 'cf') await contests.update(contest.id, { polygonId: req.contestId });
   job.progress(entries.length, entries.length, 'done');

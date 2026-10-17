@@ -14,10 +14,10 @@
 //   memory_limit=<bytes>            per-process committed memory limit, 0 = none
 //   output_limit=<bytes>            maximum size of the stdout file, 0 = none
 //   process_limit=<n>               active processes in the job (default 1)
-//   tsc_hz=<n>                      TSC frequency from `runner --calibrate` (measured if absent)
 //
-// CPU time comes from QueryProcessCycleTime / TSC frequency: the tick-sampled times of
-// GetProcessTimes under-report a busy loop by 3-5x on modern (hybrid, tickless) CPUs.
+// CPU time is Windows user + kernel accounting. Cycle counts must not be divided
+// by TSC frequency: turbo scaling and hybrid cores make that conversion invalid.
+// Very short runs can be below the OS accounting resolution; wall time is separate.
 //
 // Result per process:
 //   {"status":"OK|RE|TL|ML|OL|IE","exit_code":N,"time_ms":N,"wall_ms":N,"memory_kb":N,
@@ -28,7 +28,6 @@
 #define UNICODE
 #endif
 #include <windows.h>
-#include <intrin.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -41,7 +40,6 @@ struct Spec {
   std::wstring cmd, cwd, in, out, err;
   long long timeLimit = 0, wallLimit = 0, memoryLimit = 0, outputLimit = 0;
   long long processLimit = 1;
-  double tscHz = 0;
 };
 
 struct Result {
@@ -142,7 +140,6 @@ bool parseSpec(const std::string& text, Spec& sol, Spec& inter, bool& interactiv
     else if (k == "memory_limit") cur->memoryLimit = std::atoll(v.c_str());
     else if (k == "output_limit") cur->outputLimit = std::atoll(v.c_str());
     else if (k == "process_limit") cur->processLimit = std::atoll(v.c_str());
-    else if (k == "tsc_hz") sol.tscHz = inter.tscHz = std::atof(v.c_str());
   }
   return !sol.cmd.empty() && (!interactive || !inter.cmd.empty());
 }
@@ -160,22 +157,13 @@ long long elapsedMs(const LARGE_INTEGER& start) {
   return (now.QuadPart - start.QuadPart) * 1000 / freq.QuadPart;
 }
 
-double calibrateTsc(DWORD ms) {
-  LARGE_INTEGER a, b;
-  QueryPerformanceCounter(&a);
-  unsigned long long t0 = __rdtsc();
-  Sleep(ms);
-  QueryPerformanceCounter(&b);
-  unsigned long long t1 = __rdtsc();
-  return (double)(t1 - t0) * (double)freq.QuadPart / (double)(b.QuadPart - a.QuadPart);
-}
-
-double tscHz = 0;
-
 long long cpuMs(HANDLE process) {
-  ULONG64 cycles = 0;
-  if (!QueryProcessCycleTime(process, &cycles)) return 0;
-  return (long long)((double)cycles / tscHz * 1000.0);
+  FILETIME created, exited, kernel, user;
+  if (!GetProcessTimes(process, &created, &exited, &kernel, &user)) return 0;
+  ULARGE_INTEGER k, u;
+  k.LowPart = kernel.dwLowDateTime; k.HighPart = kernel.dwHighDateTime;
+  u.LowPart = user.dwLowDateTime; u.HighPart = user.dwHighDateTime;
+  return (long long)((k.QuadPart + u.QuadPart + 9999) / 10000);
 }
 
 // Create `p` suspended with the given std handles. Only these handles are inherited,
@@ -344,13 +332,9 @@ void runAll(std::vector<Proc*> procs) {
 
 }  // namespace
 
-int main(int argc, char** argv) {
+int main() {
   SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
   QueryPerformanceFrequency(&freq);
-  if (argc > 1 && std::string(argv[1]) == "--calibrate") {
-    std::printf("%.0f\n", calibrateTsc(300));
-    return 0;
-  }
 
   std::string text;
   char buf[4096];
@@ -364,7 +348,6 @@ int main(int argc, char** argv) {
                 "\"error\":\"invalid spec\"}\n");
     return 2;
   }
-  tscHz = sol.spec.tscHz > 0 ? sol.spec.tscHz : calibrateTsc(20);
 
   if (!interactive) {
     HANDLE hin = openFile(sol.spec.in, false);

@@ -31,6 +31,7 @@ import { detectTools, listDirs } from './tools.js';
 import { HttpError, exists, safeJoin, validateFileName } from './util/fs.js';
 import { FileService } from './workspace/files.js';
 import { ProblemRegistry } from './workspace/problems.js';
+import { moveProblem } from './workspace/move.js';
 import type { ProblemWatcher } from './workspace/watcher.js';
 import type { WsHub } from './ws.js';
 
@@ -107,6 +108,34 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const settings = (): SettingsResponse => ({ config: global.config, globalDir: global.dir, cpus: os.availableParallelism(), defaultParallel: defaultParallel() });
 
   app.get('/api/settings', async () => settings());
+  app.post<{ Body: { name: string; markdown: string; images: { problem: string; path: string; name: string }[] } }>('/api/export/markdown', async (req, reply) => {
+    const { markdown, images } = req.body ?? {};
+    if (typeof markdown !== 'string' || !Array.isArray(images) || images.length > 500) throw new HttpError(400, 'bad_request', 'Invalid Markdown export');
+    if (!images.length) return reply.type('text/markdown; charset=utf-8').send(markdown);
+    const { ZipWriter } = await import('./util/zip.js');
+    const zip = new ZipWriter();
+    zip.add('statement.md', markdown);
+    for (const image of images) {
+      if (!image || typeof image.problem !== 'string' || typeof image.path !== 'string' || !/^image-\d+\.[a-zA-Z0-9]+$/.test(image.name) || image.path.includes('\\') || !path.posix.normalize(image.path).startsWith('statement/images/')) throw new HttpError(400, 'bad_path', 'Invalid image path');
+      const ref = await registry.get(image.problem);
+      zip.add(`images/${image.name}`, await fsp.readFile(safeJoin(ref.dir, image.path)));
+    }
+    return reply.type('application/zip').send(zip.finish());
+  });
+  app.get('/api/shutdown/status', async () => ({ runningAi: agent.running }));
+  app.post<{ Params: { id: string }; Body: { root: string } }>('/api/problems/:id/relocate', async req => {
+    if (!idle()) throw new HttpError(409, 'busy', 'Wait for running tasks before moving a problem');
+    if (typeof req.body?.root !== 'string') throw new HttpError(400, 'invalid_root', 'Destination root required');
+    clearingCache = true;
+    await watcher.stop();
+    try {
+      const result = await moveProblem(registry, req.params.id, req.body.root);
+      agent.forgetIdle();
+      hub.broadcast({ type: 'problems:changed' });
+      return result;
+    } finally { clearingCache = false; await watcher.start(); }
+  });
+  app.post('/api/shutdown/stop-ai', async () => { await agent.stopAll(true); return { ok: true }; });
 
   app.put<{ Body: unknown }>('/api/settings', async (req) => {
     const before = global.config.problems.roots;
@@ -280,7 +309,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   judgeRoutes(app, deps.judge, deps.jobs);
   const sync = new PolygonSync(deps.judge);
   polygonRoutes(app, deps.judge, sync, deps.jobs, hub);
-  contestRoutes(app, { judge: deps.judge, contests: deps.contests, sync }, deps.jobs, hub);
+  contestRoutes(app, { judge: deps.judge, contests: deps.contests, sync, afterImport: () => watcher.start() }, deps.jobs, hub);
   aiRoutes(app, global, agent);
 
   app.delete<{ Params: { id: string } }>('/api/problems/:id/cache', async req => {

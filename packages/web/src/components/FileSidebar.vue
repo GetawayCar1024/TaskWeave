@@ -20,6 +20,7 @@ import { FilePlus, Folder, FolderPlus, Image, Languages, Plus } from 'lucide-vue
 import { ROLE_ICONS } from '../lib/icons';
 
 export type SidebarAction =
+  | { kind: 'newLanguage'; tutorial: boolean }
   | { kind: 'newFile'; dir: string }
   | { kind: 'newDir'; dir: string }
   | { kind: 'rename'; path: string }
@@ -270,13 +271,15 @@ const menuOptions = computed<DropdownOption[]>(() => {
   if (!n) return [];
   if (n.group === 'tutorial') {
     const missing = statementLanguages(props.ws.files.value).missingTutorial;
-    return [{ key: 'createTutorials', label: t('tree.createTutorials'), disabled: !missing.length }];
+    return [{ key: 'newLanguage', label: t('improve.language') }, { key: 'createTutorials', label: t('tree.createTutorials'), disabled: !missing.length }];
   }
+  if (n.group === 'statement') return [{ key: 'newLanguage', label: t('improve.language') }];
+  if (n.langGroup && n.langGroup !== 'images') return [{ key: 'deleteLanguage', label: t('tree.delete') }];
   if (n.group || n.dir !== undefined) {
     const dir = n.group ? ROLE_DIR[n.group] : `${n.dir}/`;
     return [
       { key: 'newFile', label: t('tree.newFile') },
-      { key: 'newDir', label: t('tree.newDir') },
+      ...(mode.value === 'dirs' ? [{ key: 'newDir', label: t('tree.newDir') }] : []),
       ...(n.dir !== undefined
         ? [{ type: 'divider', key: 'd0' }, { key: 'rename', label: t('tree.rename') }, { key: 'delete', label: t('tree.delete') }]
         : []),
@@ -322,6 +325,8 @@ function onMenu(key: string, option: DropdownOption) {
   if (!n) return;
   const path = n.path ?? n.dir ?? '';
   const act = (a: SidebarAction) => emit('action', a);
+  if (key === 'newLanguage') return act({ kind: 'newLanguage', tutorial: n.group === 'tutorial' });
+  if (key === 'deleteLanguage') return act({ kind: 'delete', path: `statement/${n.langGroup}` });
   if (key === 'createTutorials') return act({ kind: 'createTutorials', langs: statementLanguages(props.ws.files.value).missingTutorial });
   if (key === 'newFile' || key === 'newDir') return act({ kind: key, dir: (option as { dir: string }).dir });
   if (key === 'open') return props.ws.openFile(path);
@@ -349,7 +354,7 @@ function onMenu(key: string, option: DropdownOption) {
         </template>
         {{ t('tree.newFile') }}
       </n-tooltip>
-      <n-tooltip>
+      <n-tooltip v-if="mode === 'dirs'">
         <template #trigger>
           <n-button size="tiny" quaternary @click="emit('action', { kind: 'newDir', dir: '' })"><folder-plus :size="15" /></n-button>
         </template>

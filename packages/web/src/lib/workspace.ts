@@ -40,6 +40,7 @@ export function useWorkspace(problemId: string) {
     tabs: [] as Tab[],
     active: null as string | null,
     fileOpenRevision: 0,
+    contentRevision: 0,
     languages: {} as LanguagesConfig,
     shared: null as SharedListResponse | null,
   });
@@ -111,6 +112,7 @@ export function useWorkspace(problemId: string) {
     disposables.push(
       model.onDidChangeContent(() => {
         tab.dirty = model.getAlternativeVersionId() !== tab.savedVersion;
+        state.contentRevision++;
       }),
     );
     const lintLang = path.match(/^statement\/([^/]+)\/[^/]+\.tex$/)?.[1];

@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { serverText } from '../lib/serverText';
+import { registerExitGuard, exitApproved } from '../lib/exitGuards';
+import { unsavedChoice } from '../lib/confirmUnsaved';
 import { useI18n } from 'vue-i18n';
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
-import { NButton, NDropdown, NInput, NModal, NResult, NScrollbar, NSpace, NSpin, NSplit, NTabPane, NTabs, NTooltip, useDialog, useMessage } from 'naive-ui';
+import { NButton, NDropdown, NInput, NModal, NResult, NSelect, NScrollbar, NSpace, NSpin, NSplit, NTabPane, NTabs, NTooltip, useDialog, useMessage } from 'naive-ui';
 import { isSourceFile, statementLanguages } from '@polyforge/shared';
+import DirPicker from '../components/DirPicker.vue';
+import { loadSettings } from '../lib/settings';
 import AppHeader from '../components/AppHeader.vue';
 import DiffDialog from '../components/DiffDialog.vue';
 import EditorPane from '../components/EditorPane.vue';
@@ -54,22 +58,28 @@ function goBack() {
 }
 
 const ws = useWorkspace(props.id);
+registerExitGuard(async () => {
+  for (const tab of [...ws.state.tabs]) {
+    if (!tab.dirty) continue;
+    const choice = await unsavedChoice(dialog, t('editor.unsavedTitle'), tab.path, { save: t('common.save'), discard: t('editor.discard'), cancel: t('improve.cancelExit') });
+    if (choice === 'cancel') return false;
+    if (choice === 'save') {
+      const result = await ws.save(tab.path);
+      if (result !== 'ok') { if (result === 'conflict') await showDiff(tab.path); return false; }
+    }
+  }
+  return true;
+});
 const judge = useJudge(props.id, ws);
 const ai = useAi(props.id);
-const showAi = ref(false);
+const showAi = computed({ get: () => rightTab.value === 'ai', set: (v: boolean) => { if (v) rightTab.value = 'ai'; else if (rightTab.value === 'ai') rightTab.value = 'info'; } });
 const summary = computed(() => ws.state.detail?.summary);
 
 // ---- right panel / judge actions ----
-const rightTab = ref<'info' | 'tests' | 'run' | 'selftest'>('info');
-const aiSplitSize = ref(0.62);
-const toolsSplitSize = ref(0.76);
-const rightSplitSize = computed({
-  get: () => showAi.value ? aiSplitSize.value : toolsSplitSize.value,
-  set: (value: number) => { if (showAi.value) aiSplitSize.value = value; else toolsSplitSize.value = value; },
-});
+const rightTab = ref<'info' | 'tests' | 'run' | 'selftest' | 'ai'>('info');
+const rightSplitSize = ref(0.76);
 function showTools(tab: typeof rightTab.value) {
   rightTab.value = tab;
-  showAi.value = false;
 }
 const runPanel = ref<InstanceType<typeof RunPanel>>();
 const showInvocation = ref(false);
@@ -105,6 +115,7 @@ function openAiReview() {
 }
 
 const moreOptions = computed(() => [
+  { key: 'move', label: t('improve.move') },
   { key: 'clear-cache', label: t('fix.clearCache') },
   { key: 'lint', label: `${t('toolbar.lint')}  (Ctrl+Shift+L)` },
   { key: 'export', label: t('toolbar.export'), disabled: exporting.value },
@@ -114,7 +125,15 @@ const moreOptions = computed(() => [
   { key: 'shortcuts', label: `${t('shortcuts.title')}  (Ctrl+/)` },
 ]);
 
+const movePicker = ref(false);
+async function moveTo(root: string) {
+  if (ws.hasDirty.value) return message.warning(t('improve.moveBusy'));
+  try { await api.moveProblem(props.id, root); await ws.loadDetail(); await loadSettings(); message.success(t('improve.moveDone')); }
+  catch (e) { message.error(errorMessage(e)); }
+}
 function onMore(key: string) {
+  if (key === 'move') { if (ws.hasDirty.value) message.warning(t('improve.moveBusy')); else movePicker.value = true; return; }
+
   if (key === 'clear-cache') {
     dialog.warning({ title: t('fix.clearCache'), content: t('fix.clearCacheHint'), positiveText: t('common.ok'), negativeText: t('common.cancel'), onPositiveClick: async () => {
       try { await api.clearCache(props.id); await judge.loadManifest(); message.success(t('fix.cacheCleared')); }
@@ -258,6 +277,23 @@ function closeTab(path: string) {
   });
 }
 
+const languageDialog = ref(false);
+const languageCode = ref('');
+const languageTutorial = ref(false);
+const languageOptions = computed(() => ['zh', 'en', 'ru', 'es', 'fr', 'de', 'ja', 'ko'].map(value => ({ label: value, value })));
+async function createLanguage() {
+  const lang = languageCode.value.trim().toLowerCase();
+  if (!/^[a-z]{2,8}$/.test(lang) || lang === 'images') return;
+  const langs = statementLanguages(ws.files.value);
+  if ((languageTutorial.value ? langs.tutorial : langs.statement).includes(lang)) return message.warning(t('improve.languageExists'));
+  try {
+    if (languageTutorial.value) await ws.createFile(`statement/${lang}/tutorial.tex`, '');
+    else await ws.createDir(`statement/${lang}`);
+    await ws.loadDetail();
+    await ws.openFile(`statement/${lang}/${languageTutorial.value ? 'tutorial' : 'legend'}.tex`);
+    languageDialog.value = false;
+  } catch (e) { message.error(errorMessage(e)); }
+}
 // ---- prompt (new file / rename) ----
 const prompt = ref({ show: false, title: '', value: '', resolve: (_v: string | null) => {} });
 function ask(title: string, value: string): Promise<string | null> {
@@ -272,6 +308,7 @@ function finishPrompt(ok: boolean) {
 async function onAction(a: SidebarAction) {
   try {
     switch (a.kind) {
+      case 'newLanguage': { languageTutorial.value = a.tutorial; languageCode.value = ''; languageDialog.value = true; break; }
       case 'newFile': {
         const p = await ask(t('tree.newFile'), a.dir);
         if (p) await ws.createFile(p);
@@ -371,7 +408,6 @@ function onKeydown(e: KeyboardEvent) {
   const k = e.key.toLowerCase();
   if (k === 'w' && !e.shiftKey && desktop && showAi.value && (e.target as HTMLElement).closest?.('.ai-sidebar')) {
     e.preventDefault();
-    showAi.value = false;
   } else if (k === 'w' && !e.shiftKey && wLocked.value && ws.state.active) {
     e.preventDefault();
     closeTab(ws.state.active);
@@ -408,6 +444,7 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 function onBeforeUnload(e: BeforeUnloadEvent) {
+  if (exitApproved) return;
   if (ws.hasDirty.value) e.preventDefault();
 }
 
@@ -491,9 +528,6 @@ onBeforeUnmount(() => {
           </template>
           Ctrl+Shift+U
         </n-tooltip>
-        <n-button size="small" :type="showAi || ai.running.value ? 'primary' : 'default'" :aria-pressed="showAi" @click="showAi = !showAi">
-          AI<template v-if="ai.state.changes.length"> · {{ ai.state.changes.length }}</template>
-        </n-button>
         <n-dropdown trigger="click" :options="moreOptions" @select="onMore">
           <n-button size="small" :loading="exporting" icon-placement="right"><template #icon><chevron-down /></template>{{ t('toolbar.more') }}</n-button>
         </n-dropdown>
@@ -538,21 +572,23 @@ onBeforeUnmount(() => {
             />
           </template>
           <template #2>
-            <aside v-show="showAi" class="ai-sidebar" :aria-label="t('palette.aiChat')">
-              <ai-drawer ref="aiDrawer" embedded v-model:show="showAi" :ai="ai" :problem-id="id" :ws="ws" />
-            </aside>
-            <n-tabs v-show="!showAi" v-model:value="rightTab" type="line" size="small" class="right-tabs" pane-class="right-pane">
-              <n-tab-pane name="info" :tab="t('panel.info')">
+            <n-tabs v-model:value="rightTab" type="line" size="small" class="right-tabs" pane-class="right-pane">
+              <n-tab-pane key="info" name="info" :tab="t('panel.info')">
                 <info-panel :ws="ws" :judge="judge" />
               </n-tab-pane>
-              <n-tab-pane name="tests" :tab="t('panel.tests')">
+              <n-tab-pane key="tests" name="tests" :tab="t('panel.tests')">
                 <n-scrollbar style="height: 100%"><tests-panel :ws="ws" :judge="judge" :problem-id="id" @run-on-test="runOnTest" /></n-scrollbar>
               </n-tab-pane>
-              <n-tab-pane name="run" :tab="t('panel.run')" display-directive="show">
+              <n-tab-pane key="run" name="run" :tab="t('panel.run')" display-directive="show">
                 <n-scrollbar style="height: 100%"><run-panel ref="runPanel" :ws="ws" :judge="judge" :problem-id="id" /></n-scrollbar>
               </n-tab-pane>
-              <n-tab-pane name="selftest" :tab="t('panel.selftest')">
+              <n-tab-pane key="selftest" name="selftest" :tab="t('panel.selftest')">
                 <n-scrollbar style="height: 100%"><self-test-panel :ws="ws" :judge="judge" /></n-scrollbar>
+              </n-tab-pane>
+              <n-tab-pane key="ai" name="ai" tab="AI" display-directive="show">
+                <aside class="ai-sidebar" :aria-label="t('palette.aiChat')">
+                  <ai-drawer ref="aiDrawer" embedded :show="showAi" :ai="ai" :problem-id="id" :ws="ws" />
+                </aside>
               </n-tab-pane>
             </n-tabs>
           </template>
@@ -576,6 +612,11 @@ onBeforeUnmount(() => {
     <sync-dialog v-model:show="showSync" :ws="ws" :problem-id="id" :initial-tab="syncTab" />
     <diff-dialog v-model:show="diff.show" :path="diff.path" :disk="diff.disk" :mine="diff.mine" @keep-mine="keepMine" @use-disk="useDisk" />
 
+    <dir-picker v-model:show="movePicker" :initial="summary?.root" @pick="moveTo" />
+    <n-modal v-model:show="languageDialog" preset="card" :title="t('improve.language')" style="width: 420px">
+      <n-select v-model:value="languageCode" filterable tag :options="languageOptions" :placeholder="t('improve.selectLanguage')" />
+      <template #footer><n-button type="primary" :disabled="!/^[a-z]{2,8}$/.test(languageCode) || languageCode === 'images'" @click="createLanguage">{{ t('common.create') }}</n-button></template>
+    </n-modal>
     <n-modal v-model:show="prompt.show" preset="card" :title="prompt.title" style="width: 480px" @after-leave="prompt.resolve(null)">
       <n-input v-model:value="prompt.value" class="mono" autofocus @keyup.enter="finishPrompt(true)" />
       <template #footer>

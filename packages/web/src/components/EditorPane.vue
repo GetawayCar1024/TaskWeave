@@ -26,6 +26,13 @@ const { t } = useI18n();
 const host = ref<HTMLDivElement>();
 let editor: monaco.editor.IStandaloneCodeEditor | null = null;
 let current: Tab | null = null;
+let restoring = false;
+const viewStates = new Map<string, monaco.editor.ICodeEditorViewState>();
+function rememberView() {
+  if (restoring || !current || !editor) return;
+  const state = editor.saveViewState();
+  if (state) viewStates.set(current.path, state);
+}
 
 function editorOptions(): monaco.editor.IEditorOptions & monaco.editor.IGlobalEditorOptions {
   const ed = settings.config!.editor;
@@ -57,17 +64,19 @@ onMounted(() => {
   props.ws.editorRef.value = editor;
   editor.onDidScrollChange(() => {
     const p = previewHost.value;
-    if (!syncScroll.value || !p || !editor) return;
+    if (restoring || !syncScroll.value || !p || !editor) return;
     const height = editor.getScrollHeight() - editor.getLayoutInfo().height;
     const top = height > 0 ? editor.getScrollTop() / height * (p.scrollHeight - p.clientHeight) : 0;
     if (Math.abs(p.scrollTop - top) > 1) p.scrollTop = top;
   });
+  editor.onDidChangeCursorSelection(rememberView);
+  editor.onDidScrollChange(rememberView);
   show(props.ws.activeTab.value);
 });
 
 function scrollPreview() {
   const p = previewHost.value;
-  if (!syncScroll.value || !p || !editor) return;
+  if (restoring || !syncScroll.value || !p || !editor) return;
   const height = p.scrollHeight - p.clientHeight;
   const top = height > 0 ? p.scrollTop / height * (editor.getScrollHeight() - editor.getLayoutInfo().height) : 0;
   if (Math.abs(editor.getScrollTop() - top) > 1) editor.setScrollTop(top);
@@ -76,13 +85,17 @@ function scrollPreview() {
 function show(tab: Tab | null) {
   if (!editor) return;
   if (current && current !== tab && !current.model.isDisposed()) current.viewState = editor.saveViewState();
+  rememberView();
+  restoring = true;
   current = tab;
   editor.setModel(tab && !tab.model.isDisposed() ? tab.model : null);
   if (tab) {
     editor.updateOptions({ ...editorOptions(), readOnly: tab.readOnly });
-    if (tab.viewState) editor.restoreViewState(tab.viewState);
+    const state = viewStates.get(tab.path) ?? tab.viewState;
+    if (state) editor.restoreViewState(state);
     editor.focus();
   }
+  restoring = false;
 }
 
 watch(() => props.ws.activeTab.value, show);
