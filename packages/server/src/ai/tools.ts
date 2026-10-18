@@ -309,7 +309,7 @@ const PROBLEM_PROP = { type: 'string', description: 'Problem folder name (or con
 /** Tool definitions for a contest session: paths start with the problem folder. */
 export function contestToolsFor(mode: AiSessionMode): ToolDef[] {
   return toolsFor(mode).map((d) => {
-    if (d.name === 'list_files') return { ...d, description: 'List every file of every problem of the contest ("<problem>/<path>"), with size and role.' };
+    if (d.name === 'list_files') return { ...d, description: 'List contest files (files/<path>) and every problem file (<problem>/<path>), with size and role.' };
     if (SESSION_TOOLS.has(d.name)) return d;
     const schema = d.input_schema as { properties?: Record<string, unknown>; required?: string[] };
     if (PROBLEM_ARG_TOOLS.has(d.name)) {
@@ -318,7 +318,7 @@ export function contestToolsFor(mode: AiSessionMode): ToolDef[] {
         input_schema: { ...schema, properties: { problem: PROBLEM_PROP, ...(schema.properties ?? {}) }, required: ['problem', ...(schema.required ?? [])] },
       };
     }
-    return { ...d, description: `${d.description} The path starts with the problem folder, e.g. "a-plus-b/statement/en/legend.tex".` };
+    return { ...d, description: `${d.description} Paths start with the problem folder, e.g. "a-plus-b/statement/en/legend.tex", or "files/" for contest-wide documents, e.g. "files/notes.tex".` };
   });
 }
 
@@ -339,6 +339,11 @@ export async function runContestTool(name: string, input: unknown, env: ContestT
     if (name === 'list_files') {
       const out: string[] = [];
       for (const { part, sandbox } of await env.sandbox.list()) {
+        if (part.kind === 'files') {
+          out.push('# Contest files (notes.tex: instructions below the contents table)');
+          for (const [rel, abs] of await sandbox.files()) out.push(`files/${rel} (${(await fsp.stat(abs)).size} B)`);
+          continue;
+        }
         const r = await runTool(name, {}, env.forProblem(part, sandbox), mode);
         out.push(`# ${part.index} = ${part.id}`, ...r.content.split('\n').map((l) => (r.isError ? l : `${part.id}/${l}`)), '');
       }
@@ -359,6 +364,7 @@ export async function runContestTool(name: string, input: unknown, env: ContestT
       return { content: `${name} needs "problem" (one of: ${(await env.sandbox.list()).map((x) => x.part.id).join(', ')})`, isError: true };
     }
     delete i.problem;
+    if (target.part.kind === 'files' && !['read_file', 'write_file', 'edit_file', 'delete_file'].includes(name)) return { content: 'Contest files support file tools only; select a problem for judging tools.', isError: true };
     const r = await runTool(name, i, env.forProblem(target.part, target.sandbox), mode);
     // Results name paths inside the problem; give them back with the folder, as the model wrote them.
     const rest = typeof i.path === 'string' ? i.path : '';

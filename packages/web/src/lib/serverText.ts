@@ -23,6 +23,19 @@ const LANG: Record<string, string> = { chinese: '中文', english: '英文', rus
 const ROLE: Record<string, string> = { validator: '校验器', checker: '检查器', interactor: '交互器', generator: '生成器', source: '源文件', 'Main solution': '主解法', Validator: '校验器', Checker: '检查器', Interactor: '交互器', Generator: '生成器' };
 
 const RULES: Rule[] = [
+  [/^checking Lemon checker$/, () => '检查 Lemon 检查器'],
+  [/^LemonLime preflight failed; no tests were generated\.$/, () => 'LemonLime 导出预检查失败，尚未生成测试数据。'],
+  [/^LemonLime export failed; no incomplete archive was produced\.$/, () => 'LemonLime 导出失败，未生成不完整的评测包。'],
+  [/^(.+): no Lemon checker configured\. Select a Testlib for Lemons source in Information > Lemon checker\.$/, m => `${m[1]}：尚未配置 Lemon 检查器，请在“信息 → Lemon 检查器”中选择使用 Testlib for Lemons 的源码。`],
+  [/^(.+): Lemon checker compilation failed\.$/, m => `${m[1]}：Lemon 检查器编译失败。`],
+  [/^(.+): Lemon checker protocol check failed on test (\d+)\..*$/, m => `${m[1]}：Lemon 检查器在测试 ${m[2]} 上未通过协议检查。请使用 Testlib for Lemons 和 registerLemonChecker(argc, argv)，并确认标准答案能在评分文件中获得满分。`],
+  [/^Polygon does not support downloadable large samples\. Show all samples in the statement before syncing\.$/, () => 'Polygon 不支持以文件下发的大样例。请先将所有样例设为在题面中展示，再进行同步。'],
+  [/^Statements or samples changed\. Refresh the OI preview and export down.zip again\.$/, () => '题面或样例已修改，请刷新 OI 预览后重新导出 down.zip。'],
+  [/^Sample test (\d+) exceeds 256 KiB\. Mark it as a large sample to display a file reference\.$/, m => `样例测试 ${m[1]} 超过 256 KiB，请在测试面板中关闭“在题面中展示”，改为大样例文件提示。`],
+  [/^Grader problems cannot connect to Polygon\.$/, () => 'Grader 交互题不支持连接或同步到 Polygon。'],
+  [/^(.+): Polygon requires integer test points; fractional subtask scores are not supported\.$/, m => `${m[1]}：Polygon 只支持整数测试点分值，不支持小数子任务分值。`],
+  [/^Grader problems cannot use Polygon packages\. Export the contest to LemonLime instead\.$/, () => 'Grader 交互题不支持 Polygon 包，请将比赛导出为 LemonLime 格式。'],
+  [/^Polygon unsupported syntax: (.+) \((.+):(\d+)\); exported as plain content where necessary$/, (m) => `Polygon 不支持的语法：${({ blockquote: '引用框', strikethrough: '删除线', 'horizontal-rule': '分隔线', 'external-image': '外部图片' } as Record<string, string>)[m[1]] ?? m[1]}（${m[2]}，第 ${m[3]} 行）。同步时保留内容并降级不支持的排版。`],
   // ---- job progress ----
   [/^compiling$/, () => '编译中'],
   [/^running$/, () => '运行中'],

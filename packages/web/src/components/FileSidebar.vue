@@ -90,6 +90,9 @@ const roleTree = computed<Node[]>(() => {
     const path = `${SHARED_TAB}defs.toml`;
     groups.set('resource', [{key: path, label: 'defs.toml (shared)', path, role: 'resource', isLeaf: true}]);
   }
+  const oiDefs = `${SHARED_TAB}oi/defs.toml`;
+  if (!groups.has('resource')) groups.set('resource', []);
+  groups.get('resource')!.push({ key: oiDefs, label: 'oi/defs.toml (shared)', path: oiDefs, role: 'resource', isLeaf: true });
   for (const f of props.ws.files.value) {
     const role = props.ws.roleOf(f.path);
     const strip = STRIP[role];

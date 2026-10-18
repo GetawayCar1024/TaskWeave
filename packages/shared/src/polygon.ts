@@ -78,6 +78,7 @@ export interface PushItem extends SyncItem {
 }
 
 export interface PushPreview {
+  blocked?: boolean;
   polygonId?: number;
   name: string;
   items: PushItem[];

@@ -142,7 +142,7 @@ const buildPackage = ref(false);
 const packageType = ref<'standard' | 'full'>('standard');
 watch(commit, v => { if (!v) buildPackage.value = false; });
 const pushResult = ref<ContestBatchResult | null>(null);
-const pushable = (r: ContestSyncRow) => r.state !== 'missing' && r.state !== 'unreachable';
+const pushable = (r: ContestSyncRow) => !r.blocked && r.state !== 'missing' && r.state !== 'unreachable';
 function setPush(problem: string, on: boolean) {
   const next = new Set(pushPick.value);
   if (on) next.add(problem);

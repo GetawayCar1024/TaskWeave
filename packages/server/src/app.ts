@@ -1,6 +1,7 @@
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { contestFile } from './workspace/contestFiles.js';
 import { defaultParallel } from './judge/runner.js';
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
@@ -13,7 +14,7 @@ import {
   type SettingsResponse,
   type WriteFileRequest,
 } from '@polyforge/shared';
-import { parseDefsToml } from './defs.js';
+import { parseDefsToml, readSharedDefs } from './defs.js';
 import type { GlobalStore } from './global.js';
 import type { JobManager } from './jobs.js';
 import type { Judge } from './judge/index.js';
@@ -27,6 +28,7 @@ import { PolygonError } from './polygon/client.js';
 import { PolygonSync } from './polygon/sync.js';
 import { samePath } from './global.js';
 import { listShared, stdRefToPath } from './sharedFiles.js';
+import { createLemonChecker } from './judge/lemonChecker.js';
 import { detectTools, listDirs } from './tools.js';
 import { HttpError, exists, safeJoin, validateFileName } from './util/fs.js';
 import { FileService } from './workspace/files.js';
@@ -88,7 +90,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const isWs = req.url.startsWith('/ws');
     if (!isApi && !isWs) return;
     // WebSockets and <img src> (statement images) cannot send headers.
-    const queryOk = isWs || /^\/api\/problems\/[^/]+\/raw\//.test(req.url);
+    const queryOk = isWs || /^\/api\/problems\/[^/]+\/raw\//.test(req.url) || /^\/api\/contests\/[^/]+\/file\/raw\?/.test(req.url);
     const given = req.headers[TOKEN_HEADER] ?? (queryOk ? new URL(req.url, 'http://x').searchParams.get('token') : null);
     if (given !== token) return reply.code(401).send({ error: 'unauthorized', message: 'Missing or invalid token' });
   });
@@ -116,7 +118,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const zip = new ZipWriter();
     zip.add('statement.md', markdown);
     for (const image of images) {
-      if (!image || typeof image.problem !== 'string' || typeof image.path !== 'string' || !/^image-\d+\.[a-zA-Z0-9]+$/.test(image.name) || image.path.includes('\\') || !path.posix.normalize(image.path).startsWith('statement/images/')) throw new HttpError(400, 'bad_path', 'Invalid image path');
+      if (!image || typeof image.problem !== 'string' || typeof image.path !== 'string' || !/^image-\d+\.[a-zA-Z0-9]+$/.test(image.name) || image.path.includes('\\')) throw new HttpError(400, 'bad_path', 'Invalid image path');
+      if (image.problem.startsWith('contest:')) {
+        const ref = await deps.contests.get(image.problem.slice('contest:'.length));
+        zip.add(`images/${image.name}`, await fsp.readFile(await contestFile(ref.dir, image.path)));
+        continue;
+      }
+      if (!path.posix.normalize(image.path).startsWith('statement/images/')) throw new HttpError(400, 'bad_path', 'Invalid image path');
       const ref = await registry.get(image.problem);
       zip.add(`images/${image.name}`, await fsp.readFile(safeJoin(ref.dir, image.path)));
     }
@@ -177,7 +185,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   /** Parsed defs.toml (statement macros, DESIGN §4.6). */
   app.get('/api/shared/defs', async () => {
     try {
-      return parseDefsToml(await fsp.readFile(path.join(global.sharedDir, 'defs.toml'), 'utf8'));
+      return parseDefsToml(await readSharedDefs(global.sharedDir));
     } catch (e) {
       throw new HttpError(500, 'bad_defs', `defs.toml: ${(e as Error).message}`);
     }
@@ -226,6 +234,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   app.get<{ Params: { id: string } }>('/api/problems/:id', async (req) => registry.detail(req.params.id));
+  app.post<{ Params: { id: string } }>('/api/problems/:id/lemon-checker', async req => {
+    const result = await createLemonChecker(deps.judge, req.params.id);
+    hub.broadcast({ type: 'problem:changed', problemId: req.params.id });
+    return result;
+  });
 
   app.patch<{ Params: { id: string }; Body: PatchProblemRequest }>('/api/problems/:id', async (req) => {
     const detail = await registry.patch(req.params.id, req.body ?? {});

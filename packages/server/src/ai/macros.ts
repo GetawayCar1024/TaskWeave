@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { parseDefsToml } from '../defs.js';
+import { parseDefsToml, readSharedDefs } from '../defs.js';
 
 interface Command {
   name: string;
@@ -11,17 +11,19 @@ interface Command {
 /** defs.toml tables per statement language, as the statement preview uses them. */
 const TABLES: Record<string, string[]> = { en: ['english', 'common'], zh: ['chinese', 'english', 'common'], ru: ['russian', 'english', 'common'] };
 
-let cache: { mtime: number; defs: Record<string, { command?: { name: string; args?: string[]; body?: string }[] }> } | null = null;
+let cache: { key: string; defs: Record<string, { command?: { name: string; args?: string[]; body?: string }[] }> } | null = null;
 
 async function loadDefs(sharedDir: string) {
   const file = path.join(sharedDir, 'defs.toml');
   const st = await fsp.stat(file).catch(() => null);
   if (!st) return {};
-  if (!cache || cache.mtime !== st.mtimeMs) {
+  const oi = await fsp.stat(path.join(sharedDir, 'oi', 'defs.toml')).catch(() => null);
+  const key = `${sharedDir}:${st.mtimeMs}:${st.size}:${oi?.mtimeMs}:${oi?.size}`;
+  if (!cache || cache.key !== key) {
     try {
-      cache = { mtime: st.mtimeMs, defs: parseDefsToml(await fsp.readFile(file, 'utf8')) as never };
+      cache = { key, defs: parseDefsToml(await readSharedDefs(sharedDir)) as never };
     } catch {
-      cache = { mtime: st.mtimeMs, defs: {} };
+      cache = { key, defs: {} };
     }
   }
   return cache.defs;

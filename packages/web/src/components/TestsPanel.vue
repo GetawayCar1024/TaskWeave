@@ -122,6 +122,13 @@ async function setSample(index: number, on: boolean) {
     message.error(serverText(errorMessage(e)));
   }
 }
+async function setSampleVisible(index: number, visible: boolean) {
+  const cur = parseIndexList(props.ws.state.detail?.config?.tests.large_samples ?? '');
+  try {
+    await props.ws.patch({ largeSamples: compressRanges(visible ? cur.filter(i => i !== index) : [...cur, index]) });
+    await props.judge.loadManifest();
+  } catch (e) { message.error(serverText(errorMessage(e))); }
+}
 const selected = ref<number | null>(null);
 
 async function resetStatementFile(test: TestInfo, which: 'in' | 'out') {
@@ -236,7 +243,7 @@ watch(
           :options="testsets.map((x) => ({ label: x, value: x }))"
           style="width: 110px"
         />
-        <n-button size="small" quaternary :title="t('testsets.title')" @click="showTestsets = true"><layers :size="15" /></n-button>
+        <n-button size="small" quaternary :title="t('testsets.title')" @click="showTestsets = true"><template #icon><layers :size="15" /></template>{{ t('testsets.title') }}</n-button>
         <n-button size="small" quaternary :disabled="running" @click="openAdd"><template #icon><plus /></template>{{ t('tests.addTest') }}</n-button>
       </n-space>
       <span v-if="manifest" class="dim small">{{ t('tests.count', { n: manifest.tests.length }) }} · {{ new Date(manifest.generatedAt).toLocaleTimeString() }}</span>
@@ -280,6 +287,8 @@ watch(
             {{ t('tests.sample') }}
           </label>
           <template v-if="testset === 'tests' && current.sample">
+            <label class="sample-toggle"><n-switch size="small" :value="!current.largeSample" :disabled="running" @update:value="(v: boolean) => setSampleVisible(current!.index, v)" />{{ t('oiFeatures.inlineSample') }}</label>
+            <n-tag v-if="current.largeSample" size="small" type="info">{{ t('oiFeatures.largeSample') }}</n-tag>
             <n-button size="tiny" :type="current.statementInput ? 'info' : 'default'" :title="current.statementInput ?? ''" @click="editStatementFile(current, 'in')">{{ t('tests.statementInputBtn') }}</n-button>
             <n-button v-if="current.statementInput" size="tiny" :title="t('fix.resetStatement')" @click="resetStatementFile(current, 'in')"><x :size="12" /></n-button>
             <n-button size="tiny" :type="current.statementOutput ? 'info' : 'default'" :title="current.statementOutput ?? ''" @click="editStatementFile(current, 'out')">{{ t('tests.statementOutputBtn') }}</n-button>

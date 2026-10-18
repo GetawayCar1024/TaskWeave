@@ -103,6 +103,13 @@ const aiBase = (owner: string) => (owner.startsWith('contest:') ? `/contests/${p
 const tsq = (ts?: string) => (ts && ts !== 'tests' ? `?testset=${encodeURIComponent(ts)}` : '');
 
 export const api = {
+  statementSamples: (id: string) => request<import('@polyforge/shared').StatementSample[]>('GET', `/problems/${pid(id)}/statement-samples`),
+  contestDown: async (id: string, lang: string, pdf: Blob, statements: ContestStatement[], notes: string) => {
+    const base64 = await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1]); r.onerror = reject; r.readAsDataURL(pdf); });
+    const res = await fetch(`/api/contests/${pid(id)}/down`, { method: 'POST', headers: { [TOKEN_HEADER]: token, 'Content-Type': 'application/json' }, body: JSON.stringify({ lang, pdf: base64, statements, notes }) });
+    if (!res.ok) throw new Error((await res.json()).message ?? res.statusText);
+    const url = URL.createObjectURL(await res.blob()); const a = document.createElement('a'); a.href = url; a.download = 'down.zip'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
+  },
   exportMarkdown: async (name: string, markdown: string, images: { problem: string; path: string; name: string }[]) => {
     const res = await fetch('/api/export/markdown', { method: 'POST', headers: { [TOKEN_HEADER]: token, 'Content-Type': 'application/json' }, body: JSON.stringify({ name, markdown, images }) });
     if (!res.ok) throw new Error((await res.json()).message ?? res.statusText);
@@ -114,6 +121,7 @@ export const api = {
   stopAllAi: () => request<{ ok: boolean }>('POST', '/shutdown/stop-ai'),
   clearAiScratch: (owner: string, sid: string) => request('DELETE', `${aiBase(owner)}/ai/sessions/${encodeURIComponent(sid)}/scratch`),
   clearCache: (id: string) => request('DELETE', `/problems/${pid(id)}/cache`),
+  convertLemonChecker: (id: string) => request<{ source: string }>('POST', `/problems/${pid(id)}/lemon-checker`),
   contestLastResult: (id: string) => request<import('@polyforge/shared').ContestBatchResult | null>('GET', `/contests/${pid(id)}/batch/latest`),
   settings: () => request<SettingsResponse>('GET', '/settings'),
   saveSettings: (config: GlobalConfig) => request<SettingsResponse>('PUT', '/settings', config),
@@ -209,6 +217,14 @@ export const api = {
   updateContest: (id: string, req: UpdateContestRequest) => request<ContestDetail>('PUT', `/contests/${pid(id)}`, req),
   deleteContest: (id: string) => request<{ ok: true }>('DELETE', `/contests/${pid(id)}`),
   contestStatements: (id: string, lang: string) => request<ContestStatement[]>('GET', `/contests/${pid(id)}/statements?lang=${encodeURIComponent(lang)}`),
+  contestFiles: (id: string) => request<import('@polyforge/shared').FileNode[]>('GET', `/contests/${pid(id)}/files`),
+  contestFile: (id: string, path: string) => request<FileContent>('GET', `/contests/${pid(id)}/file?path=${encodeURIComponent(path)}`),
+  saveContestFile: (id: string, path: string, content: string, hash?: string) => request<{ hash: string }>('PUT', `/contests/${pid(id)}/file?path=${encodeURIComponent(path)}`, { content, hash }),
+  uploadContestFile: (id: string, path: string, base64: string) => request('POST', `/contests/${pid(id)}/file?path=${encodeURIComponent(path)}`, { base64 }),
+  deleteContestFile: (id: string, path: string) => request('DELETE', `/contests/${pid(id)}/file?path=${encodeURIComponent(path)}`),
+  contestNotes: (id: string) => request<{ content: string }>('GET', `/contests/${pid(id)}/notes`),
+  generateContestDocument: (id: string, lang: string, doc: 'statements' | 'tutorials') => request<{ path: string }>('POST', `/contests/${pid(id)}/generate-document`, { lang, doc }),
+  downloadContestFile: (id: string, path: string) => download(`/api/contests/${pid(id)}/file/raw?path=${encodeURIComponent(path)}`, path.split('/').pop()!),
   contestBatch: (id: string, req: ContestBatchRequest) => request<JobInfo>('POST', `/contests/${pid(id)}/batch`, req),
   importContest: (req: ContestImportRequest) => request<JobInfo>('POST', '/contests/import/polygon', req),
   contestSyncStatus: (id: string) => request<ContestSyncStatus>('GET', `/contests/${pid(id)}/polygon/status`),

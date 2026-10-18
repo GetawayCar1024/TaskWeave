@@ -2,6 +2,7 @@ import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import {
   DEFAULT_TESTSET,
+  judgeMode,
   checkText,
   lintStatement,
   parseIndexList,
@@ -54,7 +55,7 @@ export async function localChecks(_judge: Judge, ctx: ProblemCtx): Promise<Local
   for (const lang of langs.orphanTutorial) add('warning', 'tutorial', 'orphanTutorial', { lang }, { file: `statement/${lang}/tutorial.tex` });
   for (const f of files) {
     if (!f.size) continue;
-    const { issues } = lintStatement(f.text, { lang: f.path.split('/')[1] });
+    const { issues } = lintStatement(f.text, { lang: f.path.split('/')[1], allowMarkdown: true });
     if (!issues.length) continue;
     const rules = [...new Set(issues.map((i) => i.rule))].join(', ');
     const fixable = issues.every((i) => i.fixable);
@@ -64,6 +65,10 @@ export async function localChecks(_judge: Judge, ctx: ProblemCtx): Promise<Local
   // ---- programs ----
   if (!config.validator || !(await has(config.validator.source))) add('error', 'validator', 'noValidator');
   if (!config.checker || !(await has(config.checker.source))) add('error', 'checker', 'noChecker');
+  if (judgeMode(config.problem) === 'grader') {
+    if (!config.grader?.sources.length) add('error', 'solutions', 'noGrader');
+    for (const file of [...(config.grader?.sources ?? []), ...(config.grader?.headers ?? [])]) if (!(await has(file))) add('error', 'solutions', 'solutionMissing', { file }, { file: 'problem.toml' });
+  }
   if (config.problem.type !== 'oi' && config.problem.interactive && (!config.interactor || !(await has(config.interactor.source)))) add('error', 'interactor', 'noInteractor');
   const ma = config.solutions.filter((s) => s.tag === 'MA');
   if (ma.length !== 1) add('error', 'solutions', ma.length ? 'severalMain' : 'noMain', {}, { file: 'problem.toml' });

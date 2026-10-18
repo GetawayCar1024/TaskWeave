@@ -25,17 +25,31 @@ export function scoringInput(ctx: ProblemCtx, ts: TestsetConfig, tests: number[]
  */
 export function groupScore(input: ScoringInput): SolutionScore {
   const byIndex = new Map(input.tests.map((t) => [t.index, t]));
-  const testScore = (t: ScoringInput['tests'][number]) => t.checkerPoints ?? (t.verdict === 'OK' ? t.points ?? 0 : 0);
+  const testScore = (t: ScoringInput['tests'][number]) => t.verdict === 'OK' ? Math.max(0, Math.min(t.points ?? 0, t.checkerPoints ?? t.points ?? 0)) : 0;
   const passed = new Map<string, boolean>();
+  const definitions = new Map(input.groups.map(g => [g.name, g]));
+  const visiting = new Set<string>();
+  const passes = (name: string): boolean => {
+    if (passed.has(name)) return passed.get(name)!;
+    const g = definitions.get(name);
+    if (!g || visiting.has(name)) return false;
+    visiting.add(name);
+    const ok = g.tests.length > 0 && g.tests.every(i => {
+      const t = byIndex.get(i);
+      return !!t && t.verdict === 'OK' && (t.checkerPoints === undefined || t.checkerPoints >= (t.points ?? 0));
+    }) && g.dependencies.every(passes);
+    visiting.delete(name);
+    passed.set(name, ok);
+    return ok;
+  };
   const groups: GroupScore[] = [];
   for (const g of input.groups) {
     const run = g.tests.map((i) => byIndex.get(i)).filter((t): t is NonNullable<typeof t> => !!t);
-    const allOk = run.length === g.tests.length && run.every((t) => t.verdict === 'OK' && (t.checkerPoints === undefined || t.checkerPoints >= (t.points ?? 0)));
-    passed.set(g.name, allOk);
+    const allOk = passes(g.name);
     if (!run.length) continue;
     const max = g.points ?? run.reduce((a, t) => a + (t.points ?? 0), 0);
     let score = g.policy === 'EACH_TEST' ? run.reduce((a, t) => a + testScore(t), 0) : allOk ? max : 0;
-    const blockedBy = g.dependencies.filter((d) => passed.get(d) === false || (!passed.has(d) && input.groups.some((x) => x.name === d)));
+    const blockedBy = g.dependencies.filter(d => !passes(d));
     if (blockedBy.length) score = 0;
     groups.push({ name: g.name, score, max, passed: allOk, ...(blockedBy.length ? { blockedBy } : {}) });
   }

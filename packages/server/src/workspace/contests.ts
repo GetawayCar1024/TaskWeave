@@ -16,6 +16,7 @@ import {
   type UpdateContestRequest,
 } from '@polyforge/shared';
 import { samePath } from '../global.js';
+import { ensureContestFiles } from './contestFiles.js';
 import { atomicWrite, exists, HttpError } from '../util/fs.js';
 import type { GlobalStore } from '../global.js';
 import type { ProblemRegistry } from './problems.js';
@@ -95,6 +96,7 @@ export class ContestRegistry {
       ref = this.byId.get(id);
     }
     if (!ref) throw new HttpError(404, 'contest_not_found', `Contest not found: ${id}`);
+    await ensureContestFiles(ref.dir);
     return ref;
   }
 
@@ -168,6 +170,7 @@ export class ContestRegistry {
     const dir = await this.checkNew(name);
     const problems = await this.prepareProblems(req.problems ?? [], type);
     await fsp.mkdir(dir, { recursive: true });
+    await ensureContestFiles(dir);
     await this.write(dir, { contest: { name, type, title: req.title ?? {} }, problems });
     await this.scan();
     const ref = [...this.byId.values()].find((r) => samePath(r.dir, dir));

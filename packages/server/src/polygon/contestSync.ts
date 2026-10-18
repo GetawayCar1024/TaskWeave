@@ -7,6 +7,7 @@ import type {
   PolygonProblem,
 } from '@polyforge/shared';
 import type { JobCtx } from '../jobs.js';
+import { judgeMode, polygonFeatureWarnings } from '@polyforge/shared';
 import type { Judge } from '../judge/index.js';
 import { HttpError } from '../util/fs.js';
 import type { ContestRegistry } from '../workspace/contests.js';
@@ -54,8 +55,15 @@ export async function contestSyncStatus(deps: Deps, contestId: string): Promise<
       continue;
     }
     const polygonId = ctx.config.polygon.id;
+    if (judgeMode(ctx.config.problem) === 'grader') {
+      warnings.push(`${p.index} · Grader problems cannot connect to Polygon.`);
+      rows.push({ index: p.index, problem: p.problem, state: 'unbound', localChanges: 0, blocked: true });
+      continue;
+    }
     const local = await sync.localStatus(ctx);
+    warnings.push(...local.warnings.map(w => `${p.index} · ${w}`));
     const row: ContestSyncRow = { index: p.index, problem: p.problem, polygonId, state: 'unbound', localChanges: local.changes, tomlChanged: local.tomlChanged || undefined, syncedRevision: local.syncedRevision };
+    row.blocked = polygonFeatureWarnings(ctx.config).length > 0;
     if (polygonId !== undefined) {
       if (!revisions.has(polygonId)) row.state = 'unreachable';
       else {

@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import type { CompileResult, ProblemToml } from '@polyforge/shared';
+import { judgeMode, type CompileResult, type ProblemToml } from '@polyforge/shared';
 import type { GlobalStore } from '../global.js';
 import { HttpError, isDir } from '../util/fs.js';
 import type { ProblemRef, ProblemRegistry } from '../workspace/problems.js';
@@ -58,19 +58,20 @@ export class Judge {
   /** The `lang` override for a source, if problem.toml lists one. */
   langOf(config: ProblemToml, source: string): string | undefined {
     if (config.source_languages?.[source]) return config.source_languages[source];
-    const entries = [config.checker, config.validator, config.interactor, ...config.solutions, ...config.generators];
+    const entries = [config.checker, config.lemon_checker, config.validator, config.interactor, ...config.solutions, ...config.generators];
     return entries.find((e) => e?.source === source)?.lang;
   }
 
-  async compile(ctx: ProblemCtx, source: string): Promise<CompileOutcome> {
-    const out = await this.compiler.compile(ctx.ref.dir, source, this.langOf(ctx.config, source), ctx.buildRoot);
+  async compile(ctx: ProblemCtx, source: string, solution = ctx.config.solutions.some(s => s.source === source) || source.startsWith('solutions/')): Promise<CompileOutcome> {
+    const grader = solution && judgeMode(ctx.config.problem) === 'grader' ? ctx.config.grader ?? { sources: [], headers: [] } : undefined;
+    const out = await this.compiler.compile(ctx.ref.dir, source, this.langOf(ctx.config, source), ctx.buildRoot, grader);
     this.hub.broadcast({ type: 'build:done', problemId: ctx.ref.id, result: out.result });
     return out;
   }
 
   /** Compile or throw with the compiler log, for programs a job cannot do without. */
   async require(ctx: ProblemCtx, source: string, role: string): Promise<Program> {
-    const out = await this.compile(ctx, source);
+    const out = await this.compile(ctx, source, /solution/i.test(role) ? true : undefined);
     if (!out.program) throw new CompileFailure(role, out.result);
     return out.program;
   }

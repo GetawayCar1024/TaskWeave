@@ -1,4 +1,16 @@
 import { parse as parseToml } from 'smol-toml';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+
+/** Additional OI phrases are installed separately, preserving customized CF definitions. */
+export async function readSharedDefs(sharedDir: string): Promise<string> {
+  const base = await fs.readFile(path.join(sharedDir, 'defs.toml'), 'utf8');
+  const oi = await fs.readFile(path.join(sharedDir, 'oi', 'defs.toml'), 'utf8').catch((e: NodeJS.ErrnoException) => {
+    if (e.code === 'ENOENT') return '';
+    throw e;
+  });
+  return `${base.trimEnd()}\n\n${oi.trim()}\n`;
+}
 
 /**
  * Codeforces' defs.toml writes multi-line bodies as `body = '` … `'` (a line with a

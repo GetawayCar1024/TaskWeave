@@ -4,6 +4,8 @@ import path from 'node:path';
 import { parse, stringify } from 'smol-toml';
 import {
   PROBLEM_NAME_RE,
+  judgeMode,
+  polygonFeatureWarnings,
   testsetsOf,
   type ImportRequest,
   type ItemContent,
@@ -136,18 +138,20 @@ export class PolygonSync {
   }
 
   /** Local side of the sync state, without asking Polygon (the contest status table). */
-  async localStatus(ctx: ProblemCtx): Promise<{ changes: number; syncedRevision?: number; syncedUncommitted: boolean; tomlChanged: boolean }> {
+  async localStatus(ctx: ProblemCtx): Promise<{ changes: number; syncedRevision?: number; syncedUncommitted: boolean; tomlChanged: boolean; warnings: string[] }> {
+    if (judgeMode(ctx.config.problem) === 'grader') throw new HttpError(400, 'grader_polygon', 'Grader problems cannot connect to Polygon.');
     if (ctx.config.problem.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI problems cannot sync with Polygon');
-    const { items } = await localItems(this.judge, ctx);
+    const { items, warnings } = await localItems(this.judge, ctx);
     const sync = await readSync(ctx);
     const keys = new Set(items.map((i) => i.key));
     const changes = items.filter((it) => sync.items[it.key] !== itemHash(it)).length + Object.keys(sync.items).filter((k) => !keys.has(k)).length;
-    return { changes, syncedRevision: sync.revision, syncedUncommitted: !!sync.uncommitted, tomlChanged: false };
+    return { changes, syncedRevision: sync.revision, syncedUncommitted: !!sync.uncommitted, tomlChanged: false, warnings };
   }
 
   // ---- push ----
 
   async pushPreview(ctx: ProblemCtx): Promise<PushPreview> {
+    if (judgeMode(ctx.config.problem) === 'grader') return { name: ctx.config.problem.name, blocked: true, items: [], warnings: ['Grader problems cannot connect to Polygon.'] };
     if (ctx.config.problem.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI problems cannot sync with Polygon');
     const { items, warnings } = await localItems(this.judge, ctx);
     const sync = await readSync(ctx);
@@ -165,6 +169,7 @@ export class PolygonSync {
     }
     out.sort(byOrder);
     const preview: PushPreview = {
+      blocked: polygonFeatureWarnings(ctx.config).length > 0,
       polygonId: ctx.config.polygon.id,
       name: ctx.config.problem.name,
       items: out,
@@ -188,6 +193,9 @@ export class PolygonSync {
 
   async push(ctx: ProblemCtx, req: PushRequest, job: JobCtx): Promise<{ pushed: string[]; warnings: string[]; revision?: number; polygonId: number }> {
     if (req.buildPackage && !req.commit) throw new HttpError(400, 'commit_required', 'Commit changes before building a package');
+    const scoringWarnings = polygonFeatureWarnings(ctx.config);
+    if (scoringWarnings.length) throw new HttpError(400, 'polygon_scoring', scoringWarnings.join('\n'));
+    if (judgeMode(ctx.config.problem) === 'grader') throw new HttpError(400, 'grader_polygon', 'Grader problems cannot connect to Polygon.');
     if (ctx.config.problem.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI problems cannot sync with Polygon');
     const client = await this.client();
     const warnings: string[] = [];
@@ -205,7 +213,8 @@ export class PolygonSync {
     sync.polygonId = polygonId;
 
     this.remoteCache.delete(ctx.ref.id);
-    const { items } = await localItems(this.judge, ctx);
+    const { items, warnings: localWarnings } = await localItems(this.judge, ctx);
+    warnings.push(...localWarnings);
     const want = new Set(req.keys);
     const todo = items.filter((it) => want.has(it.key)).sort(byOrder);
     const deleted = [...want].filter((k) => !items.some((it) => it.key === k) && DELETABLE_KINDS.has(k.split(':')[0] as never));
@@ -293,6 +302,7 @@ export class PolygonSync {
   // ---- pull ----
 
   async pullPreview(ctx: ProblemCtx): Promise<PullPreview> {
+    if (judgeMode(ctx.config.problem) === 'grader') throw new HttpError(400, 'grader_polygon', 'Grader problems cannot connect to Polygon.');
     if (ctx.config.problem.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI problems cannot sync with Polygon');
     const polygonId = ctx.config.polygon.id;
     if (polygonId === undefined) throw new HttpError(400, 'not_bound', 'This problem is not bound to a Polygon problem');
@@ -332,6 +342,7 @@ export class PolygonSync {
   }
 
   async itemContent(ctx: ProblemCtx, key: string): Promise<ItemContent> {
+    if (judgeMode(ctx.config.problem) === 'grader') throw new HttpError(400, 'grader_polygon', 'Grader problems cannot connect to Polygon.');
     if (ctx.config.problem.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI problems cannot sync with Polygon');
     const { items } = key.startsWith('file:') ? await this.pullLocal(ctx) : await localItems(this.judge, ctx);
     const l = items.find((i) => i.key === key);
@@ -361,6 +372,7 @@ export class PolygonSync {
 
   /** Apply the chosen remote items locally; everything seen on Polygon becomes the new base. */
   async pull(ctx: ProblemCtx, req: PullRequest): Promise<{ applied: string[]; merged: string[]; conflicts: string[]; warnings: string[] }> {
+    if (judgeMode(ctx.config.problem) === 'grader') throw new HttpError(400, 'grader_polygon', 'Grader problems cannot connect to Polygon.');
     if (ctx.config.problem.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI problems cannot sync with Polygon');
     const cached = this.remoteCache.get(ctx.ref.id);
     if (!cached || cached.polygonId !== ctx.config.polygon.id) throw new HttpError(409, 'stale_preview', 'Fetch the Polygon state first');

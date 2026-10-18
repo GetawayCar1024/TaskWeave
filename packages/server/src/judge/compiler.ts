@@ -169,7 +169,7 @@ export class Compiler {
     return { srcPath: safeJoin(problemDir, source), buildRoot: path.join(problemDir, '.polyforge', 'build') };
   }
 
-  async compile(problemDir: string, source: string, langOverride?: string, buildRootOverride?: string): Promise<CompileOutcome> {
+  async compile(problemDir: string, source: string, langOverride?: string, buildRootOverride?: string, grader?: { sources: string[]; headers: string[] }): Promise<CompileOutcome> {
     await this.maintenance;
     const started = Date.now();
     const resolved = this.resolveSource(problemDir, source);
@@ -190,16 +190,48 @@ export class Compiler {
     if (!picked) return fail(`No language in languages.toml matches ${path.extname(srcPath) || source}`);
     const id = picked.id;
     const lang = withLfNewlines(picked.lang);
+    const extraArgs: string[] = [];
+    const dependencies = new Map<string, string>();
+    const dependencyFiles = [srcPath];
+    const includeDirs: string[] = [];
+    if (grader) {
+      if (!grader.sources.length) return fail('Grader mode requires at least one C++ grader source.', id);
+      const command = splitCommand(lang.compile ?? '');
+      if (!/\.(cpp|cc|cxx)$/i.test(srcPath) || !C_COMPILERS.test(path.basename(command[0] ?? '')) || !command.includes('{src}')) return fail('Grader mode requires a C++ compiler command with a separate {src} argument.', id);
+      const sources = grader.sources.map(s => safeJoin(problemDir, s));
+      if (sources.some(s => this.sourceKey(s) === this.sourceKey(srcPath))) return fail('A submission cannot also be a grader source.', id);
+      if (sources.some(s => !/\.(cpp|cc|cxx)$/i.test(s))) return fail('Grader sources must be C++ translation units.', id);
+      const files = [...sources, ...grader.headers.map(s => safeJoin(problemDir, s))];
+      includeDirs.push(...new Set(files.map(s => path.dirname(s))));
+      extraArgs.push(...sources, ...includeDirs.flatMap(d => ['-I', d]));
+      dependencyFiles.push(...files);
+    }
+    // Checker headers (including Testlib for Lemons) also invalidate the one executable slot.
+    if (/\.(cpp|cc|cxx|c)$/i.test(srcPath)) {
+      const collect = async (file: string): Promise<void> => {
+        if (dependencies.has(file)) return;
+        const bytes = await fsp.readFile(file);
+        dependencies.set(file, sha1(bytes));
+        for (const match of bytes.toString('utf8').matchAll(/^\s*#\s*include\s*(["<])([^">\r\n]+)[">]/gm)) {
+          for (const dir of [...(match[1] === '"' ? [path.dirname(file)] : []), ...includeDirs, this.global.sharedDir]) {
+            const candidate = path.resolve(dir, match[2]);
+            if (await exists(candidate)) { await collect(candidate); break; }
+          }
+        }
+      };
+      try { for (const file of dependencyFiles) await collect(file); }
+      catch (e) { return fail(`Cannot read source dependency: ${(e as Error).message}`, id); }
+    }
     const usesShared = `${lang.compile ?? ''} ${lang.run}`.includes('{shared}');
     const testlib = usesShared ? await fsp.readFile(path.join(this.global.sharedDir, 'testlib.h')).catch(() => '') : '';
     const base = path.basename(srcPath, path.extname(srcPath));
-    const hash = sha1(JSON.stringify([this.sourceKey(srcPath), id, lang.compile ?? '', lang.run, base, sha1(content), sha1(testlib)]));
+    const hash = sha1(JSON.stringify([this.sourceKey(srcPath), id, lang.compile ?? '', lang.run, base, sha1(content), sha1(testlib), extraArgs, [...dependencies]]));
     const dir = path.join(buildRoot, `source-${sha1(this.sourceKey(srcPath)).slice(0, 16)}`);
 
     const key = `${buildRoot}|${hash}`;
     let p = this.inflight.get(key);
     if (!p) {
-      p = withBuildLocks([dir], () => this.build({ source, srcPath, problemDir, buildRoot, dir, contentHash: sha1(content), hash, id, lang, base, started })).finally(() => this.inflight.delete(key));
+      p = withBuildLocks([dir], () => this.build({ source, srcPath, problemDir, buildRoot, dir, contentHash: sha1(content), hash, id, lang, base, started, extraArgs, dependencies })).finally(() => this.inflight.delete(key));
       this.inflight.set(key, p);
     }
     return p;
@@ -217,6 +249,8 @@ export class Compiler {
     lang: Language;
     base: string;
     started: number;
+    extraArgs: string[];
+    dependencies: Map<string, string>;
   }): Promise<CompileOutcome> {
     const dir = a.dir;
     const exe = path.join(dir, process.platform === 'win32' ? `${a.base}.exe` : a.base);
@@ -260,6 +294,7 @@ export class Compiler {
     await fsp.rm(recordPath, { force: true });
     await fsp.rm(exe, { force: true });
     const [cmd, ...args] = substitute(splitCommand(a.lang.compile), vars);
+    args.push(...a.extraArgs);
     const compileOnce = () => new Promise<CacheRecord>((resolve) => {
       execFile(
         cmd,
@@ -274,7 +309,7 @@ export class Compiler {
       );
     });
     const rec = this.pool ? await this.pool.use(compileOnce) : await compileOnce();
-    const sourceChanged = sha1(await fsp.readFile(a.srcPath).catch(() => '')) !== a.contentHash;
+    const sourceChanged = sha1(await fsp.readFile(a.srcPath).catch(() => '')) !== a.contentHash || (await Promise.all([...a.dependencies].map(async ([file, hash]) => sha1(await fsp.readFile(file).catch(() => '')) !== hash))).some(Boolean);
     if (sourceChanged) {
       rec.ok = false;
       rec.log = 'Source changed during compilation; save or run again.';

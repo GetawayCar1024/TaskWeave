@@ -1,6 +1,7 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import {
+  polygonFeatureWarnings,
   LANG_FROM_POLYGON,
   LANG_TO_POLYGON,
   STATEMENT_SECTIONS,
@@ -8,6 +9,8 @@ import {
   TAG_FROM_POLYGON,
   TAG_TO_POLYGON,
   compressRanges,
+  convertStatement,
+  statementSyntaxWarnings,
   groupLayout as sharedGroupLayout,
   parseIndexList,
   testsetOf,
@@ -21,7 +24,7 @@ import {
 import { pickLanguage } from '../judge/compiler.js';
 import type { Judge, ProblemCtx } from '../judge/index.js';
 import { planTests, scriptStatementPaths, statementPaths } from '../judge/tests.js';
-import { defsForProblem } from '../defs.js';
+import { defsForProblem, readSharedDefs } from '../defs.js';
 import { exists, isDir, looksBinary, sha1 } from '../util/fs.js';
 import { HIDDEN_DIRS } from '../workspace/files.js';
 import type { PolygonClient } from './client.js';
@@ -166,7 +169,7 @@ export interface LocalItems {
 export async function localItems(judge: Judge, ctx: ProblemCtx): Promise<LocalItems> {
   const { config, ref } = ctx;
   const dir = ref.dir;
-  const warnings: string[] = [];
+  const warnings: string[] = polygonFeatureWarnings(config);
   const items: Item[] = [];
   const languages = (await judge.global.readLanguages()).languages;
   const readText = async (rel: string) => (await fsp.readFile(path.join(dir, rel), 'utf8')).replace(/\r\n/g, '\n');
@@ -248,7 +251,7 @@ export async function localItems(judge: Judge, ctx: ProblemCtx): Promise<LocalIt
   // macros need: send the shared one unless the problem has its own files/defs.toml.
   // With a Chinese statement the version with the Chinese macros, else the original one.
   if (!(await exists(path.join(dir, 'files', DEFS_FILE)))) {
-    const text = await fsp.readFile(path.join(judge.global.sharedDir, DEFS_FILE), 'utf8').catch(() => null);
+    const text = await readSharedDefs(judge.global.sharedDir).catch(() => null);
     const zh = !!config.problem.title.zh?.trim() || (await isDir(path.join(dir, 'statement', 'zh')));
     if (text !== null) {
       const bytes = Buffer.from(defsForProblem(text, zh), 'utf8');
@@ -298,7 +301,9 @@ export async function localItems(judge: Judge, ctx: ProblemCtx): Promise<LocalIt
       const text = await readText(rel);
       if (!text.trim()) continue;
       const label = sec === 'tutorial' ? `tutorial (${plang})` : `statement (${plang}): ${sec}`;
-      items.push({ key: `statement:${plang}:${sec}`, kind: 'statement', label, path: rel, text, extra: { lang: plang, section: sec } });
+      const converted = convertStatement(text, 'polygon');
+      warnings.push(...statementSyntaxWarnings(rel, converted.warnings));
+      items.push({ key: `statement:${plang}:${sec}`, kind: 'statement', label, path: rel, text: converted.tex, extra: { lang: plang, section: sec } });
     }
   }
   for (const rel of await listFiles(path.join(stmtDir, 'images'))) {
@@ -711,7 +716,7 @@ export async function applyItem(ac: ApplyContext, it: Item): Promise<void> {
   switch (it.kind) {
     case 'info': {
       const m = it.meta as any;
-      Object.assign(doc.problem, { input: m.inputFile || 'stdin', output: m.outputFile || 'stdout', interactive: !!m.interactive, time_limit: m.timeLimit, memory_limit: m.memoryLimit });
+      Object.assign(doc.problem, { input: m.inputFile || 'stdin', output: m.outputFile || 'stdout', interactive: !!m.interactive, judge_mode: m.interactive ? 'io' : 'batch', time_limit: m.timeLimit, memory_limit: m.memoryLimit });
       return;
     }
     case 'config': {

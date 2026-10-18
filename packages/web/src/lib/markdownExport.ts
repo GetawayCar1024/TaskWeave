@@ -45,8 +45,10 @@ export function serializeMarkdown(element: HTMLElement, options: MarkdownExportO
   function imagePath(node: HTMLImageElement): string | undefined {
     const url = new URL(node.src, location.href);
     const match = url.pathname.match(/^\/api\/problems\/([^/]+)\/raw\/(.+)$/);
-    if (!match) { warnings++; return; }
-    const problem = decodeURIComponent(match[1]), path = decodeURIComponent(match[2]);
+    const contest = url.pathname.match(/^\/api\/contests\/([^/]+)\/file\/raw$/);
+    if (!match && !contest) { warnings++; return; }
+    const problem = match ? decodeURIComponent(match[1]) : `contest:${decodeURIComponent(contest![1])}`;
+    const path = match ? decodeURIComponent(match[2]) : url.searchParams.get('path') ?? '';
     let asset = images.find(image => image.problem === problem && image.path === path);
     if (!asset) {
       asset = { problem, path, name: `image-${images.length + 1}.${path.split('.').pop()}` };
@@ -69,7 +71,7 @@ export function serializeMarkdown(element: HTMLElement, options: MarkdownExportO
     if (node.matches('td,th') && node.closest('table.tabular')) declarations.padding = '0.15em 0.7em';
     if (node.matches('td,th') && node.closest('table.bordered')) declarations.border = '1px solid currentColor';
     if (node.matches('.stmt-img')) declarations['max-width'] = '95%';
-    for (const key of ['text-align', 'font-size', 'font-family', 'font-weight', 'font-style', 'font-variant', 'text-transform', 'text-decoration', 'vertical-align', 'margin-left', 'margin-right', 'width', 'height', 'max-width', 'zoom', 'flex']) {
+    for (const key of ['text-align', 'font-size', 'font-family', 'font-weight', 'font-style', 'font-variant', 'text-transform', 'text-decoration', 'vertical-align', 'margin', 'margin-left', 'margin-right', 'width', 'height', 'max-width', 'zoom', 'flex', 'align-items']) {
       const value = node.style.getPropertyValue(key);
       if (value && !/url\s*\(|expression\s*\(|[<>\\]/i.test(value)) declarations[key] = value;
     }
@@ -139,7 +141,7 @@ export function serializeMarkdown(element: HTMLElement, options: MarkdownExportO
         // Dollar delimiters next to digits or another formula are ambiguous.
         const adjacentMath = [node.previousSibling, node.nextSibling].some(n => n instanceof HTMLElement && isMath(n));
         const digitBoundary = /[\d\\]$/.test(node.previousSibling?.textContent ?? '') || /^\d/.test(node.nextSibling?.textContent ?? '');
-        return keep(adjacentMath || digitBoundary ? html(node) : `$${tex.trim()}$`);
+        return keep((adjacentMath || digitBoundary) && !node.closest('b,strong') ? html(node) : `$${tex.trim()}$`);
       }
     }
     if (node.matches('.tex-unknown, .tex-error, .katex-error')) { warnings++; return keep(inlineCode(node.textContent ?? '')); }
@@ -184,7 +186,8 @@ export function serializeMarkdown(element: HTMLElement, options: MarkdownExportO
       // CommonMark delimiter rules lose adjacent/nested emphasis and emphasis
       // starting with punctuation in Chinese prose. HTML preserves these cases.
       const adjacent = [node.previousSibling, node.nextSibling].some(n => n instanceof HTMLElement && n.matches('b,strong,i,em'));
-      if (adjacent || node.children.length || /^[\p{P}\p{S}]|[\p{P}\p{S}]$/u.test(text)) return keep(html(node));
+      const inlineMath = node.querySelector('.katex') && !node.querySelector('.math-display,.katex-display');
+      if (!inlineMath && (adjacent || node.children.length || /^[\p{P}\p{S}]|[\p{P}\p{S}]$/u.test(text))) return keep(html(node));
     }
     const content = children(node);
     const level = node.matches('.section-title') ? 2 + headingOffset : node.matches('.sample-title') ? 3 + headingOffset : /^H[1-6]$/.test(node.tagName) ? Math.min(6, Number(node.tagName[1]) + headingOffset) : 0;

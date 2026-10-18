@@ -14,6 +14,7 @@ export const CHECK_TEXT = {
   noValidator: 'No validator',
   noChecker: 'No checker',
   noInteractor: 'Interactive problem without an interactor',
+  noGrader: 'Grader problem without grader sources',
   severalMain: 'More than one MA solution',
   noMain: 'No main solution (tag MA)',
   solutionMissing: 'Listed solution is missing: {file}',

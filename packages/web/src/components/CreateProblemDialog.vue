@@ -2,8 +2,8 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { serverText } from '../lib/serverText';
-import { NModal, NForm, NFormItem, NInput, NInputNumber, NSwitch, NSelect, NButton, NSpace, useMessage } from 'naive-ui';
-import { PROBLEM_NAME_RE, type ProblemSummary } from '@polyforge/shared';
+import { NAlert, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NButton, NSpace, useMessage } from 'naive-ui';
+import { PROBLEM_NAME_RE, type JudgeMode, type ProblemSummary } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 
 const props = defineProps<{ show: boolean; roots: string[] }>();
@@ -11,7 +11,7 @@ const emit = defineEmits<{ 'update:show': [boolean]; created: [ProblemSummary] }
 const { t } = useI18n();
 const message = useMessage();
 
-const blank = () => ({ name: '', titleZh: '', titleEn: '', timeLimit: 1000, memoryLimit: 256, interactive: false, root: props.roots[0] ?? '' });
+const blank = () => ({ name: '', titleZh: '', titleEn: '', timeLimit: 1000, memoryLimit: 256, judgeMode: 'batch' as JudgeMode, root: props.roots[0] ?? '' });
 const form = reactive(blank());
 const busy = ref(false);
 
@@ -33,7 +33,7 @@ async function submit() {
       title: { zh: form.titleZh, en: form.titleEn },
       timeLimit: form.timeLimit,
       memoryLimit: form.memoryLimit,
-      interactive: form.interactive,
+      judgeMode: form.judgeMode,
     });
     emit('update:show', false);
     emit('created', p);
@@ -67,7 +67,8 @@ async function submit() {
           <template #suffix>MB</template>
         </n-input-number>
       </n-form-item>
-      <n-form-item :label="t('problem.interactive')"><n-switch v-model:value="form.interactive" /></n-form-item>
+      <n-form-item :label="t('oiFeatures.mode')"><n-select v-model:value="form.judgeMode" :options="['batch', 'io', 'grader'].map(value => ({ value, label: t(`oiFeatures.${value}`) }))" /></n-form-item>
+      <n-alert v-if="form.judgeMode === 'grader'" type="warning" style="margin-bottom: 16px">{{ t('oiFeatures.graderWarning') }}</n-alert>
       <n-form-item v-if="roots.length > 1" :label="t('create.root')">
         <n-select v-model:value="form.root" :options="rootOptions" />
       </n-form-item>

@@ -2,8 +2,9 @@ import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import {
   LANG_TO_POLYGON,
+  judgeMode,
+  PROBLEM_NAME_RE,
   STATEMENT_SECTIONS,
-  parseIndexList,
   testsetsOf,
   type ContestBatchItem,
   type ContestBatchRequest,
@@ -22,11 +23,12 @@ import { localChecks } from './checks.js';
 import type { Judge, ProblemCtx } from './index.js';
 import { readInvocation, runInvocation } from './invocation.js';
 import { exportPackage } from './package.js';
-import { answerPath, generateTests, inputPath, readManifest, sampleStatementPaths } from './tests.js';
+import { readSamples } from './samples.js';
+import { addLemonProblem, lemonReadme, preflightLemonChecker } from './lemonlime.js';
+import { generateTests, readManifest } from './tests.js';
 
 export const contestExportDir = (ref: ContestRef) => path.join(ref.dir, '.polyforge', 'export');
 
-const SAMPLE_LIMIT = 64 * 1024;
 const x = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
@@ -41,12 +43,32 @@ export interface ContestDeps {
 export async function runContestBatch(deps: ContestDeps, contestId: string, req: ContestBatchRequest, job: JobCtx): Promise<ContestBatchResult> {
   const { judge, contests, sync } = deps;
   const { ref, config } = await contests.config(contestId);
+  if (req.exportFormat && !['polygon', 'lemonlime'].includes(req.exportFormat)) throw new HttpError(400, 'bad_request', 'Unknown export format');
+  const lemon = req.action === 'export' && req.exportFormat === 'lemonlime';
+  if (lemon && !PROBLEM_NAME_RE.test(config.contest.name)) throw new HttpError(400, 'invalid_name', 'Invalid contest name.');
   if (req.action === 'polygon-push' && config.contest.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI contests cannot sync with Polygon');
   const want = req.indices?.length ? new Set(req.indices) : null;
   const list = config.problems.filter((p) => !want || want.has(p.index));
   const items: ContestBatchItem[] = [];
   const zip = req.action === 'export' ? new ZipWriter() : null;
   const exported: { index: string; name: string }[] = [];
+  const lemonTasks: Awaited<ReturnType<typeof addLemonProblem>>['task'][] = [];
+  if (lemon && !list.length) throw new HttpError(400, 'empty_contest', 'No problems to export.');
+  if (lemon) {
+    const errors: string[] = [], names = new Set<string>();
+    for (const p of list) {
+      job.signal.throwIfAborted();
+      job.progress(0, list.length, `${p.index} · checking Lemon checker`);
+      try {
+        const ctx = await judge.ctx(p.problem);
+        const name = ctx.config.problem.name.toLowerCase();
+        if (names.has(name)) throw new Error(`${p.index}: duplicate problem English name: ${name}`);
+        names.add(name);
+        await preflightLemonChecker(judge, ctx, p.index);
+      } catch (e) { errors.push((e as Error).message); }
+    }
+    if (errors.length) throw new HttpError(400, 'lemonlime_export', `LemonLime preflight failed; no tests were generated.\n${errors.join('\n')}`);
+  }
 
   for (const [i, p] of list.entries()) {
     job.signal.throwIfAborted();
@@ -114,6 +136,13 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
           break;
         }
         case 'export': {
+          if (lemon) {
+            const r = await addLemonProblem(judge, ctx, p.index, zip!, sub);
+            lemonTasks.push(r.task);
+            item.ok = true;
+            item.message = plural(r.tests, 'test');
+            break;
+          }
           const name = ctx.config.problem.name;
           const r = await exportPackage(judge, ctx, sub, { zip: zip!, prefix: `problems/${name}/` });
           exported.push({ index: p.index, name });
@@ -124,6 +153,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
         }
         case 'polygon-push': {
           const preview = await sync.pushPreview(ctx);
+          if (preview.blocked) { item.message = preview.warnings.join('\n'); item.details = preview.warnings; break; }
           if (preview.syncedRevision !== undefined && preview.remoteRevision !== undefined && preview.remoteRevision !== preview.syncedRevision) {
             item.message = `changed on Polygon (revision ${preview.remoteRevision}); pull it first`;
             break;
@@ -151,11 +181,17 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
 
   const result: ContestBatchResult = { action: req.action, items };
   if (zip) {
+    if (lemon && items.some(item => !item.ok)) throw new HttpError(400, 'lemonlime_export', `LemonLime export failed; no incomplete archive was produced.\n${items.filter(item => !item.ok).map(item => `${item.index}: ${item.message}\n${(item.details ?? []).join('\n')}`).join('\n')}`);
     job.progress(list.length, list.length, 'writing');
-    if (config.contest.type === 'cf') zip.add('contest.xml', contestXml(config.contest.title, config.contest.name, exported));
+    if (lemon) {
+      zip.add(`${config.contest.name}.cdf`, JSON.stringify({ version: '1.0', contestTitle: config.contest.title.zh || config.contest.title.en || config.contest.name, tasks: lemonTasks, contestants: [] }, null, 2));
+      zip.add('source/', '');
+      zip.add('README.txt', lemonReadme(`${process.platform}/${process.arch}`));
+    }
+    else if (config.contest.type === 'cf') zip.add('contest.xml', contestXml(config.contest.title, config.contest.name, exported));
     else zip.add('contest.toml', await fsp.readFile(path.join(ref.dir, 'contest.toml')));
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
-    const file = `${config.contest.name}-${stamp}.zip`;
+    const file = `${config.contest.name}${lemon ? '-lemonlime' : ''}-${stamp}.zip`;
     const data = zip.finish();
     await atomicWrite(path.join(contestExportDir(ref), file), data);
     result.file = file;
@@ -203,22 +239,7 @@ export async function contestStatements(judge: Judge, contests: ContestRegistry,
       if (text.trim()) sections[s] = text;
     }
     const manifest = await readManifest(ctx);
-    const samples: ContestStatement['samples'] = [];
-    const sampleIndices = new Set(parseIndexList(c.tests.samples ?? ''));
-    for (const t of manifest?.tests.filter((t) => sampleIndices.has(t.index)) ?? []) {
-      const overrides = sampleStatementPaths(t);
-      t.statementInput = await exists(safeJoin(ctx.ref.dir, overrides.input)) ? overrides.input : undefined;
-      t.statementOutput = await exists(safeJoin(ctx.ref.dir, overrides.output)) ? overrides.output : undefined;
-      const read = (f: string) =>
-        fsp
-          .readFile(f)
-          .then((b) => b.subarray(0, SAMPLE_LIMIT).toString('utf8'))
-          .catch(() => '');
-      const inFile = t.statementInput ? safeJoin(ctx.ref.dir, t.statementInput) : inputPath(ctx, t.index);
-      const outFile = t.statementOutput ? safeJoin(ctx.ref.dir, t.statementOutput) : answerPath(ctx, t.index);
-      // The markup describes the real input: drop it when the statement shows another one.
-      samples.push({ input: await read(inFile), output: await read(outFile), inputCases: t.statementInput ? undefined : t.inputCases });
-    }
+    const samples = (await readSamples(ctx)).map(row => row.sample);
     out.push({
       index: p.index,
       problem: p.problem,
@@ -228,7 +249,7 @@ export async function contestStatements(judge: Judge, contests: ContestRegistry,
       equalPoints: manifest?.tests.length ? new Set(manifest.tests.map(t => t.points ?? 1)).size === 1 : undefined,
       timeLimit: c.problem.time_limit,
       memoryLimit: c.problem.memory_limit,
-      interactive: c.problem.interactive,
+      interactive: judgeMode(c.problem) !== 'batch',
       input: c.problem.input,
       output: c.problem.output,
       type: c.problem.type,

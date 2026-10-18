@@ -1,4 +1,30 @@
 {
+  "oiFeatures": {
+    "convertChecker": "Convert ordinary checker",
+    "saveCheckerFirst": "Save the checker source and problem settings first.",
+    "convertedChecker": "Created and configured a separate Lemon checker. Review the converted source.",
+    "convertCheckerHint": "Converts basic testlib includes and initialization, preserving the original. quitp keeps proportional scoring; complex scoring APIs need manual conversion.",
+    "lemonChecker": "Lemon checker",
+    "lemonCheckerHint": "Used only for LemonLime export. Select a separate source using Testlib for Lemons: include lemon/testlib.h and call registerLemonChecker(argc, argv). Export checks configuration, compilation and the scoring protocol.",
+    "inlineSample": "Show in statement",
+    "largeSample": "Large sample (downloadable files)",
+    "down": "Export down.zip",
+    "preparingDown": "Generating samples and updating the OI statement…",
+    "mode": "Problem mode",
+    "batch": "Batch",
+    "io": "I/O interactive",
+    "grader": "Grader interactive",
+    "graderWarning": "Grader sources are linked with the contestant's C++ code. Polygon connection and sync are not supported.",
+    "graderSources": "Grader sources",
+    "graderHeaders": "Supplied headers",
+    "graderHint": "Select the grader containing main, additional .cpp files, and headers included by submissions. Changes invalidate the build cache.",
+    "subtaskHint": "Bundled: all tests must pass. Dependencies: all prerequisite subtasks and their dependencies must pass, regardless of list order. Set each subtask's score freely.",
+    "lemonlime": "Export LemonLime",
+    "exportHint": "Exports the default tests testset, generating inputs and answers. The ZIP contains a contest .cdf, data/, and an empty source/. Batch and grader problems are supported; pipe-based I/O interaction is not. Checker executables target the current operating system.",
+    "exportTitle": "Export contest package",
+    "polygon": "Polygon package",
+    "fractional": "Subtask {name} has fractional points; Polygon only supports integer test points."
+  },
   "improve": {
     "language": "Add language", "languageCode": "Language code", "numbering": "Edit problem indices", "numberError": "Indices must be valid, nonempty and unique", "results": "Check results", "move": "Move problem", "moveTarget": "Destination problem root", "ignoreWhitespace": "Ignore whitespace differences", "markdown": "Export Markdown", "shutdownAi": "AI tasks are still running", "shutdownAiBody": "Stop all AI tasks and close? Output already received will be kept.", "stopClose": "Stop AI and close", "cancelExit": "Cancel exit", "resize": "Drag to resize", "formulaOverflow": "Some formulas are too wide. Check the print preview; use aligned for complex formulas.", "stable": "Stable timing", "throughput": "Parallel throughput", "judgingMode": "Judging mode", "markdownWarnings": "Some LaTeX could not be fully converted and was preserved in the export.", "languageExists": "This language already exists", "selectLanguage": "Select or enter a language code", "moveBusy": "Save your files and wait for problem tasks to finish", "moveDone": "Problem moved", "unsavedSettings": "Settings have unsaved changes", "saveFailed": "Save failed; exit cancelled"
   },
@@ -677,6 +703,7 @@
     "note": "Create a testset with the same name on Polygon before pushing"
   },
   "checks": {
+    "noGrader": "Grader problem without grader sources",
     "noStatement": "No statement written yet",
     "missingSection": "{lang} statement has no {section} section",
     "noInteraction": "Interactive problem without an interaction section ({lang})",

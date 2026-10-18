@@ -1,5 +1,6 @@
 import { codeHtml } from './codeHighlight';
 import katex from 'katex';
+import { convertStatement } from '@polyforge/shared';
 
 /**
  * Renderer for the LaTeX subset used by Polygon statements (DESIGN §4.6). Produces
@@ -116,6 +117,8 @@ const SYMBOLS: Record<string, string> = {
   textasciitilde: '~',
   textasciicircum: '^',
   textbar: '|',
+  textasciigrave: '`',
+  textquotesingle: "'",
   textless: '&lt;',
   textgreater: '&gt;',
   textendash: '–',
@@ -417,6 +420,22 @@ class Parser {
       return '';
     }
     switch (name) {
+      case 'section': case 'section*':
+      case 'subsection': case 'subsection*':
+      case 'subsubsection': case 'subsubsection*': {
+        const level = name.startsWith('subsub') ? 3 : name.startsWith('sub') ? 2 : 1;
+        this.readOptRaw();
+        const body = this.readGroupRaw() ?? '';
+        return `${PAR}<h${level}>${this.sub(body)}</h${level}>${PAR}`;
+      }
+      case 'pfmdheading': {
+        const level = Math.max(1, Math.min(6, Number(this.readGroupRaw()) || 1));
+        const body = this.readGroupRaw() ?? '';
+        return `${PAR}<h${level}>${this.sub(body)}</h${level}>${PAR}`;
+      }
+      case 'pfmdrule':
+        this.readGroupRaw();
+        return `${PAR}<hr>${PAR}`;
       case 'footnote': {
         const arg = this.readGroupRaw() ?? '';
         this.footnotes.push(this.sub(arg));
@@ -428,7 +447,7 @@ class Parser {
         return `<a href="${esc(safeUrl(u))}" target="_blank" rel="noreferrer">${esc(u)}</a>`;
       }
       case 'href': {
-        const u = this.readGroupRaw() ?? '';
+        const u = (this.readGroupRaw() ?? '').replace(/\\([%#&_{}])/g, '$1');
         const text = this.readGroupRaw() ?? u;
         return `<a href="${esc(safeUrl(u))}" target="_blank" rel="noreferrer">${this.sub(text)}</a>`;
       }
@@ -491,11 +510,13 @@ class Parser {
   private environment(name: string): string {
     switch (name) {
       case 'itemize':
-      case 'enumerate': {
+      case 'enumerate':
+      case 'pfmdenumerate': {
+        const start = name === 'pfmdenumerate' ? Number(this.readGroupRaw()) || 1 : 1;
         const html = this.sub(this.envBodyRaw(name));
         const items = html.split(ITEM).slice(1).map((s) => `<li>${paragraphs(s)}</li>`);
         const tag = name === 'itemize' ? 'ul' : 'ol';
-        return `${PAR}<${tag}>${items.join('')}</${tag}>${PAR}`;
+        return `${PAR}<${tag}${start !== 1 ? ` start="${start}"` : ''}>${items.join('')}</${tag}>${PAR}`;
       }
       case 'center':
       case 'flushleft':
@@ -506,6 +527,8 @@ class Parser {
       case 'quote':
       case 'quotation':
         return `${PAR}<blockquote>${paragraphs(this.sub(this.envBodyRaw(name)))}</blockquote>${PAR}`;
+      case 'pfmdquote':
+        return `${PAR}<blockquote class="markdown-quote">${paragraphs(this.sub(this.envBodyRaw(name)))}</blockquote>${PAR}`;
       case 'verbatim':
       case 'lstlisting': {
         let body = this.envBodyRaw(name);
@@ -575,7 +598,7 @@ function paragraphs(html: string): string {
     .split(PAR)
     .map((p) => p.trim())
     .filter(Boolean)
-    .map((p) => (/^<(ul|ol|div|pre|table|blockquote)/.test(p) ? p : `<div class="p">${p}</div>`))
+    .map((p) => (/^<(ul|ol|div|pre|table|blockquote|h[1-6]|hr)/.test(p) ? p : `<div class="p">${p}</div>`))
     .join('');
 }
 
@@ -620,7 +643,7 @@ function fnSymbol(n: number): string {
 }
 
 export function renderLatex(src: string, opts: RenderOptions): RenderResult {
-  const p = new Parser(src.replace(/\r\n/g, '\n'), opts);
+  const p = new Parser(convertStatement(src).tex, opts);
   let html = paragraphs(p.parse(() => false));
   if (p.footnotes.length) {
     html += `<div class="footnotes">${p.footnotes.map((f, i) => `<div class="footnote"><sup>${fnSymbol(i + 1)}</sup>${paragraphs(f)}</div>`).join('')}</div>`;

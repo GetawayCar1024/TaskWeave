@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, h, reactive, watch } from 'vue';
+import { computed, h, reactive, ref, watch } from 'vue';
 import { stdCheckerDescription } from '../lib/stdCheckers';
 import { useI18n } from 'vue-i18n';
 import {
@@ -13,13 +13,13 @@ import {
   NInputNumber,
   NScrollbar,
   NSelect,
-  NSwitch,
+  NAlert,
   NTag,
   useMessage,
   type SelectOption,
 } from 'naive-ui';
-import { SOLUTION_TAGS, isSourceFile, type PatchProblemRequest, type SolutionTag } from '@polyforge/shared';
-import { errorMessage } from '../lib/api';
+import { SOLUTION_TAGS, isSourceFile, judgeMode, type JudgeMode, type PatchProblemRequest, type SolutionTag } from '@polyforge/shared';
+import { api, errorMessage } from '../lib/api';
 import { formatSize } from '../lib/format';
 import type { Judge } from '../lib/judge';
 import { tagType } from '../lib/tags';
@@ -42,10 +42,13 @@ const form = reactive({
   titleEn: '',
   timeLimit: 1000,
   memoryLimit: 256,
-  interactive: false,
+  judgeMode: 'batch' as JudgeMode,
+  graderSources: [] as string[],
+  graderHeaders: [] as string[],
   input: 'stdin',
   output: 'stdout',
   checker: null as string | null,
+  lemonChecker: null as string | null,
   validator: null as string | null,
   interactor: null as string | null,
   samples: '',
@@ -59,10 +62,13 @@ function reset() {
     titleEn: c.problem.title.en ?? '',
     timeLimit: c.problem.time_limit,
     memoryLimit: c.problem.memory_limit,
-    interactive: c.problem.interactive,
+    judgeMode: judgeMode(c.problem),
+    graderSources: [...(c.grader?.sources ?? [])],
+    graderHeaders: [...(c.grader?.headers ?? [])],
     input: c.problem.input,
     output: c.problem.output,
     checker: c.checker?.source ?? null,
+    lemonChecker: c.lemon_checker?.source ?? null,
     validator: c.validator?.source ?? null,
     interactor: c.interactor?.source ?? null,
     samples: c.tests.samples ?? '',
@@ -78,10 +84,13 @@ const dirty = computed(() => {
     form.titleEn !== (c.problem.title.en ?? '') ||
     form.timeLimit !== c.problem.time_limit ||
     form.memoryLimit !== c.problem.memory_limit ||
-    form.interactive !== c.problem.interactive ||
+    form.judgeMode !== judgeMode(c.problem) ||
+    JSON.stringify(form.graderSources) !== JSON.stringify(c.grader?.sources ?? []) ||
+    JSON.stringify(form.graderHeaders) !== JSON.stringify(c.grader?.headers ?? []) ||
     form.input !== c.problem.input ||
     form.output !== c.problem.output ||
     form.checker !== (c.checker?.source ?? null) ||
+    form.lemonChecker !== (c.lemon_checker?.source ?? null) ||
     form.validator !== (c.validator?.source ?? null) ||
     form.interactor !== (c.interactor?.source ?? null) ||
     form.samples !== (c.tests.samples ?? '')
@@ -100,6 +109,21 @@ const checkerOptions = computed<SelectOption[]>(() => [
   { type: 'group', label: t('info.localFiles'), key: 'local', children: localSources.value.map((p) => ({ label: p, value: p })) },
 ]);
 const sourceOptions = computed<SelectOption[]>(() => localSources.value.map((p) => ({ label: p, value: p })));
+const converting = ref(false);
+async function convertChecker() {
+  const detail = props.ws.state.detail;
+  if (!detail || dirty.value || converting.value) return;
+  if (props.ws.state.tabs.some(tab => tab.dirty && (tab.path === cfg.value?.checker?.source || tab.path === 'problem.toml'))) {
+    message.warning(t('oiFeatures.saveCheckerFirst')); return;
+  }
+  converting.value = true;
+  try {
+    const r = await api.convertLemonChecker(detail.summary.id);
+    await props.ws.loadDetail(); await props.ws.openFile(r.source);
+    message.success(t('oiFeatures.convertedChecker'));
+  } catch (e) { message.error(errorMessage(e)); }
+  finally { converting.value = false; }
+}
 
 async function save() {
   const c = cfg.value;
@@ -108,10 +132,12 @@ async function save() {
     title: { ...c.problem.title, zh: form.titleZh, en: form.titleEn },
     timeLimit: form.timeLimit,
     memoryLimit: form.memoryLimit,
-    interactive: form.interactive,
+    judgeMode: form.judgeMode,
+    ...(form.judgeMode === 'grader' ? { grader: { sources: form.graderSources, headers: form.graderHeaders } } : {}),
     input: form.input || 'stdin',
     output: form.output || 'stdout',
     checker: form.checker,
+    lemonChecker: form.lemonChecker,
     validator: form.validator,
     interactor: form.interactor,
     samples: form.samples,
@@ -145,7 +171,7 @@ const activeInfo = computed(() => {
   const file = props.ws.files.value.find((f) => f.path === tab.path);
   return {
     path: tab.path,
-    role: shared ? 'checker' : props.ws.roleOf(tab.path),
+    role: shared ? (tab.path.startsWith(`${SHARED_TAB}checkers/`) ? 'checker' : 'resource') : props.ws.roleOf(tab.path),
     size: file?.size,
     lang: props.ws.languageFor(tab.path),
   };
@@ -191,14 +217,26 @@ const activeInfo = computed(() => {
               <n-select v-model:value="form.output" :options="streamOptions('stdout', form.output)" filterable tag :placeholder="t('problem.ioFile')" />
             </div>
           </n-form-item>
-          <n-form-item :label="t('problem.interactive')"><n-switch v-model:value="form.interactive" /></n-form-item>
+          <n-form-item :label="t('oiFeatures.mode')"><n-select v-model:value="form.judgeMode" :options="['batch', 'io', 'grader'].map(value => ({ value, label: t(`oiFeatures.${value}`) }))" /></n-form-item>
+          <template v-if="form.judgeMode === 'grader'">
+            <n-alert type="warning" style="margin-bottom: 12px">{{ t('oiFeatures.graderWarning') }}</n-alert>
+            <n-form-item :label="t('oiFeatures.graderSources')"><n-select v-model:value="form.graderSources" multiple filterable :options="sourceOptions.filter(o => /\.(cpp|cc|cxx)$/i.test(String(o.value)))" /></n-form-item>
+            <n-form-item :label="t('oiFeatures.graderHeaders')"><n-select v-model:value="form.graderHeaders" multiple filterable :options="ws.files.value.filter(f => /\.(h|hpp|hh|hxx|inc)$/i.test(f.path)).map(f => ({ value: f.path, label: f.path }))" /></n-form-item>
+            <p class="small dim">{{ t('oiFeatures.graderHint') }}</p>
+          </template>
           <n-form-item :label="t('roles.checker')">
             <n-select v-model:value="form.checker" :options="checkerOptions" filterable clearable />
           </n-form-item>
           <n-form-item :label="t('roles.validator')">
             <n-select v-model:value="form.validator" :options="sourceOptions" filterable clearable />
           </n-form-item>
-          <n-form-item v-if="form.interactive" :label="t('roles.interactor')">
+          <n-form-item :label="t('oiFeatures.lemonChecker')">
+            <n-select v-model:value="form.lemonChecker" :options="sourceOptions" filterable clearable />
+          </n-form-item>
+          <p class="small dim">{{ t('oiFeatures.lemonCheckerHint') }}</p>
+          <n-button size="small" :loading="converting" :disabled="dirty || converting || !cfg.checker" :title="dirty ? t('oiFeatures.saveCheckerFirst') : undefined" @click="convertChecker">{{ t('oiFeatures.convertChecker') }}</n-button>
+          <p class="small dim">{{ t('oiFeatures.convertCheckerHint') }}</p>
+          <n-form-item v-if="form.judgeMode === 'io'" :label="t('roles.interactor')">
             <n-select v-model:value="form.interactor" :options="sourceOptions" filterable clearable />
           </n-form-item>
           <n-form-item :label="t('info.samples')">

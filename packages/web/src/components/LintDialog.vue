@@ -34,7 +34,7 @@ async function run() {
       const tab = props.ws.state.tabs.find((x) => x.path === p);
       const text = tab ? tab.model.getValue() : (await api.readFile(props.problemId, p)).content;
       const lang = p.split('/')[1];
-      out.push({ path: p, lang, original: text, result: lintStatement(text, { lang }) });
+      out.push({ path: p, lang, original: text, result: lintStatement(text, { lang, allowMarkdown: true }) });
     }
     files.value = out.filter((f) => f.result.issues.length);
     active.value = files.value[0]?.path ?? null;

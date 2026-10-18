@@ -31,7 +31,7 @@ const MATH_ENVS = ['equation', 'equation*', 'align', 'align*', 'gather', 'gather
 const VERBATIM_ENVS = ['verbatim', 'lstlisting'];
 
 /** Split a statement into text / math / verbatim / comment segments. */
-function segment(src: string, issues: LintIssue[], pos: (o: number) => { line: number; col: number }): Seg[] {
+function segment(src: string, issues: LintIssue[], pos: (o: number) => { line: number; col: number }, allowMarkdown = false): Seg[] {
   const segs: Seg[] = [];
   let i = 0;
   let textStart = 0;
@@ -46,10 +46,15 @@ function segment(src: string, issues: LintIssue[], pos: (o: number) => { line: n
   };
   while (i < src.length) {
     const c = src[i];
-    if ((i === 0 || src[i - 1] === '\n') && /^[ \t]*`{3,}/.test(src.slice(i))) {
-      const opening = src.slice(i).match(/^[ \t]*(`{3,})[^\n]*\n/);
+    if (allowMarkdown && c === '`' && !/^[ \t]*`{3,}/.test(src.slice(src.lastIndexOf('\n', i - 1) + 1))) {
+      const ticks = src.slice(i).match(/^`+/)![0];
+      const end = src.indexOf(ticks, i + ticks.length);
+      if (end >= 0) { push('verbatim', i, end + ticks.length); continue; }
+    }
+    if (i === 0 || src[i - 1] === '\n') {
+      const opening = src.slice(i).match(allowMarkdown ? /^[ \t>]*(?:[-+*] |\d+[.)] )?(`{3,}|~{3,})[^\n]*\n/ : /^[ \t]*(`{3,}|~{3,})[^\n]*\n/);
       if (opening) {
-        const close = new RegExp('^[ \\t]*`{' + opening[1].length + ',}[ \\t]*(?:\\n|$)', 'gm');
+        const close = new RegExp((allowMarkdown ? '^[ \\t>]*' : '^[ \\t]*') + opening[1][0] + '{' + opening[1].length + ',}[ \\t]*(?:\\n|$)', 'gm');
         close.lastIndex = i + opening[0].length;
         const ending = close.exec(src);
         issues.push({ ...pos(i), rule: 'md-code-block', message: ending ? 'Markdown code fence → verbatim' : 'Code fence is not closed', fixable: !!ending });
@@ -258,12 +263,13 @@ const LIST_ENVS = /\\(begin|end)\{(itemize|enumerate)\}/g;
  * Indent list structure by nesting depth, two spaces per level: \begin / \end of a list
  * at the depth outside it, its \item lines one level deeper. Other lines are left alone.
  */
-function indentLists(src: string, issues: LintIssue[]): string {
+function indentLists(src: string, issues: LintIssue[], protectedLines = new Set<number>()): string {
   const lines = src.split('\n');
   let depth = 0;
   let verbatim: string | null = null;
   return lines
     .map((line, n) => {
+      if (protectedLines.has(n)) return line;
       if (verbatim) {
         if (line.includes(`\\end{${verbatim}}`)) verbatim = null;
         return line;
@@ -299,7 +305,7 @@ export const LINT_RULE_IDS = [
   'unbalanced-braces',
 ] as const;
 
-export function lintStatement(src: string, opts: { lang: string }): LintResult {
+export function lintStatement(src: string, opts: { lang: string; allowMarkdown?: boolean }): LintResult {
   const text = src.replace(/\r\n/g, '\n');
   const issues: LintIssue[] = [];
   const lineStarts = [0];
@@ -315,8 +321,17 @@ export function lintStatement(src: string, opts: { lang: string }): LintResult {
     return { line: lo + 1, col: o - lineStarts[lo] + 1 };
   };
 
-  const segs = segment(text, issues, pos);
-  const out = segs.map((s) => (s.kind === 'text' ? applyRules(s.text, TEXT_RULES, s.start, issues, pos) : s.kind === 'math' ? applyRules(s.text, MATH_RULES, s.start, issues, pos) : s.kind === 'verbatim' && /^[ \t]*`{3,}/.test(s.text) && /\n[ \t]*`{3,}[ \t]*\n?$/.test(s.text) ? s.text.replace(/^[ \t]*`{3,}[^\n]*\n/, '\\begin{verbatim}\n').replace(/\n[ \t]*`{3,}[ \t]*(\n?)$/, '\n\\end{verbatim}$1') : s.text));
+  const segs = segment(text, issues, pos, opts.allowMarkdown);
+  if (opts.allowMarkdown) for (let i = issues.length - 1; i >= 0; i--) if (issues[i].rule === 'md-code-block' && issues[i].fixable) issues.splice(i, 1);
+  const textRules = opts.allowMarkdown ? TEXT_RULES.filter(rule => !rule.id.startsWith('md-')) : TEXT_RULES;
+  const out = segs.map(s => {
+    if (s.kind === 'text') return applyRules(s.text, textRules, s.start, issues, pos);
+    if (s.kind === 'math') return applyRules(s.text, MATH_RULES, s.start, issues, pos);
+    if (!opts.allowMarkdown && s.kind === 'verbatim' && /^[ \t]*(?:`{3,}|~{3,})/.test(s.text) && /\n[ \t]*(?:`{3,}|~{3,})[ \t]*\n?$/.test(s.text)) {
+      return s.text.replace(/^[ \t]*(?:`{3,}|~{3,})[^\n]*\n/, '\\begin{verbatim}\n').replace(/\n[ \t]*(?:`{3,}|~{3,})[ \t]*(\n?)$/, '\n\\end{verbatim}$1');
+    }
+    return s.text;
+  });
   if (opts.lang === 'zh') cjkRules(segs, out, issues, pos);
 
   // Brace balance in text (report only).
@@ -341,8 +356,8 @@ export function lintStatement(src: string, opts: { lang: string }): LintResult {
     const b = pos(s.start + s.text.length).line - 1;
     for (let l = a; l <= b; l++) verbatimLines.add(l);
   }
-  let fixed = indentLists(convertLists(out.join(''), issues, verbatimLines), issues);
-  const collapsed = segment(fixed, [], () => ({ line: 1, col: 1 })).map(s => s.kind === 'verbatim' ? s.text : s.text.replace(/\n{3,}/g, '\n\n')).join('');
+  let fixed = indentLists(opts.allowMarkdown ? out.join('') : convertLists(out.join(''), issues, verbatimLines), issues, opts.allowMarkdown ? verbatimLines : undefined);
+  const collapsed = segment(fixed, [], () => ({ line: 1, col: 1 }), opts.allowMarkdown).map(s => s.kind === 'verbatim' ? s.text : s.text.replace(/\n{3,}/g, '\n\n')).join('');
   if (collapsed !== fixed) issues.push({ line: 1, col: 1, rule: 'blank-lines', message: 'More than one blank line in a row', fixable: true });
   fixed = collapsed;
   issues.sort((a, b) => a.line - b.line || a.col - b.col);

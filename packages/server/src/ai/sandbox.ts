@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { AiChange, AiChangeContent } from '@polyforge/shared';
 import { atomicWrite, exists, HttpError, looksBinary, safeJoin, sha1, toPosix } from '../util/fs.js';
 import { HIDDEN_DIRS } from '../workspace/files.js';
+import { contestFile } from '../workspace/contestFiles.js';
 
 async function walk(root: string): Promise<Map<string, string>> {
   const out = new Map<string, string>(); // rel -> abs
@@ -33,6 +34,7 @@ export class Sandbox {
     readonly dir: string,
     /** Paths the agent has written or deleted (candidates for the change set). */
     readonly touched: Set<string>,
+    private contestFiles = false,
   ) {}
 
   /** Create the copy on first use; afterwards bring files the agent has not touched up to date. */
@@ -126,6 +128,7 @@ export class Sandbox {
       if (!this.touched.has(rel)) continue;
       const mine = await readOrNull(path.join(this.dir, rel));
       const target = safeJoin(this.realDir, rel);
+      if (this.contestFiles) await contestFile(path.dirname(this.realDir), rel);
       if (mine) await atomicWrite(target, mine);
       else {
         await fsp.rm(target, { force: true });
@@ -176,6 +179,7 @@ export interface SandboxLike {
 
 /** A problem of a contest session: its id (the path prefix), letter and real folder. */
 export interface ContestPart {
+  kind?: 'files';
   id: string;
   index: string;
   realDir: string;
@@ -225,7 +229,7 @@ export class ContestSandbox implements SandboxLike {
       }
       const mine = this.pending.filter((p) => p.startsWith(`${part.id}/`)).map((p) => p.slice(part.id.length + 1));
       this.pending = this.pending.filter((p) => !p.startsWith(`${part.id}/`));
-      next.set(part.id, { part, sandbox: new Sandbox(part.realDir, path.join(this.dir, part.id), new Set(mine)) });
+      next.set(part.id, { part, sandbox: new Sandbox(part.realDir, path.join(this.dir, part.id), new Set(mine), part.kind === 'files') });
     }
     // A problem that has pending changes but no longer resolves keeps them in `pending`.
     this.parts = next;
@@ -243,6 +247,7 @@ export class ContestSandbox implements SandboxLike {
 
   private lookup(name: string, any: boolean) {
     const all = [...this.parts.values()].filter((x) => any || x.part.listed);
+    if (name === 'files') return all.find(x => x.part.kind === 'files');
     return all.find((x) => x.part.id === name) ?? all.find((x) => x.part.index.toLowerCase() === name.toLowerCase());
   }
 

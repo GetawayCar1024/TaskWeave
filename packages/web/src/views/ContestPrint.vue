@@ -11,8 +11,10 @@ import { fitPrintMath } from '../lib/printMath';
 import { serverText } from '../lib/serverText';
 import { STATEMENT_SECTIONS, type ContestDetail, type ContestStatement, type StatementSection } from '@polyforge/shared';
 import StatementDoc from '../components/StatementDoc.vue';
-import { api, errorMessage, rawUrl } from '../lib/api';
+import OiContestPreview from '../components/OiContestPreview.vue';
+import { api, errorMessage, rawUrl, token } from '../lib/api';
 import { getDefs } from '../lib/defs';
+import { waitJob } from '../lib/jobs';
 import { buildMacros, renderLatex, type MacroTable } from '../lib/latex';
 
 /**
@@ -27,8 +29,32 @@ const message = useMessage();
 
 const detail = ref<ContestDetail | null>(null);
 const statements = ref<ContestStatement[]>([]);
+const notes = ref('');
+const notesHtml = computed(() => renderLatex(notes.value, { macros: macros.value, imageUrl: n => `/api/contests/${encodeURIComponent(props.id)}/file/raw?path=${encodeURIComponent(n)}&token=${encodeURIComponent(token)}` }).html);
 const macros = shallowRef<MacroTable>(new Map());
 const loading = ref(true);
+const style = ref<'cf' | 'oi'>(route.query.style === 'oi' || route.query.down ? 'oi' : 'cf');
+const preparingDown = ref(false);
+const downRequest = ref(0);
+let alive = true;
+onBeforeUnmount(() => { alive = false; });
+async function prepareDown() {
+  if (preparingDown.value) return;
+  preparingDown.value = true;
+  try {
+    const job = await api.contestBatch(props.id, { action: 'generate' });
+    const done = await waitJob(job, () => {});
+    if (done.status !== 'done') throw new Error(done.error ?? 'Sample generation cancelled.');
+    const result = done.result as import('@polyforge/shared').ContestBatchResult;
+    const errors = result.items.filter(item => !item.ok);
+    if (errors.length) throw new Error(errors.map(item => `${item.index}: ${item.message}\n${(item.details ?? []).join('\n')}`).join('\n'));
+    if (!alive) return;
+    if (!await load()) return;
+    await nextTick();
+    if (alive) downRequest.value++;
+  } catch (e) { if (alive) message.error(serverText(errorMessage(e))); }
+  finally { preparingDown.value = false; }
+}
 const lang = ref((typeof route.query.lang === 'string' && route.query.lang) || localStorage.getItem('polyforge-print-lang') || 'zh');
 /** Which document: the problem statements or the tutorials (kept in the URL). */
 const doc = ref<'statements' | 'tutorials'>(route.query.doc === 'tutorials' ? 'tutorials' : 'statements');
@@ -44,21 +70,28 @@ const langs = computed(() => {
   return [...set].sort();
 });
 
+let loadVersion = 0;
 async function load() {
+  const version = ++loadVersion;
+  const language = lang.value;
   loading.value = true;
   try {
-    const [d, s, defs] = await Promise.all([api.contest(props.id), api.contestStatements(props.id, lang.value), getDefs()]);
+    const [d, s, defs, instructions] = await Promise.all([api.contest(props.id), api.contestStatements(props.id, language), getDefs(), api.contestNotes(props.id)]);
+    if (version !== loadVersion) return false;
+    notes.value = instructions.content;
     detail.value = d;
     statements.value = s;
-    macros.value = buildMacros(defs, lang.value);
+    macros.value = buildMacros(defs, language);
     if (langs.value.length && !langs.value.includes(lang.value)) lang.value = langs.value[0];
+    return true;
   } catch (e) {
-    message.error(errorMessage(e));
+    if (version === loadVersion) message.error(errorMessage(e));
+    return false;
   } finally {
-    loading.value = false;
+    if (version === loadVersion) loading.value = false;
   }
 }
-onMounted(load);
+onMounted(async () => { await load(); if (route.query.down) await prepareDown(); });
 watch(lang, (l) => {
   localStorage.setItem('polyforge-print-lang', l);
   load();
@@ -87,6 +120,8 @@ watch([rendered, doc], fitMath, { flush: 'post' });
 const print = async () => { await fitMath(); window.print(); };
 async function markdown() {
   const fragment = document.createElement('article');
+  const instructions = document.querySelector('.sheet .contest-notes');
+  if (withToc.value && instructions) fragment.append(instructions.cloneNode(true));
   document.querySelectorAll<HTMLElement>('.sheet .problem').forEach(problem => {
     const doc = problem.querySelector('.statement-doc')?.cloneNode(true) as HTMLElement | undefined;
     if (!doc) return;
@@ -243,29 +278,32 @@ onBeforeUnmount(() => {
       <n-button size="small" quaternary @click="router.push({ name: 'contest', params: { id } })">
         <template #icon><arrow-left /></template>{{ t('nav.contest') }}
       </n-button>
-      <n-radio-group v-model:value="lang" size="small">
+      <n-radio-group v-model:value="lang" size="small" :disabled="preparingDown">
         <n-radio-button v-for="l in langs.length ? langs : [lang]" :key="l" :value="l">{{ l }}</n-radio-button>
       </n-radio-group>
-      <n-radio-group v-model:value="doc" size="small">
+      <n-radio-group v-model:value="doc" size="small" :disabled="preparingDown">
         <n-radio-button value="statements">{{ t('contest.docStatements') }}</n-radio-button>
         <n-radio-button value="tutorials">{{ t('contest.docTutorials') }}</n-radio-button>
       </n-radio-group>
-      <label class="opt"><n-switch v-model:value="withToc" size="small" /> {{ t('contest.toc') }}</label>
-      <label class="opt"><n-switch v-model:value="pageBreaks" size="small" /> {{ t('contest.pageBreaks') }}</label>
+      <n-radio-group v-model:value="style" size="small" :disabled="preparingDown"><n-radio-button value="cf">CF</n-radio-button><n-radio-button value="oi">OI</n-radio-button></n-radio-group>
+      <label v-if="style === 'cf'" class="opt"><n-switch v-model:value="withToc" size="small" /> {{ t('contest.toc') }}</label>
+      <label v-if="style === 'cf'" class="opt"><n-switch v-model:value="pageBreaks" size="small" /> {{ t('contest.pageBreaks') }}</label>
       <n-tag v-if="doc === 'statements' && problemsMissing.length" size="small" type="error" :bordered="false">{{ t('contest.noStatementIn', { lang, list: problemsMissing.join(', ') }) }}</n-tag>
       <n-tag v-if="doc === 'tutorials' && tutorialsMissing.length" size="small" type="warning" :bordered="false">
         {{ t('contest.noTutorialIn', { lang, list: tutorialsMissing.join(', ') }) }}
       </n-tag>
       <span class="grow" />
-      <n-dropdown trigger="click" :options="exportOptions" @select="onExport">
+      <n-dropdown v-if="style === 'cf'" trigger="click" :options="exportOptions" @select="onExport">
         <n-button size="small" :loading="exporting"><template #icon><file-down /></template>{{ t('contest.export') }}</n-button>
       </n-dropdown>
-      <n-button size="small" type="primary" @click="print"><template #icon><printer /></template>{{ t('contest.print') }}</n-button>
+      <n-button v-if="style === 'cf'" size="small" type="primary" @click="print"><template #icon><printer /></template>{{ t('contest.print') }}</n-button>
     </div>
 
     <n-alert v-if="formulaOverflow" type="warning" class="no-print">{{ t('improve.formulaOverflow') }}</n-alert>
+    <n-alert v-if="preparingDown" type="info" class="no-print">{{ t('oiFeatures.preparingDown') }}</n-alert>
     <div v-if="loading && !statements.length" class="center no-print"><n-spin /></div>
     <n-alert v-else-if="!statements.length" type="info" :show-icon="false" class="no-print empty">{{ t('contest.noProblems') }}</n-alert>
+    <oi-contest-preview v-else-if="style === 'oi' && detail" :detail="detail" :statements="statements" :lang="lang" :doc="doc" :notes="notes" :macros="macros" :loading="loading" :preparing-down="preparingDown" :down-request="downRequest" @prepare-down="prepareDown" />
     <div v-else class="sheet" :class="{ breaks: pageBreaks, 'with-toc': withToc }">
       <h1 class="contest-title">{{ docTitle }}</h1>
       <section v-if="withToc && shown.length" class="toc">
@@ -295,6 +333,7 @@ onBeforeUnmount(() => {
             </tr>
           </tbody>
         </table>
+        <div v-if="notes.trim()" class="contest-notes"><statement-doc :lang="lang" :title="lang === 'zh' ? '注意事项' : 'Instructions'" :sections="{ legend: notesHtml }" :samples="[]" /></div>
       </section>
       <div v-if="!shown.length" class="nothing">{{ doc === 'tutorials' ? t('contest.noTutorials') : t('contest.noProblems') }}</div>
       <section v-for="r in shown" :id="`problem-${r.s.index}`" :key="r.s.index" class="problem">

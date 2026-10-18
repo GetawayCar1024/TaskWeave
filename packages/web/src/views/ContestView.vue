@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, h, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { checkMessage, serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import {
   NAlert,
   NButton,
@@ -49,6 +49,7 @@ import { CONTEST_INDEX_RE, PROBLEM_NAME_RE, type ContestAction, type ContestBatc
 import AppHeader from '../components/AppHeader.vue';
 import AiDrawer from '../components/AiDrawer.vue';
 import ContestSyncDialog from '../components/ContestSyncDialog.vue';
+import ContestFiles from '../components/ContestFiles.vue';
 import { useAi } from '../lib/ai';
 import { api, errorMessage } from '../lib/api';
 import { problemTitle } from '../lib/format';
@@ -61,6 +62,9 @@ import { desktop } from '../lib/desktop';
 const props = defineProps<{ id: string }>();
 const { t, locale } = useI18n();
 const router = useRouter();
+const route = useRoute();
+const showFiles = ref(!!route.query.contestFile);
+watch(() => route.query.contestFile, file => { if (file) showFiles.value = true; });
 const message = useMessage();
 
 const detail = ref<ContestDetail | null>(null);
@@ -214,8 +218,11 @@ const ACTIONS: { action: ContestAction; icon: typeof Play }[] = [
 const job = ref<JobInfo | null>(null);
 const running = computed(() => job.value?.status === 'running');
 const result = ref<ContestBatchResult | null>(null);
+const showExport = ref(false);
+const exportFormat = ref<'polygon' | 'lemonlime'>('lemonlime');
 const resultByProblem = computed(() => new Map((result.value?.items ?? []).map((x) => [x.problem, x])));
 async function run(action: ContestAction) {
+  if (action === 'export') { showExport.value = true; return; }
   try {
     // Pushing to Polygon lives in the sync dialog (with its commit message).
     const started = await api.contestBatch(props.id, { action });
@@ -223,6 +230,10 @@ async function run(action: ContestAction) {
   } catch (e) {
     message.error(errorMessage(e));
   }
+}
+async function exportContest() {
+  try { follow(await api.contestBatch(props.id, { action: 'export', exportFormat: exportFormat.value })); showExport.value = false; }
+  catch (e) { message.error(errorMessage(e)); }
 }
 async function follow(started: JobInfo) {
   job.value = started;
@@ -354,6 +365,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
       <span v-if="summary" class="mono sub">{{ summary.name }}</span>
       <n-tag v-if="summary?.polygonId" size="small" :bordered="false">Polygon #{{ summary.polygonId }}</n-tag>
       <template #right>
+        <n-button size="small" :disabled="!summary" @click="showFiles = true">比赛文件</n-button>
         <n-button size="small" :disabled="!summary" @click="router.push({ name: 'contest-print', params: { id } })">
           <template #icon><file-text /></template>{{ t('contest.statements') }}
         </n-button>
@@ -365,6 +377,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
       </template>
     </app-header>
     <contest-sync-dialog v-model:show="showSync" :contest-id="id" :detail="detail" @changed="load" />
+    <contest-files v-model:show="showFiles" :id="id" :detail="detail" />
 
     <n-split v-model:size="contentSplitSize" direction="horizontal" :min="0.35" :max="showAi ? 0.8 : 1" :disabled="!showAi" :resize-trigger-size="showAi ? 3 : 0" class="content-split">
       <template #1>
@@ -385,6 +398,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
                 <n-button size="small" :disabled="running || !rows.length" @click="showSync = true">
                   <template #icon><refresh-cw /></template>{{ t('toolbar.sync') }}
                 </n-button>
+                <n-button size="small" :disabled="running || !rows.length" @click="router.push({ name: 'contest-print', params: { id }, query: { style: 'oi', down: '1', doc: 'statements' } })">{{ t('oiFeatures.down') }}</n-button>
                 <n-button v-if="running" size="small" type="warning" ghost @click="cancel">{{ t('common.cancel') }}</n-button>
               </n-space>
               <div v-if="running && job" class="progress">
@@ -431,6 +445,11 @@ const columns = computed<DataTableColumns<Row>>(() => [
       </template>
     </n-split>
 
+    <n-modal v-model:show="showExport" preset="card" :title="t('oiFeatures.exportTitle')" style="width: min(520px, 94vw)">
+      <n-select v-model:value="exportFormat" :options="[{ value: 'lemonlime', label: 'LemonLime (.cdf + data + source)' }, { value: 'polygon', label: t('oiFeatures.polygon') }]" />
+      <n-alert v-if="exportFormat === 'lemonlime'" type="info" style="margin-top: 12px">{{ t('oiFeatures.exportHint') }}</n-alert>
+      <template #footer><n-space justify="end"><n-button @click="showExport = false">{{ t('common.cancel') }}</n-button><n-button type="primary" :disabled="running" @click="exportContest">{{ t('contest.export') }}</n-button></n-space></template>
+    </n-modal>
     <n-modal v-model:show="showNumbering" preset="card" :title="t('improve.numbering')" style="width: 560px">
       <div style="max-height: 60vh; overflow: auto">
         <n-form-item v-for="entry in numberDraft" :key="entry.problem" :label="entry.problem">

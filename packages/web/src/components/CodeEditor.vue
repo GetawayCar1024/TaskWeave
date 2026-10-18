@@ -33,6 +33,7 @@ watch(
     if (editor && v !== editor.getValue()) editor.setValue(v);
   },
 );
+watch(() => props.readOnly, value => editor?.updateOptions({ readOnly: !!value }));
 
 onBeforeUnmount(() => editor?.dispose());
 </script>

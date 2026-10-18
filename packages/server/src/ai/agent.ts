@@ -129,11 +129,12 @@ export class AgentService {
         const { config } = await contests.config(cid);
         const listed = config.problems.map((p) => ({ id: p.problem, index: p.index }));
         // Problems no longer in the contest that still have changes: reviewable, not reachable by tools.
-        const extra = withIds.filter((id) => !listed.some((p) => p.id === id)).map((id) => ({ id, index: '-' }));
-        const out: ContestPart[] = [];
+        const extra = withIds.filter((id) => id !== 'files' && !listed.some((p) => (p.id === 'files' ? '_problem_files' : p.id) === id)).map((id) => ({ id, index: '-' }));
+        const out: ContestPart[] = [{ id: 'files', index: 'files', kind: 'files', realDir: path.join(cref.dir, 'files'), listed: true }];
         for (const p of [...listed.map((x) => ({ ...x, listed: true })), ...extra.map((x) => ({ ...x, listed: false }))]) {
-          const ref = await this.judge.registry.get(p.id).catch(() => null);
-          if (ref) out.push({ id: ref.id, index: p.index, realDir: ref.dir, listed: p.listed });
+          if (p.id === 'files' && !p.listed) continue;
+          const ref = await this.judge.registry.get(p.id === '_problem_files' ? 'files' : p.id).catch(() => null);
+          if (ref) out.push({ id: ref.id === 'files' ? '_problem_files' : ref.id, index: p.index, realDir: ref.dir, listed: p.listed });
         }
         return out;
       };
@@ -164,7 +165,7 @@ export class AgentService {
                 ...base,
                 sandbox,
                 ctx: async () => {
-                  const ref = await this.judge.registry.get(part.id);
+                  const ref = await this.judge.registry.get(part.id === '_problem_files' ? 'files' : part.id);
                   return this.judge.ctxFor({ id: `${part.id}@ai`, dir: sandbox.dir, root: ref.root }, path.join(ref.dir, '.polyforge', 'build'));
                 },
               }),

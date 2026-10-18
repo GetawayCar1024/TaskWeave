@@ -78,7 +78,8 @@ function addGroup() {
   const s = set.value;
   const used = s.group.flatMap((g) => parseIndexList(g.tests));
   const from = (used.length ? Math.max(...used) : 0) + 1;
-  const name = String(s.group.length + 1);
+  let name = String(s.group.length + 1);
+  for (let n = 1; s.group.some(g => g.name === name); n++) name = String(n);
   s.group.push({ name, tests: from <= testCount.value ? `${from}-${testCount.value}` : '', points: null, policy: 'COMPLETE_GROUP', dependencies: [] });
   s.groups = true;
 }
@@ -106,7 +107,7 @@ async function save() {
           (g): TestGroup => ({
             name: g.name.trim(),
             tests: g.tests.trim() || undefined,
-            points: form.points && g.points !== null ? g.points : undefined,
+            points: g.points !== null ? g.points : undefined,
             policy: g.policy,
             dependencies: g.dependencies.length ? g.dependencies : undefined,
           }),
@@ -128,7 +129,7 @@ const policyOptions = computed(() => GROUP_POLICIES.map((p) => ({ label: t(`test
 </script>
 
 <template>
-  <n-modal :show="show" preset="card" :title="t('testsets.title')" style="width: 920px" @update:show="emit('update:show', $event)">
+  <n-modal :show="show" preset="card" :title="t('testsets.title')" style="width: min(1040px, 96vw)" @update:show="emit('update:show', $event)">
     <div v-if="set" class="layout">
       <aside class="sets">
         <div
@@ -178,6 +179,7 @@ const policyOptions = computed(() => GROUP_POLICIES.map((p) => ({ label: t(`test
         </div>
 
         <template v-if="set.groups">
+          <n-alert type="info" :show-icon="false">{{ t('oiFeatures.subtaskHint') }}</n-alert>
           <table class="groups">
             <thead>
               <tr>

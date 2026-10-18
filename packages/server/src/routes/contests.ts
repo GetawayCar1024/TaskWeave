@@ -1,12 +1,17 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { CONTEST_ACTIONS, type ContestBatchRequest, type ContestImportRequest, type ContestPullRequest, type CreateContestRequest, type UpdateContestRequest } from '@polyforge/shared';
+import { commonContestLanguages, CONTEST_ACTIONS, type ContestBatchRequest, type ContestImportRequest, type ContestPullRequest, type CreateContestRequest, type UpdateContestRequest } from '@polyforge/shared';
 import { contestPull, contestPullPreview, contestSyncStatus } from '../polygon/contestSync.js';
 import type { JobManager } from '../jobs.js';
 import { contestExportDir, contestStatements, importContest, runContestBatch, type ContestDeps } from '../judge/contest.js';
 import { contestTex } from '../judge/statementTex.js';
-import { HttpError } from '../util/fs.js';
+import { contestDown } from '../judge/down.js';
+import { atomicWrite, exists, HttpError, validateFileName } from '../util/fs.js';
+import { buildTree, FileService, SelfWrites } from '../workspace/files.js';
+import { contestFile, contestNotes } from '../workspace/contestFiles.js';
+import { convertStatement, largeSampleNotice } from '@polyforge/shared';
 import type { WsHub } from '../ws.js';
 
 /** Contest jobs use `contest:<id>` as their owner so the contest page can find them. */
@@ -25,6 +30,103 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps, jobs: Job
   });
 
   app.get<P>('/api/contests/:id', async (req) => contests.detail(req.params.id));
+  app.post<P & { Body: Parameters<typeof contestDown>[3] }>('/api/contests/:id/down', async (req, reply) => {
+    const data = await contestDown(judge, contests, req.params.id, req.body);
+    return reply.type('application/zip').header('content-disposition', 'attachment; filename="down.zip"').send(data);
+  });
+  const files = new FileService(new SelfWrites());
+  app.get<P>('/api/contests/:id/files', async req => buildTree(path.join((await contests.get(req.params.id)).dir, 'files')));
+  type FP = P & { Querystring: { path: string } };
+  app.get<FP>('/api/contests/:id/file', async req => {
+    const ref = await contests.get(req.params.id);
+    await contestFile(ref.dir, req.query.path);
+    return files.read(path.join(ref.dir, 'files'), req.query.path);
+  });
+  app.get<FP>('/api/contests/:id/file/raw', async (req, reply) => {
+    const ref = await contests.get(req.params.id);
+    const abs = await contestFile(ref.dir, req.query.path);
+    const ext = path.extname(abs).toLowerCase();
+    const mime: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf' };
+    return reply.type(mime[ext] ?? 'application/octet-stream').header('x-content-type-options', 'nosniff').send(await fsp.readFile(abs));
+  });
+  app.put<FP & { Body: { content: string; hash?: string } }>('/api/contests/:id/file', async req => {
+    const ref = await contests.get(req.params.id);
+    await contestFile(ref.dir, req.query.path);
+    if (typeof req.body?.content !== 'string') throw new HttpError(400, 'bad_request', 'content required');
+    return { hash: await files.write(path.join(ref.dir, 'files'), req.query.path, req.body.content, req.body.hash) };
+  });
+  app.post<FP & { Body: { base64: string } }>('/api/contests/:id/file', { bodyLimit: 24 * 1024 * 1024 }, async req => {
+    const ref = await contests.get(req.params.id);
+    const abs = await contestFile(ref.dir, req.query.path);
+    if (typeof req.body?.base64 !== 'string') throw new HttpError(400, 'bad_request', 'base64 required');
+    const data = Buffer.from(req.body.base64, 'base64');
+    await fsp.mkdir(path.dirname(abs), { recursive: true });
+    await fsp.writeFile(abs, data, { flag: 'wx' }).catch((e: NodeJS.ErrnoException) => {
+      if (e.code === 'EEXIST') throw new HttpError(409, 'exists', 'File already exists');
+      throw e;
+    });
+    return { ok: true };
+  });
+  app.delete<FP>('/api/contests/:id/file', async req => {
+    const ref = await contests.get(req.params.id);
+    const abs = await contestFile(ref.dir, req.query.path);
+    if (req.query.path === 'notes.tex') await atomicWrite(abs, '');
+    else await fsp.unlink(abs);
+    return { ok: true };
+  });
+  app.get<P>('/api/contests/:id/notes', async req => ({ content: await contestNotes((await contests.get(req.params.id)).dir) }));
+  // Editable snapshot: each source section is included, with local copies of images.
+  app.post<P & { Body: { lang: string; doc: 'statements' | 'tutorials' } }>('/api/contests/:id/generate-document', async req => {
+    const { lang, doc } = req.body ?? {};
+    if (!/^[a-z]{2,8}$/.test(lang) || !['statements', 'tutorials'].includes(doc)) throw new HttpError(400, 'bad_request', 'Invalid document or language');
+    const { ref, config } = await contests.config(req.params.id);
+    const detail = await contests.detail(ref.id);
+    if (!commonContestLanguages(detail.problems, doc).includes(lang)) {
+      throw new HttpError(400, 'incomplete_document_language', `Cannot generate ${doc} in ${lang}: every contest problem must have non-empty content in this language.`);
+    }
+    const statements = await contestStatements(judge, contests, ref.id, lang);
+    const folder = `${doc}-${lang}-${Date.now()}-${randomBytes(3).toString('hex')}`;
+    const esc = (text: string) => text.replace(/[\\{}%&#_$]/g, c => c === '\\' ? '\\textbackslash{}' : '\\' + c);
+    const out: string[] = [`% polyforge-language: ${lang}`, `\\section*{${esc(config.contest.title[lang] || config.contest.name)}}`];
+    const copyImages = async (source: string, from: string, prefix: string) => {
+      let text = convertStatement(source, 'preview').tex;
+      for (const match of [...text.matchAll(/\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}/g)]) {
+        const name = match[1].trim(); validateFileName(name);
+        const asset = `images/${prefix}/${name}`;
+        const dest = await contestFile(ref.dir, `${folder}/${asset}`);
+        const original = prefix === 'contest' ? await contestFile(ref.dir, name) : path.join(from, name);
+        if (!(await exists(original))) throw new HttpError(400, 'missing_image', `Missing image: ${prefix}/${name}`);
+        await fsp.mkdir(path.dirname(dest), { recursive: true });
+        await fsp.copyFile(original, dest);
+        text = text.replace(match[0], match[0].replace(`{${match[1]}}`, `{${asset}}`));
+      }
+      return text;
+    };
+    const notes = await contestNotes(ref.dir);
+    if (notes.trim()) out.push(`\\subsection*{${lang === 'zh' ? '注意事项' : 'Instructions'}}`, await copyImages(notes, '', 'contest'));
+    const labels: Record<string, string> = lang === 'zh' ? { legend: '题目描述', input: '输入格式', output: '输出格式', interaction: '交互', scoring: '评分', notes: '说明', tutorial: '题解' } : { legend: 'Description', input: 'Input', output: 'Output', interaction: 'Interaction', scoring: 'Scoring', notes: 'Notes', tutorial: 'Tutorial' };
+    for (const s of statements) {
+      out.push(`\\subsection*{${s.index}. ${esc(s.title)}}`);
+      if (doc === 'statements') out.push(`${lang === 'zh' ? '时间限制' : 'Time limit'}: ${s.timeLimit / 1000} s\\\\\n${lang === 'zh' ? '空间限制' : 'Memory limit'}: ${s.memoryLimit} MB\\\\\n${esc(s.input || 'stdin')} / ${esc(s.output || 'stdout')}`);
+      const parts = doc === 'tutorials' ? [['tutorial', s.sections.tutorial ?? '']] : s.body ? [['legend', s.body]] : ['legend', 'input', 'output', 'interaction', 'scoring'].map(k => [k, s.sections[k] ?? '']);
+      if (doc === 'statements' && !s.body) {
+        s.samples.forEach((sample, i) => {
+          if (sample.large) { parts.push([`${lang === 'zh' ? '样例' : 'Sample'} ${sample.number ?? i + 1}`, esc(largeSampleNotice(sample, lang, sample.number ?? i + 1))]); return; }
+          parts.push([`${lang === 'zh' ? '样例' : 'Sample'} ${i + 1}`, `\\begin{verbatim}\n${sample.input}\n\\end{verbatim}\n\n\\begin{verbatim}\n${sample.output}\n\\end{verbatim}`]);
+        });
+        parts.push(['notes', s.sections.notes ?? '']);
+      }
+      for (const [key, source] of parts) {
+        if (!source.trim()) continue;
+        const problem = await judge.registry.get(s.problem);
+        const text = await copyImages(source, path.join(problem.dir, 'statement', 'images'), s.problem);
+        out.push(`\\subsubsection*{${labels[key] ?? key}}`, text);
+      }
+    }
+    const rel = `${folder}/${doc}.tex`;
+    await atomicWrite(await contestFile(ref.dir, rel), out.join('\n\n') + '\n');
+    return { path: rel };
+  });
   app.get<P>('/api/contests/:id/attachments', async (req, reply) => {
     const { config } = await contests.config(req.params.id);
     if (config.contest.type !== 'oi') throw new HttpError(400, 'oi_only', 'Attachments are only available for OI contests');

@@ -20,7 +20,7 @@ import {
   NTag,
   useMessage,
 } from 'naive-ui';
-import type { ItemContent, JobInfo, PullItem, PullPreview, PushItem, PushPreview } from '@polyforge/shared';
+import { judgeMode, type ItemContent, type JobInfo, type PullItem, type PullPreview, type PushItem, type PushPreview } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 import { waitJob } from '../lib/jobs';
 import type { Workspace } from '../lib/workspace';
@@ -31,6 +31,7 @@ const props = defineProps<{ show: boolean; ws: Workspace; problemId: string; ini
 const emit = defineEmits<{ 'update:show': [boolean] }>();
 const { t } = useI18n();
 const message = useMessage();
+const graderProblem = computed(() => props.ws.state.detail?.config && judgeMode(props.ws.state.detail.config.problem) === 'grader');
 
 const tab = ref<'push' | 'pull'>('push');
 /** Push and pull load independently: the pull tab works while the push preview loads. */
@@ -249,7 +250,7 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
         <n-space v-else align="center" size="small">
           <span>{{ t('sync.unbound', { name: preview.name }) }}</span>
           <n-input-number v-model:value="bindId" size="small" :placeholder="t('sync.bindPlaceholder')" :show-button="false" style="width: 150px" />
-          <n-button size="small" :disabled="!bindId" @click="bind">{{ t('sync.bind') }}</n-button>
+          <n-button size="small" :disabled="!bindId || !!graderProblem" @click="bind">{{ t('sync.bind') }}</n-button>
         </n-space>
       </template>
     </div>
@@ -306,7 +307,7 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
               <n-checkbox v-model:checked="buildPackage" :disabled="!commit">{{ t('sync.buildPackage') }}</n-checkbox>
               <n-select v-if="buildPackage" v-model:value="packageType" :options="[{label:'Standard',value:'standard'},{label:'Full',value:'full'}]" size="small" style="width: 120px" />
             </n-space>
-            <n-button type="primary" :loading="pushJob?.status === 'running'" :disabled="!selected.size && !buildPackage && !commit" @click="doPush">
+            <n-button type="primary" :loading="pushJob?.status === 'running'" :disabled="preview.blocked || (!selected.size && !buildPackage && !commit)" @click="doPush">
               {{ bound ? t('sync.pushN', { n: selected.size }) : t('sync.createAndPush', { n: selected.size }) }}
             </n-button>
           </div>

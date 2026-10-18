@@ -11,6 +11,12 @@ export type StatementSection = (typeof STATEMENT_SECTIONS)[number];
 
 export const problemTypeSchema = z.enum(['cf', 'oi']);
 export type ProblemType = z.infer<typeof problemTypeSchema>;
+export const judgeModeSchema = z.enum(['batch', 'io', 'grader']);
+export type JudgeMode = z.infer<typeof judgeModeSchema>;
+/** Older projects encode I/O interaction with `interactive` only. */
+export function judgeMode(problem: { judge_mode?: JudgeMode; interactive?: boolean }): JudgeMode {
+  return problem.judge_mode ?? (problem.interactive ? 'io' : 'batch');
+}
 
 /** Prefix for references to files in the global `shared/` directory, e.g. `std:ncmp`. */
 export const STD_PREFIX = 'std:';
@@ -31,7 +37,7 @@ export const GROUP_POLICIES = ['COMPLETE_GROUP', 'EACH_TEST'] as const;
 const testGroupSchema = z
   .object({
     name: z.string(),
-    points: z.number().optional(),
+    points: z.number().finite().nonnegative().optional(),
     /** COMPLETE_GROUP: the points only when every test passes; EACH_TEST: split over the tests. */
     policy: z.enum(GROUP_POLICIES).optional(),
     /** Groups that must pass completely for this group to score. */
@@ -61,12 +67,17 @@ export const problemTomlSchema = z.object({
       input: z.string().default('stdin'),
       output: z.string().default('stdout'),
       interactive: z.boolean().default(false),
+      judge_mode: judgeModeSchema.optional(),
     })
     .loose(),
   polygon: z.object({ id: z.number().int().optional() }).loose().default({}),
   checker: sourceEntry.optional(),
+  /** Independent checker using the Lemon score/report-file protocol. */
+  lemon_checker: sourceEntry.optional(),
   validator: sourceEntry.optional(),
   interactor: sourceEntry.optional(),
+  /** C++ translation units linked with each submission, plus supplied headers. */
+  grader: z.object({ sources: z.array(z.string()).min(1), headers: z.array(z.string()).default([]) }).optional(),
   solutions: z.array(sourceEntry.extend({ tag: z.enum(SOLUTION_TAGS) })).refine(
     list => !list.length || list.filter(s => s.tag === 'MA').length === 1,
     'Solutions must have exactly one MA',
@@ -79,6 +90,8 @@ export const problemTomlSchema = z.object({
     .extend({
       /** Tests shown as examples in the statement, e.g. "1-2". */
       samples: z.string().optional(),
+      /** Sample test indices supplied in down.zip instead of printed inline. */
+      large_samples: z.string().optional(),
       /** Points are enabled for the whole problem (Polygon: problem.enablePoints). */
       points: z.boolean().optional(),
     })
@@ -90,6 +103,12 @@ export const problemTomlSchema = z.object({
 
 export type ProblemToml = z.infer<typeof problemTomlSchema>;
 export type TestGroup = z.infer<typeof testGroupSchema>;
+
+export function polygonFeatureWarnings(config: ProblemToml): string[] {
+  const warnings = config.tests.large_samples?.trim() ? ['Polygon does not support downloadable large samples. Show all samples in the statement before syncing.'] : [];
+  if (config.tests.points) warnings.push(...testsetsOf(config).filter(ts => ts.groups).flatMap(ts => ts.group.filter(g => g.points !== undefined && !Number.isInteger(g.points)).map(g => `${ts.name}/${g.name}: Polygon requires integer test points; fractional subtask scores are not supported.`)));
+  return warnings;
+}
 
 export const DEFAULT_TESTSET = 'tests';
 
@@ -147,6 +166,7 @@ export interface ProblemSummary {
   input: string;
   output: string;
   interactive: boolean;
+  judgeMode?: JudgeMode;
   status: ProblemStatus;
   /** Set when problem.toml could not be parsed. */
   error?: string;
@@ -169,6 +189,7 @@ export interface ProblemDetail {
 }
 
 export interface CreateProblemRequest {
+  judgeMode?: JudgeMode;
   type?: ProblemType;
   name: string;
   root?: string;
@@ -180,6 +201,8 @@ export interface CreateProblemRequest {
 
 /** Partial update of problem.toml. `null` removes the section. */
 export interface PatchProblemRequest {
+  judgeMode?: JudgeMode;
+  grader?: { sources: string[]; headers: string[] } | null;
   language?: { source: string; lang: string | null };
   title?: Record<string, string>;
   timeLimit?: number;
@@ -188,6 +211,7 @@ export interface PatchProblemRequest {
   input?: string;
   output?: string;
   checker?: string | null;
+  lemonChecker?: string | null;
   validator?: string | null;
   interactor?: string | null;
   /** Set (or with tag null, remove) the tag of one solution. */
@@ -196,6 +220,8 @@ export interface PatchProblemRequest {
   generator?: { source: string; enabled: boolean };
   /** tests.samples, e.g. "1-2"; empty string removes it. */
   samples?: string;
+  /** Subset of samples supplied as files rather than shown inline. */
+  largeSamples?: string;
   /** Bind to a Polygon problem id; null unbinds. */
   polygonId?: number | null;
   /** Create / update a testset (groups and script); null deletes it ("tests" cannot be deleted). */

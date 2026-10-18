@@ -1,10 +1,10 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_TESTSET, LANG_TO_POLYGON, STATEMENT_SECTIONS, STD_PREFIX, parseIndexList, testsetsOf, type SolutionTag, type TestsManifest } from '@polyforge/shared';
+import { polygonFeatureWarnings, judgeMode, convertStatement, statementSyntaxWarnings, DEFAULT_TESTSET, LANG_TO_POLYGON, STATEMENT_SECTIONS, STD_PREFIX, parseIndexList, testsetsOf, type SolutionTag, type TestsManifest } from '@polyforge/shared';
 import type { JobCtx } from '../jobs.js';
-import { defsForProblem } from '../defs.js';
+import { defsForProblem, readSharedDefs } from '../defs.js';
 import { stdRefToPath } from '../sharedFiles.js';
-import { atomicWrite, exists, safeJoin } from '../util/fs.js';
+import { atomicWrite, exists, safeJoin, HttpError } from '../util/fs.js';
 import { ZipWriter } from '../util/zip.js';
 import { pickLanguage } from './compiler.js';
 import type { Judge, ProblemCtx } from './index.js';
@@ -50,6 +50,9 @@ export const exportDir = (ctx: ProblemCtx) => path.join(ctx.work, 'export');
 export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, into?: { zip: ZipWriter; prefix: string }): Promise<PackageResult> {
   const warnings: string[] = [];
   const { config, ref } = ctx;
+  const unsupported = polygonFeatureWarnings(config);
+  if (config.problem.type !== 'oi' && unsupported.length) throw new HttpError(400, 'polygon_features', unsupported.join('\n'));
+  if (judgeMode(config.problem) === 'grader' && config.problem.type !== 'oi') throw new HttpError(400, 'grader_polygon', 'Grader problems cannot use Polygon packages. Export the contest to LemonLime instead.');
   const sets = testsetsOf(config);
   const manifests = new Map<string, TestsManifest>();
   for (const ts of sets) {
@@ -69,7 +72,7 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
     }
     await addAttachments(zip, ref.dir, 'attachments/');
     zip.add('files/testlib.h', await fsp.readFile(path.join(judge.global.sharedDir, 'testlib.h')));
-    if (!(await exists(path.join(ref.dir, 'files/defs.toml')))) zip.add('files/defs.toml', await fsp.readFile(path.join(judge.global.sharedDir, 'defs.toml')));
+    if (!(await exists(path.join(ref.dir, 'files/defs.toml')))) zip.add('files/defs.toml', await readSharedDefs(judge.global.sharedDir));
     let count = 0;
     for (const [name, m] of manifests) for (const test of m.tests) {
       count++;
@@ -105,7 +108,7 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
     resources.push(`<file path="files/${x(f)}"/>`);
   }
   // The statement macros (\Def…), like testlib.h: the shared defs.toml unless the problem has its own.
-  const defs = ownFiles.includes('defs.toml') ? null : await fsp.readFile(path.join(judge.global.sharedDir, 'defs.toml'), 'utf8').catch(() => null);
+  const defs = ownFiles.includes('defs.toml') ? null : await readSharedDefs(judge.global.sharedDir).catch(() => null);
   if (defs !== null) {
     // With a Chinese statement the version with the Chinese macros, else the original one.
     const zh = !!config.problem.title.zh?.trim() || (await fsp.stat(path.join(ref.dir, 'statement', 'zh')).then((s) => s.isDirectory()).catch(() => false));
@@ -216,7 +219,11 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
   for (const lang of (await fsp.readdir(path.join(ref.dir, 'statement')).catch(() => [] as string[])).sort()) {
     if (lang === 'images') continue;
     const sec: Record<string, string> = {};
-    for (const s of STATEMENT_SECTIONS) sec[s] = await secRead(lang, s);
+    for (const s of STATEMENT_SECTIONS) {
+      const converted = convertStatement(await secRead(lang, s), 'polygon');
+      sec[s] = converted.tex;
+      warnings.push(...statementSyntaxWarnings(`statement/${lang}/${s}.tex`, converted.warnings));
+    }
     if (!sec.legend && !sec.input && !sec.output && !sec.tutorial) continue;
     const plang = LANG_TO_POLYGON[lang] ?? lang;
     const title = config.problem.title[lang] || config.problem.name;

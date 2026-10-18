@@ -1,0 +1,44 @@
+# PolyForge 0.3.0：OI 题面与比赛评测流程
+
+发布日期：2026-10-18。
+
+本版增加从题面编辑、OI 排版到子任务评测、LemonLime 导出和选手资料下发的一套流程，同时保留 Polygon 工作流。
+
+## 题面与 OI 排版
+
+- 同时编写 Polygon TeX 与 Markdown，无需转换原文件；增加引用框等排版，同步时提示 Polygon 不支持的语法。
+- 内置 CNOI 排版引擎，先预览再导出 OI PDF，支持中文、英文及 Markdown 导出，运行时可离线使用。
+- 新增 OI 常用术语宏；修复粗体公式的 Markdown 导出、英文宏展开和脚注排版。
+
+## OI 评测
+
+- 创建传统题、I/O 交互题或 grader 交互题，配置 grader 源码与头文件。
+- 设置子任务分数、捆绑、按点计分及依赖关系；修复依赖顺序和缓存更新问题。
+- 导出 LemonLime ZIP，包含配置好的 `.cdf`、`data/` 和空的 `source/`。
+- 独立配置 Lemon checker，也可从普通 testlib checker 生成基础转换副本；导出前检查配置、编译和评分协议。
+
+## 比赛文件与下发包
+
+- 比赛文件采用三栏工作区，支持公告、注意事项和整场题面／题解快照，AI 可以协助编辑。
+- 生成文档只可选择全部题目共有的内容语言；预览宏始终跟随文件语言。
+- 大样例可不在题面内展开，显示对应文件提示；`down.zip` 打包整场 OI PDF 和全部样例，按 `trip/trip1.in`、`trip/trip1.out` 等命名。
+
+## 使用说明
+
+- 原有题目无需迁移即可继续使用；选择 OI 排版不要求改变题目类型。
+- grader、仅下发的大样例等 OI 特性与 Polygon 的兼容性会在同步前检查。
+- LemonLime 导出目前支持传统题和 grader；checker 为当前系统的原生程序，跨系统使用需重编译。自动转换仅处理基础 testlib 用法。
+- OI 文档提供 PDF 和 Markdown，CF 文档继续提供 HTML、TeX 等导出。
+
+## 下载
+
+- `PolyForge-0.3.0-setup.exe`：Windows x64 安装版。
+- `PolyForge-0.3.0-portable.exe`：Windows x64 免安装版。
+- `PolyForge-0.3.0-source.zip`：与发布 tag 对应的完整源码、依赖锁文件和构建说明。
+- `SHA256SUMS.txt`：以上文件的 SHA-256 校验值。
+
+保留原版 OI 字体，用于当前私有仓库的个人使用。发行包附第三方许可、CNOI 原版与适配源码，完整源码另随 Release 提供。
+
+LemonLime 已验证 CDF、grader 编译布局和 checker 协议，尚未进行 GUI 评测；Polygon 使用模拟接口验证，独立 TeX 尚未用 LaTeX 编译器实际编译。
+
+完整记录见 [CHANGES_0.3.0.md](https://github.com/GetawayCar1024/polyforge/blob/v0.3.0/CHANGES_0.3.0.md)；第三方来源与构建方式见源码包内的 THIRD_PARTY_NOTICES.md、SOURCE_BUILD.md。

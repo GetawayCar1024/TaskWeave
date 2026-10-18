@@ -192,6 +192,7 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
       group: group(p.index),
       points: layout.points[p.index],
       sample: samples.has(p.index) || undefined,
+      largeSample: samples.has(p.index) && parseIndexList(ctx.config.tests.large_samples ?? '').includes(p.index) || undefined,
     });
   }
   let done = 0;

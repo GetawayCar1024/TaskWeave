@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { StatementSection } from '@polyforge/shared';
+import { largeSampleNotice, type StatementSection, type StatementSample } from '@polyforge/shared';
 import { sampleHtml } from '../lib/latex';
 
 /** A rendered statement (or tutorial): used by the editor preview and the contest print view. */
@@ -11,7 +11,7 @@ const props = defineProps<{
   limits?: { timeLimit: number; memoryLimit: number; input?: string; output?: string } | null;
   /** Rendered HTML per section. */
   sections: Partial<Record<StatementSection, string>>;
-  samples: { input: string; output: string; inputCases?: number[] }[];
+  samples: StatementSample[];
   mode?: 'statement' | 'tutorial';
   /** Small line under the title (tutorial mode). */
   note?: string;
@@ -65,7 +65,10 @@ function hover(e: MouseEvent, on: boolean) {
       </template>
       <template v-if="samples.length">
         <div class="section-title">{{ heading('examples') }}</div>
-        <div v-for="(x, i) in samples" :key="i" v-html="sampleHtml(x.input, x.output, zh() ? '输入' : 'Input', zh() ? '输出' : 'Output', x.inputCases)" />
+        <template v-for="(x, i) in samples" :key="i">
+          <template v-if="x.large"><div class="section-title">{{ zh() ? '样例' : 'Sample' }} {{ x.number ?? i + 1 }}</div><p class="large-sample">{{ largeSampleNotice(x, lang, x.number ?? i + 1) }}</p></template>
+          <div v-else v-html="sampleHtml(x.input, x.output, (zh() ? '输入' : 'Input') + ' ' + (x.number ?? i + 1), (zh() ? '输出' : 'Output') + ' ' + (x.number ?? i + 1), x.inputCases)" />
+        </template>
       </template>
       <template v-if="sections.notes">
         <div class="section-title">{{ heading('notes') }}</div>
@@ -157,6 +160,17 @@ function hover(e: MouseEvent, on: boolean) {
 .statement-doc :deep(.stmt-img) {
   max-width: 95%;
 }
+.statement-doc :deep(blockquote.markdown-quote) {
+  margin: 1em 0;
+  padding: 0.65em 1em;
+  border-left: 3px solid var(--pf-rule);
+  background: var(--pf-sample-bg);
+  border-radius: 0 4px 4px 0;
+}
+.statement-doc :deep(blockquote.markdown-quote > .p:last-child) { margin-bottom: 0; }
+.statement-doc :deep(hr) { border: 0; border-top: 1px solid var(--pf-rule); margin: 1em 0; }
+.statement-doc :deep(h1), .statement-doc :deep(h2), .statement-doc :deep(h3),
+.statement-doc :deep(h4), .statement-doc :deep(h5), .statement-doc :deep(h6) { margin: 1em 0 0.5em; line-height: 1.4; }
 .statement-doc :deep(pre.verbatim) {
   font-size: 0.95em;
   line-height: 1.5;

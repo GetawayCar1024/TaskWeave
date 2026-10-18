@@ -210,7 +210,11 @@ async function openAt(file: string, line?: number) {
     // Contest AI: paths are "<problem>/<path>"; open the file in that problem.
     const [problem, ...rest] = file.split('/');
     if (isContest.value && problem && rest.length) {
-      router.push({ name: 'problem', params: { id: problem }, query: { from: props.problemId, file: rest.join('/'), line: line ? String(line) : undefined } });
+        if (problem === 'files') {
+          await router.push({ name: 'contest', params: { id: props.problemId.slice('contest:'.length) }, query: { contestFile: rest.join('/') } });
+          return;
+        }
+        router.push({ name: 'problem', params: { id: problem === '_problem_files' ? 'files' : problem }, query: { from: props.problemId, file: rest.join('/'), line: line ? String(line) : undefined } });
     }
     return;
   }

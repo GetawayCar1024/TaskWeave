@@ -10,7 +10,7 @@ const OUTPUT_PREVIEW = 64 * 1024;
 
 /** "Run" button in the editor: compile the current file and run it on custom input or a test. */
 export async function quickRun(judge: Judge, ctx: ProblemCtx, req: QuickRunRequest, options: { experiment?: boolean } = {}): Promise<QuickRunResponse> {
-  const out = await judge.compile(ctx, req.source);
+  const out = await judge.compile(ctx, req.source, !options.experiment);
   if (!out.program) return { compile: out.result, stdout: '', stderr: '' };
   const interactive = !options.experiment && ctx.config.problem.interactive;
   const interactor = interactive && ctx.config.interactor ? await judge.require(ctx, ctx.config.interactor.source, 'Interactor') : undefined;

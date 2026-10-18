@@ -1,6 +1,4 @@
-import { promises as fsp } from 'node:fs';
-import path from 'node:path';
-import { parseDefsToml } from '../defs.js';
+import { parseDefsToml, readSharedDefs } from '../defs.js';
 
 /**
  * The agent's system prompt. It must stay byte-identical across turns of a session so
@@ -20,12 +18,18 @@ Your edits go to a working copy. The user reviews every changed file as a diff a
   memory_limit = 256           # MB
   input = "stdin"              # or a file name
   output = "stdout"
-  interactive = false
+  interactive = false           # legacy: true means pipe-based I/O interaction
+  judge_mode = "batch"          # batch | io | grader; grader cannot connect to Polygon
   [checker]
   source = "std:ncmp"          # a standard checker (see list_shared) or a file, e.g. "checker.cpp"
+  [lemon_checker]              # optional independent checker, only for LemonLime exports
+  source = "lemon-checker.cpp" # include "lemon/testlib.h" and use registerLemonChecker(argc, argv)
   [validator]
   source = "validator.cpp"
-  [interactor]                 # interactive problems only
+  [grader]                     # grader mode only: linked with each C++ solution (which has no main)
+  sources = ["grader/grader.cpp"] # main and any additional C++ translation units
+  headers = ["grader/grader.h"]  # supplied headers; grader reads input and emits checker-compatible output
+  [interactor]                 # I/O interactive problems only
   source = "interactor.cpp"
   [[solutions]]
   source = "solutions/std.cpp"
@@ -39,6 +43,7 @@ Your edits go to a working copy. The user reviews every changed file as a diff a
   script = "tests/script.txt"
   samples = "1-2"              # tests shown as examples in the statement
   groups = false               # optional: [[tests.group]] name/points/policy/dependencies/tests
+  large_samples = ""           # subset of tests.samples: down.zip files, reference only in the statement
   Tags: MA main correct; OK correct; WA wrong answer somewhere; TL time limit somewhere; TL-OR-OK may TL; TM TL or ML; ML memory limit; RE runtime error; PE presentation error; RJ fails somehow; NR not run.
 - statement/<lang>/{legend,input,output,interaction,scoring,notes,tutorial}.tex — languages zh and en. Images in statement/images/.
 - statement/<lang>/tutorial.tex is the tutorial (editorial) for that language. Tutorial languages must match the statement languages exactly: every language with a statement gets a tutorial, and no tutorial exists without a statement in that language. Keep the language versions equivalent.
@@ -86,7 +91,7 @@ const MACRO_RULES = `A macro stands for its full text: it is part of the stateme
 async function macroList(sharedDir: string): Promise<string> {
   macros ??= (async () => {
     try {
-      const defs = parseDefsToml(await fsp.readFile(path.join(sharedDir, 'defs.toml'), 'utf8')) as Record<string, { command?: { name: string; args?: string[]; body?: string }[] }>;
+      const defs = parseDefsToml(await readSharedDefs(sharedDir)) as Record<string, { command?: { name: string; args?: string[]; body?: string }[] }>;
       const cmds = [...(defs.english?.command ?? []), ...(defs.common?.command ?? [])];
       return cmds
         .map((c) => {
@@ -138,7 +143,7 @@ export function contestOverview(title: string, problems: { index: string; id: st
 }
 
 export async function contestSystemPrompt(sharedDir: string, overview: string): Promise<string> {
-  return `${await systemPrompt(sharedDir)}\n\n${CONTEST}\n\n${overview}`;
+  return `${await systemPrompt(sharedDir)}\n\n${CONTEST}\n\nContest-wide documents are in files/. You may read, write, edit or delete them using file tools, with the same change review as problem files. files/notes.tex contains optional instructions shown below the contents table. Generated statements/tutorials in files/ are editable snapshots, not the original problem files. A problem whose id is files is addressed as _problem_files/ or by its contest index.\n\n${overview}`;
 }
 
 const CONTEST_REVIEW = `# Checking the whole contest

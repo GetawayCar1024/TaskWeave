@@ -1,10 +1,11 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { oiOverview, type ContestStatement } from '@polyforge/shared';
+import { largeSampleNotice, convertStatement, STATEMENT_LATEX_PREAMBLE, oiOverview, type ContestStatement } from '@polyforge/shared';
 import { expandMacros } from '../ai/macros.js';
 import { exists } from '../util/fs.js';
 import { ZipWriter } from '../util/zip.js';
 import type { ContestRegistry } from '../workspace/contests.js';
+import { contestNotes, contestFile } from '../workspace/contestFiles.js';
 import { contestStatements } from './contest.js';
 import type { Judge } from './index.js';
 
@@ -44,7 +45,7 @@ export async function contestTex(
   }
 
   const section = async (s: ContestStatement, text: string) => {
-    let t = await expandMacros(sharedDir, text, lang);
+    let t = await expandMacros(sharedDir, convertStatement(text, 'latex').tex, lang);
     // Images of each problem live in its statement/images; keep them apart in the zip.
     t = t.replace(/\\includegraphics(\[[^\]]*\])?\{([^}]+)\}/g, (_m, opt: string | undefined, name: string) => {
       const file = name.trim();
@@ -57,6 +58,15 @@ export async function contestTex(
   };
 
   const body: string[] = [];
+  const notesSource = await contestNotes(ref.dir);
+  let notesTex = await expandMacros(sharedDir, convertStatement(notesSource, 'latex').tex, lang);
+  for (const match of [...notesTex.matchAll(/\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}/g)]) {
+    const abs = await contestFile(ref.dir, match[1].trim());
+    const dest = `contest-files/${match[1].trim()}`;
+    images.set(dest, abs);
+    notesTex = notesTex.replace(match[0], match[0].replace(`{${match[1]}}`, `{${dest}}`));
+  }
+  const instructions = notesTex.trim() ? [`\\pfsection{${lang === 'zh' ? '注意事项' : 'Instructions'}}`, notesTex] : [];
   const opts = config.statement;
   if (!oi) body.push(`\\begin{center}{\\LARGE ${esc(doc === 'tutorials' ? `${title} — ${h.tutorial}` : title)}}\\end{center}`, '');
   else if (toc) {
@@ -81,7 +91,7 @@ export async function contestTex(
         ...table([[zh ? '对于 C++ 语言' : 'For C++', ...group.map(p => `\\texttt{${esc(p.name ?? p.problem)}.cpp}`)]], group.length));
     }
     if (opts.compileOptions) body.push(zh ? '编译选项\\par' : 'Compiler options\\par', ...table([[zh ? '对于 C++ 语言' : 'For C++', `\\centering\\arraybackslash\\texttt{${esc(opts.compileOptions)}}`]], 1));
-    if (opts.instructions) body.push(`{${zh ? '\\heiti 注意事项（请仔细阅读）' : '\\bfseries Instructions (please read carefully)'}}\\par`, ...opts.instructions.split(/\r?\n/).map(line => `${esc(line)}\\par`));
+    body.push(...instructions);
     body.push('\\clearpage', '');
   } else if (toc && shown.length) {
     // Contents page: the problems of this document, then the first problem on a new page.
@@ -101,6 +111,7 @@ export async function contestTex(
       '\\hline',
       cols && oi ? '\\end{tabularx}' : '\\end{tabular}',
       '\\end{center}',
+      ...instructions,
       '\\newpage',
       '',
     );
@@ -142,6 +153,7 @@ export async function contestTex(
     if (s.samples.length) {
       if (!oi) body.push(`\\pfsection{${h.examples}}`);
       for (const [i, x] of s.samples.entries()) {
+        if (x.large) { body.push(`\\pfsection{${zh ? '样例' : 'Sample'} ${x.number ?? i + 1}}`, esc(largeSampleNotice(x, lang, x.number ?? i + 1))); continue; }
         if (oi) {
           for (const [label, text] of [[zh ? '输入' : 'Input', x.input], [zh ? '输出' : 'Output', x.output]]) {
             body.push(`\\pfsection{${zh ? '样例' : 'Sample'} ${i + 1} ${label}}`, '\\begin{OIsample}', text.replace(/\r\n/g, '\n').replace(/\n$/, ''), '\\end{OIsample}');
@@ -165,6 +177,7 @@ export async function contestTex(
     '\\usepackage{array}',
     '\\usepackage{tabularx}',
     '\\usepackage{verbatim}',
+    ...STATEMENT_LATEX_PREAMBLE,
     '\\setlength{\\parindent}{0pt}',
     '\\setlength{\\parskip}{0.6em}',
     '\\pagestyle{plain}',

@@ -104,7 +104,7 @@ export function registerLatexMacros() {
   monaco.languages.registerHoverProvider('latex', {
     async provideHover(model, position) {
       const line = model.getLineContent(position.lineNumber);
-      const re = /\\(Def[A-Za-z]*)/g;
+      const re = /\\([A-Za-z]+)/g;
       for (let m; (m = re.exec(line)); ) {
         const start = m.index + 1;
         const end = start + m[0].length;
@@ -126,7 +126,7 @@ export function attachStatementLint(model: monaco.editor.ITextModel, lang: strin
   let timer: ReturnType<typeof setTimeout> | undefined;
   const update = () => {
     if (model.isDisposed()) return;
-    const { issues } = lintStatement(model.getValue(), { lang });
+    const { issues } = lintStatement(model.getValue(), { lang, allowMarkdown: true });
     monaco.editor.setModelMarkers(
       model,
       'polyforge-lint',

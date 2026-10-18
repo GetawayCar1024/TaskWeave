@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { LocalCheck } from './ai.js';
 import type { ProblemSummary } from './problem.js';
+import type { StatementSample } from './judge.js';
 import { problemTypeSchema, type ProblemType } from './problem.js';
 
 /**
@@ -59,6 +60,15 @@ export interface ContestDetail {
   problems: (ContestProblemRef & { summary: ProblemSummary | null })[];
 }
 
+/** A missing problem or an empty contest has no language available for a complete document. */
+export function commonContestLanguages(problems: ContestDetail['problems'], doc: 'statements' | 'tutorials'): string[] {
+  if (!problems.length || problems.some(p => !p.summary || p.summary.error)) return [];
+  const key = doc === 'statements' ? 'statementLangs' : 'tutorialLangs';
+  return [...new Set(problems[0].summary!.status[key])]
+    .filter(lang => /^[a-z]{2,8}$/.test(lang) && problems.every(p => p.summary!.status[key].includes(lang)))
+    .sort();
+}
+
 export interface CreateContestRequest {
   type?: ProblemType;
   name: string;
@@ -81,6 +91,7 @@ export const CONTEST_ACTIONS = ['generate', 'invocation', 'checks', 'export', 'p
 export type ContestAction = (typeof CONTEST_ACTIONS)[number];
 
 export interface ContestBatchRequest {
+  exportFormat?: 'polygon' | 'lemonlime';
   commit?: boolean;
   buildPackage?: boolean;
   packageType?: 'standard' | 'full';
@@ -136,7 +147,7 @@ export interface ContestStatement {
   output: string;
   /** Raw LaTeX per section (empty sections omitted). */
   sections: Record<string, string>;
-  samples: { input: string; output: string; inputCases?: number[] }[];
+  samples: StatementSample[];
 }
 
 /** OI cover matrix; shared by the paper preview and TeX export. */
@@ -165,6 +176,7 @@ export function oiOverview(problems: ContestStatement[], lang: string) {
 export type ContestSyncState = 'same' | 'local' | 'remote' | 'both' | 'unbound' | 'unreachable' | 'missing';
 
 export interface ContestSyncRow {
+  blocked?: boolean;
   index: string;
   /** Local problem id. */
   problem: string;

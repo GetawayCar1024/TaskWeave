@@ -3,11 +3,14 @@ import path from 'node:path';
 import { parse, stringify } from 'smol-toml';
 import {
   DEFAULT_TESTSET,
+  judgeMode,
+  judgeModeSchema,
   isSourceFile,
   STATEMENT_SECTIONS,
   PROBLEM_NAME_RE,
   TESTSET_NAME_RE,
   parseIndexList,
+  compressRanges,
   type TestGroup,
   STD_PREFIX,
   statementLanguages,
@@ -132,6 +135,16 @@ export class ProblemRegistry {
       return { config: null, raw, error: `problem.toml: ${msg}` };
     }
     // External deletions must not leave phantom entries in run selectors.
+    r.data.problem.interactive = judgeMode(r.data.problem) === 'io';
+    try {
+      checkGroups('tests', r.data.tests.group ?? []);
+      if (r.data.tests.large_samples) {
+        checkGroups('large samples', [{ name: 'large', tests: r.data.tests.large_samples }]);
+        const samples = new Set(parseIndexList(r.data.tests.samples ?? ''));
+        if (parseIndexList(r.data.tests.large_samples).some(i => !samples.has(i))) throw new Error('Large samples must be a subset of samples.');
+      }
+      for (const [name, ts] of Object.entries(r.data.testsets)) checkGroups(name, ts.group ?? []);
+    } catch (e) { return { config: null, raw, error: `problem.toml: ${(e as Error).message}` }; }
     r.data.solutions = (await Promise.all(r.data.solutions.map(async s => (await this.sourceExists(ref, s.source)) ? s : null))).filter(s => s !== null);
     if (r.data.solutions.length && !r.data.solutions.some(s => s.tag === 'MA')) r.data.solutions[0].tag = 'MA';
     return { config: r.data, raw };
@@ -179,7 +192,8 @@ export class ProblemRegistry {
       memoryLimit: config?.problem.memory_limit ?? 0,
       input: config?.problem.input ?? 'stdin',
       output: config?.problem.output ?? 'stdout',
-      interactive: config?.problem.interactive ?? false,
+      interactive: config ? judgeMode(config.problem) !== 'batch' : false,
+      judgeMode: config ? judgeMode(config.problem) : 'batch',
       status: {
         statement: langs.statement.length > 0,
         statementLangs: langs.statement,
@@ -244,7 +258,8 @@ export class ProblemRegistry {
 
     const tl = req.timeLimit ?? 1000;
     const ml = req.memoryLimit ?? 256;
-    const interactive = !!req.interactive;
+    const mode = judgeModeSchema.parse(req.judgeMode ?? (req.interactive ? 'io' : 'batch'));
+    const interactive = mode === 'io';
     const vars: Record<string, string> = {
       '"{{name}}"': JSON.stringify(name),
       '"{{title_zh}}"': JSON.stringify(req.title?.zh ?? ''),
@@ -275,6 +290,15 @@ export class ProblemRegistry {
       }
       const doc = parse(await fsp.readFile(path.join(dir, PROBLEM_FILE), 'utf8')) as Record<string, any>;
       doc.problem.type = type;
+      doc.problem.judge_mode = mode;
+      doc.problem.interactive = interactive;
+      if (mode === 'grader') {
+        doc.grader = { sources: ['grader/grader.cpp'], headers: ['grader/grader.h'] };
+        doc.solutions = [{ source: 'solutions/std.cpp', tag: 'MA' }];
+        await atomicWrite(path.join(dir, 'grader/grader.h'), '#pragma once\nlong long solve(long long a, long long b);\n');
+        await atomicWrite(path.join(dir, 'grader/grader.cpp'), '#include "grader.h"\n#include <iostream>\nint main() { long long a, b; if (!(std::cin >> a >> b)) return 1; std::cout << solve(a, b) << "\\n"; }\n');
+        await atomicWrite(path.join(dir, 'solutions/std.cpp'), '#include "grader.h"\nlong long solve(long long a, long long b) { return a + b; }\n');
+      }
       await atomicWrite(path.join(dir, PROBLEM_FILE), stringify(doc));
       if (type === 'oi') {
         for (const lang of ['zh', 'en']) await atomicWrite(path.join(dir, 'statement', lang, 'statement.tex'), oiTemplate(lang));
@@ -309,7 +333,7 @@ export class ProblemRegistry {
       if (doc.polygon_source_types) delete doc.polygon_source_types[source];
       if (lang === null) delete doc.source_languages[source];
       else doc.source_languages[source] = lang;
-      for (const entry of [doc.validator, doc.checker, doc.interactor, ...(doc.solutions ?? []), ...(doc.generators ?? [])]) {
+      for (const entry of [doc.validator, doc.checker, doc.lemon_checker, doc.interactor, ...(doc.solutions ?? []), ...(doc.generators ?? [])]) {
         if (entry?.source !== source) continue;
         if (lang === null) delete entry.lang; else entry.lang = lang;
       }
@@ -317,8 +341,28 @@ export class ProblemRegistry {
     if (req.title) p.title = req.title;
     if (req.timeLimit !== undefined) p.time_limit = req.timeLimit;
     if (req.memoryLimit !== undefined) p.memory_limit = req.memoryLimit;
-    if (req.interactive !== undefined) p.interactive = req.interactive;
+    if (req.judgeMode !== undefined || req.interactive !== undefined) {
+      const mode = judgeModeSchema.parse(req.judgeMode ?? (req.interactive ? 'io' : 'batch'));
+      if (mode === 'grader' && doc.polygon?.id !== undefined) throw new HttpError(400, 'grader_polygon', 'Grader problems cannot connect to Polygon. Unbind the problem first.');
+      p.judge_mode = mode;
+      p.interactive = mode === 'io';
+    }
+    if (req.grader !== undefined) {
+      if (req.grader === null) delete doc.grader;
+      else {
+        for (const file of [...req.grader.sources, ...req.grader.headers]) safeJoin(ref.dir, file);
+        doc.grader = req.grader;
+      }
+    }
     if (req.input !== undefined) p.input = req.input;
+    if (req.lemonChecker !== undefined) {
+      if (req.lemonChecker === null) delete doc.lemon_checker;
+      else {
+        safeJoin(ref.dir, req.lemonChecker);
+        doc.lemon_checker = { ...(doc.lemon_checker?.source === req.lemonChecker ? doc.lemon_checker : {}), source: req.lemonChecker,
+          ...(doc.source_languages?.[req.lemonChecker] ? { lang: doc.source_languages[req.lemonChecker] } : {}) };
+      }
+    }
     if (req.output !== undefined) p.output = req.output;
     for (const key of ['checker', 'validator', 'interactor'] as const) {
       const v = req[key];
@@ -339,6 +383,7 @@ export class ProblemRegistry {
       doc.solutions = list;
     }
     if (req.polygonId !== undefined) {
+      if (judgeMode(p) === 'grader' && req.polygonId !== null) throw new HttpError(400, 'grader_polygon', 'Grader problems cannot connect to Polygon.');
       if (p.type === 'oi' && req.polygonId !== null) throw new HttpError(400, 'oi_polygon', 'OI problems cannot sync with Polygon');
       doc.polygon ??= {};
       if (req.polygonId === null) delete doc.polygon.id;
@@ -348,6 +393,17 @@ export class ProblemRegistry {
       doc.tests ??= {};
       if (req.samples.trim()) doc.tests.samples = req.samples.trim();
       else delete doc.tests.samples;
+      const remaining = new Set(parseIndexList(doc.tests.samples ?? ''));
+      const large = parseIndexList(doc.tests.large_samples ?? '').filter(i => remaining.has(i));
+      if (large.length) doc.tests.large_samples = compressRanges(large); else delete doc.tests.large_samples;
+    }
+    if (req.largeSamples !== undefined) {
+      doc.tests ??= {};
+      checkGroups('large samples', [{ name: 'large', tests: req.largeSamples }]);
+      const samples = new Set(parseIndexList(doc.tests.samples ?? ''));
+      const large = parseIndexList(req.largeSamples);
+      if (large.some(i => !samples.has(i))) throw new HttpError(400, 'invalid_samples', 'Large samples must be a subset of samples.');
+      if (large.length) doc.tests.large_samples = compressRanges(large); else delete doc.tests.large_samples;
     }
     if (req.generator) {
       const list: any[] = Array.isArray(doc.generators) ? doc.generators : [];
@@ -411,10 +467,19 @@ export class ProblemRegistry {
       doc[role] = list.filter(e => !removed || !matches(e.source));
       if (to) for (const e of doc[role]) if (matches(e.source)) e.source = to + e.source.slice(rel.length);
     }
-    for (const role of ['validator', 'checker', 'interactor']) {
+    for (const role of ['validator', 'checker', 'lemon_checker', 'interactor']) {
       if (!doc[role]?.source || !matches(doc[role].source)) continue;
       if (removed) delete doc[role];
       else if (to) doc[role].source = to + doc[role].source.slice(rel.length);
+    }
+    if (doc.grader) {
+      for (const role of ['sources', 'headers']) {
+        doc.grader[role] = ((doc.grader[role] ?? []) as string[])
+          .filter(source => !removed || !matches(source))
+          .map(source => to && matches(source) ? to + source.slice(rel.length) : source);
+      }
+      // A grader with no translation units is unconfigured, rather than invalid TOML.
+      if (!doc.grader.sources.length) delete doc.grader;
     }
     const target = to ?? rel;
     if (!removed && /^solutions?\//.test(target) && isSourceFile(target) && !doc.solutions.some((s: any) => s.source === target)) {
@@ -513,7 +578,7 @@ async function countFiles(dir: string): Promise<number> {
 }
 
 /** Validate a testset's groups (subtasks) and drop empty fields before writing TOML. */
-function checkGroups(testset: string, list: TestGroup[]): TestGroup[] {
+export function checkGroups(testset: string, list: TestGroup[]): TestGroup[] {
   const names = new Set<string>();
   const covered = new Map<number, string>();
   const out = list.map((g) => {
@@ -522,16 +587,19 @@ function checkGroups(testset: string, list: TestGroup[]): TestGroup[] {
     if (names.has(name)) throw new HttpError(400, 'invalid_group', `${testset}: duplicate group ${name}`);
     names.add(name);
     const tests = String(g.tests ?? '').trim();
+    if ((tests.match(/\d+/g) ?? []).some(n => !Number.isSafeInteger(Number(n)) || Number(n) > 100000)) throw new HttpError(400, 'invalid_group', `${testset}: test indices must not exceed 100000`);
     if (tests && !/^\s*\d+(\s*-\s*\d+)?(\s*,\s*\d+(\s*-\s*\d+)?)*\s*$/.test(tests)) {
       throw new HttpError(400, 'invalid_group', `${testset}: group ${name}: tests must look like "1-5, 8"`);
     }
     for (const i of parseIndexList(tests)) {
+      if (i < 1) throw new HttpError(400, 'invalid_group', `${testset}: test indices start at 1`);
       if (covered.has(i)) throw new HttpError(400, 'invalid_group', `${testset}: test ${i} is in groups ${covered.get(i)} and ${name}`);
       covered.set(i, name);
     }
     const r: TestGroup = { name };
     if (tests) r.tests = tests;
     if (g.points !== undefined && g.points !== null && !Number.isNaN(Number(g.points))) r.points = Number(g.points);
+    if (g.points !== undefined && (!Number.isFinite(g.points) || g.points < 0)) throw new HttpError(400, 'invalid_group', `${testset}: group ${name}: points must be finite and nonnegative`);
     if (g.policy) r.policy = g.policy;
     if (g.dependencies?.length) r.dependencies = g.dependencies.map(String);
     return r;

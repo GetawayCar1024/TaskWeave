@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import { useI18n } from 'vue-i18n';
 import { NButton, NTag, NTooltip, useMessage } from 'naive-ui';
 import 'katex/dist/katex.min.css';
-import { STATEMENT_SECTIONS, statementLanguages, type StatementSection } from '@polyforge/shared';
+import { STATEMENT_SECTIONS, statementLanguages, type StatementSection, type StatementSample } from '@polyforge/shared';
 import { exportMarkdown } from '../lib/markdownExport';
 import { api, rawUrl } from '../lib/api';
 import type { Judge } from '../lib/judge';
@@ -30,7 +30,7 @@ async function markdown() {
 const disk = ref<Partial<Record<StatementSection, string>>>({});
 const macros = shallowRef<MacroTable>(new Map());
 const tick = ref(0);
-const samples = ref<{ index: number; input: string; output: string; inputCases?: number[] }[]>([]);
+const samples = ref<StatementSample[]>([]);
 
 const pathOf = (s: StatementSection) => `statement/${props.lang}/${s}.tex`;
 
@@ -47,17 +47,11 @@ async function loadDisk() {
   disk.value = Object.fromEntries(entries.filter(([, v]) => v !== undefined));
 }
 
+let sampleRequest = 0;
 async function loadSamples() {
-  const tests = (props.judge.state.manifest?.tests ?? []).filter((x) => x.sample);
-  samples.value = await Promise.all(
-    tests.map(async (x) => ({
-      index: x.index,
-      // The markup describes the real input, not a custom statement input.
-      inputCases: x.statementInput ? undefined : x.inputCases,
-      input: (await api.testFile(props.problemId, x.index, 'statement-in').catch(() => null))?.content ?? '',
-      output: (await api.testFile(props.problemId, x.index, 'statement-out').catch(() => null))?.content ?? '',
-    })),
-  );
+  const request = ++sampleRequest;
+  try { const result = await api.statementSamples(props.problemId); if (request === sampleRequest) samples.value = result; }
+  catch (e) { if (request === sampleRequest) { samples.value = []; message.error(String(e)); } }
 }
 
 // A workspace revision includes edits made while another section is active.
@@ -78,6 +72,7 @@ watch(() => props.lang, async () => {
   tick.value++;
 });
 watch(() => props.judge.state.manifest?.tests, loadSamples);
+watch(() => JSON.stringify(props.ws.state.detail?.config?.tests), loadSamples);
 // Sections created or deleted on disk.
 watch(() => props.ws.files.value.filter((f) => f.path.startsWith(`statement/${props.lang}/`)).length, loadDisk);
 onBeforeUnmount(() => {

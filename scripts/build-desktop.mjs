@@ -54,6 +54,35 @@ cpSync(path.join(root, 'assets'), path.join(out, 'assets'), { recursive: true })
 cpSync(path.join(desk, 'build/icon.png'), path.join(out, 'icon.png'));
 mkdirSync(path.join(out, 'runner'));
 cpSync(path.join(root, 'packages/server/runner/runner.cpp'), path.join(out, 'runner/runner.cpp'));
+// Keep attribution, upstream source and integration source next to the shipped binary.
+for (const name of ['THIRD_PARTY_NOTICES.md', 'SOURCE_BUILD.md']) cpSync(path.join(root, name), path.join(out, name));
+const thirdParty = path.join(out, 'third-party');
+mkdirSync(thirdParty, { recursive: true });
+cpSync(path.join(root, 'packages/web/src/vendor/cnoi'), path.join(thirdParty, 'cnoi'), { recursive: true });
+const integration = path.join(thirdParty, 'cnoi-integration');
+mkdirSync(integration, { recursive: true });
+for (const name of ['cnoi.worker.ts', 'cnoiTemplate.ts', 'cnoiDocument.ts', 'cnoi-notes.en.md']) {
+  cpSync(path.join(root, 'packages/web/src/lib', name), path.join(integration, name));
+}
+cpSync(path.join(root, 'packages/web/src/components/OiContestPreview.vue'), path.join(integration, 'OiContestPreview.vue'));
+const packageStore = path.join(root, 'node_modules/.pnpm');
+for (const entry of readdirSync(packageStore, { withFileTypes: true })) {
+  if (!entry.isDirectory()) continue;
+  const nm = path.join(packageStore, entry.name, 'node_modules');
+  if (!existsSync(nm)) continue;
+  const packageDirs = readdirSync(nm, { withFileTypes: true }).filter(x => x.isDirectory())
+    .flatMap(x => x.name.startsWith('@') ? readdirSync(path.join(nm, x.name), { withFileTypes: true }).filter(y => y.isDirectory()).map(y => path.join(nm, x.name, y.name)) : [path.join(nm, x.name)]);
+  for (const dir of packageDirs) {
+    if (!existsSync(path.join(dir, 'package.json'))) continue;
+    const pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
+    const destination = path.join(thirdParty, 'npm', `${pkg.name.replace(/[/\\]/g, '__')}@${pkg.version}`);
+    mkdirSync(destination, { recursive: true });
+    writeFileSync(path.join(destination, 'package.json'), JSON.stringify({ name: pkg.name, version: pkg.version, license: pkg.license, repository: pkg.repository }, null, 2));
+    for (const license of readdirSync(dir, { withFileTypes: true })) {
+      if (license.isFile() && /^(LICENSE|LICENCE|COPYING|NOTICE)(?:[.-]|$)/i.test(license.name)) cpSync(path.join(dir, license.name), path.join(destination, license.name));
+    }
+  }
+}
 writeFileSync(
   path.join(out, 'package.json'),
   JSON.stringify({ name: 'polyforge', productName: 'PolyForge', version, description: 'Local-first problem preparation for Codeforces Polygon', main: 'main.cjs', author: 'PolyForge', license: 'UNLICENSED' }, null, 2),

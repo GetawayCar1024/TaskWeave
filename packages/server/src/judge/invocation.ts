@@ -112,7 +112,7 @@ export async function runInvocation(
 
     const programs: (Program | undefined)[] = await Promise.all(
       sources.map(async (src, i) => {
-        const out = await judge.compile(ctx, src);
+        const out = await judge.compile(ctx, src, true);
         inv.solutions[i].compile = out.result;
         dirty = true;
         job.progress(inv.solutions.filter(s => s.compile).length, sources.length, `compiled ${src}`);

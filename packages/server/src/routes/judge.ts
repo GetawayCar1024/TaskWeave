@@ -12,6 +12,7 @@ import { localChecks } from '../judge/checks.js';
 import { runCheckerTests, runValidatorTests } from '../judge/selftest.js';
 import { addManualTest, removeTest, answerPath, generateTests, inputPath, overviewPath, publicManifest, readManifest, requireTestset, sampleStatementPaths } from '../judge/tests.js';
 import { HttpError, safeJoin, exists } from '../util/fs.js';
+import { readSamples } from '../judge/samples.js';
 
 const PREVIEW = 64 * 1024;
 
@@ -33,6 +34,7 @@ async function preview(file: string, bytes = PREVIEW): Promise<TestFileResponse>
 }
 
 export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager) {
+  app.get<{ Params: { id: string } }>('/api/problems/:id/statement-samples', async req => (await readSamples(await judge.ctx(req.params.id))).map(row => row.sample));
   type P = { Params: { id: string } };
 
   /** Compile the given sources, or every program referenced by problem.toml. */
@@ -87,6 +89,7 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
       const samples = new Set(parseIndexList(ctx.config.tests.samples ?? ''));
       await Promise.all(m.tests.map(async t => {
         t.sample = samples.has(t.index) || undefined;
+        t.largeSample = t.sample && parseIndexList(ctx.config.tests.large_samples ?? '').includes(t.index) || undefined;
         const sp = sampleStatementPaths(t);
         t.statementInput = t.sample && await exists(safeJoin(ctx.ref.dir, sp.input)) ? sp.input : undefined;
         t.statementOutput = t.sample && await exists(safeJoin(ctx.ref.dir, sp.output)) ? sp.output : undefined;

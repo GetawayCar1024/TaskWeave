@@ -1,4 +1,30 @@
 {
+  "oiFeatures": {
+    "convertChecker": "从普通检查器转换",
+    "saveCheckerFirst": "请先保存检查器源码和题目信息。",
+    "convertedChecker": "已生成并配置独立的 Lemon 检查器，请核对转换结果。",
+    "convertCheckerHint": "仅转换基础 testlib 头文件和初始化调用，保留原文件；quitp 按比例计分。复杂计分接口需手动处理。",
+    "lemonChecker": "Lemon 检查器",
+    "lemonCheckerHint": "仅用于 LemonLime 导出。请单独选择使用 Testlib for Lemons 的源码：包含 lemon/testlib.h，并调用 registerLemonChecker(argc, argv)。导出前会检查配置、编译及评分协议。",
+    "inlineSample": "在题面中展示",
+    "largeSample": "大样例（下发文件）",
+    "down": "导出 down.zip",
+    "preparingDown": "正在生成样例数据并更新 OI 题面…",
+    "mode": "题目类型",
+    "batch": "传统题",
+    "io": "I/O 交互题",
+    "grader": "Grader 交互题",
+    "graderWarning": "Grader 与选手 C++ 代码共同编译，不支持连接或同步到 Polygon。",
+    "graderSources": "Grader 源文件",
+    "graderHeaders": "下发头文件",
+    "graderHint": "选择含 main 的 grader 与辅助 .cpp，以及选手需要包含的头文件。修改后会自动使编译缓存失效。",
+    "subtaskHint": "捆绑：全部测试通过才得分。依赖：前置子任务及其依赖全部通过才得分，与列表顺序无关。分数可自由设置。",
+    "lemonlime": "导出 LemonLime",
+    "exportHint": "导出默认测试集 tests，自动生成数据与答案。ZIP 包含比赛 .cdf、data/ 和空 source/。支持传统题和 grader 题；I/O 管道交互题暂不能导出。检查器程序适用于当前操作系统。",
+    "exportTitle": "导出比赛评测包",
+    "polygon": "Polygon package",
+    "fractional": "子任务 {name} 使用小数分值，Polygon 只支持整数测试点分值。"
+  },
   "improve": {
     "language": "新增语言", "languageCode": "语言代码", "numbering": "修改题号", "numberError": "题号不能为空、格式必须正确且不能重复", "results": "检查结果", "move": "移动题目", "moveTarget": "目标题库目录", "ignoreWhitespace": "忽略空白差异", "markdown": "导出 Markdown", "shutdownAi": "AI 任务仍在运行", "shutdownAiBody": "是否停止所有 AI 任务并关闭程序？已输出的内容会保留。", "stopClose": "停止 AI 并关闭", "cancelExit": "取消退出", "resize": "拖动调整区域高度", "formulaOverflow": "部分公式过长，请检查分页预览；复杂公式可使用 aligned 手动分行。", "stable": "稳定计时", "throughput": "并行吞吐", "judgingMode": "评测模式", "markdownWarnings": "部分 LaTeX 内容未能完整转换，已在导出文件中保留。", "languageExists": "该语言已存在", "selectLanguage": "选择或输入语言代码", "moveBusy": "请先保存文件并等待题目相关任务结束", "moveDone": "题目已移动", "unsavedSettings": "设置中有未保存的修改", "saveFailed": "保存失败，已取消退出"
   },
@@ -671,12 +697,13 @@
     "loose": "不属于任何子任务的测试点：{list}",
     "twice": "属于多个子任务的测试点：{list}",
     "policy": {
-      "COMPLETE_GROUP": "全部通过得分",
+      "COMPLETE_GROUP": "捆绑（全部通过）",
       "EACH_TEST": "按测试点得分"
     },
     "note": "推送前需在 Polygon 上建好同名测试集"
   },
   "checks": {
+    "noGrader": "Grader 交互题未配置 grader 源文件",
     "noStatement": "还没有写题面",
     "missingSection": "{lang} 题面缺少「{section}」部分",
     "noInteraction": "交互题没有交互说明（{lang}）",

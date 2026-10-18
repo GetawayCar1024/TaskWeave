@@ -38,6 +38,7 @@ export interface CompileResult {
 }
 
 export interface TestInfo {
+  largeSample?: boolean;
   index: number;
   origin: 'manual' | 'script';
   /** Manual: problem-relative file. Script: the expanded script command. */
@@ -75,6 +76,26 @@ export interface TestsManifest {
   errors: string[];
   /** Validator overview (testlib --testOverviewLogFileName) merged over all tests. */
   hasOverview?: boolean;
+}
+
+export interface StatementSample {
+  index?: number;
+  number?: number;
+  input: string;
+  output: string;
+  inputCases?: number[];
+  large?: boolean;
+  inputFile?: string;
+  outputFile?: string;
+  inputHash?: string;
+  outputHash?: string;
+}
+
+export function sampleFileNames(problemName: string, number: number) {
+  return { inputFile: `${problemName}/${problemName}${number}.in`, outputFile: `${problemName}/${problemName}${number}.out` };
+}
+export function largeSampleNotice(sample: StatementSample, lang: string, number: number): string {
+  return lang === 'zh' ? `样例 ${number} 见选手目录下的 ${sample.inputFile} 与 ${sample.outputFile}。` : `Sample ${number}: see ${sample.inputFile} and ${sample.outputFile} in the contestant directory.`;
 }
 
 export interface CheckerOutcome {

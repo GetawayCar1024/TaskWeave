@@ -7,6 +7,7 @@ interface Entry {
   compressed: Buffer;
   method: number;
   offset: number;
+  attributes: number;
 }
 
 /** DOS date/time for the zip headers. */
@@ -24,7 +25,7 @@ export class ZipWriter {
   private offset = 0;
   private stamp = dosTime(new Date());
 
-  add(name: string, data: Buffer | string): void {
+  add(name: string, data: Buffer | string, executable = false): void {
     const buf = typeof data === 'string' ? Buffer.from(data, 'utf8') : data;
     const deflated = deflateRawSync(buf);
     const useDeflate = deflated.length < buf.length;
@@ -35,6 +36,7 @@ export class ZipWriter {
       compressed: useDeflate ? deflated : buf,
       method: useDeflate ? 8 : 0,
       offset: this.offset,
+      attributes: name.endsWith('/') ? (0o40755 << 16) | 0x10 : ((executable ? 0o100755 : 0o100644) << 16) >>> 0,
     };
     const h = Buffer.alloc(30);
     h.writeUInt32LE(0x04034b50, 0);
@@ -59,7 +61,7 @@ export class ZipWriter {
     for (const e of this.entries) {
       const c = Buffer.alloc(46);
       c.writeUInt32LE(0x02014b50, 0);
-      c.writeUInt16LE(20, 4); // version made by
+      c.writeUInt16LE(0x0314, 4); // Unix attributes, ZIP 2.0
       c.writeUInt16LE(20, 6);
       c.writeUInt16LE(0x0800, 8);
       c.writeUInt16LE(e.method, 10);
@@ -70,6 +72,7 @@ export class ZipWriter {
       c.writeUInt32LE(e.size, 24);
       c.writeUInt16LE(e.name.length, 28);
       c.writeUInt32LE(e.offset, 42);
+      c.writeUInt32LE(e.attributes >>> 0, 38);
       central.push(c, e.name);
       size += c.length + e.name.length;
     }
