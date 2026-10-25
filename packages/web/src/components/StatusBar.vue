@@ -125,7 +125,7 @@ const activeLang = computed(() => {
   background: #18a058;
 }
 .good {
-  color: #63e2b7;
+  color: light-dark(#16804a, #63e2b7);
 }
 .icon-text {
   display: inline-flex;
@@ -133,6 +133,6 @@ const activeLang = computed(() => {
   gap: 2px;
 }
 .bad {
-  color: #e88080;
+  color: light-dark(#c53b3b, #e88080);
 }
 </style>

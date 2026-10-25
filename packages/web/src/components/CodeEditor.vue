@@ -2,30 +2,32 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { monaco } from '../lib/monaco';
 import { settings } from '../lib/settings';
+import { EDITOR_BASE_OPTIONS, editorOptions } from '../lib/editorOptions';
 
-/** A single-document Monaco editor bound with v-model (used outside the workspace). */
-const props = defineProps<{ modelValue: string; language: string; readOnly?: boolean }>();
-const emit = defineEmits<{ 'update:modelValue': [string]; save: [] }>();
+/**
+ * A single-document Monaco editor bound with v-model (used outside the workspace).
+ * Same font, theme and editor settings as the problem editor; `path` decides wrapping.
+ */
+const props = defineProps<{ modelValue: string; language: string; readOnly?: boolean; path?: string }>();
+const emit = defineEmits<{ 'update:modelValue': [string]; save: []; scroll: [] }>();
 
 const el = ref<HTMLDivElement>();
 let editor: monaco.editor.IStandaloneCodeEditor | null = null;
 
 onMounted(() => {
-  const ed = settings.config?.editor;
   editor = monaco.editor.create(el.value!, {
     value: props.modelValue,
     language: props.language,
     readOnly: props.readOnly,
-    automaticLayout: true,
-    theme: settings.config?.ui.theme === 'light' ? 'vs' : 'vs-dark',
-    fontSize: ed?.font_size ?? 14,
-    tabSize: ed?.tab_size ?? 4,
-    minimap: { enabled: false },
-    scrollBeyondLastLine: false,
+    ...EDITOR_BASE_OPTIONS,
+    ...editorOptions(props.path ?? ''),
   });
   editor.onDidChangeModelContent(() => emit('update:modelValue', editor!.getValue()));
+  editor.onDidScrollChange(() => emit('scroll'));
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => emit('save'));
 });
+watch(() => [settings.config, props.path], () => editor?.updateOptions(editorOptions(props.path ?? '')), { deep: true });
+defineExpose({ editor: () => editor });
 
 watch(
   () => props.modelValue,

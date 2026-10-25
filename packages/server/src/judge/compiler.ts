@@ -132,6 +132,13 @@ export class Compiler {
     for (const root of this.roots) {
       const records: { dir: string; source: string; at: number }[] = [];
       for (const name of await fsp.readdir(root).catch(() => [] as string[])) {
+        if (/^source-[a-f0-9]{16}$/.test(name)) {
+          // Stable slots go once their source is gone (deleted or renamed).
+          const dir = path.join(root, name);
+          const r: CacheRecord | null = await fsp.readFile(path.join(dir, 'compile.json'), 'utf8').then(JSON.parse).catch(() => null);
+          if (r?.source && !(await exists(r.source))) await fsp.rm(dir, { recursive: true, force: true });
+          continue;
+        }
         if (!/^[a-f0-9]{16}$/.test(name)) continue;
         const dir = path.join(root, name);
         const r: CacheRecord | null = await fsp.readFile(path.join(dir, 'compile.json'), 'utf8').then(JSON.parse).catch(() => null);
@@ -151,6 +158,11 @@ export class Compiler {
   private sourceKey(file: string) {
     const resolved = path.resolve(file);
     return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  }
+  /** The plain variant keeps the historic slot name. */
+  private slotKey(file: string, ...variant: string[]) {
+    const v = variant.filter(Boolean);
+    return v.length ? `${this.sourceKey(file)}|${v.join('|')}` : this.sourceKey(file);
   }
 
   constructor(
@@ -226,7 +238,10 @@ export class Compiler {
     const testlib = usesShared ? await fsp.readFile(path.join(this.global.sharedDir, 'testlib.h')).catch(() => '') : '';
     const base = path.basename(srcPath, path.extname(srcPath));
     const hash = sha1(JSON.stringify([this.sourceKey(srcPath), id, lang.compile ?? '', lang.run, base, sha1(content), sha1(testlib), extraArgs, [...dependencies]]));
-    const dir = path.join(buildRoot, `source-${sha1(this.sourceKey(srcPath)).slice(0, 16)}`);
+    // One slot per build variant: the grader-linked build must not overwrite the plain build
+    // of the same source (and invalidate queued runs). A changed language reuses the slot:
+    // every caller takes the language from problem.toml, so it cannot alternate.
+    const dir = path.join(buildRoot, `source-${sha1(this.slotKey(srcPath, grader ? 'grader' : '')).slice(0, 16)}`);
 
     const key = `${buildRoot}|${hash}`;
     let p = this.inflight.get(key);

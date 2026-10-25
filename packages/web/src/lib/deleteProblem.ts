@@ -28,7 +28,7 @@ export function confirmDeleteProblem(dialog: ReturnType<typeof useDialog>, messa
   });
 }
 
-/** Confirm, then delete the contest (only contest.toml; its problems stay). Resolves true when deleted. */
+/** Confirm, then delete the contest folder (its problems stay). Resolves true when deleted. */
 export function confirmDeleteContest(dialog: ReturnType<typeof useDialog>, message: ReturnType<typeof useMessage>, id: string, title: string): Promise<boolean> {
   const t = i18n.global.t as (k: string, p?: Record<string, unknown>) => string;
   return new Promise((resolve) => {

@@ -79,6 +79,10 @@ export interface TestsManifest {
 }
 
 export interface StatementSample {
+  /** Testset of the sample ("tests" when absent). */
+  testset?: string;
+  /** OI documents: raw LaTeX explaining this sample (statement/<lang>/samples/<index>.tex). */
+  note?: string;
   index?: number;
   number?: number;
   input: string;
@@ -130,6 +134,8 @@ export interface InvocationSolution {
 
 export interface GroupScore {
   name: string;
+  /** Testset of the group (invocations over several testsets). */
+  testset?: string;
   score: number;
   max: number;
   /** Every test of the group passed. */
@@ -142,7 +148,18 @@ export interface SolutionScore {
   total: number;
   max: number;
   groups: GroupScore[];
+  /** Per-testset totals when the invocation covers several testsets. */
+  testsets?: { testset: string; total: number; max: number }[];
 }
+
+/** One test of an invocation: a test of some testset. */
+export interface InvocationTestRef {
+  testset: string;
+  index: number;
+}
+
+/** Tests to run, testset by testset (`tests` absent = the whole testset). */
+export type InvocationSelection = { testset: string; tests?: number[] }[];
 
 /** Per-test results and group definitions a score is computed from. */
 export interface ScoringInput {
@@ -155,13 +172,29 @@ export interface Invocation {
   createdAt: string;
   status: 'running' | 'done' | 'failed' | 'cancelled';
   error?: string;
+  /** Testset of `tests` (the first one when `refs` spans several testsets). */
   testset?: string;
   timeLimit: number;
   memoryLimit: number;
+  /** Test indices by position (see `refs` for their testsets). */
   tests: number[];
+  /** Testset + index of each test position; absent in older invocations (all of `testset`). */
+  refs?: InvocationTestRef[];
   solutions: InvocationSolution[];
   /** cells[solutionIndex][testPosition] */
   cells: (InvocationCell | null)[][];
+}
+
+/** Testset + index of every test position, also for invocations stored before `refs`. */
+export function invocationRefs(inv: Pick<Invocation, 'tests' | 'testset' | 'refs'>): InvocationTestRef[] {
+  if (inv.refs && inv.refs.length === inv.tests.length) return inv.refs;
+  const testset = inv.testset ?? 'tests';
+  return inv.tests.map((index) => ({ testset, index }));
+}
+
+/** Where a test's saved output lives below runs/<id>/<solution>/: the first testset keeps the old flat layout. */
+export function invocationOutputName(inv: Pick<Invocation, 'testset'>, ref: InvocationTestRef): string {
+  return ref.testset === (inv.testset ?? 'tests') ? `${ref.index}.out` : `${ref.testset}/${ref.index}.out`;
 }
 
 export interface InvocationSummary {
@@ -171,6 +204,8 @@ export interface InvocationSummary {
   solutions: number;
   tests: number;
   testset?: string;
+  /** Every testset of the invocation when it covers several. */
+  testsets?: string[];
   ok: boolean;
 }
 
@@ -359,16 +394,19 @@ export function groupLayout(ts: TestsetConfig, pointsEnabled: boolean): { mappin
   const points: Record<string, number> = {};
   if (!ts.groups) return { mapping, points };
   for (const g of ts.group) {
-    const idx = parseIndexList(g.tests ?? '').sort((a, b) => a - b);
+    const idx = [...new Set(parseIndexList(g.tests ?? ''))].sort((a, b) => a - b);
     idx.forEach((i) => (mapping[i] = g.name));
     if (pointsEnabled && g.points && idx.length) {
       if ((g.policy ?? 'COMPLETE_GROUP') === 'COMPLETE_GROUP') {
         idx.forEach((i) => (points[i] = 0));
         points[idx[idx.length - 1]] = g.points;
       } else {
-        const each = Math.floor(g.points / idx.length);
-        idx.forEach((i) => (points[i] = each));
-        points[idx[idx.length - 1]] += g.points - each * idx.length;
+        // Integer shares that add up exactly: the last tests get one point more.
+        const whole = Math.floor(g.points);
+        const each = Math.floor(whole / idx.length);
+        const extra = whole - each * idx.length;
+        idx.forEach((i, k) => (points[i] = each + (k >= idx.length - extra ? 1 : 0)));
+        points[idx[idx.length - 1]] = Math.round((points[idx[idx.length - 1]] + g.points - whole) * 1e6) / 1e6;
       }
     }
   }

@@ -1,4 +1,5 @@
 import { createHash, randomInt } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { HttpError } from '../util/fs.js';
 
 export type ParamValue = string | number | boolean | Buffer | undefined | null;
@@ -28,23 +29,39 @@ export class PolygonError extends Error {
   constructor(
     public method: string,
     message: string,
+    /** `result` of a FAILED answer, when Polygon sends one (e.g. problem.deleteTest failures). */
+    public result?: unknown,
   ) {
     super(`${method}: ${message}`);
   }
 }
 
+/** No answer, a timeout, or HTTP 5xx/429: the request may be repeated (if idempotent). */
+export class TransportError extends Error {}
+
+/**
+ * Methods that must not be sent twice: a lost answer does not mean nothing happened
+ * (a second problem, a second commit or package, or a failure for an already deleted object).
+ */
+const NOT_IDEMPOTENT = /^(problem\.create|problem\.commitChanges|problem\.buildPackage|problem\.delete\w*|problem\.addIssue|problem\.runStresses|problem\.addStressCountertest)$/;
+
 export interface ClientOptions {
   apiUrl: string;
   key: string;
   secret: string;
-  /** Retries for network errors and HTTP 5xx/429. */
+  /** Retries for network errors / timeouts and HTTP 5xx/429 (idempotent methods only). */
   retries?: number;
   timeoutMs?: number;
+  /** First backoff delay (doubled on every retry). */
+  retryDelayMs?: number;
+  /** Aborts every request of this client, including the one in flight (job cancellation). */
+  signal?: AbortSignal;
 }
 
 /**
- * Polygon API client. Requests are serialised (one at a time) and retried with
- * exponential backoff on transport failures; `FAILED` API answers are not retried.
+ * Polygon API client. Requests are serialised (one at a time). Transport failures
+ * (no answer, timeout, HTTP 5xx/429) of idempotent methods are retried with exponential
+ * backoff; Polygon's own answers (HTTP 400 / `FAILED`) and other HTTP errors are not.
  */
 export class PolygonClient {
   private queue: Promise<unknown> = Promise.resolve();
@@ -56,39 +73,41 @@ export class PolygonClient {
   }
 
   /** Call a JSON method and return `result`. */
-  async call<T = any>(method: string, params: Params = {}): Promise<T> {
-    const res = await this.raw(method, params);
+  async call<T = any>(method: string, params: Params = {}, signal?: AbortSignal): Promise<T> {
+    const res = await this.raw(method, params, signal);
     let json: { status?: string; comment?: string; result?: T };
     try {
       json = JSON.parse(res.toString('utf8'));
     } catch {
       throw new PolygonError(method, 'response is not JSON');
     }
-    if (json.status !== 'OK') throw new PolygonError(method, json.comment || `status ${json.status}`);
+    if (json.status !== 'OK') throw new PolygonError(method, json.comment || `status ${json.status}`, json.result);
     return json.result as T;
   }
 
   /** Call a method returning a raw body (viewFile, script, testInput, package…). */
-  async text(method: string, params: Params = {}): Promise<string> {
-    return (await this.raw(method, params)).toString('utf8');
+  async text(method: string, params: Params = {}, signal?: AbortSignal): Promise<string> {
+    return (await this.raw(method, params, signal)).toString('utf8');
   }
 
   raw(method: string, params: Params = {}, signal?: AbortSignal): Promise<Buffer> {
-    const run = () => this.withRetry(method, params, signal);
+    const sig = signal && this.opts.signal ? AbortSignal.any([signal, this.opts.signal]) : signal ?? this.opts.signal;
+    const run = () => this.withRetry(method, params, sig);
     const p = this.queue.then(run, run);
     this.queue = p.catch(() => {});
     return p;
   }
 
   private async withRetry(method: string, params: Params, signal?: AbortSignal): Promise<Buffer> {
-    const retries = this.opts.retries ?? 3;
+    const retries = NOT_IDEMPOTENT.test(method) ? 0 : this.opts.retries ?? 3;
     for (let attempt = 0; ; attempt++) {
+      signal?.throwIfAborted();
       try {
         return await this.once(method, params, signal);
       } catch (e) {
-        const retryable = !(e instanceof PolygonError) && !(signal?.aborted ?? false);
-        if (!retryable || attempt >= retries) throw e;
-        await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+        if (signal?.aborted) throw signal.reason ?? e;
+        if (!(e instanceof TransportError) || attempt >= retries) throw e;
+        await delay((this.opts.retryDelayMs ?? 1000) * 2 ** attempt, undefined, signal ? { signal } : undefined);
       }
     }
   }
@@ -111,24 +130,34 @@ export class PolygonClient {
     append('apiSig', Buffer.from(apiSignature(method, pairs, this.opts.secret)));
 
     const timeout = AbortSignal.timeout(this.opts.timeoutMs ?? 120_000);
-    const res = await fetch(this.base + method, { method: 'POST', body: form, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
-    const body = Buffer.from(await res.arrayBuffer());
-    // Polygon answers user errors with 400 + a JSON body; anything else non-2xx is transport trouble.
+    let res: Response;
+    let body: Buffer;
+    try {
+      res = await fetch(this.base + method, { method: 'POST', body: form, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+      body = Buffer.from(await res.arrayBuffer());
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      const err = e as Error & { cause?: { code?: string; message?: string } };
+      const why = timeout.aborted ? `no answer within ${Math.round((this.opts.timeoutMs ?? 120_000) / 1000)} s` : err.cause?.code ?? err.cause?.message ?? err.message;
+      throw new TransportError(`${method}: ${why}`);
+    }
+    // Polygon answers user errors with 400 + a JSON body; 5xx / 429 are worth another try.
     if (res.status === 400) {
       try {
         const j = JSON.parse(body.toString('utf8'));
-        throw new PolygonError(method, j.comment || 'bad request');
+        throw new PolygonError(method, j.comment || 'bad request', j.result);
       } catch (e) {
         if (e instanceof PolygonError) throw e;
         throw new PolygonError(method, `HTTP 400: ${body.toString('utf8').slice(0, 200)}`);
       }
     }
+    if (res.status >= 500 || res.status === 429) throw new TransportError(`${method}: HTTP ${res.status}`);
     if (!res.ok) throw new Error(`${method}: HTTP ${res.status}`);
     // Raw endpoints still report failures as JSON.
     if (body[0] === 0x7b /* { */ && body.length < 4096) {
       try {
         const j = JSON.parse(body.toString('utf8'));
-        if (j && j.status === 'FAILED') throw new PolygonError(method, j.comment || 'FAILED');
+        if (j && j.status === 'FAILED') throw new PolygonError(method, j.comment || 'FAILED', j.result);
       } catch (e) {
         if (e instanceof PolygonError) throw e;
       }

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { NButton, NTag, NTooltip, useMessage } from 'naive-ui';
+import { NButton, NDropdown, NTag, NTooltip, useMessage } from 'naive-ui';
 import 'katex/dist/katex.min.css';
-import { STATEMENT_SECTIONS, statementLanguages, type StatementSection, type StatementSample } from '@polyforge/shared';
+import { STATEMENT_SECTIONS, sampleNotePath, statementLanguages, type StatementSection, type StatementSample } from '@polyforge/shared';
 import { exportMarkdown } from '../lib/markdownExport';
 import { api, rawUrl } from '../lib/api';
 import type { Judge } from '../lib/judge';
@@ -22,6 +22,8 @@ async function markdown() {
   try {
     const doc = host.value?.querySelector<HTMLElement>('.statement-doc')?.cloneNode(true) as HTMLElement | undefined;
     if (!doc) return;
+    // OI-only parts are shown in the preview only; the Markdown export is the CF statement.
+    doc.querySelectorAll('.oi-only').forEach((el) => el.remove());
     if (await exportMarkdown(doc, `${props.ws.state.detail?.summary.name ?? props.problemId}-${props.lang}`)) message.warning(t('improve.markdownWarnings'));
   } catch (e) { message.error(String(e)); }
 }
@@ -33,24 +35,28 @@ const tick = ref(0);
 const samples = ref<StatementSample[]>([]);
 
 const pathOf = (s: StatementSection) => `statement/${props.lang}/${s}.tex`;
+/** OI-only files (constraints.tex, samples/*.tex), by path. */
+const oiDisk = ref<Record<string, string>>({});
+const isOiFile = (p: string) => p === `statement/${props.lang}/constraints.tex` || (p.startsWith(`statement/${props.lang}/samples/`) && p.endsWith('.tex'));
 
 let diskRequest = 0;
 async function loadDisk() {
   const request = ++diskRequest;
   const present = new Set(props.ws.files.value.map((f) => f.path));
-  const entries = await Promise.all(
-    STATEMENT_SECTIONS.filter((s) => present.has(pathOf(s))).map(
-      async (s) => [s, await api.readFile(props.problemId, pathOf(s)).then((f) => f.content).catch(() => undefined)] as const,
-    ),
-  );
+  const read = (path: string) => api.readFile(props.problemId, path).then((f) => f.content).catch(() => undefined);
+  const [entries, oiEntries] = await Promise.all([
+    Promise.all(STATEMENT_SECTIONS.filter((s) => present.has(pathOf(s))).map(async (s) => [s, await read(pathOf(s))] as const)),
+    Promise.all([...present].filter(isOiFile).map(async (p) => [p, await read(p)] as const)),
+  ]);
   if (request !== diskRequest) return;
   disk.value = Object.fromEntries(entries.filter(([, v]) => v !== undefined));
+  oiDisk.value = Object.fromEntries(oiEntries.filter((e): e is readonly [string, string] => e[1] !== undefined));
 }
 
 let sampleRequest = 0;
 async function loadSamples() {
   const request = ++sampleRequest;
-  try { const result = await api.statementSamples(props.problemId); if (request === sampleRequest) samples.value = result; }
+  try { const result = await api.statementSamples(props.problemId, props.lang); if (request === sampleRequest) samples.value = result; }
   catch (e) { if (request === sampleRequest) { samples.value = []; message.error(String(e)); } }
 }
 
@@ -68,7 +74,7 @@ onMounted(async () => {
 });
 watch(() => props.lang, async () => {
   macros.value = buildMacros(await getDefs(), props.lang);
-  await loadDisk();
+  await Promise.all([loadDisk(), loadSamples()]);
   tick.value++;
 });
 watch(() => props.judge.state.manifest?.tests, loadSamples);
@@ -93,7 +99,21 @@ const rendered = computed(() => {
     out[s] = r.html;
     r.unknown.forEach((u) => unknown.add(u));
   }
-  return { sections: out, unknown: [...unknown] };
+  // OI-only parts, as in the OI contest document; the CF exports leave them out.
+  const oiSource = (path: string) => props.ws.state.tabs.find((x) => x.path === path)?.model.getValue() ?? oiDisk.value[path];
+  const oiHtml = (src: string | undefined) => {
+    if (!src?.trim()) return undefined;
+    const r = renderLatex(src, opts);
+    r.unknown.forEach((u) => unknown.add(u));
+    return r.html || undefined;
+  };
+  const constraints = oiHtml(oiSource(`statement/${props.lang}/constraints.tex`));
+  const sampleNotes = samples.value.map((x, i) => {
+    const path = sampleNotePath(props.lang, x.index ?? x.number ?? i + 1, x.testset);
+    return oiHtml(props.ws.files.value.some((f) => f.path === path) ? oiSource(path) : x.note);
+  });
+  const oi = constraints || sampleNotes.some(Boolean) ? { constraints, sampleNotes, label: t('preview.oiOnly') } : undefined;
+  return { sections: out, unknown: [...unknown], oi };
 });
 
 const summary = computed(() => props.ws.state.detail?.summary);
@@ -104,11 +124,30 @@ const langs = computed(() => statementLanguages(props.ws.files.value));
 const noStatement = computed(() => props.mode === 'tutorial' && !langs.value.statement.includes(props.lang));
 const noTutorial = computed(() => props.mode !== 'tutorial' && langs.value.missingTutorial.includes(props.lang));
 const otherTutorials = computed(() => langs.value.tutorial.filter((l) => l !== props.lang));
+/** OI problems: create constraints.tex or a sample explanation that does not exist yet. */
+const oiCreate = computed(() => {
+  if (props.mode === 'tutorial' || summary.value?.type !== 'oi') return [];
+  const present = new Set(props.ws.files.value.map((f) => f.path));
+  const constraints = `statement/${props.lang}/constraints.tex`;
+  return [
+    ...(present.has(constraints) ? [] : [{ key: constraints, label: t('preview.addConstraints') }]),
+    ...samples.value.map((x, i) => ({ key: sampleNotePath(props.lang, x.index ?? x.number ?? i + 1, x.testset), label: t('preview.addSampleNote', { n: x.number ?? i + 1 }) })).filter((o) => !present.has(o.key)),
+  ];
+});
+async function createOi(path: string) {
+  try { await props.ws.createFile(path); }
+  catch (e) { message.error(String(e)); }
+}
 </script>
 
 <template>
   <div ref="host" class="statement">
-    <div class="export-tools"><n-button size="tiny" @click="markdown">{{ t('improve.markdown') }}</n-button></div>
+    <div class="export-tools">
+      <n-button size="tiny" @click="markdown">{{ t('improve.markdown') }}</n-button>
+      <n-dropdown v-if="oiCreate.length" trigger="click" :options="oiCreate" @select="createOi">
+        <n-button size="tiny" quaternary>+ {{ t('preview.addOi') }}</n-button>
+      </n-dropdown>
+    </div>
     <div v-if="rendered.unknown.length" class="lint">
       <n-tooltip>
         <template #trigger>
@@ -129,6 +168,7 @@ const otherTutorials = computed(() => langs.value.tutorial.filter((l) => l !== p
       :limits="summary"
       :sections="rendered.sections"
       :samples="samples"
+      :oi="rendered.oi"
       :mode="mode"
       :note="otherTutorials.length ? `${t('preview.otherLangs')}: ${otherTutorials.join(', ')}` : ''"
     >

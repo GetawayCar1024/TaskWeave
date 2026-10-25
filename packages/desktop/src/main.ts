@@ -3,6 +3,7 @@
  * window. There is no browser around it, so Ctrl+W / Ctrl+Shift+T and the other
  * shortcuts belong to PolyForge. The window opens maximized; F11 toggles fullscreen.
  */
+import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import electron from 'electron';
@@ -24,6 +25,21 @@ ipcMain.on('polyforge:confirm-close', event => {
   win.close();
 });
 
+// PDF export of the print view: Chromium's own PDF output keeps text selectable and
+// links clickable (the system print dialog can rasterize pages and drops links).
+ipcMain.handle('polyforge:print-pdf', async (event, name: unknown) => {
+  if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame) return null;
+  const file = typeof name === 'string' && /^[^\\/:*?"<>|\r\n]{1,200}$/.test(name) ? name : 'document';
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    defaultPath: path.join(app.getPath('downloads'), `${file}.pdf`),
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+  if (canceled || !filePath) return null;
+  const data = await win.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true, generateDocumentOutline: true });
+  await fsp.writeFile(filePath, data);
+  return filePath;
+});
+
 ipcMain.on('polyforge:theme', (event, theme: unknown) => {
   if (event.sender !== win?.webContents || event.senderFrame !== win.webContents.mainFrame) return;
   if (theme !== 'light' && theme !== 'dark') return;
@@ -32,7 +48,9 @@ ipcMain.on('polyforge:theme', (event, theme: unknown) => {
 });
 
 // One PolyForge at a time: a second start focuses the running window.
-if (!app.requestSingleInstanceLock()) app.quit();
+// app.quit() is asynchronous: the second instance must never reach startServer().
+const primary = app.requestSingleInstanceLock();
+if (!primary) app.quit();
 app.on('second-instance', () => {
   if (!win) return;
   if (win.isMinimized()) win.restore();
@@ -40,6 +58,7 @@ app.on('second-instance', () => {
 });
 
 async function createWindow() {
+  if (!primary) return;
   // No menu: its accelerators (Ctrl+W closes the window, Ctrl+R reloads, …) would take the keys.
   Menu.setApplicationMenu(null);
   try {
@@ -98,7 +117,7 @@ async function createWindow() {
   await w.loadURL(server.url);
 }
 
-app.whenReady().then(createWindow);
+if (primary) app.whenReady().then(createWindow);
 app.on('window-all-closed', async () => {
   await server?.close().catch(() => {});
   app.quit();

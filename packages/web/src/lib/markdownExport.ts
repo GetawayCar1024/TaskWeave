@@ -67,7 +67,13 @@ export function serializeMarkdown(element: HTMLElement, options: MarkdownExportO
     if (node.matches('.epigraph-source')) Object.assign(declarations, { 'text-align': 'right', 'border-top': '1px solid currentColor' });
     if (node.matches('.footnotes')) Object.assign(declarations, { 'font-size': '85%', 'border-top': '1px solid currentColor' });
     if (node.matches('.footnote')) Object.assign(declarations, { display: 'flex', gap: '0.5em' });
-    if (node.matches('table.tabular')) declarations['border-collapse'] = 'collapse';
+    if (node.matches('table.tabular')) {
+      declarations['border-collapse'] = 'collapse';
+      // Centred like the preview unless inside flushleft / flushright.
+      const align = node.parentElement?.style.textAlign;
+      if (align !== 'left') declarations['margin-left'] = 'auto';
+      if (align !== 'right') declarations['margin-right'] = 'auto';
+    }
     if (node.matches('td,th') && node.closest('table.tabular')) declarations.padding = '0.15em 0.7em';
     if (node.matches('td,th') && node.closest('table.bordered')) declarations.border = '1px solid currentColor';
     if (node.matches('.stmt-img')) declarations['max-width'] = '95%';

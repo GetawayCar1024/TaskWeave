@@ -17,13 +17,15 @@ const props = defineProps<{
   note?: string;
   /** Tutorial mode: append "— Tutorial" to the title (off when the document title already says it). */
   tutorialSuffix?: boolean;
+  /** OI-only content (single-problem preview): rendered constraints, and explanations per sample. */
+  oi?: { constraints?: string; sampleNotes?: (string | undefined)[]; label: string };
 }>();
 
-const HEADINGS: Record<string, Partial<Record<StatementSection | 'examples', string>>> = {
-  zh: { input: '输入格式', output: '输出格式', interaction: '交互', scoring: '评分', notes: '说明', tutorial: '题解', examples: '样例' },
-  en: { input: 'Input', output: 'Output', interaction: 'Interaction', scoring: 'Scoring', notes: 'Note', tutorial: 'Tutorial', examples: 'Examples' },
+const HEADINGS: Record<string, Partial<Record<StatementSection | 'examples' | 'constraints', string>>> = {
+  zh: { input: '输入格式', output: '输出格式', interaction: '交互', scoring: '评分', constraints: '数据范围', notes: '说明', tutorial: '题解', examples: '样例' },
+  en: { input: 'Input', output: 'Output', interaction: 'Interaction', scoring: 'Scoring', constraints: 'Constraints', notes: 'Note', tutorial: 'Tutorial', examples: 'Examples' },
 };
-const heading = (k: StatementSection | 'examples') => (HEADINGS[props.lang] ?? HEADINGS.en)[k] ?? k;
+const heading = (k: StatementSection | 'examples' | 'constraints') => (HEADINGS[props.lang] ?? HEADINGS.en)[k] ?? k;
 const zh = () => props.lang === 'zh';
 
 /** Hovering a test case line highlights that case in the input and the output box. */
@@ -36,7 +38,7 @@ function hover(e: MouseEvent, on: boolean) {
 </script>
 
 <template>
-  <div class="statement-doc" @mouseover="hover($event, true)" @mouseout="hover($event, false)">
+  <div class="statement-doc" :class="{ latin: lang !== 'zh' }" @mouseover="hover($event, true)" @mouseout="hover($event, false)">
     <template v-if="mode === 'tutorial'">
       <div class="header">
         <div class="title"><template v-if="index">{{ index }}. </template>{{ title }}<template v-if="tutorialSuffix !== false"> — {{ heading('tutorial') }}</template></div>
@@ -68,8 +70,16 @@ function hover(e: MouseEvent, on: boolean) {
         <template v-for="(x, i) in samples" :key="i">
           <template v-if="x.large"><div class="section-title">{{ zh() ? '样例' : 'Sample' }} {{ x.number ?? i + 1 }}</div><p class="large-sample">{{ largeSampleNotice(x, lang, x.number ?? i + 1) }}</p></template>
           <div v-else v-html="sampleHtml(x.input, x.output, (zh() ? '输入' : 'Input') + ' ' + (x.number ?? i + 1), (zh() ? '输出' : 'Output') + ' ' + (x.number ?? i + 1), x.inputCases)" />
+          <div v-if="oi?.sampleNotes?.[i]" class="oi-only">
+            <div class="section-title" :data-oi="oi.label">{{ zh() ? `样例 ${x.number ?? i + 1} 解释` : `Explanation for sample ${x.number ?? i + 1}` }}</div>
+            <div class="section" v-html="oi.sampleNotes[i]" />
+          </div>
         </template>
       </template>
+      <div v-if="oi?.constraints" class="oi-only">
+        <div class="section-title" :data-oi="oi.label">{{ heading('constraints') }}</div>
+        <div class="section" v-html="oi.constraints" />
+      </div>
       <template v-if="sections.notes">
         <div class="section-title">{{ heading('notes') }}</div>
         <div class="section" v-html="sections.notes" />
@@ -113,8 +123,23 @@ function hover(e: MouseEvent, on: boolean) {
 .section :deep(.p) {
   margin: 0 0 1.25em;
 }
+.latin .section :deep(.p) {
+  margin-bottom: 0.9em;
+}
 .section :deep(.p:last-child) {
   margin-bottom: 0;
+}
+/* OI-only content in the single-problem preview: a small tag after the heading. */
+.oi-only > .section-title::after {
+  content: attr(data-oi);
+  margin-left: 0.6em;
+  padding: 0 0.4em;
+  border: 1px solid var(--pf-rule);
+  border-radius: 3px;
+  font-size: 65%;
+  font-weight: normal;
+  vertical-align: middle;
+  opacity: 0.7;
 }
 .statement-doc :deep(ul),
 .statement-doc :deep(ol) {
@@ -140,16 +165,23 @@ function hover(e: MouseEvent, on: boolean) {
   font-size: 0.9em;
 }
 .statement-doc :deep(.tex-error) {
-  color: #e88080;
+  color: light-dark(#c53b3b, #e88080);
 }
 .statement-doc :deep(.math-display) {
   margin: 0.85em 0;
   overflow-x: auto;
 }
+/* Tables are centred unless inside flushleft / flushright. */
 .statement-doc :deep(table.tabular) {
-  margin: 1em 0;
+  margin: 1em auto;
   border-collapse: collapse;
   border-spacing: 0;
+}
+.statement-doc :deep(div[style*='text-align:left'] > table.tabular) {
+  margin-left: 0;
+}
+.statement-doc :deep(div[style*='text-align:right'] > table.tabular) {
+  margin-right: 0;
 }
 .statement-doc :deep(table.tabular td) {
   padding: 0.15em 0.7em;

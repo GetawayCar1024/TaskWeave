@@ -144,8 +144,8 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
   const planned = await plan(ctx, errors, ts);
   const layout = groupLayout(ts, !!ctx.config.tests.points);
   const group = (i: number) => layout.mapping[i];
-  // Statements use the samples of "tests" only (as on Polygon).
-  const samples = new Set(ts.name === DEFAULT_TESTSET ? parseIndexList(ts.samples ?? '') : []);
+  const samples = new Set(parseIndexList(ts.samples ?? ''));
+  const largeSamples = new Set(parseIndexList(ts.largeSamples ?? ''));
   const inputPath = (c: ProblemCtx, i: number) => inputPathOf(c, i, ts.name);
   const answerPath = (c: ProblemCtx, i: number) => answerPathOf(c, i, ts.name);
   const overviewPath = (c: ProblemCtx, i: number) => overviewPathOf(c, i, ts.name);
@@ -161,7 +161,14 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
   };
   const mainSrc = judge.mainSolution(ctx.config);
   if (!mainSrc) errors.push('No main solution: tag one solution as MA to generate answers');
-  const [validator, main, interactor] = await Promise.all([
+  // Groups may use their own validator (local only); tests outside them use the problem's.
+  const groupValidators = new Map<string, Program>();
+  const groupValidatorSources = new Map((ts.groups ? ts.group : []).filter((g) => g.validator?.trim()).map((g) => [g.name, g.validator!.trim()]));
+  const groupValidatorTasks = [...new Set(groupValidatorSources.values())].map(async (src) => {
+    const p = await judge.require(ctx, src, 'Validator').catch(compileErr);
+    if (p) groupValidators.set(src, p);
+  });
+  const [problemValidator, main, interactor] = await Promise.all([
     ctx.config.validator ? judge.require(ctx, ctx.config.validator.source, 'Validator').catch(compileErr) : undefined,
     mainSrc ? judge.require(ctx, mainSrc, 'Main solution').catch(compileErr) : undefined,
     ctx.config.problem.interactive
@@ -176,11 +183,12 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
       if (p) gens.set(name, p);
     }),
   ]);
+  await Promise.all(groupValidatorTasks);
   job.signal.throwIfAborted();
 
   const entries = new Map<number, Entry>();
   for (const p of planned) {
-    const sp = samples.has(p.index) ? sampleStatementPaths(p) : undefined;
+    const sp = samples.has(p.index) ? sampleStatementPaths(p, ts.name) : undefined;
     const has = async (rel?: string) => (rel && (await exists(safeJoin(ctx.ref.dir, rel))) ? rel : undefined);
     entries.set(p.index, {
       statementInput: await has(sp?.input),
@@ -192,7 +200,7 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
       group: group(p.index),
       points: layout.points[p.index],
       sample: samples.has(p.index) || undefined,
-      largeSample: samples.has(p.index) && parseIndexList(ctx.config.tests.large_samples ?? '').includes(p.index) || undefined,
+      largeSample: (samples.has(p.index) && largeSamples.has(p.index)) || undefined,
     });
   }
   let done = 0;
@@ -263,7 +271,7 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
     inputTasks.push(
       (async () => {
         const gen = gens.get(cmd.generator);
-        const key = gen ? sha1(JSON.stringify([gen.hash, cmd.args, 'multi'])) : '';
+        const key = gen ? sha1(JSON.stringify([gen.hash, cmd.args, 'multi-pos'])) : '';
         const allCached =
           gen &&
           (await Promise.all(ps.map(async (p) => prev.get(p.index)?.inputKey === `${key}:${p.multiPos}` && (await exists(inputPath(ctx, p.index)))))).every(
@@ -274,13 +282,14 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
           failure = await withTmp(ctx.ref.dir, async (tmp) => {
             const r = await runHelper(judge.runner, gen, cmd.args, { cwd: tmp, stdout: path.join(tmp, 'stdout.txt'), stderr: path.join(tmp, 'err.txt') }, job.signal);
             if (r.status !== 'OK') return `generator failed: ${describeRun(r)} ${(await readHead(path.join(tmp, 'err.txt'), 1000)).trim()}`.trim();
-            // testlib's startTest(k) writes a file named k: accept the target indices or 1..n.
+            // Polygon: the generator writes files 1..k (testlib's startTest(k)) for the k targets
+            // in order. Files named by the target indices are accepted only if 1..k are not all there.
+            const byPos = (await Promise.all(ps.map((p) => exists(path.join(tmp, String(p.multiPos! + 1)))))).every(Boolean);
+            const byIndex = !byPos && (await Promise.all(ps.map((p) => exists(path.join(tmp, String(p.index)))))).every(Boolean);
             for (const p of ps) {
-              const candidates = [String(p.index), String(p.multiPos! + 1)];
-              let found: string | null = null;
-              for (const c of candidates) if (await exists(path.join(tmp, c))) (found ??= c);
-              if (!found) return `generator did not create a file for test ${p.index} (expected "${candidates.join('" or "')}")`;
-              await copyNormalized(path.join(tmp, found), inputPath(ctx, p.index));
+              const file = String(byIndex ? p.index : p.multiPos! + 1);
+              if (!(await exists(path.join(tmp, file)))) return `generator did not create a file for test ${p.index} (expected "${p.multiPos! + 1}")`;
+              await copyNormalized(path.join(tmp, file), inputPath(ctx, p.index));
             }
             return null;
           });
@@ -299,7 +308,13 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
   const perTest = planned.map(async (p) => {
     const e = entries.get(p.index)!;
     const old = prev.get(p.index);
+    const ans = answerPath(ctx, p.index);
+    const ownSrc = e.group ? groupValidatorSources.get(e.group) : undefined;
+    const validator = ownSrc ? groupValidators.get(ownSrc) : problemValidator;
+    if (ownSrc && !validator) e.error ??= `validator ${ownSrc} of group ${e.group} unavailable`;
     if (e.error) {
+      // Never leave the answer of an older version of this test for exports.
+      await fsp.rm(ans, { force: true });
       done += 2;
       return;
     }
@@ -336,7 +351,6 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
     if (main && e.valid !== false && !(ctx.config.problem.interactive && !interactor)) {
       const lim = ctx.limits;
       const key = sha1(JSON.stringify([e.inputHash, main.hash, interactor?.hash ?? '', lim]));
-      const ans = answerPath(ctx, p.index);
       if (old?.answerKey === key && (await exists(ans))) {
         e.answerKey = key;
       } else {
@@ -352,7 +366,7 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
         });
       }
       if (await exists(ans)) e.answerSize = (await fsp.stat(ans)).size;
-    }
+    } else await fsp.rm(ans, { force: true });
     tick(`answer ${p.index}`);
   });
   await Promise.all(perTest);
@@ -366,7 +380,7 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
   }
 
   const tests = [...entries.values()].sort((a, b) => a.index - b.index);
-  for (const i of samples) if (!entries.has(i)) errors.push(`Sample test ${i} does not exist (tests.samples)`);
+  for (const i of samples) if (!entries.has(i)) errors.push(`Sample test ${i} does not exist (${ts.name === DEFAULT_TESTSET ? 'tests' : `testsets.${ts.name}`}.samples)`);
   for (const t of tests) {
     if (t.valid === false) errors.push(`Test ${t.index} is invalid: ${t.validatorMessage ?? ''}`.trim());
     if (t.error) errors.push(`Test ${t.index}: ${t.error}`);
@@ -400,23 +414,51 @@ export function statementPaths(manualSource: string): { input: string; output: s
 
 /**
  * Statement input / output of a sample made by the script: keyed by the test index,
- * tests/_statement/NN.in / NN.out ("_" keeps the folder apart from testset folders).
+ * tests/_statement/NN.in / NN.out ("_" keeps the folder apart from testset folders);
+ * other testsets use tests/_statement/<testset>/NN.in / NN.out.
  */
-export function scriptStatementPaths(index: number): { input: string; output: string } {
+export function scriptStatementPaths(index: number, testset = DEFAULT_TESTSET): { input: string; output: string } {
   const nn = String(index).padStart(2, '0');
-  return { input: `tests/_statement/${nn}.in`, output: `tests/_statement/${nn}.out` };
+  if (testset !== DEFAULT_TESTSET && !TESTSET_NAME_RE.test(testset)) throw new HttpError(400, 'bad_testset', `Invalid testset name: ${testset}`);
+  const dir = testset === DEFAULT_TESTSET ? 'tests/_statement' : `tests/_statement/${testset}`;
+  return { input: `${dir}/${nn}.in`, output: `${dir}/${nn}.out` };
 }
 
 /** Where a sample's statement input / output live, for either kind of test. */
-export function sampleStatementPaths(t: { origin: string; source: string; index: number }): { input: string; output: string } {
-  return t.origin === 'manual' ? statementPaths(t.source) : scriptStatementPaths(t.index);
+export function sampleStatementPaths(t: { origin: string; source: string; index: number }, testset = DEFAULT_TESTSET): { input: string; output: string } {
+  return t.origin === 'manual' ? statementPaths(t.source) : scriptStatementPaths(t.index, testset);
+}
+
+/** Sample lists after tests moved (manual tests added or removed, `$` tests shift), by test identity. */
+function remapSamples(ts: TestsetConfig, before: Planned[], after: Planned[]): { samples: string; largeSamples: string } | undefined {
+  const ids = (list: Planned[]) => {
+    const seen = new Map<string, number>();
+    return new Map(list.map((p) => {
+      const base = `${p.origin}|${p.source}|${p.multiPos ?? ''}`;
+      const n = (seen.get(base) ?? 0) + 1;
+      seen.set(base, n);
+      return [p.index, `${base}|${n}`] as const;
+    }));
+  };
+  const oldIds = ids(before);
+  const newIndex = new Map([...ids(after)].map(([i, id]) => [id, i]));
+  const map = (list: string | undefined) => compressRanges(parseIndexList(list ?? '').flatMap((i) => {
+    const id = oldIds.get(i);
+    // Indices that had no test keep their (stale) value; removed tests leave the list.
+    if (id === undefined) return [i];
+    const j = newIndex.get(id);
+    return j === undefined ? [] : [j];
+  }));
+  const samples = map(ts.samples), largeSamples = map(ts.largeSamples);
+  if (samples === compressRanges(parseIndexList(ts.samples ?? '')) && largeSamples === compressRanges(parseIndexList(ts.largeSamples ?? ''))) return undefined;
+  return { samples, largeSamples };
 }
 
 export async function addManualTest(
   ctx: ProblemCtx,
   input: string,
   opts: { sample?: boolean; testset?: string; statementInput?: string; statementOutput?: string },
-): Promise<{ index: number; path: string; samples?: string }> {
+): Promise<{ index: number; path: string; testset: string; samples?: string; largeSamples?: string }> {
   const ts = requireTestset(ctx, opts.testset);
   const planned = await plan(ctx, [], ts);
   const explicit = new Set<number>();
@@ -427,7 +469,7 @@ export async function addManualTest(
   }
   // Only samples that exist count: a stale entry in tests.samples must not leave a gap.
   const existing = new Set(planned.map((p) => p.index));
-  const samples = ts.name === DEFAULT_TESTSET ? parseIndexList(ts.samples ?? '').filter((i) => existing.has(i)) : [];
+  const samples = parseIndexList(ts.samples ?? '').filter((i) => existing.has(i));
   let index = samples.length ? Math.max(...samples) + 1 : 1;
   const manualDir = ts.manual.replace(/\/+$/, '');
   const fileOf = (i: number) => `${manualDir}/${String(i).padStart(2, '0')}.in`;
@@ -436,7 +478,7 @@ export async function addManualTest(
   const text = input.replace(/\r\n/g, '\n');
   await fsp.mkdir(path.dirname(safeJoin(ctx.ref.dir, rel)), { recursive: true });
   await atomicWrite(safeJoin(ctx.ref.dir, rel), text.endsWith('\n') || !text ? text : `${text}\n`);
-  if (opts.sample && ts.name === DEFAULT_TESTSET) {
+  if (opts.sample) {
     const sp = statementPaths(rel);
     for (const [text, file] of [
       [opts.statementInput, sp.input],
@@ -447,11 +489,12 @@ export async function addManualTest(
       await atomicWrite(safeJoin(ctx.ref.dir, file), t.endsWith('\n') ? t : `${t}\n`);
     }
   }
-  if (opts.sample && ts.name === DEFAULT_TESTSET) {
-    const next = [...new Set([...samples, index])].sort((a, b) => a - b);
-    return { index, path: rel, samples: compressRanges(next) };
-  }
-  return { index, path: rel };
+  // Tests from "> $" lines (and unnumbered manual files) behind the new one move up: so do their sample marks.
+  const moved = remapSamples(ts, planned, await plan(ctx, [], ts));
+  const cur = moved ?? { samples: ts.samples ?? '', largeSamples: ts.largeSamples ?? '' };
+  // A new sample is not shown in the statement until the user turns that on (like marking a sample in the tests panel).
+  if (opts.sample) return { index, path: rel, testset: ts.name, samples: compressRanges([...parseIndexList(cur.samples), index]), largeSamples: compressRanges([...parseIndexList(cur.largeSamples), index]) };
+  return moved ? { index, path: rel, testset: ts.name, ...moved } : { index, path: rel, testset: ts.name };
 }
 
 /**
@@ -503,7 +546,7 @@ export async function removeTest(
   ctx: ProblemCtx,
   index: number,
   opts: { testset?: string; source?: string },
-): Promise<{ kind: 'manual' | 'script'; removed: number[]; samples?: string }> {
+): Promise<{ kind: 'manual' | 'script'; removed: number[]; testset: string; samples?: string; largeSamples?: string }> {
   const ts = requireTestset(ctx, opts.testset);
   const planned = await plan(ctx, [], ts);
   const p = planned.find((x) => x.index === index);
@@ -534,14 +577,10 @@ export async function removeTest(
     await atomicWrite(file, lines.join('\n'));
     const removed = planned.filter((x) => x.cmd === p.cmd).map((x) => x.index);
     // Their statement input / output (keyed by index) go with them.
-    if (ts.name === DEFAULT_TESTSET) {
-      for (const i of removed) for (const rel of Object.values(scriptStatementPaths(i))) await fsp.rm(safeJoin(ctx.ref.dir, rel), { force: true });
-    }
+    for (const i of removed) for (const rel of Object.values(scriptStatementPaths(i, ts.name))) await fsp.rm(safeJoin(ctx.ref.dir, rel), { force: true });
     result = { kind: 'script', removed };
   }
-  if (ts.name === DEFAULT_TESTSET) {
-    const samples = parseIndexList(ts.samples ?? '');
-    if (samples.some((i) => result.removed.includes(i))) return { ...result, samples: compressRanges(samples.filter((i) => !result.removed.includes(i))) };
-  }
-  return result;
+  // Removed tests leave the sample lists; tests that move down keep their marks.
+  const moved = remapSamples(ts, planned, await plan(ctx, [], ts));
+  return moved ? { ...result, testset: ts.name, ...moved } : { ...result, testset: ts.name };
 }

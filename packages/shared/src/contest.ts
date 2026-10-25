@@ -90,8 +90,14 @@ export interface UpdateContestRequest {
 export const CONTEST_ACTIONS = ['generate', 'invocation', 'checks', 'export', 'polygon-push'] as const;
 export type ContestAction = (typeof CONTEST_ACTIONS)[number];
 
+export type LuoguAggregate = 'sum' | 'min' | 'max';
+
 export interface ContestBatchRequest {
-  exportFormat?: 'polygon' | 'lemonlime';
+  exportFormat?: 'polygon' | 'lemonlime' | 'luogu';
+  /** lemonlime / luogu: testsets to export per problem id (default: ["tests"]). */
+  testsets?: Record<string, string[]>;
+  /** luogu: how the scoring script combines the time / memory of the subtasks. */
+  luogu?: { time: LuoguAggregate; memory: LuoguAggregate };
   commit?: boolean;
   buildPackage?: boolean;
   packageType?: 'standard' | 'full';
@@ -173,7 +179,7 @@ export function oiOverview(problems: ContestStatement[], lang: string) {
 // that changed on Polygon are fetched in full.
 
 /** Where a problem of the contest stands against Polygon. */
-export type ContestSyncState = 'same' | 'local' | 'remote' | 'both' | 'unbound' | 'unreachable' | 'missing';
+export type ContestSyncState = 'same' | 'local' | 'remote' | 'both' | 'unbound' | 'unreachable' | 'deleted' | 'missing';
 
 export interface ContestSyncRow {
   blocked?: boolean;
@@ -228,6 +234,14 @@ export interface ContestPullPreview {
 
 export interface ContestPullRequest {
   problems: { problem: string; take: string[] }[];
+}
+
+/** Take Polygon's version of everything (conflicts too) for every bound problem of the contest. */
+export interface ContestRepullRequest {
+  /** Also delete local items Polygon does not have (default false). */
+  deleteLocal?: boolean;
+  /** Local problem ids; default: every bound problem. */
+  problems?: string[];
 }
 
 export interface ContestPullResult {

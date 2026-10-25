@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { ImportRequest, PullRequest, PushRequest, SaveSecretsRequest } from '@polyforge/shared';
+import type { ImportRequest, PullPreviewRequest, PullRequest, PushRequest, SaveSecretsRequest } from '@polyforge/shared';
 import type { JobManager } from '../jobs.js';
 import type { Judge } from '../judge/index.js';
 import type { PolygonSync } from '../polygon/sync.js';
@@ -31,11 +31,16 @@ export function polygonRoutes(app: FastifyInstance, judge: Judge, sync: PolygonS
     });
   });
 
-  app.post<P>('/api/problems/:id/polygon/pull-preview', async (req) => sync.pullPreview(await judge.ctx(req.params.id)));
+  app.post<P & { Body: PullPreviewRequest }>('/api/problems/:id/polygon/pull-preview', async (req) =>
+    sync.pullPreview(await judge.ctx(req.params.id), { testsets: Array.isArray(req.body?.testsets) ? req.body.testsets.map(String) : [] }),
+  );
 
   app.post<P & { Body: PullRequest }>('/api/problems/:id/polygon/pull', async (req) => {
     const ctx = await judge.ctx(req.params.id);
-    const r = await sync.pull(ctx, { take: req.body?.take ?? [], merge: req.body?.merge ?? [] });
+    // A pull rewrites the files and the sync state a running push works from.
+    if (jobs.list(ctx.ref.id).some((j) => j.kind === 'polygon-push' && j.status === 'running')) throw new HttpError(409, 'busy', 'A Polygon push of this problem is running; wait for it to finish');
+    const keys = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
+    const r = await sync.pull(ctx, { take: keys(req.body?.take), merge: keys(req.body?.merge) });
     hub.broadcast({ type: 'problem:changed', problemId: ctx.ref.id });
     return r;
   });

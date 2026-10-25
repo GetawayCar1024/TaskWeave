@@ -42,3 +42,29 @@ test('Responses streams text, replays reasoning and call IDs, and accounts for c
     assert.ok(requests[1].input.some((i: any) => i.type === 'function_call_output' && i.call_id === 'call_1' && i.output === 'problem data'));
   } finally { await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve())); }
 });
+
+test('Responses maps incomplete reasons and tolerates usage without token details', async () => {
+  const reasons = ['max_output_tokens', 'content_filter'];
+  const server = http.createServer(async (req, res) => {
+    for await (const _ of req) { /* drain */ }
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.write(`data: ${JSON.stringify({ type: 'response.incomplete', response: {
+      id: 'resp_inc', object: 'response', status: 'incomplete', incomplete_details: { reason: reasons.shift() },
+      output: [{ type: 'message', role: 'assistant', id: 'msg_1', status: 'incomplete', content: [{ type: 'output_text', text: 'Partial', annotations: [] }] }],
+      usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+    } })}\n\n`);
+    res.end();
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const port = (server.address() as import('node:net').AddressInfo).port;
+    const provider = new ResponsesProvider({ name: 'mock', protocol: 'openai-responses', baseUrl: `http://127.0.0.1:${port}/v1`, apiKey: 'test-only', models: ['mock-model'] });
+    const messages: AgentMessage[] = [{ role: 'user', content: [{ type: 'text', text: 'Hi' }] }];
+    const cut = await provider.chat({ model: 'mock-model', system: 'Test', tools: [], messages });
+    assert.equal(cut.stopReason, 'max_tokens');
+    assert.deepEqual(cut.usage, { input: 10, output: 5, cacheRead: 0 });
+    const filtered = await provider.chat({ model: 'mock-model', system: 'Test', tools: [], messages });
+    assert.equal(filtered.stopReason, 'refusal');
+    assert.equal(filtered.stopDetail, 'content_filter');
+  } finally { await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve())); }
+});

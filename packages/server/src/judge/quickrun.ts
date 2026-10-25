@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import type { QuickRunRequest, QuickRunResponse } from '@polyforge/shared';
+import { testsetsOf, type QuickRunRequest, type QuickRunResponse } from '@polyforge/shared';
 import { exists, HttpError } from '../util/fs.js';
 import { readHead, runChecker, runHelper, runSolution, withTmp } from './execute.js';
 import type { Judge, ProblemCtx } from './index.js';
@@ -10,9 +10,13 @@ const OUTPUT_PREVIEW = 64 * 1024;
 
 /** "Run" button in the editor: compile the current file and run it on custom input or a test. */
 export async function quickRun(judge: Judge, ctx: ProblemCtx, req: QuickRunRequest, options: { experiment?: boolean } = {}): Promise<QuickRunResponse> {
-  const out = await judge.compile(ctx, req.source, !options.experiment);
+  // Only solutions are linked with the grader; generators, validators, checkers… never.
+  const c = ctx.config;
+  const helper = req.source.startsWith('generators/') || [c.checker, c.lemon_checker, c.validator, c.interactor, ...c.generators].some((e) => e?.source === req.source)
+    || testsetsOf(c).some((ts) => ts.group.some((g) => g.validator === req.source));
+  const out = await judge.compile(ctx, req.source, !options.experiment && !helper);
   if (!out.program) return { compile: out.result, stdout: '', stderr: '' };
-  const interactive = !options.experiment && ctx.config.problem.interactive;
+  const interactive = !options.experiment && !helper && ctx.config.problem.interactive;
   const interactor = interactive && ctx.config.interactor ? await judge.require(ctx, ctx.config.interactor.source, 'Interactor') : undefined;
 
   return withTmp(ctx.ref.dir, async (tmp) => {

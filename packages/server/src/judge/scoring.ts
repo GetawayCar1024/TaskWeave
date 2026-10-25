@@ -12,7 +12,7 @@ export function scoringInput(ctx: ProblemCtx, ts: TestsetConfig, tests: number[]
       return { index, group: layout.mapping[index], points: layout.points[index], verdict: c?.verdict ?? 'SKIP', checkerPoints: c?.points };
     }),
     groups: ts.groups
-      ? ts.group.map((g) => ({ name: g.name, points: g.points, policy: g.policy ?? 'COMPLETE_GROUP', dependencies: g.dependencies ?? [], tests: parseIndexList(g.tests ?? '') }))
+      ? ts.group.map((g) => ({ name: g.name, points: g.points, policy: g.policy ?? 'COMPLETE_GROUP', dependencies: [...new Set(g.dependencies ?? [])], tests: [...new Set(parseIndexList(g.tests ?? ''))] }))
       : [],
   };
 }

@@ -9,6 +9,18 @@ export type StatementLang = (typeof STATEMENT_LANGS)[number];
 export const STATEMENT_SECTIONS = ['legend', 'input', 'output', 'interaction', 'scoring', 'notes', 'tutorial'] as const;
 export type StatementSection = (typeof STATEMENT_SECTIONS)[number];
 
+/**
+ * Sections only used by OI-style documents (not part of Polygon statements):
+ * `statement/<lang>/constraints.tex`, placed before the notes. Empty files are not rendered.
+ */
+export const OI_SECTIONS = ['constraints'] as const;
+export type OiSection = (typeof OI_SECTIONS)[number];
+
+/** Per-sample explanation (OI documents only): `statement/<lang>/samples/<index>.tex`, or `<testset>-<index>.tex` outside "tests". */
+export function sampleNotePath(lang: string, index: number, testset = 'tests'): string {
+  return `statement/${lang}/samples/${testset === 'tests' ? '' : `${testset}-`}${index}.tex`;
+}
+
 export const problemTypeSchema = z.enum(['cf', 'oi']);
 export type ProblemType = z.infer<typeof problemTypeSchema>;
 export const judgeModeSchema = z.enum(['batch', 'io', 'grader']);
@@ -43,6 +55,8 @@ const testGroupSchema = z
     /** Groups that must pass completely for this group to score. */
     dependencies: z.array(z.string()).optional(),
     tests: z.string().optional(),
+    /** Validator used for the tests of this group instead of the problem validator (local only). */
+    validator: z.string().optional(),
   })
   .loose();
 
@@ -53,6 +67,10 @@ const testsetSchema = z
     manual: z.string().optional(),
     groups: z.boolean().optional(),
     group: z.array(testGroupSchema).optional(),
+    /** Tests shown as examples in the statement, e.g. "1-2". */
+    samples: z.string().optional(),
+    /** Sample test indices supplied as files instead of printed inline. */
+    large_samples: z.string().optional(),
   })
   .loose();
 
@@ -88,10 +106,6 @@ export const problemTomlSchema = z.object({
   /** The Polygon testset "tests" (also used for statements and answers). */
   tests: testsetSchema
     .extend({
-      /** Tests shown as examples in the statement, e.g. "1-2". */
-      samples: z.string().optional(),
-      /** Sample test indices supplied in down.zip instead of printed inline. */
-      large_samples: z.string().optional(),
       /** Points are enabled for the whole problem (Polygon: problem.enablePoints). */
       points: z.boolean().optional(),
     })
@@ -104,10 +118,21 @@ export const problemTomlSchema = z.object({
 export type ProblemToml = z.infer<typeof problemTomlSchema>;
 export type TestGroup = z.infer<typeof testGroupSchema>;
 
+/** Polygon accepts test points with at most 2 digits after the decimal point. */
+export function polygonPointsOk(points: number): boolean {
+  return Math.abs(points * 100 - Math.round(points * 100)) < 1e-6;
+}
+
+/** Problem features Polygon cannot represent; these block pushing / Polygon packages. */
 export function polygonFeatureWarnings(config: ProblemToml): string[] {
-  const warnings = config.tests.large_samples?.trim() ? ['Polygon does not support downloadable large samples. Show all samples in the statement before syncing.'] : [];
-  if (config.tests.points) warnings.push(...testsetsOf(config).filter(ts => ts.groups).flatMap(ts => ts.group.filter(g => g.points !== undefined && !Number.isInteger(g.points)).map(g => `${ts.name}/${g.name}: Polygon requires integer test points; fractional subtask scores are not supported.`)));
+  const warnings = testsetsOf(config).some(ts => ts.largeSamples?.trim()) ? ['Polygon does not support downloadable large samples. Show all samples in the statement before syncing.'] : [];
+  if (config.tests.points) warnings.push(...testsetsOf(config).filter(ts => ts.groups).flatMap(ts => ts.group.filter(g => g.points !== undefined && !polygonPointsOk(g.points)).map(g => `${ts.name}/${g.name}: Polygon requires test points with at most 2 decimal places.`)));
   return warnings;
+}
+
+/** Local-only features that are not synced to Polygon (sync goes on, without them). */
+export function polygonLossWarnings(config: ProblemToml): string[] {
+  return testsetsOf(config).flatMap(ts => ts.group.filter(g => g.validator?.trim()).map(g => `${ts.name}/${g.name}: per-group validators are local only and are not synced to Polygon.`));
 }
 
 export const DEFAULT_TESTSET = 'tests';
@@ -120,17 +145,18 @@ export interface TestsetConfig {
   groups: boolean;
   group: TestGroup[];
   samples?: string;
+  largeSamples?: string;
 }
 
 /** All testsets of a problem, "tests" first. */
 export function testsetsOf(config: ProblemToml): TestsetConfig[] {
   const t = config.tests;
   const out: TestsetConfig[] = [
-    { name: DEFAULT_TESTSET, script: t.script, manual: t.manual ?? 'tests/manual', groups: !!t.groups, group: t.group ?? [], samples: t.samples },
+    { name: DEFAULT_TESTSET, script: t.script, manual: t.manual ?? 'tests/manual', groups: !!t.groups, group: t.group ?? [], samples: t.samples, largeSamples: t.large_samples },
   ];
   for (const [name, s] of Object.entries(config.testsets ?? {})) {
     if (name === DEFAULT_TESTSET) continue;
-    out.push({ name, script: s.script, manual: s.manual ?? `tests/${name}`, groups: !!s.groups, group: s.group ?? [] });
+    out.push({ name, script: s.script, manual: s.manual ?? `tests/${name}`, groups: !!s.groups, group: s.group ?? [], samples: s.samples, largeSamples: s.large_samples });
   }
   return out;
 }
@@ -231,6 +257,9 @@ export interface PatchProblemRequest {
 }
 
 export interface TestsetPatch {
+  /** Samples of this testset (for "tests" the top-level `samples` works too); empty string removes. */
+  samples?: string;
+  largeSamples?: string;
   script?: string | null;
   groups?: boolean;
   group?: TestGroup[];

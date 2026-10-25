@@ -1,10 +1,10 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { isSourceFile, parseIndexList, type CompileResult, type QuickRunRequest, type StressRequest, type TestFileResponse } from '@polyforge/shared';
+import { isSourceFile, parseIndexList, type CompileResult, type InvocationSelection, type QuickRunRequest, type StressRequest, type TestFileResponse } from '@polyforge/shared';
 import type { JobManager } from '../jobs.js';
 import type { Judge } from '../judge/index.js';
-import { listInvocations, outputPath, readInvocation, runInvocation } from '../judge/invocation.js';
+import { listInvocations, readInvocation, refOutputPath, runInvocation } from '../judge/invocation.js';
 import { quickRun } from '../judge/quickrun.js';
 import { runStress } from '../judge/stress.js';
 import { exportDir, exportPackage } from '../judge/package.js';
@@ -34,7 +34,11 @@ async function preview(file: string, bytes = PREVIEW): Promise<TestFileResponse>
 }
 
 export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager) {
-  app.get<{ Params: { id: string } }>('/api/problems/:id/statement-samples', async req => (await readSamples(await judge.ctx(req.params.id))).map(row => row.sample));
+  app.get<{ Params: { id: string }; Querystring: { lang?: string } }>('/api/problems/:id/statement-samples', async req => {
+    const lang = req.query.lang;
+    if (lang !== undefined && !/^[a-z]{2,8}$/.test(lang)) throw new HttpError(400, 'bad_lang', 'Invalid language');
+    return (await readSamples(await judge.ctx(req.params.id), false, lang)).map(row => row.sample);
+  });
   type P = { Params: { id: string } };
 
   /** Compile the given sources, or every program referenced by problem.toml. */
@@ -68,7 +72,7 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     const ctx = await judge.ctx(req.params.id);
     if (typeof req.body?.input !== 'string') throw new HttpError(400, 'bad_request', 'input required');
     const r = await addManualTest(ctx, req.body.input, { sample: req.body.sample, testset: req.body.testset, statementInput: req.body.statementInput, statementOutput: req.body.statementOutput });
-    if (r.samples !== undefined) await judge.registry.patch(ctx.ref.id, { samples: r.samples });
+    if (r.samples !== undefined) await judge.registry.patch(ctx.ref.id, { testsets: { [r.testset]: { samples: r.samples, largeSamples: r.largeSamples ?? '' } } });
     return r;
   });
 
@@ -78,19 +82,22 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     const n = Number(req.params.n);
     if (!Number.isInteger(n) || n < 1) throw new HttpError(400, 'bad_test', 'Invalid test index');
     const r = await removeTest(ctx, n, { testset: req.query.testset, source: req.query.source });
-    if (r.samples !== undefined) await judge.registry.patch(ctx.ref.id, { samples: r.samples });
+    if (r.samples !== undefined) await judge.registry.patch(ctx.ref.id, { testsets: { [r.testset]: { samples: r.samples, largeSamples: r.largeSamples ?? '' } } });
     return r;
   });
 
   app.get<P & TS>('/api/problems/:id/tests', async (req) => {
     const ctx = await judge.ctx(req.params.id);
-    const m = await readManifest(ctx, requireTestset(ctx, req.query.testset).name);
-    if (m && (!req.query.testset || req.query.testset === 'tests')) {
-      const samples = new Set(parseIndexList(ctx.config.tests.samples ?? ''));
+    const ts = requireTestset(ctx, req.query.testset);
+    const m = await readManifest(ctx, ts.name);
+    if (m) {
+      // problem.toml may have changed since the tests were generated.
+      const samples = new Set(parseIndexList(ts.samples ?? ''));
+      const large = new Set(parseIndexList(ts.largeSamples ?? ''));
       await Promise.all(m.tests.map(async t => {
         t.sample = samples.has(t.index) || undefined;
-        t.largeSample = t.sample && parseIndexList(ctx.config.tests.large_samples ?? '').includes(t.index) || undefined;
-        const sp = sampleStatementPaths(t);
+        t.largeSample = (t.sample && large.has(t.index)) || undefined;
+        const sp = sampleStatementPaths(t, ts.name);
         t.statementInput = t.sample && await exists(safeJoin(ctx.ref.dir, sp.input)) ? sp.input : undefined;
         t.statementOutput = t.sample && await exists(safeJoin(ctx.ref.dir, sp.output)) ? sp.output : undefined;
       }));
@@ -104,10 +111,11 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     if (!Number.isInteger(n) || n < 1) throw new HttpError(400, 'bad_test', 'Invalid test index');
     // What the statement shows (custom NN.statement.in / .out, else the test itself).
     if (req.params.kind === 'statement-in' || req.params.kind === 'statement-out') {
-      const t = (await readManifest(ctx))?.tests.find((x) => x.index === n);
-      const candidate = t ? sampleStatementPaths(t)[req.params.kind === 'statement-in' ? 'input' : 'output'] : undefined;
+      const ts = requireTestset(ctx, req.query.testset).name;
+      const t = (await readManifest(ctx, ts))?.tests.find((x) => x.index === n);
+      const candidate = t ? sampleStatementPaths(t, ts)[req.params.kind === 'statement-in' ? 'input' : 'output'] : undefined;
       const rel = candidate && await exists(safeJoin(ctx.ref.dir, candidate)) ? candidate : undefined;
-      return preview(rel ? safeJoin(ctx.ref.dir, rel) : req.params.kind === 'statement-in' ? inputPath(ctx, n) : answerPath(ctx, n));
+      return preview(rel ? safeJoin(ctx.ref.dir, rel) : req.params.kind === 'statement-in' ? inputPath(ctx, n, ts) : answerPath(ctx, n, ts));
     }
     const file = { in: inputPath, ans: answerPath, overview: overviewPath }[req.params.kind];
     if (!file) throw new HttpError(400, 'bad_kind', 'kind must be in, ans, overview, statement-in or statement-out');
@@ -120,10 +128,15 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     return quickRun(judge, ctx, req.body);
   });
 
-  app.post<P & { Body: { sources: string[]; tests?: number[]; testset?: string } }>('/api/problems/:id/invocations', async (req) => {
+  /** Body: one testset (`testset` + optional `tests`), or `selection` spanning several testsets. */
+  app.post<P & { Body: { sources: string[]; tests?: number[]; testset?: string; selection?: InvocationSelection } }>('/api/problems/:id/invocations', async (req) => {
     const ctx = await judge.ctx(req.params.id);
     const sources = req.body?.sources ?? [];
     const testset = requireTestset(ctx, req.body?.testset).name;
+    const selection = Array.isArray(req.body?.selection) ? req.body.selection : undefined;
+    if (selection?.some((s) => typeof s?.testset !== 'string' || (s.tests !== undefined && (!Array.isArray(s.tests) || s.tests.some((n) => !Number.isInteger(n) || n < 1)))))
+      throw new HttpError(400, 'bad_request', 'Invalid test selection');
+    for (const s of selection ?? []) requireTestset(ctx, s.testset);
     let invId = '';
     let resolveStart!: () => void;
     const started = new Promise<void>((r) => (resolveStart = r));
@@ -131,7 +144,7 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
       runInvocation(judge, ctx, sources, req.body?.tests, j, (id) => {
         invId = id;
         resolveStart();
-      }, testset).finally(resolveStart),
+      }, testset, selection).finally(resolveStart),
     );
     await started;
     return { job, invocationId: invId };
@@ -143,12 +156,16 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     readInvocation(await judge.ctx(req.params.id), req.params.inv),
   );
 
-  app.get<{ Params: { id: string; inv: string; sol: string; test: string } }>(
+  app.get<{ Params: { id: string; inv: string; sol: string; test: string } } & TS>(
     '/api/problems/:id/invocations/:inv/output/:sol/:test',
     async (req) => {
       const ctx = await judge.ctx(req.params.id);
-      await readInvocation(ctx, req.params.inv);
-      return preview(outputPath(ctx, req.params.inv, Number(req.params.sol), Number(req.params.test)));
+      const inv = await readInvocation(ctx, req.params.inv);
+      const sol = Number(req.params.sol);
+      const test = Number(req.params.test);
+      if (!Number.isInteger(sol) || sol < 0 || !Number.isInteger(test) || test < 1) throw new HttpError(400, 'bad_test', 'Invalid test index');
+      const testset = req.query.testset ? requireTestset(ctx, req.query.testset).name : (inv.testset ?? 'tests');
+      return preview(refOutputPath(ctx, inv, sol, { testset, index: test }));
     },
   );
 

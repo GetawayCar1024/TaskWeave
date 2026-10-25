@@ -55,7 +55,13 @@ cpSync(path.join(desk, 'build/icon.png'), path.join(out, 'icon.png'));
 mkdirSync(path.join(out, 'runner'));
 cpSync(path.join(root, 'packages/server/runner/runner.cpp'), path.join(out, 'runner/runner.cpp'));
 // Keep attribution, upstream source and integration source next to the shipped binary.
-for (const name of ['THIRD_PARTY_NOTICES.md', 'SOURCE_BUILD.md']) cpSync(path.join(root, name), path.join(out, name));
+for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) cpSync(path.join(root, name), path.join(out, name));
+cpSync(path.join(root, 'docs/building.md'), path.join(out, 'BUILDING.md'));
+// SimSun / SimHei / KaiTi may not be redistributed: never ship them, even if a local copy is lying around.
+if (readdirSync(path.join(out, 'web/cnoi/fonts')).some(f => /^sim(sun|hei|kai)/i.test(f))) {
+  console.error('app/web/cnoi/fonts contains non-redistributable fonts (SimSun / SimHei / KaiTi); remove them from packages/web/public/cnoi/fonts');
+  process.exit(1);
+}
 const thirdParty = path.join(out, 'third-party');
 mkdirSync(thirdParty, { recursive: true });
 cpSync(path.join(root, 'packages/web/src/vendor/cnoi'), path.join(thirdParty, 'cnoi'), { recursive: true });
@@ -85,7 +91,7 @@ for (const entry of readdirSync(packageStore, { withFileTypes: true })) {
 }
 writeFileSync(
   path.join(out, 'package.json'),
-  JSON.stringify({ name: 'polyforge', productName: 'PolyForge', version, description: 'Local-first problem preparation for Codeforces Polygon', main: 'main.cjs', author: 'PolyForge', license: 'UNLICENSED' }, null, 2),
+  JSON.stringify({ name: 'polyforge', productName: 'PolyForge', version, description: 'Local-first problem preparation for Codeforces Polygon', main: 'main.cjs', author: 'PolyForge', license: 'AGPL-3.0-or-later' }, null, 2),
 );
 
 if (appOnly) {

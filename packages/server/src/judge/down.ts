@@ -26,9 +26,10 @@ export async function contestDown(judge: Judge, contests: ContestRegistry, id: s
     const name = ctx.config.problem.name;
     if (!PROBLEM_NAME_RE.test(name) || names.has(name.toLowerCase())) throw new HttpError(400, 'duplicate_name', `down.zip requires unique English problem names: ${name}`);
     names.add(name.toLowerCase()); zip.add(`${name}/`, '');
-    const rows = await readSamples(ctx, true);
+    const rows = await readSamples(ctx, true, req.lang);
     const previous = current.find(s => s.problem === p.problem)!;
-    if (JSON.stringify(rows.map(row => row.sample)) !== JSON.stringify(previous.samples)) stale();
+    // A statement.tex document prints no generated samples (the snapshot has none): nothing to compare.
+    if (!previous.body && JSON.stringify(rows.map(row => row.sample)) !== JSON.stringify(previous.samples)) stale();
     for (const row of rows) {
       zip.add(row.sample.inputFile!, row.input);
       zip.add(row.sample.outputFile!, row.output);

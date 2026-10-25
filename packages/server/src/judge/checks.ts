@@ -41,8 +41,11 @@ export async function localChecks(_judge: Judge, ctx: ProblemCtx): Promise<Local
   }
   const langs = statementLanguages(files);
   if (!langs.statement.length) add('error', 'statement', 'noStatement');
+  const mode = judgeMode(config.problem);
+  // Grader problems describe the interface instead of input / output; I/O interaction replaces the output.
+  const required = config.problem.type === 'oi' ? ['statement'] : ['legend', 'input', 'output'].filter((s) => !(mode === 'grader' && s !== 'legend') && !(mode === 'io' && s === 'output'));
   for (const lang of langs.statement) {
-    for (const section of (config.problem.type === 'oi' ? ['statement'] : ['legend', 'input', 'output'])) {
+    for (const section of required) {
       const file = `statement/${lang}/${section}.tex`;
       if (!files.some((f) => f.path === file && f.size)) add('warning', 'statement', 'missingSection', { lang, section }, { file });
     }
@@ -76,9 +79,10 @@ export async function localChecks(_judge: Judge, ctx: ProblemCtx): Promise<Local
   if (config.solutions.length < 2) add('info', 'solutions', 'oneSolution');
 
   // ---- tests ----
-  const manual = (await fsp.readdir(path.join(ref.dir, 'tests', 'manual')).catch(() => [] as string[])).length;
-  if (!manual && !(config.tests.script && (await has(config.tests.script)))) add('error', 'tests', 'noTests');
-  if (!parseIndexList(config.tests.samples ?? '').length) add('warning', 'tests', 'noSamples', {}, { file: 'problem.toml' });
+  const main = testsetsOf(config)[0];
+  const manual = (await fsp.readdir(safeJoin(ref.dir, main.manual)).catch(() => [] as string[])).filter((f) => !f.startsWith('.')).length;
+  if (!manual && !(main.script && (await has(main.script)))) add('error', 'tests', 'noTests');
+  if (!testsetsOf(config).some((ts) => parseIndexList(ts.samples ?? '').length)) add('warning', 'tests', 'noSamples', {}, { file: 'problem.toml' });
   const vt = (await fsp.readdir(path.join(ref.dir, 'validator-tests')).catch(() => [] as string[])).filter((f) => !f.startsWith('.'));
   if (!vt.length) add('info', 'validator', 'noValidatorTests');
   const m = await readManifest(ctx);
@@ -93,6 +97,10 @@ export async function localChecks(_judge: Judge, ctx: ProblemCtx): Promise<Local
       if (!own && !(ts.script && (await has(ts.script)))) add('warning', 'tests', 'testsetEmpty', { testset: ts.name }, file);
     }
     if (!ts.groups) continue;
+    for (const g of ts.group) {
+      const v = g.validator?.trim();
+      if (v && (v.startsWith(STD_PREFIX) || !/\.(cpp|cc|cxx)$/i.test(v) || !(await has(v)))) add('error', 'validator', 'groupValidatorMissing', { group: g.name, where, file: v }, file);
+    }
     if (!ts.group.length) {
       add('warning', 'tests', 'groupsUndefined', { where }, file);
       continue;

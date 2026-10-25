@@ -2,8 +2,8 @@ import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { commonContestLanguages, CONTEST_ACTIONS, type ContestBatchRequest, type ContestImportRequest, type ContestPullRequest, type CreateContestRequest, type UpdateContestRequest } from '@polyforge/shared';
-import { contestPull, contestPullPreview, contestSyncStatus } from '../polygon/contestSync.js';
+import { commonContestLanguages, CONTEST_ACTIONS, type ContestBatchRequest, type ContestImportRequest, type ContestPullRequest, type ContestRepullRequest, type CreateContestRequest, type UpdateContestRequest } from '@polyforge/shared';
+import { contestPull, contestPullPreview, contestRepull, contestSyncStatus } from '../polygon/contestSync.js';
 import type { JobManager } from '../jobs.js';
 import { contestExportDir, contestStatements, importContest, runContestBatch, type ContestDeps } from '../judge/contest.js';
 import { contestTex } from '../judge/statementTex.js';
@@ -17,7 +17,7 @@ import type { WsHub } from '../ws.js';
 /** Contest jobs use `contest:<id>` as their owner so the contest page can find them. */
 export const contestJobOwner = (id: string) => `contest:${id}`;
 
-export function contestRoutes(app: FastifyInstance, deps: ContestDeps, jobs: JobManager, hub: WsHub) {
+export function contestRoutes(app: FastifyInstance, deps: ContestDeps & { aiRunning?: (owner: string) => boolean }, jobs: JobManager, hub: WsHub) {
   const { contests, judge } = deps;
   type P = { Params: { id: string } };
 
@@ -89,6 +89,10 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps, jobs: Job
     const esc = (text: string) => text.replace(/[\\{}%&#_$]/g, c => c === '\\' ? '\\textbackslash{}' : '\\' + c);
     const out: string[] = [`% polyforge-language: ${lang}`, `\\section*{${esc(config.contest.title[lang] || config.contest.name)}}`];
     const copyImages = async (source: string, from: string, prefix: string) => {
+      // Snapshots are PolyForge documents (rendered by its TeX preview, never compiled as
+      // LaTeX nor sent to Polygon): the preview dialect keeps them rendering exactly like
+      // the sources (the conversion is idempotent) and normalises Markdown images to
+      // \includegraphics, which are copied next to the snapshot.
       let text = convertStatement(source, 'preview').tex;
       for (const match of [...text.matchAll(/\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}/g)]) {
         const name = match[1].trim(); validateFileName(name);
@@ -156,7 +160,11 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps, jobs: Job
   });
 
   app.delete<P>('/api/contests/:id', async (req) => {
-    await contests.remove(req.params.id);
+    const ref = await contests.get(req.params.id);
+    if (jobs.list(contestJobOwner(ref.id)).some(j => j.status === 'running') || deps.aiRunning?.(contestJobOwner(ref.id))) {
+      throw new HttpError(409, 'busy', 'Wait for running tasks of this contest before deleting it');
+    }
+    await contests.remove(ref.id);
     hub.broadcast({ type: 'contests:changed' });
     return { ok: true };
   });
@@ -216,6 +224,15 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps, jobs: Job
       const r = await contestPull(deps, ref.id, body, job);
       hub.broadcast({ type: 'problems:changed' });
       return r;
+    });
+  });
+  // Re-pull everything: Polygon's version wins, also over conflicts and local edits.
+  app.post<P & { Body: ContestRepullRequest }>('/api/contests/:id/polygon/repull', async (req) => {
+    const ref = await contests.get(req.params.id);
+    const body: ContestRepullRequest = { deleteLocal: req.body?.deleteLocal === true, problems: Array.isArray(req.body?.problems) ? req.body.problems.map(String) : undefined };
+    return exclusive(ref.id, async (job) => {
+      try { return await contestRepull(deps, ref.id, body, job); }
+      finally { hub.broadcast({ type: 'problems:changed' }); }
     });
   });
 

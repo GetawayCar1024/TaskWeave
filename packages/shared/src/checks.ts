@@ -28,6 +28,7 @@ export const CHECK_TEXT = {
   looseTests: 'Tests outside every group{where}: {list}',
   groupEmpty: 'Group {group}{where} has no tests',
   groupMissingTests: 'Group {group}{where} refers to missing tests {list}',
+  groupValidatorMissing: 'Validator {file} of group {group}{where} is missing or not a C++ source of the problem',
   groupsWithoutPoints: 'Groups without points: {list}',
   pointsSum: 'Group points add up to {sum}, not 100',
 } as const;

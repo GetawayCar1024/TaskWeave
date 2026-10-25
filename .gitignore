@@ -7,3 +7,6 @@ dist/
 release/
 *.tgz
 packages/desktop/app/
+
+# Non-redistributable fonts of the OI template: read from the user's system (packages/server/src/systemFonts.ts)
+packages/web/public/cnoi/fonts/sim*

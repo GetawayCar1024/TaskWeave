@@ -30,12 +30,12 @@ async function go(fn: () => Promise<void>) {
   <div class="panel">
     <section>
       <n-space align="center" justify="space-between">
-        <strong>{{ t('selftest.validator') }}</strong>
+        <span class="pf-section-title">{{ t('selftest.validator') }}</span>
         <n-button size="small" :loading="judge.running('validator-tests')" @click="go(judge.validatorTests)">{{ t('selftest.run') }}</n-button>
       </n-space>
-      <div class="hint">{{ t('selftest.validatorHint') }}</div>
+      <div class="pf-hint">{{ t('selftest.validatorHint') }}</div>
       <template v-if="vr">
-        <n-alert v-if="vr.compile && !vr.compile.ok" type="error" :show-icon="false"><pre class="log mono">{{ vr.compile.log }}</pre></n-alert>
+        <n-alert v-if="vr.compile && !vr.compile.ok" type="error" :show-icon="false"><pre class="pf-log">{{ vr.compile.log }}</pre></n-alert>
         <n-alert v-if="vr.error" type="warning" :show-icon="false" class="small">{{ serverText(vr.error) }}</n-alert>
         <div v-if="vr.results.length" class="summary" :class="passed(vr.results) === vr.results.length ? 'good' : 'bad'">
           {{ passed(vr.results) }} / {{ vr.results.length }}
@@ -52,12 +52,12 @@ async function go(fn: () => Promise<void>) {
 
     <section>
       <n-space align="center" justify="space-between">
-        <strong>{{ t('selftest.checker') }}</strong>
+        <span class="pf-section-title">{{ t('selftest.checker') }}</span>
         <n-button size="small" :loading="judge.running('checker-tests')" @click="go(judge.checkerTests)">{{ t('selftest.run') }}</n-button>
       </n-space>
-      <div class="hint">{{ t('selftest.checkerHint') }}</div>
+      <div class="pf-hint">{{ t('selftest.checkerHint') }}</div>
       <template v-if="cr">
-        <n-alert v-if="cr.compile && !cr.compile.ok" type="error" :show-icon="false"><pre class="log mono">{{ cr.compile.log }}</pre></n-alert>
+        <n-alert v-if="cr.compile && !cr.compile.ok" type="error" :show-icon="false"><pre class="pf-log">{{ cr.compile.log }}</pre></n-alert>
         <n-alert v-if="cr.error" type="warning" :show-icon="false" class="small">{{ serverText(cr.error) }}</n-alert>
         <div v-if="cr.results.length" class="summary" :class="passed(cr.results) === cr.results.length ? 'good' : 'bad'">
           {{ passed(cr.results) }} / {{ cr.results.length }}
@@ -86,10 +86,6 @@ section {
   flex-direction: column;
   gap: 4px;
 }
-.hint {
-  font-size: 12px;
-  opacity: 0.6;
-}
 .summary {
   font-size: 13px;
   font-weight: 600;
@@ -104,17 +100,10 @@ section {
 .msg {
   width: 100%;
   padding-left: 18px;
-  opacity: 0.7;
+  color: var(--pf-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.log {
-  margin: 0;
-  white-space: pre-wrap;
-  font-size: 12px;
-  max-height: 200px;
-  overflow: auto;
 }
 .link {
   cursor: pointer;
@@ -123,10 +112,10 @@ section {
   text-decoration: underline;
 }
 .good {
-  color: #63e2b7;
+  color: light-dark(#16804a, #63e2b7);
 }
 .bad {
-  color: #e88080;
+  color: light-dark(#c53b3b, #e88080);
 }
 .small {
   font-size: 12px;

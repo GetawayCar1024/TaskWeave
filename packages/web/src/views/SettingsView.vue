@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, h, onMounted, ref, watch } from 'vue';
-import { ArrowLeft, Check, X } from 'lucide-vue-next';
+import { ArrowLeft, Check, Plus, X } from 'lucide-vue-next';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import {
   NAlert,
   NButton,
   NCard,
+  NCheckbox,
   NDataTable,
   NForm,
   NFormItem,
@@ -26,6 +27,7 @@ import {
   type DataTableColumns,
 } from 'naive-ui';
 import { AI_PROTOCOLS, CURRENCIES, type AiProtocol, type Currency, type EndpointPricing, type GlobalConfig, type LanguagesConfig, type SecretsResponse, type ToolProbe, type UsageGroup, type UsageStats } from '@polyforge/shared';
+import { LANGUAGE_PRESETS, addLanguageSection, languageSectionText, removeLanguageSection, type LanguagePreset } from '@polyforge/shared';
 import { registerExitGuard } from '../lib/exitGuards';
 import { unsavedChoice } from '../lib/confirmUnsaved';
 import AppHeader from '../components/AppHeader.vue';
@@ -91,6 +93,37 @@ async function saveLanguages() {
   } catch (e) {
     langError.value = errorMessage(e);
   }
+}
+
+// Built-in presets: checking one appends its section, unchecking removes that section only.
+const presetRows = computed(() => LANGUAGE_PRESETS.map((p) => {
+  const current = languageSectionText(langText.value, p.id);
+  return { ...p, enabled: current !== null, modified: current !== null && current.replace(/\r/g, '') !== p.text };
+}));
+function applyLanguageText(next: string) {
+  if (next === langText.value) return;
+  langText.value = next;
+  void saveLanguages();
+}
+function togglePreset(p: LanguagePreset, on: boolean) {
+  if (on) return applyLanguageText(addLanguageSection(langText.value, p));
+  const remove = () => applyLanguageText(removeLanguageSection(langText.value, p.id));
+  if (!presetRows.value.find((r) => r.id === p.id)?.modified) return remove();
+  dialog.warning({ title: t('settings.langRemoveTitle', { name: p.name }), content: t('settings.langRemoveModified'), positiveText: t('common.remove'), negativeText: t('common.cancel'), onPositiveClick: remove });
+}
+function resetPreset(p: LanguagePreset) {
+  dialog.warning({ title: t('settings.langResetTitle', { name: p.name }), content: t('settings.langResetBody'), positiveText: t('settings.langReset'), negativeText: t('common.cancel'),
+    onPositiveClick: () => {
+      // Replace in place so the section keeps its position (the first match per extension is the default).
+      const lines = langText.value.split(/\r?\n/);
+      const old = languageSectionText(langText.value, p.id);
+      const at = lines.findIndex((l) => l.trim().startsWith(`[${p.id}]`));
+      if (old === null || at < 0) return;
+      const nl = langText.value.includes('\r\n') ? '\r\n' : '\n';
+      const count = old.split('\n').length;
+      lines.splice(at, count, ...p.text.split('\n'));
+      applyLanguageText(lines.join(nl));
+    } });
 }
 
 const probes = ref<ToolProbe[]>([]);
@@ -269,8 +302,8 @@ async function testEndpoint(e: EditEndpoint) {
     ep.status = r.ok ? { ok: true, text: `${r.ms} ms · ${r.reply ?? ''}` } : { ok: false, text: serverText(r.error) };
     if (!r.ok) message.error(serverText(r.error) || t('settings.failed'));
   } catch (err) {
-    fresh(name, e).status = { ok: false, text: serverText(errorMessage(err)) };
-    message.error(serverText(errorMessage(err)));
+    fresh(name, e).status = { ok: false, text: errorMessage(err) };
+    message.error(errorMessage(err));
   } finally {
     aiBusy.value = null;
   }
@@ -292,8 +325,8 @@ async function fetchModels(e: EditEndpoint) {
     fresh(name, e).status = { ok: true, text: t('settings.aiModelsFetched', { n: models.length, added }) };
     message.success(t('settings.aiModelsFetched', { n: models.length, added }));
   } catch (err) {
-    fresh(name, e).status = { ok: false, text: serverText(errorMessage(err)) };
-    message.error(serverText(errorMessage(err)));
+    fresh(name, e).status = { ok: false, text: errorMessage(err) };
+    message.error(errorMessage(err));
   } finally {
     aiBusy.value = null;
   }
@@ -362,7 +395,7 @@ registerExitGuard(async () => {
                     <span class="mono">{{ r }}</span>
                     <n-button size="tiny" quaternary type="error" @click="draft.problems.roots.splice(i, 1)">{{ t('common.remove') }}</n-button>
                   </div>
-                  <n-button size="small" dashed @click="showPicker = true">+ {{ t('settings.addRoot') }}</n-button>
+                  <n-button size="small" dashed @click="showPicker = true"><template #icon><plus /></template>{{ t('settings.addRoot') }}</n-button>
                 </div>
               </n-form-item>
               <n-form-item :label="t('settings.contestsDir')">
@@ -418,6 +451,17 @@ registerExitGuard(async () => {
               </div>
             </n-card>
             <div class="lang-side">
+              <n-card size="small" :title="t('settings.langPresets')">
+                <p class="hint">{{ t('settings.langPresetsHint') }}</p>
+                <div v-for="p in presetRows" :key="p.id" class="lang-item">
+                  <n-checkbox :checked="p.enabled" :disabled="!!langError && !p.enabled" @update:checked="(v: boolean) => togglePreset(p, v)">{{ p.name }}</n-checkbox>
+                  <span class="mono ext">[{{ p.id }}]</span>
+                  <template v-if="p.modified">
+                    <n-tag size="tiny" :bordered="false" type="warning">{{ t('settings.langModified') }}</n-tag>
+                    <n-button size="tiny" quaternary @click="resetPreset(p)">{{ t('settings.langReset') }}</n-button>
+                  </template>
+                </div>
+              </n-card>
               <n-card size="small" :title="t('settings.configured')">
                 <div v-for="(l, id) in langParsed" :key="id" class="lang-item">
                   <n-tag size="small" :bordered="false">{{ id }}</n-tag>
@@ -474,18 +518,18 @@ registerExitGuard(async () => {
                   <n-input-number v-model:value="p.output" size="tiny" :min="0" :show-button="false" placeholder="—" />
                   <n-input-number v-model:value="p.cacheRead" size="tiny" :min="0" :show-button="false" :placeholder="e.protocol === 'anthropic' ? '×0.1' : '='" />
                   <n-input-number v-model:value="p.cacheWrite" size="tiny" :min="0" :show-button="false" :placeholder="e.protocol === 'anthropic' ? '×1.25' : '='" />
-                  <n-button size="tiny" quaternary @click="e.prices.splice(pi, 1)">×</n-button>
+                  <n-button size="tiny" quaternary @click="e.prices.splice(pi, 1)"><x :size="13" /></n-button>
                 </div>
                 <div class="price-foot">
-                  <n-button size="tiny" dashed @click="addPrice(e)">+ {{ t('settings.priceAdd') }}</n-button>
+                  <n-button size="tiny" dashed @click="addPrice(e)"><template #icon><plus /></template>{{ t('settings.priceAdd') }}</n-button>
                   <span class="small dim">{{ t('settings.priceHint') }}</span>
                 </div>
               </div>
             </div>
             <n-space>
-              <n-button size="small" dashed @click="addEndpoint('anthropic')">+ Anthropic</n-button>
-              <n-button size="small" dashed @click="addEndpoint('openai-chat')">+ OpenAI Chat</n-button>
-              <n-button size="small" dashed @click="addEndpoint('openai-responses')">+ OpenAI Responses</n-button>
+              <n-button size="small" dashed @click="addEndpoint('anthropic')"><template #icon><plus /></template>Anthropic</n-button>
+              <n-button size="small" dashed @click="addEndpoint('openai-chat')"><template #icon><plus /></template>OpenAI Chat</n-button>
+              <n-button size="small" dashed @click="addEndpoint('openai-responses')"><template #icon><plus /></template>OpenAI Responses</n-button>
             </n-space>
             <n-form label-placement="left" label-width="160" style="margin-top: 16px">
               <n-form-item :label="t('settings.aiDefault')">
@@ -630,11 +674,11 @@ registerExitGuard(async () => {
 }
 .ext {
   font-size: 12px;
-  opacity: 0.65;
+  color: var(--pf-text-secondary);
 }
 .hint {
   font-size: 12px;
-  opacity: 0.7;
+  color: var(--pf-text-secondary);
   margin: 0 0 8px;
 }
 .small {
@@ -646,13 +690,13 @@ registerExitGuard(async () => {
   gap: 4px;
 }
 .good {
-  color: #63e2b7;
+  color: light-dark(#16804a, #63e2b7);
 }
 .bad {
-  color: #e88080;
+  color: light-dark(#c53b3b, #e88080);
 }
 .endpoint {
-  border: 1px solid rgba(128, 128, 128, 0.25);
+  border: 1px solid var(--pf-border);
   border-radius: 4px;
   padding: 8px;
   margin-bottom: 8px;
@@ -684,7 +728,7 @@ registerExitGuard(async () => {
   align-items: center;
 }
 .dim {
-  opacity: 0.6;
+  color: var(--pf-text-secondary);
 }
 .usage {
   width: 100%;

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
-import { NModal } from 'naive-ui';
+import ToolWindow from './ToolWindow.vue';
 
 defineProps<{ show: boolean }>();
 const emit = defineEmits<{ 'update:show': [boolean] }>();
@@ -19,27 +19,23 @@ const KEYS: [string, string][] = [
 </script>
 
 <template>
-  <n-modal :show="show" preset="card" :title="t('shortcuts.title')" style="width: 420px" @update:show="emit('update:show', $event)">
+  <tool-window :show="show" :title="t('shortcuts.title')" size="sm" @update:show="emit('update:show', $event)">
     <div v-for="[k, id] in KEYS" :key="k" class="row">
       <span>{{ t(`shortcuts.${id}`) }}</span>
-      <kbd>{{ k }}</kbd>
+      <kbd class="pf-kbd">{{ k }}</kbd>
     </div>
-  </n-modal>
+  </tool-window>
 </template>
 
 <style scoped>
 .row {
   display: flex;
   justify-content: space-between;
-  padding: 4px 0;
+  padding: 5px 0;
   font-size: 13px;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.15);
+  border-bottom: 1px solid var(--pf-border);
 }
-kbd {
-  font-family: Consolas, monospace;
-  font-size: 12px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  border: 1px solid rgba(128, 128, 128, 0.4);
+.row:last-child {
+  border-bottom: none;
 }
 </style>

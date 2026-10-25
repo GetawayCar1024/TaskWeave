@@ -382,12 +382,12 @@ function openContest(c: ContestSummary) {
   white-space: nowrap;
 }
 .warn {
-  color: #e8b060;
+  color: light-dark(#986415, #e8b060);
   font-size: 12px;
   margin-bottom: 6px;
 }
 .error {
-  color: #e88080;
+  color: light-dark(#c53b3b, #e88080);
   font-size: 12px;
   margin-bottom: 6px;
   word-break: break-all;

@@ -104,9 +104,9 @@ function onKey(e: KeyboardEvent) {
         >
           <span class="label">{{ c.label }}</span>
           <span v-if="c.group" class="group">{{ c.group }}</span>
-          <kbd v-if="c.shortcut">{{ c.shortcut }}</kbd>
+          <kbd v-if="c.shortcut" class="pf-kbd">{{ c.shortcut }}</kbd>
         </div>
-        <div v-if="!results.length" class="empty">{{ t('palette.none') }}</div>
+        <div v-if="!results.length" class="pf-empty">{{ t('palette.none') }}</div>
       </div>
     </n-card>
   </n-modal>
@@ -114,7 +114,7 @@ function onKey(e: KeyboardEvent) {
 
 <style scoped>
 .palette {
-  width: 600px;
+  width: min(600px, 94vw);
   align-self: flex-start;
   margin-top: 10vh;
 }
@@ -133,26 +133,13 @@ function onKey(e: KeyboardEvent) {
   font-size: 13px;
 }
 .item.sel {
-  background: rgba(99, 226, 183, 0.18);
+  background: var(--pf-selected);
 }
 .label {
   flex: 1;
 }
 .group {
-  font-size: 11px;
-  opacity: 0.5;
-}
-kbd {
-  font-family: Consolas, monospace;
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  border: 1px solid rgba(128, 128, 128, 0.4);
-  opacity: 0.8;
-}
-.empty {
-  padding: 12px;
-  opacity: 0.6;
-  font-size: 13px;
+  font-size: 12px;
+  color: var(--pf-text-secondary);
 }
 </style>

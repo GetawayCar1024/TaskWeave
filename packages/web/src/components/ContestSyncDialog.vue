@@ -2,11 +2,12 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { NAlert, NButton, NCheckbox, NInput, NModal, NSpace, NSpin, NTabPane, NTabs, NTag, NSelect, useMessage } from 'naive-ui';
+import { NAlert, NButton, NCheckbox, NInput, NSpace, NSpin, NTabPane, NTabs, NTag, NSelect, useMessage } from 'naive-ui';
 import type { ContestBatchResult, ContestDetail, ContestPullPreview, ContestPullResult, ContestSyncRow, ContestSyncState, ContestSyncStatus, JobInfo } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 import { waitJob } from '../lib/jobs';
 import { serverText } from '../lib/serverText';
+import ToolWindow from './ToolWindow.vue';
 
 /**
  * Contest ⇄ Polygon, like a problem's sync dialog with a push and a pull tab. The status
@@ -37,7 +38,7 @@ async function load() {
   try {
     status.value = await api.contestSyncStatus(props.contestId);
   } catch (e) {
-    error.value = serverText(errorMessage(e));
+    error.value = errorMessage(e);
   } finally {
     loading.value = false;
   }
@@ -49,6 +50,8 @@ watch(
     preview.value = null;
     result.value = null;
     pushResult.value = null;
+    if (!busy.value) job.value = null;
+    repullAsk.value = false;
     tab.value = 'push';
     load().then(() => {
       // Push by default what has local changes and is unchanged on Polygon; creating a Polygon
@@ -65,6 +68,7 @@ const STATE_TYPE: Record<ContestSyncState, 'default' | 'success' | 'info' | 'war
   both: 'error',
   unbound: 'default',
   unreachable: 'error',
+  deleted: 'error',
   missing: 'error',
 };
 const titleOf = (problem: string) => {
@@ -72,7 +76,7 @@ const titleOf = (problem: string) => {
   return s?.title.zh || s?.title.en || problem;
 };
 const changedOnPolygon = computed(() => (status.value?.rows ?? []).filter((r) => r.state === 'remote' || r.state === 'both'));
-const bound = computed(() => (status.value?.rows ?? []).filter((r) => r.polygonId !== undefined && r.state !== 'unreachable'));
+const bound = computed(() => (status.value?.rows ?? []).filter((r) => r.polygonId !== undefined && r.state !== 'unreachable' && r.state !== 'deleted'));
 const letterDiffs = computed(() => (status.value?.rows ?? []).filter((r) => r.polygonIndex));
 
 function remoteCell(r: ContestSyncRow) {
@@ -94,7 +98,7 @@ async function check(rows: ContestSyncRow[]) {
     preview.value = done.result as ContestPullPreview;
     take.value = Object.fromEntries(preview.value.problems.map((p) => [p.problem, new Set(p.items.filter((i) => i.take).map((i) => i.key))]));
   } catch (e) {
-    message.error(serverText(errorMessage(e)));
+    message.error(errorMessage(e));
   }
 }
 
@@ -130,7 +134,31 @@ async function pull() {
     emit('changed');
     await load();
   } catch (e) {
-    message.error(serverText(errorMessage(e)));
+    message.error(errorMessage(e));
+  }
+}
+
+/** Re-pull everything (Polygon wins), after a confirmation; local-only items only when ticked. */
+const repullAsk = ref(false);
+const repullDelete = ref(false);
+async function repull() {
+  repullAsk.value = false;
+  preview.value = null;
+  result.value = null;
+  try {
+    const started = await api.contestRepull(props.contestId, { deleteLocal: repullDelete.value, problems: bound.value.map((r) => r.problem) });
+    job.value = started;
+    const done = await waitJob(started, (j) => (job.value = j));
+    job.value = done;
+    if (done.status !== 'done') throw new Error(done.error ?? done.status);
+    result.value = done.result as ContestPullResult;
+    message.success(t('csync.repulled', { n: result.value.problems.reduce((n, p) => n + p.applied, 0) }));
+    emit('changed');
+    await load();
+  } catch (e) {
+    message.error(errorMessage(e));
+  } finally {
+    repullDelete.value = false;
   }
 }
 
@@ -142,7 +170,7 @@ const buildPackage = ref(false);
 const packageType = ref<'standard' | 'full'>('standard');
 watch(commit, v => { if (!v) buildPackage.value = false; });
 const pushResult = ref<ContestBatchResult | null>(null);
-const pushable = (r: ContestSyncRow) => !r.blocked && r.state !== 'missing' && r.state !== 'unreachable';
+const pushable = (r: ContestSyncRow) => !r.blocked && r.state !== 'missing' && r.state !== 'unreachable' && r.state !== 'deleted';
 function setPush(problem: string, on: boolean) {
   const next = new Set(pushPick.value);
   if (on) next.add(problem);
@@ -175,7 +203,7 @@ async function push() {
     await load();
     pushPick.value = new Set([...pushPick.value].filter((p) => status.value?.rows.find((r) => r.problem === p)?.state === 'local'));
   } catch (e) {
-    message.error(serverText(errorMessage(e)));
+    message.error(errorMessage(e));
   }
 }
 
@@ -200,7 +228,7 @@ async function useLetters() {
     emit('changed');
     await load();
   } catch (e) {
-    message.error(serverText(errorMessage(e)));
+    message.error(errorMessage(e));
   }
 }
 
@@ -226,21 +254,27 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
     emit('changed');
     await load();
   } catch (e) {
-    message.error(serverText(errorMessage(e)));
+    message.error(errorMessage(e));
   }
 }
 </script>
 
 <template>
-  <n-modal :show="show" preset="card" :title="t('csync.title')" style="width: min(980px, 96vw)" @update:show="emit('update:show', $event)">
-    <n-space v-if="!status">
-      <n-button :type="tab === 'push' ? 'primary' : 'default'" @click="tab = 'push'">{{ t('sync.push') }}</n-button>
-      <n-button :type="tab === 'pull' ? 'primary' : 'default'" @click="tab = 'pull'">{{ t('sync.pull') }}</n-button>
-    </n-space>
-    <div v-if="loading && !status" class="center"><n-spin /></div>
-    <n-alert v-else-if="error" type="error" :show-icon="false">{{ error }}</n-alert>
-    <template v-else-if="status">
-      <div class="small dim head">
+  <tool-window
+    :show="show"
+    :title="t('csync.title')"
+    size="lg"
+    :status="job?.status ?? null"
+    :progress="job?.progress ?? null"
+    :error="error"
+    @update:show="emit('update:show', $event)"
+  >
+    <template #actions>
+      <n-button size="small" :disabled="busy || loading" @click="load">{{ t('csync.refresh') }}</n-button>
+    </template>
+    <div v-if="loading && !status" class="pf-center"><n-spin /></div>
+    <template v-else-if="status && !error">
+      <div class="pf-hint head">
         {{ status.polygonId !== undefined ? t('csync.boundTo', { id: status.polygonId }) : t('csync.notBound') }}
       </div>
       <n-alert v-for="(w, i) in status.warnings" :key="i" type="warning" :show-icon="false" class="alert small">{{ serverText(w) }}</n-alert>
@@ -287,12 +321,6 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
               </tr>
             </tbody>
           </table>
-          <div class="commit">
-            <n-checkbox v-model:checked="commit">{{ t('sync.commit') }}</n-checkbox>
-            <n-checkbox v-model:checked="buildPackage" :disabled="!commit">{{ t('sync.buildPackage') }}</n-checkbox>
-            <n-select v-if="buildPackage" v-model:value="packageType" :options="[{label:'Standard',value:'standard'},{label:'Full',value:'full'}]" size="small" style="width:120px" />
-            <n-input v-model:value="commitMessage" size="small" :placeholder="t('sync.commitMessage')" :disabled="busy" />
-          </div>
           <div v-if="pushResult" class="small result">
             <div v-for="it in pushResult.items" :key="it.index" :class="{ bad: !it.ok }">
               {{ it.index }}: {{ serverText(it.message) }}
@@ -346,6 +374,15 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
         </div>
       </div>
 
+      <n-alert v-if="repullAsk" type="warning" :show-icon="false" class="repull">
+        <div>{{ t('csync.repullConfirm', { n: bound.length }) }}</div>
+        <n-checkbox v-model:checked="repullDelete" class="repull-line">{{ t('csync.repullDeleteLocal') }}</n-checkbox>
+        <n-space class="repull-line" size="small">
+          <n-button size="small" @click="repullAsk = false">{{ t('csync.cancel') }}</n-button>
+          <n-button size="small" type="error" :disabled="busy" @click="repull">{{ t('csync.repullGo') }}</n-button>
+        </n-space>
+      </n-alert>
+
       <!-- Confirmation: what a pull takes, per problem -->
       <div v-if="preview" class="preview">
         <div v-for="p in preview.problems" :key="p.problem" class="pp">
@@ -386,33 +423,33 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
       </div>
         </n-tab-pane>
       </n-tabs>
-      <div v-if="busy" class="small dim progress">{{ serverText(job!.progress.message) }}</div>
     </template>
 
+    <template #footer-left>
+      <div v-if="tab === 'push' && status" class="commit">
+        <n-checkbox v-model:checked="commit" :disabled="busy">{{ t('sync.commit') }}</n-checkbox>
+        <n-input v-model:value="commitMessage" size="small" :placeholder="t('sync.commitMessage')" :disabled="busy || !commit" style="width: 240px" />
+        <n-checkbox v-model:checked="buildPackage" :disabled="busy || !commit">{{ t('sync.buildPackage') }}</n-checkbox>
+        <n-select v-if="buildPackage" v-model:value="packageType" :options="[{label:'Standard',value:'standard'},{label:'Full',value:'full'}]" size="small" style="width: 120px" />
+      </div>
+    </template>
     <template #footer>
-      <n-space justify="end">
-        <n-button :disabled="busy || loading" @click="load">{{ t('csync.refresh') }}</n-button>
-        <template v-if="tab === 'push'">
-          <n-button type="primary" :loading="busy" :disabled="!pushPick.size" @click="push">{{ t('csync.pushN', { n: pushPick.size }) }}</n-button>
-        </template>
-        <template v-else>
+      <template v-if="tab === 'push'">
+        <n-button type="primary" :loading="busy" :disabled="!pushPick.size" @click="push">{{ t('csync.pushN', { n: pushPick.size }) }}</n-button>
+      </template>
+      <template v-else>
+        <n-button :disabled="busy || !bound.length" :title="t('csync.repullHint')" @click="repullAsk = true; repullDelete = false">{{ t('csync.repull') }}</n-button>
         <n-button :disabled="busy || !bound.length" :title="t('csync.checkAllHint')" @click="check(bound)">{{ t('csync.checkAll') }}</n-button>
         <n-button v-if="!preview" type="primary" :loading="busy" :disabled="!changedOnPolygon.length" @click="check(changedOnPolygon)">
           {{ t('csync.checkChanged', { n: changedOnPolygon.length }) }}
         </n-button>
         <n-button v-else type="primary" :loading="busy" :disabled="!pullable.length" @click="pull">{{ t('csync.pull', { n: takeCount }) }}</n-button>
-        </template>
-      </n-space>
+      </template>
     </template>
-  </n-modal>
+  </tool-window>
 </template>
 
 <style scoped>
-.center {
-  display: flex;
-  justify-content: center;
-  padding: 40px;
-}
 .head {
   margin-bottom: 8px;
 }
@@ -428,7 +465,7 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
 .rows td {
   text-align: left;
   padding: 5px 8px;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+  border-bottom: 1px solid var(--pf-border);
 }
 .rows .idx {
   font-weight: bold;
@@ -456,7 +493,7 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
   font-size: 13px;
 }
 .pp {
-  border: 1px solid rgba(128, 128, 128, 0.25);
+  border: 1px solid var(--pf-border);
   border-radius: 4px;
   padding: 6px 10px;
 }
@@ -477,22 +514,33 @@ async function addRemote(x: ContestSyncStatus['remoteOnly'][number]) {
   align-items: center;
   gap: 8px;
   margin-top: 4px;
-  color: #e88080;
-}
-.progress {
-  margin-top: 8px;
+  color: light-dark(#c53b3b, #e88080);
 }
 .pick {
   width: 28px;
 }
+.repull {
+  margin-top: 12px;
+}
+.repull-line {
+  margin-top: 6px;
+}
 .commit {
-  margin-top: 10px;
-  max-width: 480px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
 }
 .warn {
-  color: #e8b060;
+  color: light-dark(#986415, #e8b060);
 }
 .bad {
-  color: #e88080;
+  color: light-dark(#c53b3b, #e88080);
+}
+.small {
+  font-size: 12px;
+}
+.dim {
+  color: var(--pf-text-secondary);
 }
 </style>

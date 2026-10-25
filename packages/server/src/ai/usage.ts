@@ -17,11 +17,13 @@ export class UsageLog {
   }
 
   append(r: UsageRecord): Promise<void> {
-    this.writing = this.writing.then(async () => {
+    const write = this.writing.then(async () => {
       await fsp.mkdir(path.dirname(this.file), { recursive: true });
       await fsp.appendFile(this.file, JSON.stringify(r) + '\n');
     });
-    return this.writing;
+    // A failed write must not poison the chain for every later record.
+    this.writing = write.catch((e) => console.warn('[polyforge] usage log:', (e as Error).message));
+    return write;
   }
 
   async records(): Promise<UsageRecord[]> {

@@ -3,6 +3,7 @@ import path from 'node:path';
 import { parse, stringify } from 'smol-toml';
 import {
   DEFAULT_TESTSET,
+  GROUP_POLICIES,
   judgeMode,
   judgeModeSchema,
   isSourceFile,
@@ -143,7 +144,10 @@ export class ProblemRegistry {
         const samples = new Set(parseIndexList(r.data.tests.samples ?? ''));
         if (parseIndexList(r.data.tests.large_samples).some(i => !samples.has(i))) throw new Error('Large samples must be a subset of samples.');
       }
-      for (const [name, ts] of Object.entries(r.data.testsets)) checkGroups(name, ts.group ?? []);
+      for (const [name, ts] of Object.entries(r.data.testsets)) {
+        checkGroups(name, ts.group ?? []);
+        if (ts.large_samples && parseIndexList(ts.large_samples).some(i => !parseIndexList(ts.samples ?? '').includes(i))) throw new Error(`${name}: Large samples must be a subset of samples.`);
+      }
     } catch (e) { return { config: null, raw, error: `problem.toml: ${(e as Error).message}` }; }
     r.data.solutions = (await Promise.all(r.data.solutions.map(async s => (await this.sourceExists(ref, s.source)) ? s : null))).filter(s => s !== null);
     if (r.data.solutions.length && !r.data.solutions.some(s => s.tag === 'MA')) r.data.solutions[0].tag = 'MA';
@@ -154,17 +158,27 @@ export class ProblemRegistry {
    * Problems without `input` / `output` (older files, other tools) get stdin / stdout
    * written into [problem], as text so the rest of the file (comments) stays as it is.
    */
+  private filling = new Map<string, Promise<void>>();
   private async fillStreams(ref: ProblemRef, raw: Record<string, unknown>) {
     const p = raw.problem as Record<string, unknown> | undefined;
     if (!p || typeof p !== 'object' || (p.input !== undefined && p.output !== undefined)) return;
     const file = path.join(ref.dir, PROBLEM_FILE);
-    const text = await fsp.readFile(file, 'utf8');
-    const m = /^[ \t]*\[problem\][ \t]*(#.*)?\r?\n/m.exec(text);
-    if (!m) return;
-    const nl = text.includes('\r\n') ? '\r\n' : '\n';
-    const add = [p.input === undefined ? 'input = "stdin"' : '', p.output === undefined ? 'output = "stdout"' : ''].filter(Boolean);
-    const at = m.index + m[0].length;
-    await atomicWrite(file, text.slice(0, at) + add.map((l) => l + nl).join('') + text.slice(at)).catch(() => {});
+    // Concurrent reads (summary + detail) must not insert the keys twice.
+    const run = (this.filling.get(file) ?? Promise.resolve()).then(async () => {
+      const text = await fsp.readFile(file, 'utf8');
+      let current: Record<string, unknown> | undefined;
+      try { current = (parse(text) as Record<string, any>).problem; } catch { return; }
+      if (!current || typeof current !== 'object' || (current.input !== undefined && current.output !== undefined)) return;
+      const m = /^[ \t]*\[problem\][ \t]*(#.*)?\r?\n/m.exec(text);
+      if (!m) return;
+      const nl = text.includes('\r\n') ? '\r\n' : '\n';
+      const add = [current.input === undefined ? 'input = "stdin"' : '', current.output === undefined ? 'output = "stdout"' : ''].filter(Boolean);
+      const at = m.index + m[0].length;
+      await atomicWrite(file, text.slice(0, at) + add.map((l) => l + nl).join('') + text.slice(at));
+    }).catch(() => {});
+    this.filling.set(file, run);
+    await run;
+    if (this.filling.get(file) === run) this.filling.delete(file);
     p.input ??= 'stdin';
     p.output ??= 'stdout';
   }
@@ -367,7 +381,12 @@ export class ProblemRegistry {
     for (const key of ['checker', 'validator', 'interactor'] as const) {
       const v = req[key];
       if (v === null) delete doc[key];
-      else if (v !== undefined) doc[key] = { ...(doc[key] ?? {}), source: v };
+      else if (v !== undefined) {
+        safeJoinUnlessStd(ref.dir, v);
+        // Options such as `lang` belong to the previous file; never carry them over.
+        doc[key] = { ...(doc[key]?.source === v ? doc[key] : {}), source: v,
+          ...(doc[key]?.source !== v && doc.source_languages?.[v] ? { lang: doc.source_languages[v] } : {}) };
+      }
     }
     if (req.solution) {
       const list: any[] = Array.isArray(doc.solutions) ? doc.solutions : [];
@@ -439,6 +458,20 @@ export class ProblemRegistry {
         if (groups.length) target.group = groups;
         else delete target.group;
       }
+      if (p.samples !== undefined) {
+        checkGroups(`${name} samples`, [{ name: 'samples', tests: p.samples }]);
+        const samples = parseIndexList(p.samples);
+        if (samples.length) target.samples = compressRanges(samples); else delete target.samples;
+        const large = parseIndexList(target.large_samples ?? '').filter(i => samples.includes(i));
+        if (large.length) target.large_samples = compressRanges(large); else delete target.large_samples;
+      }
+      if (p.largeSamples !== undefined) {
+        checkGroups(`${name} large samples`, [{ name: 'large', tests: p.largeSamples }]);
+        const samples = new Set(parseIndexList(target.samples ?? ''));
+        const large = parseIndexList(p.largeSamples);
+        if (large.some(i => !samples.has(i))) throw new HttpError(400, 'invalid_samples', 'Large samples must be a subset of samples.');
+        if (large.length) target.large_samples = compressRanges(large); else delete target.large_samples;
+      }
     }
     if (doc.testsets && !Object.keys(doc.testsets).length) delete doc.testsets;
     const check = problemTomlSchema.safeParse(doc);
@@ -463,7 +496,8 @@ export class ProblemRegistry {
       }
     }
     for (const role of ['solutions', 'generators']) {
-      const list = (doc[role] ?? []) as { source: string; tag?: string }[];
+      if (!Array.isArray(doc[role])) continue;
+      const list = doc[role] as { source: string; tag?: string }[];
       doc[role] = list.filter(e => !removed || !matches(e.source));
       if (to) for (const e of doc[role]) if (matches(e.source)) e.source = to + e.source.slice(rel.length);
     }
@@ -474,18 +508,20 @@ export class ProblemRegistry {
     }
     if (doc.grader) {
       for (const role of ['sources', 'headers']) {
-        doc.grader[role] = ((doc.grader[role] ?? []) as string[])
+        if (!Array.isArray(doc.grader[role])) continue;
+        doc.grader[role] = (doc.grader[role] as string[])
           .filter(source => !removed || !matches(source))
           .map(source => to && matches(source) ? to + source.slice(rel.length) : source);
       }
       // A grader with no translation units is unconfigured, rather than invalid TOML.
-      if (!doc.grader.sources.length) delete doc.grader;
+      if (Array.isArray(doc.grader.sources) && !doc.grader.sources.length) delete doc.grader;
     }
     const target = to ?? rel;
-    if (!removed && /^solutions?\//.test(target) && isSourceFile(target) && !doc.solutions.some((s: any) => s.source === target)) {
-      doc.solutions.push({ source: target, tag: 'OK' });
+    if (!removed && /^solutions?\//.test(target) && isSourceFile(target) && !(doc.solutions ?? []).some((s: any) => s.source === target)) {
+      (doc.solutions ??= []).push({ source: target, tag: 'OK' });
     }
-    if (doc.solutions.length && !doc.solutions.some((s: any) => s.tag === 'MA')) doc.solutions[0].tag = 'MA';
+    if (doc.solutions?.length && !doc.solutions.some((s: any) => s.tag === 'MA')) doc.solutions[0].tag = 'MA';
+    // Rewriting drops comments, so only write when a registration really changed.
     if (JSON.stringify(doc) !== before) await atomicWrite(path.join(ref.dir, PROBLEM_FILE), stringify(doc) + '\n');
   }
 
@@ -569,6 +605,10 @@ async function copyTemplate(src: string, dest: string, vars: Record<string, stri
   }
 }
 
+function safeJoinUnlessStd(dir: string, source: string) {
+  if (!source.startsWith(STD_PREFIX)) safeJoin(dir, source);
+}
+
 async function countFiles(dir: string): Promise<number> {
   try {
     return (await fsp.readdir(dir, { withFileTypes: true })).filter((e) => e.isFile()).length;
@@ -598,10 +638,17 @@ export function checkGroups(testset: string, list: TestGroup[]): TestGroup[] {
     }
     const r: TestGroup = { name };
     if (tests) r.tests = tests;
-    if (g.points !== undefined && g.points !== null && !Number.isNaN(Number(g.points))) r.points = Number(g.points);
-    if (g.points !== undefined && (!Number.isFinite(g.points) || g.points < 0)) throw new HttpError(400, 'invalid_group', `${testset}: group ${name}: points must be finite and nonnegative`);
-    if (g.policy) r.policy = g.policy;
-    if (g.dependencies?.length) r.dependencies = g.dependencies.map(String);
+    if (g.points !== undefined && g.points !== null) {
+      const points = Number(g.points);
+      if (!Number.isFinite(points) || points < 0) throw new HttpError(400, 'invalid_group', `${testset}: group ${name}: points must be finite and nonnegative`);
+      r.points = points;
+    }
+    if (g.policy) {
+      if (!(GROUP_POLICIES as readonly string[]).includes(g.policy)) throw new HttpError(400, 'invalid_group', `${testset}: group ${name}: unknown points policy ${g.policy}`);
+      r.policy = g.policy;
+    }
+    if (g.dependencies?.length) r.dependencies = [...new Set(g.dependencies.map((d) => String(d).trim()))];
+    if (g.validator?.trim()) r.validator = g.validator.trim();
     return r;
   });
   for (const g of out) {

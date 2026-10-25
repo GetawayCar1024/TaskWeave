@@ -77,15 +77,44 @@ async function probeJava(tool: string): Promise<ToolProbe> {
   return { tool, found: true, path: p, version: firstLine(r.stderr || r.stdout), helloWorld: 'skipped' };
 }
 
+/** Whether g++ accepts a language standard (C++23 needs GCC 11+). */
+async function probeStd(tool: string, std: string): Promise<ToolProbe> {
+  const label = `${tool} -std=${std}`;
+  const p = await which(tool);
+  if (!p) return { tool: label, found: false };
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'polyforge-probe-'));
+  try {
+    const src = path.join(dir, 'std.cpp');
+    await fsp.writeFile(src, 'int main() {}\n');
+    const c = await run(p, [`-std=${std}`, '-fsyntax-only', src], { timeout: 60_000 });
+    return { tool: label, found: true, path: p, helloWorld: c.code === 0 ? 'ok' : 'failed', ...(c.code ? { error: firstLine(c.stderr || c.stdout) } : {}) };
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/** Version only; `shell` for .bat/.cmd wrappers such as kotlinc on Windows. */
+async function probeVersion(tool: string, args: string[], shell = false): Promise<ToolProbe> {
+  const p = await which(tool);
+  if (!p) return { tool, found: false };
+  const r = shell && process.platform === 'win32' ? await run('cmd', ['/c', tool, ...args], { timeout: 60_000 }) : await run(p, args);
+  return { tool, found: true, path: p, version: firstLine(r.stdout) || firstLine(r.stderr), helloWorld: 'skipped' };
+}
+
 export async function detectTools(sharedDir: string): Promise<ToolProbe[]> {
   return Promise.all([
     probeCxx('g++', sharedDir),
+    probeStd('g++', 'c++23'),
     probeCxx('clang++', sharedDir),
+    probeVersion('gcc', ['--version']),
     probePython('python'),
     probePython('python3'),
     probePython('pypy3'),
     probeJava('javac'),
     probeJava('java'),
+    probeVersion('kotlinc', ['-version'], true),
+    probeVersion('rustc', ['--version']),
+    probeVersion('go', ['version']),
   ]);
 }
 

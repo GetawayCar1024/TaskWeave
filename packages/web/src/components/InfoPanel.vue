@@ -51,7 +51,6 @@ const form = reactive({
   lemonChecker: null as string | null,
   validator: null as string | null,
   interactor: null as string | null,
-  samples: '',
 });
 
 function reset() {
@@ -71,7 +70,6 @@ function reset() {
     lemonChecker: c.lemon_checker?.source ?? null,
     validator: c.validator?.source ?? null,
     interactor: c.interactor?.source ?? null,
-    samples: c.tests.samples ?? '',
   });
 }
 watch(cfg, reset, { immediate: true });
@@ -92,8 +90,7 @@ const dirty = computed(() => {
     form.checker !== (c.checker?.source ?? null) ||
     form.lemonChecker !== (c.lemon_checker?.source ?? null) ||
     form.validator !== (c.validator?.source ?? null) ||
-    form.interactor !== (c.interactor?.source ?? null) ||
-    form.samples !== (c.tests.samples ?? '')
+    form.interactor !== (c.interactor?.source ?? null)
   );
 });
 
@@ -140,7 +137,6 @@ async function save() {
     lemonChecker: form.lemonChecker,
     validator: form.validator,
     interactor: form.interactor,
-    samples: form.samples,
   };
   try {
     await props.ws.patch(req);
@@ -239,9 +235,6 @@ const activeInfo = computed(() => {
           <n-form-item v-if="form.judgeMode === 'io'" :label="t('roles.interactor')">
             <n-select v-model:value="form.interactor" :options="sourceOptions" filterable clearable />
           </n-form-item>
-          <n-form-item :label="t('info.samples')">
-            <n-input v-model:value="form.samples" placeholder="1-2" class="mono" />
-          </n-form-item>
         </n-form>
       </n-card>
 
@@ -312,7 +305,7 @@ const activeInfo = computed(() => {
   overflow: auto;
 }
 .good {
-  color: #63e2b7;
+  color: light-dark(#16804a, #63e2b7);
 }
 .status {
   display: inline-flex;
@@ -320,7 +313,7 @@ const activeInfo = computed(() => {
   gap: 3px;
 }
 .bad {
-  color: #e88080;
+  color: light-dark(#c53b3b, #e88080);
 }
 .link {
   cursor: pointer;

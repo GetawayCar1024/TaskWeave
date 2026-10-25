@@ -79,6 +79,7 @@ function choose(f: string) {
           <span class="base">{{ f.split('/').pop() }}</span>
           <span class="dir">{{ f.includes('/') ? f.slice(0, f.lastIndexOf('/')) : '' }}</span>
         </div>
+        <div v-if="!results.length" class="pf-empty">{{ t('common.noMatch') }}</div>
       </div>
     </n-card>
   </n-modal>
@@ -86,17 +87,17 @@ function choose(f: string) {
 
 <style scoped>
 .qo {
-  width: 560px;
+  width: min(600px, 94vw);
   align-self: flex-start;
-  margin-top: 12vh;
+  margin-top: 10vh;
 }
 .list {
-  max-height: 50vh;
+  max-height: 55vh;
   overflow: auto;
   margin-top: 6px;
 }
 .item {
-  padding: 4px 8px;
+  padding: 5px 10px;
   font-size: 13px;
   cursor: pointer;
   border-radius: 4px;
@@ -104,9 +105,10 @@ function choose(f: string) {
   gap: 10px;
 }
 .item.sel {
-  background: rgba(99, 226, 183, 0.18);
+  background: var(--pf-selected);
 }
 .dir {
-  opacity: 0.5;
+  font-size: 12px;
+  color: var(--pf-text-secondary);
 }
 </style>

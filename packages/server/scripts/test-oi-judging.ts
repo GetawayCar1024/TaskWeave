@@ -45,11 +45,12 @@ test('CDF preserves bundles, expands per-test scores and puts dependency targets
   ] } });
   const rows = lemonTestCases(c, [1,2,3,4,5], 'A-test');
   assert.deepEqual(rows.map(r => r.fullScore), [15,12,13,60]);
-  assert.deepEqual(rows[3].inputFiles, ['A-test/4.in','A-test/5.in','2_lemon_SUbtaskDEPENDENCE_fLAg','3_lemon_SUbtaskDEPENDENCE_fLAg']);
+  // Dependencies are listed transitively (a 0-point dependency could not block otherwise).
+  assert.deepEqual(rows[3].inputFiles, ['A-test/4.in','A-test/5.in','1_lemon_SUbtaskDEPENDENCE_fLAg','2_lemon_SUbtaskDEPENDENCE_fLAg','3_lemon_SUbtaskDEPENDENCE_fLAg']);
   assert.equal(rows[0].timeLimit,1000); assert.equal(rows[0].memoryLimit,256);
   assert.throws(() => lemonTestCases(c,[1,2,3,4,5,6],'A-test'), /do not belong/);
   assert.throws(() => lemonTestCases(c,[1,2,3,4],'A-test'), /missing tests/);
-  c.tests.group![0].points=60.5;
+  c.tests.group![0].points=60.125;
   assert.ok(polygonFeatureWarnings(c).length);
   assert.throws(() => lemonTestCases(c,[1,2,3,4,5],'A-test'), /integer scores/);
   for (const groups of [ [{name:'a',tests:'0'}], [{name:'a',tests:'1-999999999'}], [{name:'a',tests:'1',points:-1}], [{name:'a',dependencies:['b']},{name:'b',dependencies:['a']}], [{name:'a',tests:'1'},{name:'b',tests:'1'}] ]) assert.throws(() => checkGroups('tests',groups));

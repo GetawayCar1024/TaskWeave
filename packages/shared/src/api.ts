@@ -8,6 +8,13 @@ export type UiLocale = (typeof UI_LOCALES)[number];
 /** Header carrying the per-launch access token (see DESIGN §8). */
 export const TOKEN_HEADER = 'x-polyforge-token';
 
+/** Non-redistributable OI template fonts, loaded from the user's system (GET /api/system-fonts). */
+export interface SystemFontStatus {
+  fonts: { key: string; family: string; label: string; found: boolean }[];
+  /** Folder searched first; users without the fonts can put the files there. */
+  userDir: string;
+}
+
 export const globalConfigSchema = z
   .object({
     ui: z

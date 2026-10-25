@@ -38,4 +38,7 @@ export function verdictBg(v: Verdict): string {
   }
 }
 
+/** Cell class (global .pf-v-* in style.css): background and text colour for the verdict. */
+export const verdictClass = (v: Verdict) => `pf-v-${verdictType(v)}`;
+
 export const fmtMem = (kb: number) => (kb >= 1024 ? `${(kb / 1024).toFixed(kb >= 10240 ? 0 : 1)} MB` : `${kb} KB`);

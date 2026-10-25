@@ -3,9 +3,12 @@ import path from 'node:path';
 import {
   LANG_TO_POLYGON,
   judgeMode,
+  OI_SECTIONS,
+  parseIndexList,
   PROBLEM_NAME_RE,
   STATEMENT_SECTIONS,
   testsetsOf,
+  type ProblemToml,
   type ContestBatchItem,
   type ContestBatchRequest,
   type ContestBatchResult,
@@ -24,7 +27,8 @@ import type { Judge, ProblemCtx } from './index.js';
 import { readInvocation, runInvocation } from './invocation.js';
 import { exportPackage } from './package.js';
 import { readSamples } from './samples.js';
-import { addLemonProblem, lemonReadme, preflightLemonChecker } from './lemonlime.js';
+import { addLemonProblem, exportTestsets, lemonReadme, preflightLemonChecker } from './lemonlime.js';
+import { addLuoguProblem, luoguContestReadme } from './luogu.js';
 import { generateTests, readManifest } from './tests.js';
 
 export const contestExportDir = (ref: ContestRef) => path.join(ref.dir, '.polyforge', 'export');
@@ -43,8 +47,14 @@ export interface ContestDeps {
 export async function runContestBatch(deps: ContestDeps, contestId: string, req: ContestBatchRequest, job: JobCtx): Promise<ContestBatchResult> {
   const { judge, contests, sync } = deps;
   const { ref, config } = await contests.config(contestId);
-  if (req.exportFormat && !['polygon', 'lemonlime'].includes(req.exportFormat)) throw new HttpError(400, 'bad_request', 'Unknown export format');
+  if (req.exportFormat && !['polygon', 'lemonlime', 'luogu'].includes(req.exportFormat)) throw new HttpError(400, 'bad_request', 'Unknown export format');
   const lemon = req.action === 'export' && req.exportFormat === 'lemonlime';
+  const luogu = req.action === 'export' && req.exportFormat === 'luogu';
+  const aggs = ['sum', 'min', 'max'];
+  const agg = { time: req.luogu?.time ?? 'sum', memory: req.luogu?.memory ?? 'max' } as const;
+  if (luogu && (!aggs.includes(agg.time) || !aggs.includes(agg.memory))) throw new HttpError(400, 'bad_request', 'Unknown time / memory aggregation');
+  if (req.testsets !== undefined && (typeof req.testsets !== 'object' || Object.values(req.testsets).some(v => !Array.isArray(v) || v.some(s => typeof s !== 'string')))) throw new HttpError(400, 'bad_request', 'testsets must map problem ids to testset names');
+  if (luogu && !PROBLEM_NAME_RE.test(config.contest.name)) throw new HttpError(400, 'invalid_name', 'Invalid contest name.');
   if (lemon && !PROBLEM_NAME_RE.test(config.contest.name)) throw new HttpError(400, 'invalid_name', 'Invalid contest name.');
   if (req.action === 'polygon-push' && config.contest.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI contests cannot sync with Polygon');
   const want = req.indices?.length ? new Set(req.indices) : null;
@@ -53,7 +63,17 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
   const zip = req.action === 'export' ? new ZipWriter() : null;
   const exported: { index: string; name: string }[] = [];
   const lemonTasks: Awaited<ReturnType<typeof addLemonProblem>>['task'][] = [];
-  if (lemon && !list.length) throw new HttpError(400, 'empty_contest', 'No problems to export.');
+  if ((lemon || luogu) && !list.length) throw new HttpError(400, 'empty_contest', 'No problems to export.');
+  if (luogu) {
+    const names = new Set<string>();
+    for (const p of list) {
+      const ctx = await judge.ctx(p.problem);
+      const name = ctx.config.problem.name.toLowerCase();
+      if (names.has(name)) throw new HttpError(400, 'luogu_export', `${p.index}: duplicate problem English name: ${name}`);
+      names.add(name);
+      exportTestsets(ctx, p.index, req.testsets?.[p.problem]);
+    }
+  }
   if (lemon) {
     const errors: string[] = [], names = new Set<string>();
     for (const p of list) {
@@ -64,6 +84,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
         const name = ctx.config.problem.name.toLowerCase();
         if (names.has(name)) throw new Error(`${p.index}: duplicate problem English name: ${name}`);
         names.add(name);
+        exportTestsets(ctx, p.index, req.testsets?.[p.problem]);
         await preflightLemonChecker(judge, ctx, p.index);
       } catch (e) { errors.push((e as Error).message); }
     }
@@ -137,10 +158,17 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
         }
         case 'export': {
           if (lemon) {
-            const r = await addLemonProblem(judge, ctx, p.index, zip!, sub);
+            const r = await addLemonProblem(judge, ctx, p.index, zip!, sub, exportTestsets(ctx, p.index, req.testsets?.[p.problem]));
             lemonTasks.push(r.task);
             item.ok = true;
             item.message = plural(r.tests, 'test');
+            break;
+          }
+          if (luogu) {
+            const r = await addLuoguProblem(judge, ctx, p.index, zip!, sub, exportTestsets(ctx, p.index, req.testsets?.[p.problem]), agg);
+            item.ok = true;
+            item.message = plural(r.tests, 'test');
+            item.details = r.warnings;
             break;
           }
           const name = ctx.config.problem.name;
@@ -181,9 +209,12 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
 
   const result: ContestBatchResult = { action: req.action, items };
   if (zip) {
-    if (lemon && items.some(item => !item.ok)) throw new HttpError(400, 'lemonlime_export', `LemonLime export failed; no incomplete archive was produced.\n${items.filter(item => !item.ok).map(item => `${item.index}: ${item.message}\n${(item.details ?? []).join('\n')}`).join('\n')}`);
+    const failed = () => items.filter(item => !item.ok).map(item => `${item.index}: ${item.message}\n${(item.details ?? []).join('\n')}`).join('\n');
+    if (lemon && items.some(item => !item.ok)) throw new HttpError(400, 'lemonlime_export', `LemonLime export failed; no incomplete archive was produced.\n${failed()}`);
+    if (luogu && items.some(item => !item.ok)) throw new HttpError(400, 'luogu_export', `Luogu export failed; no incomplete archive was produced.\n${failed()}`);
     job.progress(list.length, list.length, 'writing');
-    if (lemon) {
+    if (luogu) zip.add('README.txt', luoguContestReadme(config.contest.title.zh || config.contest.title.en || config.contest.name, list.map(p => p.index)));
+    else if (lemon) {
       zip.add(`${config.contest.name}.cdf`, JSON.stringify({ version: '1.0', contestTitle: config.contest.title.zh || config.contest.title.en || config.contest.name, tasks: lemonTasks, contestants: [] }, null, 2));
       zip.add('source/', '');
       zip.add('README.txt', lemonReadme(`${process.platform}/${process.arch}`));
@@ -191,7 +222,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
     else if (config.contest.type === 'cf') zip.add('contest.xml', contestXml(config.contest.title, config.contest.name, exported));
     else zip.add('contest.toml', await fsp.readFile(path.join(ref.dir, 'contest.toml')));
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
-    const file = `${config.contest.name}${lemon ? '-lemonlime' : ''}-${stamp}.zip`;
+    const file = `${config.contest.name}${lemon ? '-lemonlime' : luogu ? '-luogu' : ''}-${stamp}.zip`;
     const data = zip.finish();
     await atomicWrite(path.join(contestExportDir(ref), file), data);
     result.file = file;
@@ -218,6 +249,31 @@ function contestXml(title: Record<string, string>, name: string, problems: { ind
 `;
 }
 
+/**
+ * "测试点是否等分": every test of "tests" is worth the same. A subtask's points count as
+ * spread evenly over its tests (also when bundled), so they must divide evenly and match
+ * the other subtasks; tests outside every subtask score nothing. Without points the
+ * problem's 100 points are split over the tests, which is equal only if it divides.
+ */
+export function equalTestPoints(config: ProblemToml, tests: number[]): boolean {
+  const ts = testsetsOf(config)[0];
+  if (!tests.length) return true;
+  if (!config.tests.points || !ts.groups) return config.tests.points ? true : 100 % tests.length === 0;
+  const present = new Set(tests);
+  const values: number[] = [];
+  const grouped = new Set<number>();
+  for (const g of ts.group) {
+    const idx = [...new Set(parseIndexList(g.tests ?? ''))].filter(i => present.has(i) && !grouped.has(i));
+    if (!idx.length) continue;
+    idx.forEach(i => grouped.add(i));
+    const each = (g.points ?? 0) / idx.length;
+    if (Math.abs(each * 100 - Math.round(each * 100)) > 1e-6) return false;
+    values.push(each);
+  }
+  if (tests.some(i => !grouped.has(i))) values.push(0);
+  return values.every(v => Math.abs(v - values[0]) < 1e-9);
+}
+
 /** Statement sources of every problem in one language, for the combined / print view. */
 export async function contestStatements(judge: Judge, contests: ContestRegistry, contestId: string, lang: string): Promise<ContestStatement[]> {
   const { config } = await contests.config(contestId);
@@ -234,28 +290,30 @@ export async function contestStatements(judge: Judge, contests: ContestRegistry,
     if (config.contest.type === 'cf' && c.problem.type === 'oi') throw new HttpError(400, 'incompatible_problem_type', `CF contests cannot import OI problem: ${p.problem}`);
     if (config.contest.type === 'oi' && c.problem.type === 'cf') throw new HttpError(400, 'conversion_required', 'Convert CF problems to OI before exporting this contest');
     const sections: Record<string, string> = {};
-    for (const s of STATEMENT_SECTIONS) {
+    for (const s of [...STATEMENT_SECTIONS, ...OI_SECTIONS]) {
       const text = await fsp.readFile(path.join(ctx.ref.dir, 'statement', lang, `${s}.tex`), 'utf8').catch(() => '');
       if (text.trim()) sections[s] = text;
     }
     const manifest = await readManifest(ctx);
-    const samples = (await readSamples(ctx)).map(row => row.sample);
+    const samples = (await readSamples(ctx, false, lang)).map(row => row.sample);
+    const body = c.problem.type === 'oi' ? await fsp.readFile(safeJoin(ctx.ref.dir, `statement/${lang}/statement.tex`), 'utf8').catch(() => '') : undefined;
     out.push({
       index: p.index,
       problem: p.problem,
       title: c.problem.title[lang] || c.problem.title.en || c.problem.name,
       name: c.problem.name,
       testCount: manifest?.tests.length,
-      equalPoints: manifest?.tests.length ? new Set(manifest.tests.map(t => t.points ?? 1)).size === 1 : undefined,
+      equalPoints: manifest?.tests.length ? equalTestPoints(c, manifest.tests.map(t => t.index)) : undefined,
       timeLimit: c.problem.time_limit,
       memoryLimit: c.problem.memory_limit,
       interactive: judgeMode(c.problem) !== 'batch',
       input: c.problem.input,
       output: c.problem.output,
       type: c.problem.type,
-      body: c.problem.type === 'oi' ? await fsp.readFile(safeJoin(ctx.ref.dir, `statement/${lang}/statement.tex`), 'utf8').catch(() => '') : undefined,
+      body,
       sections,
-      samples: c.problem.type === 'oi' ? [] : samples,
+      // A statement.tex document prints its own samples; the section files get the generated ones.
+      samples: body ? [] : samples,
     });
   }
   return out;

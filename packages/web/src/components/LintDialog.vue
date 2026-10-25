@@ -2,7 +2,8 @@
 import { computed, ref, watch } from 'vue';
 import { lintMessage } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
-import { NButton, NEmpty, NModal, NScrollbar, NSpace, NSpin, NTag, useMessage } from 'naive-ui';
+import { NButton, NEmpty, NScrollbar, NSpin, NTag, useMessage } from 'naive-ui';
+import ToolWindow from './ToolWindow.vue';
 import { lintStatement, type LintResult } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 import type { Workspace } from '../lib/workspace';
@@ -77,38 +78,38 @@ async function apply(list: FileLint[]) {
 </script>
 
 <template>
-  <n-modal :show="show" preset="card" :title="t('lint.title')" style="width: min(1200px, 96vw)" @update:show="emit('update:show', $event)">
-    <div v-if="loading" class="center"><n-spin /></div>
+  <tool-window :show="show" :title="t('lint.title')" size="xl" @update:show="emit('update:show', $event)">
+    <div v-if="loading" class="pf-center"><n-spin /></div>
     <n-empty v-else-if="!files.length" :description="t('lint.clean')" style="padding: 40px" />
     <div v-else class="body">
       <n-scrollbar class="list">
-        <div v-for="f in files" :key="f.path" class="file" :class="{ active: active === f.path }" @click="active = f.path">
+        <div v-for="f in files" :key="f.path" class="pf-row file" :class="{ active: active === f.path }" @click="active = f.path">
           <div class="mono">{{ f.path.replace('statement/', '') }}</div>
-          <div class="small dim">{{ t('lint.count', { n: f.result.issues.length, fix: fixable(f) }) }}</div>
+          <div class="pf-hint">{{ t('lint.count', { n: f.result.issues.length, fix: fixable(f) }) }}</div>
         </div>
       </n-scrollbar>
       <div v-if="current" class="detail">
         <n-scrollbar class="issues">
           <div v-for="(i, k) in current.result.issues" :key="k" class="issue">
-            <span class="mono dim">{{ i.line }}:{{ i.col }}</span>
+            <span class="mono pf-hint">{{ i.line }}:{{ i.col }}</span>
             <n-tag size="tiny" :type="i.fixable ? 'info' : 'warning'" :bordered="false">{{ i.fixable ? t('lint.auto') : t('lint.manual') }}</n-tag>
             <span>{{ lintMessage(i) }}</span>
           </div>
         </n-scrollbar>
         <div class="diff">
           <text-diff v-if="current.result.changed" :original="current.original" :modified="current.result.fixed" language="latex" />
-          <div v-else class="center small dim">{{ t('lint.nothingToFix') }}</div>
+          <div v-else class="pf-center pf-hint">{{ t('lint.nothingToFix') }}</div>
         </div>
       </div>
     </div>
-    <template #footer>
-      <n-space justify="end">
-        <n-button @click="run">{{ t('lint.recheck') }}</n-button>
-        <n-button :disabled="!current?.result.changed" @click="current && apply([current])">{{ t('lint.applyOne') }}</n-button>
-        <n-button type="primary" :disabled="!files.some((f) => f.result.changed)" @click="apply(files)">{{ t('lint.applyAll') }}</n-button>
-      </n-space>
+    <template #actions>
+      <n-button size="small" :disabled="loading" @click="run">{{ t('lint.recheck') }}</n-button>
     </template>
-  </n-modal>
+    <template #footer>
+      <n-button :disabled="!current?.result.changed" @click="current && apply([current])">{{ t('lint.applyOne') }}</n-button>
+      <n-button type="primary" :disabled="!files.some((f) => f.result.changed)" @click="apply(files)">{{ t('lint.applyAll') }}</n-button>
+    </template>
+  </tool-window>
 </template>
 
 <style scoped>
@@ -119,16 +120,11 @@ async function apply(list: FileLint[]) {
   height: 68vh;
 }
 .list {
-  border-right: 1px solid rgba(128, 128, 128, 0.2);
+  border-right: 1px solid var(--pf-border);
+  padding-right: 6px;
 }
 .file {
-  padding: 4px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 13px;
-}
-.file.active {
-  background: rgba(99, 226, 183, 0.15);
+  display: block;
 }
 .detail {
   display: grid;
@@ -144,20 +140,10 @@ async function apply(list: FileLint[]) {
   padding: 2px 0;
 }
 .diff {
-  min-height: 0;
-  border: 1px solid rgba(128, 128, 128, 0.2);
-}
-.center {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  padding: 24px;
-}
-.small {
-  font-size: 12px;
-}
-.dim {
-  opacity: 0.65;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--pf-border);
+  border-radius: 4px;
 }
 </style>

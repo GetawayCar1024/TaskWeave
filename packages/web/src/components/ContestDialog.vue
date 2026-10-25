@@ -2,11 +2,13 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
-import { NAlert, NButton, NForm, NFormItem, NInput, NInputNumber, NModal, NProgress, NSelect, NSpace, useMessage } from 'naive-ui';
+import { NAlert, NButton, NForm, NFormItem, NInput, NInputNumber, NSelect, useMessage } from 'naive-ui';
 import { PROBLEM_NAME_RE, type ContestSummary, type JobInfo, type ProblemSummary } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 import { problemTitle } from '../lib/format';
 import DirPicker from './DirPicker.vue';
+import ToolWindow from './ToolWindow.vue';
+import { Plus } from 'lucide-vue-next';
 import { loadSettings } from '../lib/settings';
 import { waitJob } from '../lib/jobs';
 
@@ -36,7 +38,12 @@ watch(
 
 const nameValid = computed(() => PROBLEM_NAME_RE.test(form.name));
 const canSubmit = computed(() => nameValid.value && (props.mode === 'create' || (!!form.contestId && !!form.root.trim())));
-const rootOptions = computed(() => props.roots.map((r) => ({ label: r, value: r })));
+const pickedRoots = ref<string[]>([]);
+const rootOptions = computed(() => [...new Set([...props.roots, ...pickedRoots.value])].map((r) => ({ label: r, value: r })));
+function pickRoot(p: string) {
+  if (!pickedRoots.value.includes(p)) pickedRoots.value.push(p);
+  form.root = p;
+}
 const problemOptions = computed(() => props.problems.map((p) => ({ label: `${problemTitle(p.title, locale.value) || p.name} (${p.id})`, value: p.id })));
 const letter = (i: number) => String.fromCharCode(65 + i);
 
@@ -71,7 +78,7 @@ async function submit() {
     emit('update:show', false);
     emit('created', r.contest);
   } catch (e) {
-    importError.value = serverText(errorMessage(e));
+    importError.value = errorMessage(e);
   } finally {
     busy.value = false;
   }
@@ -79,11 +86,13 @@ async function submit() {
 </script>
 
 <template>
-  <n-modal
+  <tool-window
     :show="show"
-    preset="card"
     :title="mode === 'create' ? t('contest.new') : t('contest.importTitle')"
-    style="width: 560px"
+    size="md"
+    :status="job?.status ?? null"
+    :progress="job?.progress ?? null"
+    :error="importError"
     @update:show="emit('update:show', $event)"
   >
     <n-form label-placement="left" label-width="auto" @submit.prevent="submit">
@@ -108,27 +117,23 @@ async function submit() {
         </div>
       </template>
       <n-form-item v-if="mode === 'import'" :label="t('contest.problemsRoot')">
-        <n-space vertical style="width: 100%"><n-select v-model:value="form.root" filterable tag :options="rootOptions" :disabled="busy" /><n-button size="small" :disabled="busy" @click="showRootPicker = true">{{ t('dirPicker.title') }}</n-button></n-space>
+        <div class="root-field">
+          <n-select v-model:value="form.root" filterable tag :options="rootOptions" :disabled="busy" />
+          <n-button dashed block :disabled="busy" @click="showRootPicker = true"><template #icon><plus /></template>{{ t('contest.addFolder') }}</n-button>
+        </div>
       </n-form-item>
     </n-form>
-    <div v-if="job && job.status === 'running'" class="progress">
-      <n-progress type="line" :percentage="job.progress.total ? Math.round((job.progress.done / job.progress.total) * 100) : 0" :height="4" :show-indicator="false" />
-      <span class="small dim">{{ serverText(job.progress.message) }}</span>
-    </div>
-    <dir-picker v-model:show="showRootPicker" :initial="form.root" @pick="p => form.root = p" />
-    <n-alert v-if="importError" type="error" style="white-space: pre-wrap">{{ importError }}</n-alert>
+    <dir-picker v-model:show="showRootPicker" :initial="form.root" @pick="pickRoot" />
     <n-alert v-if="warnings.length" type="warning" :show-icon="false">
-      <div v-for="w in warnings" :key="w" class="small">{{ serverText(w) }}</div>
+      <div v-for="w in warnings" :key="w" class="pf-hint">{{ serverText(w) }}</div>
     </n-alert>
     <template #footer>
-      <n-space justify="end">
-        <n-button @click="emit('update:show', false)">{{ warnings.length ? t('common.close') : t('common.cancel') }}</n-button>
-        <n-button v-if="!warnings.length" type="primary" :disabled="!canSubmit" :loading="busy" @click="submit">
-          {{ mode === 'create' ? t('common.create') : t('contest.import') }}
-        </n-button>
-      </n-space>
+      <n-button @click="emit('update:show', false)">{{ warnings.length ? t('common.close') : t('common.cancel') }}</n-button>
+      <n-button v-if="!warnings.length" type="primary" :disabled="!canSubmit" :loading="busy" @click="submit">
+        {{ mode === 'create' ? t('common.create') : t('contest.import') }}
+      </n-button>
     </template>
-  </n-modal>
+  </tool-window>
 </template>
 
 <style scoped>
@@ -140,16 +145,10 @@ async function submit() {
   opacity: 0.7;
   margin: -8px 0 12px;
 }
-.progress {
+.root-field {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-bottom: 8px;
-}
-.small {
-  font-size: 12px;
-}
-.dim {
-  opacity: 0.6;
+  gap: 8px;
+  width: 100%;
 }
 </style>

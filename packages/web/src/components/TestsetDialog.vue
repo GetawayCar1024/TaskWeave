@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { NAlert, NButton, NInput, NInputNumber, NModal, NSelect, NSpace, NSwitch, NTag, useMessage } from 'naive-ui';
+import { NAlert, NButton, NInput, NInputNumber, NSelect, NSwitch, NTag, useMessage } from 'naive-ui';
 import { Plus, Trash2, X } from 'lucide-vue-next';
 import { DEFAULT_TESTSET, GROUP_POLICIES, TESTSET_NAME_RE, parseIndexList, testsetsOf, type TestGroup, type TestsetPatch } from '@polyforge/shared';
 import { errorMessage } from '../lib/api';
 import type { Judge } from '../lib/judge';
 import type { Workspace } from '../lib/workspace';
+import ToolWindow from './ToolWindow.vue';
 
 /** Testsets (Polygon) and their groups / subtasks with points. */
 const props = defineProps<{ show: boolean; ws: Workspace; judge: Judge; initial?: string }>();
@@ -20,6 +21,8 @@ interface EditGroup {
   points: number | null;
   policy: (typeof GROUP_POLICIES)[number];
   dependencies: string[];
+  /** Validator for the tests of this group; '' = the problem validator. */
+  validator: string;
 }
 interface EditTestset {
   name: string;
@@ -35,9 +38,11 @@ const form = reactive({ points: false, sets: [] as EditTestset[], deleted: [] as
 const current = ref(DEFAULT_TESTSET);
 const newName = ref('');
 const saving = ref(false);
+const error = ref('');
 
 function reset() {
   const c = cfg.value;
+  error.value = '';
   if (!c) return;
   form.points = !!c.tests.points;
   form.deleted = [];
@@ -47,7 +52,7 @@ function reset() {
     script: ts.script ?? '',
     manual: ts.manual,
     groups: ts.groups,
-    group: ts.group.map((g) => ({ name: g.name, tests: g.tests ?? '', points: g.points ?? null, policy: g.policy ?? 'COMPLETE_GROUP', dependencies: [...(g.dependencies ?? [])] })),
+    group: ts.group.map((g) => ({ name: g.name, tests: g.tests ?? '', points: g.points ?? null, policy: g.policy ?? 'COMPLETE_GROUP', dependencies: [...(g.dependencies ?? [])], validator: g.validator ?? '' })),
   }));
   current.value = props.initial && form.sets.some((s) => s.name === props.initial) ? props.initial : DEFAULT_TESTSET;
 }
@@ -57,6 +62,9 @@ const set = computed(() => form.sets.find((s) => s.name === current.value) ?? fo
 const scripts = computed(() => props.ws.files.value.filter((f) => f.path.endsWith('.txt') && f.path.startsWith('tests/')).map((f) => f.path));
 const manifest = computed(() => props.judge.state.manifests[current.value] ?? (current.value === DEFAULT_TESTSET ? props.judge.state.manifest : null));
 const testCount = computed(() => manifest.value?.tests.length ?? 0);
+watch([() => props.show, current], ([s, ts]) => {
+  if (s && ts !== DEFAULT_TESTSET && !(ts in props.judge.state.manifests) && form.sets.some((x) => x.name === ts && !x.isNew)) void props.judge.loadManifest(ts);
+});
 
 function addTestset() {
   const name = newName.value.trim();
@@ -80,9 +88,27 @@ function addGroup() {
   const from = (used.length ? Math.max(...used) : 0) + 1;
   let name = String(s.group.length + 1);
   for (let n = 1; s.group.some(g => g.name === name); n++) name = String(n);
-  s.group.push({ name, tests: from <= testCount.value ? `${from}-${testCount.value}` : '', points: null, policy: 'COMPLETE_GROUP', dependencies: [] });
+  s.group.push({ name, tests: from <= testCount.value ? `${from}-${testCount.value}` : '', points: null, policy: 'COMPLETE_GROUP', dependencies: [], validator: '' });
   s.groups = true;
 }
+/** Renaming a group keeps the dependencies on it; removing it drops them. */
+function renameGroup(g: EditGroup, name: string) {
+  for (const x of set.value.group) x.dependencies = x.dependencies.map((d) => (d === g.name ? name : d));
+  g.name = name;
+}
+function removeGroup(i: number) {
+  const [g] = set.value.group.splice(i, 1);
+  for (const x of set.value.group) x.dependencies = x.dependencies.filter((d) => d !== g.name);
+}
+const validatorOptions = computed(() => [
+  { label: t('testsets.problemValidator'), value: '' },
+  ...props.ws.files.value.filter((f) => /\.(cpp|cc|cxx)$/i.test(f.path)).map((f) => ({ label: f.path, value: f.path })),
+]);
+/** Per-subtask points as each test sees them (Luogu / LemonLime need integers). */
+const unevenGroups = computed(() => form.points ? set.value?.group.filter((g) => {
+  const n = new Set(parseIndexList(g.tests)).size;
+  return g.points !== null && n > 0 && (!Number.isInteger(g.points) || g.points % n !== 0);
+}).map((g) => g.name) ?? [] : []);
 
 // Coverage summary: tests outside groups / in two groups.
 const coverage = computed(() => {
@@ -91,17 +117,20 @@ const coverage = computed(() => {
   const seen = new Map<number, number>();
   for (const g of s.group) for (const i of parseIndexList(g.tests)) seen.set(i, (seen.get(i) ?? 0) + 1);
   const all = manifest.value!.tests.map((x) => x.index);
-  return { loose: all.filter((i) => !seen.has(i)), twice: [...seen].filter(([, n]) => n > 1).map(([i]) => i) };
+  const known = new Set(all);
+  return { loose: all.filter((i) => !seen.has(i)), twice: [...seen].filter(([, n]) => n > 1).map(([i]) => i), missing: [...seen.keys()].filter((i) => !known.has(i)).sort((a, b) => a - b) };
 });
 const pointsSum = computed(() => set.value?.group.reduce((a, g) => a + (g.points ?? 0), 0) ?? 0);
 
 async function save() {
   saving.value = true;
+  error.value = '';
   try {
     const testsets: Record<string, TestsetPatch | null> = {};
     for (const s of form.sets) {
       testsets[s.name] = {
-        script: s.script.trim() || null,
+        // A cleared select sets null.
+        script: (s.script ?? '').trim() || null,
         groups: s.groups,
         group: s.group.map(
           (g): TestGroup => ({
@@ -110,6 +139,7 @@ async function save() {
             points: g.points !== null ? g.points : undefined,
             policy: g.policy,
             dependencies: g.dependencies.length ? g.dependencies : undefined,
+            validator: g.validator || undefined,
           }),
         ),
       };
@@ -119,7 +149,7 @@ async function save() {
     message.success(t('common.saved'));
     emit('update:show', false);
   } catch (e) {
-    message.error(errorMessage(e));
+    error.value = errorMessage(e);
   } finally {
     saving.value = false;
   }
@@ -129,13 +159,13 @@ const policyOptions = computed(() => GROUP_POLICIES.map((p) => ({ label: t(`test
 </script>
 
 <template>
-  <n-modal :show="show" preset="card" :title="t('testsets.title')" style="width: min(1040px, 96vw)" @update:show="emit('update:show', $event)">
+  <tool-window :show="show" :title="t('testsets.title')" size="xl" :error="error" @update:show="emit('update:show', $event)">
     <div v-if="set" class="layout">
       <aside class="sets">
         <div
           v-for="s in form.sets"
           :key="s.name"
-          class="set"
+          class="pf-row"
           :class="{ active: s.name === current }"
           @click="current = s.name"
         >
@@ -188,12 +218,13 @@ const policyOptions = computed(() => GROUP_POLICIES.map((p) => ({ label: t(`test
                 <th v-if="form.points">{{ t('testsets.groupPoints') }}</th>
                 <th>{{ t('testsets.groupPolicy') }}</th>
                 <th>{{ t('testsets.groupDeps') }}</th>
+                <th>{{ t('testsets.groupValidator') }}</th>
                 <th />
               </tr>
             </thead>
             <tbody>
               <tr v-for="(g, i) in set.group" :key="i">
-                <td><n-input v-model:value="g.name" size="small" class="mono" style="width: 70px" /></td>
+                <td><n-input :value="g.name" size="small" class="mono" style="width: 70px" @update:value="(v: string) => renameGroup(g, v)" /></td>
                 <td><n-input v-model:value="g.tests" size="small" class="mono" placeholder="1-5, 8" /></td>
                 <td v-if="form.points"><n-input-number v-model:value="g.points" size="small" :min="0" :show-button="false" style="width: 70px" /></td>
                 <td><n-select v-model:value="g.policy" size="small" :options="policyOptions" style="width: 130px" /></td>
@@ -206,26 +237,27 @@ const policyOptions = computed(() => GROUP_POLICIES.map((p) => ({ label: t(`test
                     style="min-width: 120px"
                   />
                 </td>
-                <td><n-button size="tiny" quaternary @click="set.group.splice(i, 1)"><x :size="13" /></n-button></td>
+                <td><n-select v-model:value="g.validator" size="small" filterable :options="validatorOptions" style="min-width: 140px" /></td>
+                <td><n-button size="tiny" quaternary @click="removeGroup(i)"><x :size="13" /></n-button></td>
               </tr>
             </tbody>
           </table>
           <n-button size="small" dashed @click="addGroup"><template #icon><plus /></template>{{ t('testsets.addGroup') }}</n-button>
-          <n-alert v-if="coverage && (coverage.loose.length || coverage.twice.length)" type="warning" :show-icon="false" class="coverage">
+          <n-alert v-if="coverage && (coverage.loose.length || coverage.twice.length || coverage.missing.length)" type="warning" :show-icon="false" class="coverage">
             <div v-if="coverage.loose.length">{{ t('testsets.loose', { list: coverage.loose.slice(0, 30).join(', ') }) }}</div>
             <div v-if="coverage.twice.length">{{ t('testsets.twice', { list: coverage.twice.join(', ') }) }}</div>
+            <div v-if="coverage.missing.length">{{ t('testsets.missingTests', { list: coverage.missing.slice(0, 30).join(', ') }) }}</div>
           </n-alert>
+          <n-alert v-if="unevenGroups.length" type="info" :show-icon="false" class="coverage">{{ t('testsets.uneven', { list: unevenGroups.join(', ') }) }}</n-alert>
         </template>
         <div class="small dim note">{{ t('testsets.note') }}</div>
       </section>
     </div>
     <template #footer>
-      <n-space justify="end">
-        <n-button @click="emit('update:show', false)">{{ t('common.cancel') }}</n-button>
-        <n-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</n-button>
-      </n-space>
+      <n-button @click="emit('update:show', false)">{{ t('common.cancel') }}</n-button>
+      <n-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</n-button>
     </template>
-  </n-modal>
+  </tool-window>
 </template>
 
 <style scoped>
@@ -239,24 +271,10 @@ const policyOptions = computed(() => GROUP_POLICIES.map((p) => ({ label: t(`test
   display: flex;
   flex-direction: column;
   gap: 4px;
-  border-right: 1px solid rgba(128, 128, 128, 0.25);
+  border-right: 1px solid var(--pf-border);
   padding-right: 12px;
 }
-.set {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.set:hover {
-  background: rgba(128, 128, 128, 0.12);
-}
-.set.active {
-  background: rgba(99, 226, 183, 0.15);
-}
-.set .del {
+.del {
   margin-left: auto;
 }
 .add-set {
@@ -270,7 +288,7 @@ const policyOptions = computed(() => GROUP_POLICIES.map((p) => ({ label: t(`test
   flex-direction: column;
   gap: 6px;
   padding-top: 12px;
-  border-top: 1px solid rgba(128, 128, 128, 0.25);
+  border-top: 1px solid var(--pf-border);
 }
 .detail {
   display: flex;
@@ -317,9 +335,9 @@ const policyOptions = computed(() => GROUP_POLICIES.map((p) => ({ label: t(`test
   font-size: 12px;
 }
 .dim {
-  opacity: 0.6;
+  color: var(--pf-text-secondary);
 }
 .warn {
-  color: #e8b060;
+  color: light-dark(#986415, #e8b060);
 }
 </style>

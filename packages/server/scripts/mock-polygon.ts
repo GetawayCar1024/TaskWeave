@@ -5,15 +5,16 @@
  *   pnpm --filter @polyforge/server mock-polygon [--port 4700] [--key K] [--secret S]
  *
  * Point PolyForge at it with secrets.toml: [polygon] api_url = "http://127.0.0.1:4700/api/".
- * GET /__dump returns the whole state as JSON; GET /__contest defines a contest.
+ * GET /__dump returns the whole state as JSON; GET /__contest defines a contest;
+ * GET /__delete?problem=ID deletes a problem (problems.list shows it with showDeleted only).
+ * Tests start it in-process with startMockPolygon().
  */
 import http from 'node:http';
+import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { apiSignature } from '../src/polygon/client.js';
 
-const { values: args } = parseArgs({
-  options: { port: { type: 'string', default: '4700' }, key: { type: 'string', default: 'mock-key' }, secret: { type: 'string', default: 'mock-secret' } },
-});
+const args = { key: 'mock-key', secret: 'mock-secret' };
 
 interface Test {
   index: number;
@@ -39,6 +40,7 @@ interface Prob {
   owner: string;
   revision: number;
   modified: boolean;
+  deleted?: boolean;
   info: { inputFile: string; outputFile: string; interactive: boolean; timeLimit: number; memoryLimit: number };
   validator: string;
   checker: string;
@@ -59,7 +61,7 @@ interface Prob {
   checkerTests: Record<number, { index: number; input: string; output: string; answer: string; expectedVerdict: string }>;
 }
 
-const problems = new Map<number, Prob>();
+export const problems = new Map<number, Prob>();
 /** contestId -> index -> problem id (set up through GET /__contest). */
 const contests = new Map<number, Record<string, number>>();
 let nextId = 100000;
@@ -96,16 +98,21 @@ function newProblem(name: string): Prob {
   return p;
 }
 
-class Fail extends Error {}
+class Fail extends Error {
+  constructor(message: string, public result?: unknown) {
+    super(message);
+  }
+}
 
 const bool = (v?: string) => v === 'true';
 
 function handle(method: string, a: Record<string, string>, files: Record<string, Buffer>): unknown {
   const get = (): Prob => {
     const p = problems.get(Number(a.problemId));
-    if (!p) throw new Fail('problemId: Problem not found');
+    if (!p || p.deleted) throw new Fail('problemId: Problem not found');
     return p;
   };
+  const testIndices = () => (a.testIndices ? a.testIndices.split(',').map(Number) : [Number(a.testIndex)]);
   const touch = (p: Prob) => (p.modified = true);
   /** The testset named by the testset parameter ("tests" is the problem itself). */
   const set = (p: Prob): Testset => {
@@ -116,11 +123,11 @@ function handle(method: string, a: Record<string, string>, files: Record<string,
     return t;
   };
   const content = (k: string) => files[k] ?? (a[k] !== undefined ? Buffer.from(a[k]) : undefined);
-  const brief = (p: Prob) => ({ id: p.id, name: p.name, owner: p.owner, accessType: 'OWNER', revision: p.revision, modified: p.modified, deleted: false });
+  const brief = (p: Prob) => ({ id: p.id, name: p.name, owner: p.owner, accessType: 'OWNER', revision: p.revision, modified: p.modified, deleted: !!p.deleted });
 
   switch (method) {
     case 'problems.list':
-      return [...problems.values()].filter((p) => (!a.id || p.id === Number(a.id)) && (!a.name || p.name === a.name)).map(brief);
+      return [...problems.values()].filter((p) => (!p.deleted || bool(a.showDeleted)) && (!a.id || p.id === Number(a.id)) && (!a.name || p.name === a.name)).map(brief);
     case 'problem.create': {
       if (!/^[a-z0-9-]+$/.test(a.name ?? '')) throw new Fail('name: Invalid problem name');
       if ([...problems.values()].some((p) => p.name === a.name)) throw new Fail('name: Problem with this name already exists');
@@ -133,7 +140,11 @@ function handle(method: string, a: Record<string, string>, files: Record<string,
       if (a.inputFile) p.info.inputFile = a.inputFile;
       if (a.outputFile) p.info.outputFile = a.outputFile;
       if (a.interactive) p.info.interactive = bool(a.interactive);
-      if (a.timeLimit) p.info.timeLimit = Number(a.timeLimit);
+      if (a.timeLimit) {
+        const tl = Number(a.timeLimit);
+        if (!Number.isInteger(tl) || tl < 250 || tl > 15000 || tl % 50) throw new Fail('timeLimit: Time limit should be between 250 and 15000 and divisible by 50');
+        p.info.timeLimit = tl;
+      }
       if (a.memoryLimit) p.info.memoryLimit = Number(a.memoryLimit);
       touch(p);
       return null;
@@ -177,6 +188,76 @@ function handle(method: string, a: Record<string, string>, files: Record<string,
       if (a.type === 'source') p.source[a.name] = { text: file, sourceType: a.sourceType };
       else if (a.type === 'resource') p.resource[a.name] = file;
       else throw new Fail('type: invalid');
+      touch(p);
+      return null;
+    }
+    case 'problem.deleteFile': {
+      const p = get();
+      if (a.type === 'resource') {
+        if (['olymp.sty', 'problem.tex', 'statements.ftl'].includes(a.name)) throw new Fail(`name: Resource file ${a.name} can't be deleted`);
+        if (!p.resource[a.name]) throw new Fail('name: File not found');
+        delete p.resource[a.name];
+      } else if (a.type === 'source') {
+        if (!p.source[a.name]) throw new Fail('name: File not found');
+        const gen = a.name.replace(/\.[^.]*$/, '');
+        const scripts = [p.script, ...Object.values(p.extraTestsets).map((t) => t.script)];
+        if (scripts.some((s) => s.split('\n').some((l) => l.trim().split(/\s+/)[0] === gen))) throw new Fail(`name: Source ${a.name} is used in a test script`);
+        if ([p.validator, p.checker, p.interactor].includes(a.name)) throw new Fail(`name: Source ${a.name} is in use`);
+        delete p.source[a.name];
+      } else throw new Fail('type: invalid');
+      touch(p);
+      return null;
+    }
+    case 'problem.deleteSolution': {
+      const p = get();
+      if (!p.solutions[a.name]) throw new Fail('name: Solution not found');
+      delete p.solutions[a.name];
+      touch(p);
+      return null;
+    }
+    case 'problem.deleteStatement': {
+      const p = get();
+      if (!p.statements[a.lang]) throw new Fail(`lang: There is no statement in ${a.lang}`);
+      delete p.statements[a.lang];
+      touch(p);
+      return null;
+    }
+    case 'problem.deleteStatementResource': {
+      const p = get();
+      if (!p.statementResources[a.name]) throw new Fail('name: Statement resource not found');
+      delete p.statementResources[a.name];
+      touch(p);
+      return null;
+    }
+    case 'problem.deleteValidatorTest': {
+      const p = get();
+      if (!p.validatorTests[Number(a.testIndex)]) throw new Fail('testIndex: Validator test not found');
+      delete p.validatorTests[Number(a.testIndex)];
+      touch(p);
+      return null;
+    }
+    case 'problem.deleteCheckerTest': {
+      const p = get();
+      if (!p.checkerTests[Number(a.testIndex)]) throw new Fail('testIndex: Checker test not found');
+      delete p.checkerTests[Number(a.testIndex)];
+      touch(p);
+      return null;
+    }
+    case 'problem.deleteTest': {
+      const p = get();
+      const ts = set(p);
+      const idx = testIndices();
+      const missing = idx.filter((i) => !ts.tests[i]);
+      if (missing.length) throw new Fail('Some tests can not be deleted.', { failures: missing.map((i) => ({ index: i, reason: 'NOT_FOUND', message: `Test ${i} not found` })) });
+      for (const i of idx) delete ts.tests[i];
+      touch(p);
+      return null;
+    }
+    case 'problem.clearScript': {
+      const p = get();
+      const ts = set(p);
+      for (const [i, t] of Object.entries(ts.tests)) if (!t.manual) delete ts.tests[Number(i)];
+      ts.script = '';
       touch(p);
       return null;
     }
@@ -265,7 +346,9 @@ function handle(method: string, a: Record<string, string>, files: Record<string,
       if (a.testGroup !== undefined) t.group = a.testGroup;
       if (a.testPoints !== undefined) {
         if (!p.pointsEnabled) throw new Fail('testPoints: Points are disabled for this problem');
-        t.points = Number(a.testPoints);
+        const pts = Number(a.testPoints);
+        if (!(pts >= 0) || Math.abs(pts * 100 - Math.round(pts * 100)) > 1e-6) throw new Fail('testPoints: at most 2 digits after the decimal point');
+        t.points = pts;
       }
       if (a.testUseInStatements !== undefined) t.useInStatements = bool(a.testUseInStatements);
       if (a.testInputForStatements !== undefined) t.inputForStatement = a.testInputForStatements;
@@ -325,9 +408,10 @@ function handle(method: string, a: Record<string, string>, files: Record<string,
     }
     case 'problem.commitChanges': {
       const p = get();
-      if (p.modified) p.revision++;
+      if (!p.modified) return { committed: false, conflictOccurred: false, message: 'No changes' };
+      p.revision++;
       p.modified = false;
-      return null;
+      return { committed: true, conflictOccurred: false, message: `Committed revision ${p.revision}` };
     }
     case 'contest.problems': {
       const c = contests.get(Number(a.contestId));
@@ -370,6 +454,12 @@ const server = http.createServer(async (req, res) => {
     contests.set(Number(url.searchParams.get('id')), map);
     return send(200, JSON.stringify({ ok: true }));
   }
+  if (url.pathname === '/__delete') {
+    const p = problems.get(Number(url.searchParams.get('problem')));
+    if (!p) return send(400, JSON.stringify({ error: 'unknown problem' }));
+    p.deleted = true;
+    return send(200, JSON.stringify({ ok: true }));
+  }
   const m = url.pathname.match(/^\/api\/([\w.]+)$/);
   if (!m) return send(404, 'not found', 'text/plain');
   const method = m[1];
@@ -394,7 +484,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
   calls++;
-  const fail = (comment: string) => send(400, JSON.stringify({ status: 'FAILED', comment }));
+  const fail = (comment: string, result?: unknown) => send(400, JSON.stringify({ status: 'FAILED', comment, ...(result !== undefined ? { result } : {}) }));
   if (a.apiKey !== args.key) return fail('apiKey: Incorrect API key');
   if (Math.abs(Number(a.time) - Date.now() / 1000) > 300) return fail('time: Incorrect time');
   if (!sig || apiSignature(method, pairs, args.secret!, sig.slice(0, 6)) !== sig) return fail('apiSig: Incorrect signature');
@@ -403,14 +493,27 @@ const server = http.createServer(async (req, res) => {
     if (result && typeof result === 'object' && 'raw' in (result as object)) return send(200, (result as { raw: Buffer }).raw, 'application/octet-stream');
     send(200, JSON.stringify({ status: 'OK', result }));
   } catch (e) {
-    if (e instanceof Fail) return fail(e.message);
+    if (e instanceof Fail) return fail(e.message, e.result);
     console.error(e);
     send(500, 'internal error', 'text/plain');
   }
 });
 
-server.listen(Number(args.port), '127.0.0.1', () => console.log(`[mock-polygon] http://127.0.0.1:${args.port}/api/  key=${args.key} secret=${args.secret}`));
-process.on('SIGINT', () => {
-  console.log(`[mock-polygon] ${calls} calls`);
-  process.exit(0);
-});
+/** Start the mock (port 0: any free port); `url` is the API base for PolygonClient. */
+export async function startMockPolygon(port = 0): Promise<{ url: string; key: string; secret: string; close: () => Promise<void> }> {
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
+  const { port: p } = server.address() as import('node:net').AddressInfo;
+  return { url: `http://127.0.0.1:${p}/api/`, key: args.key, secret: args.secret, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const { values } = parseArgs({
+    options: { port: { type: 'string', default: '4700' }, key: { type: 'string', default: 'mock-key' }, secret: { type: 'string', default: 'mock-secret' } },
+  });
+  Object.assign(args, { key: values.key, secret: values.secret });
+  server.listen(Number(values.port), '127.0.0.1', () => console.log(`[mock-polygon] http://127.0.0.1:${values.port}/api/  key=${args.key} secret=${args.secret}`));
+  process.on('SIGINT', () => {
+    console.log(`[mock-polygon] ${calls} calls`);
+    process.exit(0);
+  });
+}

@@ -155,6 +155,8 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
 
   // ---- tests: one <testset> per testset, files under <testset>/NN (Polygon layout) ----
   const samples = new Set(parseIndexList(config.tests.samples ?? ''));
+  // Polygon statements only show samples of "tests"; statement/<lang>/constraints.tex and samples/ are OI-only.
+  for (const ts of sets) if (ts.name !== DEFAULT_TESTSET && parseIndexList(ts.samples ?? '').length) warnings.push(`${ts.name}: samples outside the "tests" testset are not part of Polygon statements`);
   const testsetXml: string[] = [];
   const count = manifest.tests.length;
   for (const ts of sets) {

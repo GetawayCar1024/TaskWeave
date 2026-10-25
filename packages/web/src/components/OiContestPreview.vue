@@ -10,7 +10,7 @@ import { exportMarkdown } from '../lib/markdownExport';
 import { api, token } from '../lib/api';
 import { serverText } from '../lib/serverText';
 
-const props = defineProps<{ detail: ContestDetail; statements: ContestStatement[]; lang: string; doc: 'statements' | 'tutorials'; notes: string; macros: MacroTable; loading?: boolean; preparingDown?: boolean; downRequest?: number }>();
+const props = defineProps<{ detail: ContestDetail; statements: ContestStatement[]; lang: string; doc: 'statements' | 'tutorials'; notes: string; macros: MacroTable; toc?: boolean; loading?: boolean; preparingDown?: boolean; downRequest?: number }>();
 const emit = defineEmits<{ prepareDown: [] }>();
 let pendingDown = false;
 watch(() => props.downRequest, value => { if (value) pendingDown = true; });
@@ -28,9 +28,16 @@ const end = ref(schedule[1]?.includes('T') ? schedule[1] : `${date}T12:00`);
 const settingsKey = () => JSON.stringify([subtitle.value, dayname.value, options.value, start.value, end.value]);
 let savedSettings = settingsKey(); let saveQueue = Promise.resolve();
 const busy = ref(true); const error = ref(''); const pdf = ref(''); const svg = ref(''); const stale = ref(true); const exporting = ref(false);
+/** SimSun / SimHei / KaiTi are not bundled (not redistributable): the worker reports the ones this system lacks. */
+const missingFonts = ref<string[]>([]); const fontDir = ref('');
+const FONT_NAMES: Record<string, [string, string, string]> = { simsun: ['宋体', 'SimSun', 'simsun.ttc'], simhei: ['黑体', 'SimHei', 'simhei.ttf'], simkai: ['楷体', 'KaiTi', 'simkai.ttf'] };
+const missingFontText = computed(() => missingFonts.value.map(k => FONT_NAMES[k] ? ui(`${FONT_NAMES[k][0]}（${FONT_NAMES[k][1]}）`, FONT_NAMES[k][1]) : k).join(ui('、', ', ')));
+const missingFontFiles = computed(() => missingFonts.value.map(k => FONT_NAMES[k]?.[2] ?? k).join(ui('、', ', ')));
 const problems = computed(() => props.statements.filter(s => props.doc === 'tutorials' ? s.sections.tutorial?.trim() : s.body || s.sections.legend || s.sections.input || s.sections.output));
 const title = computed(() => (props.detail.summary.title[props.lang] || props.detail.summary.title.en || props.detail.summary.name) + (props.doc === 'tutorials' ? word(' · 题解', ' · Tutorial') : ''));
 const notesImage = (n: string) => `/api/contests/${encodeURIComponent(props.detail.summary.id)}/file/raw?path=${encodeURIComponent(n)}&token=${encodeURIComponent(token)}`;
+/** Cover, overview tables and instructions: optional for statements, never for tutorials. */
+const withToc = computed(() => props.doc === 'statements' && props.toc !== false);
 const notesBody = computed(() => props.notes.replace(/^\s*\*\*(?:注意事项[^\n]*|Instructions[^\n]*)\*\*\s*/i, ''));
 const fileIo = computed(() => problems.value.some(p => p.input !== 'stdin' && !!p.input || p.output !== 'stdout' && !!p.output));
 const rows = computed(() => problems.value.map(p => ({
@@ -44,7 +51,7 @@ const rows = computed(() => problems.value.map(p => ({
 let worker: Worker | undefined; let timer: ReturnType<typeof setTimeout> | undefined; let generation = 0;
 function stop() { generation++; clearTimeout(timer); worker?.terminate(); worker = undefined; busy.value = false; }
 function schedulePreview() { stop(); stale.value = true; busy.value = true; error.value = ''; if (!props.loading) timer = setTimeout(generate, 350); }
-watch(() => [props.statements, props.notes, props.lang, props.doc, props.macros, props.loading, props.detail.summary.title, subtitle.value, dayname.value, options.value, start.value, end.value], schedulePreview, { immediate: true });
+watch(() => [props.statements, props.notes, props.lang, props.doc, props.macros, withToc.value, props.loading, props.detail.summary.title, subtitle.value, dayname.value, options.value, start.value, end.value], schedulePreview, { immediate: true });
 onBeforeUnmount(() => { stop(); if (pdf.value) URL.revokeObjectURL(pdf.value); });
 const dateArray = (s: string) => { const d = new Date(s); if (!Number.isFinite(+d)) throw new Error(ui('请填写有效的比赛起止时间', 'Enter a valid start and end time.')); return [d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()]; };
 async function generate() {
@@ -57,7 +64,7 @@ async function generate() {
     if (!problems.value.length) throw new Error(ui('当前语言没有可导出的内容', 'No content is available in this language.'));
     const content = {
       lang: props.lang, title: title.value, subtitle: subtitle.value, dayname: dayname.value, date: { start: startDate, end: endDate },
-      noi_style: true, file_io: fileIo.value, use_pretest: false,
+      noi_style: true, file_io: fileIo.value, use_pretest: false, pf_toc: withToc.value,
       support_languages: [{ name: 'C++', compile_options: options.value }],
       problems: rows.value.map((row, i) => ({ ...row, markdown: cnoiProblemMarkdown(problems.value[i], props.doc, props.lang, props.macros) })),
       extraContents: { precaution: { markdown: notesBody.value.trim() ? `**${word('注意事项（请仔细阅读）', 'Instructions (please read carefully)')}**\n\n` + cnoiMarkdown(notesBody.value, props.macros, notesImage, props.lang) : '' } },
@@ -74,11 +81,15 @@ async function generate() {
     activeWorker.onmessage = ({ data }) => {
       if (current !== generation) return;
       if (data.error) { error.value = data.error; pendingDown = false; }
-      else { if (pdf.value) URL.revokeObjectURL(pdf.value); pdf.value = URL.createObjectURL(new Blob([data.pdf], { type: 'application/pdf' })); svg.value = data.svg; stale.value = false; }
+      else {
+        if (pdf.value) URL.revokeObjectURL(pdf.value); pdf.value = URL.createObjectURL(new Blob([data.pdf], { type: 'application/pdf' })); svg.value = data.svg; stale.value = false;
+        missingFonts.value = data.missingFonts ?? [];
+        if (missingFonts.value.length && !fontDir.value) api.systemFonts().then(s => { fontDir.value = s.userDir; }).catch(() => {});
+      }
       stop();
       if (pendingDown && !stale.value) { pendingDown = false; void exportDown(); }
     };
-    activeWorker.postMessage({ content });
+    activeWorker.postMessage({ content, token });
   } catch (e) { if (current === generation) { error.value = e instanceof Error ? e.message : String(e); stop(); } }
 }
 const baseName = () => `${props.detail.summary.name}-${props.doc}-${props.lang}-oi`;
@@ -97,39 +108,38 @@ async function onExport(format: string) {
     if (format === 'pdf') { const a = document.createElement('a'); a.href = pdf.value; a.download = `${baseName()}.pdf`; a.click(); return; }
     const root = document.createElement('article');
     const appendText = (tag: string, text: string, parent: HTMLElement = root) => { const node = document.createElement(tag); node.textContent = text; parent.append(node); return node; };
-    for (const text of [subtitle.value, dayname.value, `${word('时间', 'Time')}: ${start.value.replace('T', ' ')} – ${end.value.replace('T', ' ')}`]) if (text) appendText('p', text).style.textAlign = 'center';
-    const table = appendText('table', '');
-    const labels: [keyof typeof rows.value[number], string][] = [
-      ['title', word('题目名称', 'Problem')], ['type', word('题目类型', 'Problem type')], ['dir', word('目录', 'Directory')], ['exec', word('可执行文件名', 'Executable')],
-      ...(fileIo.value ? [['input', word('输入文件名', 'Input file')], ['output', word('输出文件名', 'Output file')]] as [keyof typeof rows.value[number], string][] : []),
-      ['time_limit', word('每个测试点时限', 'Time limit per test')], ['memory_limit', word('内存限制', 'Memory limit')], ['testcase', word('测试点数目', 'Test cases')], ['point_equal', word('测试点是否等分', 'Equal points per test')],
-    ];
-    for (const [key, label] of labels) {
-      const tr = appendText('tr', '', table); appendText('th', label, tr);
-      rows.value.forEach((row, i) => {
-        const td = appendText('td', '', tr);
-        if (key === 'title') { const a = appendText('a', String(row[key]), td); a.setAttribute('href', `#problem-${problems.value[i].index}`); }
-        else appendText(['dir', 'exec', 'input', 'output'].includes(key) ? 'code' : 'span', String(row[key]), td);
-      });
+    if (withToc.value) {
+      for (const text of [subtitle.value, dayname.value, `${word('时间', 'Time')}: ${start.value.replace('T', ' ')} – ${end.value.replace('T', ' ')}`]) if (text) appendText('p', text).style.textAlign = 'center';
+      const table = appendText('table', '');
+      const labels: [keyof typeof rows.value[number], string][] = [
+        ['title', word('题目名称', 'Problem')], ['type', word('题目类型', 'Problem type')], ['dir', word('目录', 'Directory')], ['exec', word('可执行文件名', 'Executable')],
+        ...(fileIo.value ? [['input', word('输入文件名', 'Input file')], ['output', word('输出文件名', 'Output file')]] as [keyof typeof rows.value[number], string][] : []),
+        ['time_limit', word('每个测试点时限', 'Time limit per test')], ['memory_limit', word('内存限制', 'Memory limit')], ['testcase', word('测试点数目', 'Test cases')], ['point_equal', word('测试点是否等分', 'Equal points per test')],
+      ];
+      for (const [key, label] of labels) {
+        const tr = appendText('tr', '', table); appendText('th', label, tr);
+        rows.value.forEach((row, i) => {
+          const td = appendText('td', '', tr);
+          if (key === 'title') { const a = appendText('a', String(row[key]), td); a.setAttribute('href', `#problem-${problems.value[i].index}`); }
+          else appendText(['dir', 'exec', 'input', 'output'].includes(key) ? 'code' : 'span', String(row[key]), td);
+        });
+      }
+      appendText('p', word('提交源程序文件名', 'Source file names'));
+      const sourceTable = appendText('table', ''); const sourceRow = appendText('tr', '', sourceTable); appendText('th', 'C++', sourceRow);
+      rows.value.forEach(row => appendText('code', row.submit_filename[0], appendText('td', '', sourceRow)));
+      appendText('p', word('编译选项', 'Compiler options'));
+      const compileTable = appendText('table', ''); const compileRow = appendText('tr', '', compileTable); appendText('th', 'C++', compileRow); appendText('code', options.value, appendText('td', '', compileRow));
+      if (notesBody.value.trim()) {
+        appendText('h1', word('注意事项（请仔细阅读）', 'Instructions (please read carefully)'));
+        const body = appendText('div', ''); body.innerHTML = renderLatex(notesBody.value, { macros: props.macros, imageUrl: notesImage }).html;
+      }
     }
-    appendText('p', word('提交源程序文件名', 'Source file names'));
-    const sourceTable = appendText('table', ''); const sourceRow = appendText('tr', '', sourceTable); appendText('th', 'C++', sourceRow);
-    rows.value.forEach(row => appendText('code', row.submit_filename[0], appendText('td', '', sourceRow)));
-    appendText('p', word('编译选项', 'Compiler options'));
-    const compileTable = appendText('table', ''); const compileRow = appendText('tr', '', compileTable); appendText('th', 'C++', compileRow); appendText('code', options.value, appendText('td', '', compileRow));
-    if (notesBody.value.trim()) {
-      appendText('h1', word('注意事项（请仔细阅读）', 'Instructions (please read carefully)'));
-      const body = appendText('div', ''); body.innerHTML = renderLatex(notesBody.value, { macros: props.macros, imageUrl: notesImage }).html;
-    }
+    // Footnote marks restart in every section, as in the PDF (section endnotes).
     problems.value.forEach((p, i) => {
       const heading = appendText('div', `${p.title}${word('（', ' (')}${rows.value[i].name}${word('）', ')')}`);
       heading.className = 'title'; heading.id = `problem-${p.index}`;
       root.append(cnoiProblemElement(p, props.doc, props.lang, props.macros));
     });
-    // Typst numbers footnotes continuously across the document. Keep the same
-    // marks in Markdown while reusing the CF serializer for their HTML layout.
-    root.querySelectorAll('.footnote-ref').forEach((mark, i) => { mark.textContent = String(i + 1); });
-    root.querySelectorAll('.footnote > sup').forEach((mark, i) => { mark.textContent = String(i + 1); });
     if (await exportMarkdown(root, baseName(), { contestTitle: title.value })) message.warning(t('improve.markdownWarnings'));
   } catch (e) { message.error(e instanceof Error ? e.message : String(e)); }
   finally { exporting.value = false; }
@@ -162,6 +172,13 @@ async function onExport(format: string) {
       </div>
     </div>
     <n-alert v-if="error" type="error">{{ error }}</n-alert>
+    <n-alert v-if="missingFonts.length && !error" type="warning" :title="ui(`本机缺少 OI 排版字体：${missingFontText}`, `Missing OI fonts on this computer: ${missingFontText}`)">
+      {{ ui(
+        `这些字体的版权不允许随 PolyForge 分发，排版时从本机读取。缺少时，对应文字会改用其他已加载的中文字体；若中文字体全部缺少，中文将显示为方框。Windows 通常自带这些字体；也可以把字体文件（${missingFontFiles}）放到 ${fontDir || '全局目录的 fonts 文件夹'}，再重新检测。`,
+        `These fonts may not be redistributed with PolyForge, so they are read from this computer. Missing ones are replaced by other loaded Chinese fonts; without any, Chinese text shows as boxes. Windows usually includes them; you can also put the font files (${missingFontFiles}) into ${fontDir || 'the fonts folder of the global directory'} and check again.`,
+      ) }}
+      <div class="font-actions"><n-button size="small" @click="generate">{{ ui('重新检测', 'Check again') }}</n-button></div>
+    </n-alert>
     <div v-if="!svg && !error" class="preview-placeholder"><FileText :size="32" :stroke-width="1.25" /><span>{{ ui('正在排版，首次预览可能需要几秒钟', 'Preparing pages. The first preview may take a few seconds.') }}</span></div>
     <div v-if="svg" class="oi-pages" :class="{ stale }" :aria-busy="busy" :aria-label="ui('OI 题面预览', 'OI statement preview')" v-html="svg" />
     <div class="attribution">{{ ui('排版', 'Typesetting') }} · <a href="https://github.com/Mr-Python-in-China/cnoi-statement-generator/tree/43d437ba80d2cd42e04344d59928cfa23fdeb569" target="_blank" rel="noopener">CNOI · AGPL-3.0</a></div>
@@ -182,6 +199,7 @@ async function onExport(format: string) {
 .preview-status { display: flex; align-items: center; gap: 7px; color: var(--pf-text-secondary); font-size: 12px; }
 .export-chevron { margin-left: 8px; }
 .export-actions { display: flex; gap: 8px; }
+.font-actions { margin-top: 8px; }
 .preview-placeholder { min-height: 320px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--pf-text-secondary); font-size: 13px; }
 .oi-pages { width: min(100%, 850px); margin: 0 auto; background: #fff; color: #111; color-scheme: light; box-shadow: 0 2px 12px #0002; }
 .oi-pages.stale { opacity: .5; }

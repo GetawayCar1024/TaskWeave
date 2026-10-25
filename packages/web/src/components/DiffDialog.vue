@@ -2,7 +2,8 @@
 import { ignoreWhitespace } from '../lib/diffOptions';
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { NButton, NModal, NSpace, NSpin } from 'naive-ui';
+import { NButton, NSpin } from 'naive-ui';
+import ToolWindow from './ToolWindow.vue';
 import { monaco, languageForPath } from '../lib/monaco';
 import { settings } from '../lib/settings';
 
@@ -48,30 +49,26 @@ watch(ignoreWhitespace, value => diff?.updateOptions({ ignoreTrimWhitespace: val
 </script>
 
 <template>
-  <n-modal :show="show" preset="card" :title="`${t('diff.title')} — ${path}`" style="width: 90vw" @update:show="emit('update:show', $event)">
+  <tool-window :show="show" :title="`${t('diff.title')} — ${path}`" size="full" @update:show="emit('update:show', $event)">
     <label class="diff-options"><input type="checkbox" v-model="ignoreWhitespace" />{{ t('improve.ignoreWhitespace') }}</label>
-    <div class="labels">
+    <div class="labels pf-label">
       <span>{{ t('diff.disk') }}</span>
       <span>{{ t('diff.mine') }}</span>
     </div>
     <div v-if="disk === null" class="loading"><n-spin /></div>
     <div v-else ref="host" class="host" />
     <template #footer>
-      <n-space justify="end">
-        <n-button @click="emit('update:show', false)">{{ t('common.cancel') }}</n-button>
-        <n-button @click="emit('useDisk')">{{ t('diff.useDisk') }}</n-button>
-        <n-button type="warning" @click="emit('keepMine')">{{ t('diff.keepMine') }}</n-button>
-      </n-space>
+      <n-button @click="emit('update:show', false)">{{ t('common.cancel') }}</n-button>
+      <n-button @click="emit('useDisk')">{{ t('diff.useDisk') }}</n-button>
+      <n-button type="warning" @click="emit('keepMine')">{{ t('diff.keepMine') }}</n-button>
     </template>
-  </n-modal>
+  </tool-window>
 </template>
 
 <style scoped>
 .labels {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  font-size: 12px;
-  opacity: 0.7;
   margin-bottom: 4px;
 }
 .host {

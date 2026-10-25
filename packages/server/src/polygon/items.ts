@@ -15,6 +15,8 @@ import {
   parseIndexList,
   testsetOf,
   testsetsOf,
+  OI_SECTIONS,
+  TESTSET_NAME_RE,
   type TestsetConfig,
   type ProblemToml,
   type SolutionTag,
@@ -25,9 +27,9 @@ import { pickLanguage } from '../judge/compiler.js';
 import type { Judge, ProblemCtx } from '../judge/index.js';
 import { planTests, scriptStatementPaths, statementPaths } from '../judge/tests.js';
 import { defsForProblem, readSharedDefs } from '../defs.js';
-import { exists, isDir, looksBinary, sha1 } from '../util/fs.js';
+import { exists, HttpError, isDir, looksBinary, safeJoin, sha1, validateFileName } from '../util/fs.js';
 import { HIDDEN_DIRS } from '../workspace/files.js';
-import type { PolygonClient } from './client.js';
+import { PolygonError, type PolygonClient } from './client.js';
 
 export const TESTSET = 'tests';
 
@@ -120,6 +122,17 @@ async function listFiles(dir: string): Promise<string[]> {
 
 const hasToken = (s: string, t: string) => new RegExp(`(^|[/._-])${t}([/._-]|$)`, 'i').test(s);
 
+/**
+ * Polygon indices of validator / checker self-test files: their number prefix ("03.valid.in",
+ * as a pull writes them) when every file has a distinct one, since Polygon keeps the indices
+ * of the other tests when one is deleted; else their position.
+ */
+function selfTestIndices(files: string[]): number[] {
+  const nums = files.map((f) => Number(f.match(/^(\d+)(?=[._-]|$)/)?.[1] ?? NaN));
+  const ok = nums.every((n) => Number.isInteger(n) && n >= 1) && new Set(nums).size === nums.length;
+  return ok ? nums : files.map((_, i) => i + 1);
+}
+
 /** Everything of a testset other than "tests", synced as one item. */
 export interface TestsetContent {
   script: string;
@@ -129,10 +142,31 @@ export interface TestsetContent {
   groups: { name: string; pointsPolicy: string; dependencies: string[]; points?: number; tests: string }[];
   /** Per-test points (points enabled). */
   points?: Record<string, number>;
+  /** Tests used in the statements ("1-2"). */
+  samples?: string;
+  /** Statement input / output of manual tests, by index. */
+  statements?: Record<string, { input?: string; output?: string }>;
+  /** Statement input / output of samples made by the script, by index. */
+  scriptStatements?: Record<string, { input?: string; output?: string }>;
+}
+
+/** Statement input / output metadata as a testset content entry (undefined when there is none). */
+function statementEntry(sm: Record<string, string>): { input?: string; output?: string } | undefined {
+  if (sm.statementInput === undefined && sm.statementOutput === undefined) return undefined;
+  return { ...(sm.statementInput !== undefined ? { input: sm.statementInput } : {}), ...(sm.statementOutput !== undefined ? { output: sm.statementOutput } : {}) };
+}
+
+/** Points as Polygon takes them: at most 2 decimals (also hides float noise of split scores). */
+export const roundPoints = (n: number) => Math.round(Number(n) * 100) / 100;
+
+/** Non-zero per-test points, rounded: the form compared on both sides. */
+function pointsKey(points: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(Object.entries(points).map(([i, p]) => [i, roundPoints(p)]).filter(([, p]) => p !== 0));
 }
 
 function testsetGroups(ts: TestsetConfig, pointsEnabled: boolean): Pick<TestsetContent, 'groupsEnabled' | 'groups' | 'points'> {
   const layout = sharedGroupLayout(ts, pointsEnabled);
+  const points = pointsKey(layout.points);
   return {
     groupsEnabled: ts.groups,
     groups: ts.groups
@@ -140,17 +174,63 @@ function testsetGroups(ts: TestsetConfig, pointsEnabled: boolean): Pick<TestsetC
           name: g.name,
           pointsPolicy: g.policy ?? 'COMPLETE_GROUP',
           dependencies: [...(g.dependencies ?? [])].sort(),
-          ...(pointsEnabled ? { points: g.points ?? 0 } : {}),
+          ...(pointsEnabled ? { points: roundPoints(g.points ?? 0) } : {}),
           tests: compressRanges(parseIndexList(g.tests ?? '')),
         }))
       : [],
-    ...(Object.keys(layout.points).length ? { points: layout.points } : {}),
+    ...(Object.keys(points).length ? { points } : {}),
   };
+}
+
+/** A name from Polygon that becomes a local file or folder name: one plain path segment. */
+export class UnsafeNameError extends HttpError {
+  constructor(what: string, name: string) {
+    super(400, 'unsafe_name', `Unsafe ${what} name from Polygon: "${name}"; skipped`);
+  }
+}
+function safeName(what: string, name: unknown): string {
+  const s = String(name ?? '');
+  try {
+    if (/[\\/]/.test(s)) throw new Error();
+    validateFileName(s);
+  } catch {
+    throw new UnsafeNameError(what, s);
+  }
+  return s;
+}
+function safeIndex(i: unknown): number {
+  const n = Number(i);
+  if (!Number.isInteger(n) || n < 1 || n > 1e6) throw new UnsafeNameError('test index', String(i));
+  return n;
+}
+
+/**
+ * OI-only statement files (`statement/<lang>/constraints.tex`, `statement/<lang>/samples/*.tex`):
+ * Polygon statements have nothing like them, so they are never synced nor deleted by a pull.
+ */
+export function isOiOnlyFile(rel: string): boolean {
+  const m = rel.match(/^statement\/[^/]+\/(.+)$/);
+  if (!m) return false;
+  return m[1].startsWith('samples/') || (OI_SECTIONS as readonly string[]).some((s) => m[1] === `${s}.tex`);
+}
+
+/** The OI-only statement files a problem has (with content), for the push warning. */
+export async function oiOnlyFiles(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  for (const rel of await listFiles(path.join(dir, 'statement'))) {
+    const full = `statement/${rel}`;
+    if (!isOiOnlyFile(full)) continue;
+    const text = await fsp.readFile(path.join(dir, full), 'utf8').catch(() => '');
+    if (text.trim()) out.push(full);
+  }
+  return out;
 }
 
 /** Stable, readable text for hashing and the diff view. */
 export function testsetText(c: TestsetContent): string {
-  return JSON.stringify(sortKeys(c), null, 2);
+  // Line endings and trailing blanks do not count, as for single-file items.
+  const tests = Object.fromEntries(Object.entries(c.tests).map(([i, t]) => [i, normalize(t)]));
+  return JSON.stringify(sortKeys({ ...c, script: normalize(c.script), tests }), null, 2);
 }
 
 /** Group of each test index, and per-test points derived from group totals (testset "tests"). */
@@ -228,14 +308,16 @@ export async function localItems(judge: Judge, ctx: ProblemCtx): Promise<LocalIt
             name: g.name,
             pointsPolicy: g.policy ?? 'COMPLETE_GROUP',
             dependencies: [...(g.dependencies ?? [])].sort(),
-            ...(config.tests.points ? { points: g.points ?? 0 } : {}),
+            ...(config.tests.points ? { points: roundPoints(g.points ?? 0) } : {}),
           }))
         : [],
     },
     extra: { groupsEnabled: !!config.tests.groups, pointsEnabled: !!config.tests.points },
   });
   if (Object.keys(mapping).length) {
-    items.push({ key: 'groups', kind: 'groups', label: 'test groups', path: 'problem.toml', meta: { mapping }, extra: { points } });
+    // Per-test points are part of the content: a change of points alone must be pushed too.
+    const pk = pointsKey(points);
+    items.push({ key: 'groups', kind: 'groups', label: 'test groups', path: 'problem.toml', meta: { mapping, ...(Object.keys(pk).length ? { points: pk } : {}) }, extra: { points, pointsEnabled: !!config.tests.points } });
   }
 
   // ---- resources ----
@@ -321,7 +403,9 @@ export async function localItems(judge: Judge, ctx: ProblemCtx): Promise<LocalIt
 
   // ---- tests ----
   if (config.tests.script && (await exists(path.join(dir, config.tests.script)))) {
-    items.push({ key: 'script', kind: 'script', label: 'test script', path: config.tests.script, text: await readText(config.tests.script) });
+    const text = await readText(config.tests.script);
+    // An empty script is no script (Polygon: clearScript), as on the remote side.
+    if (text.trim()) items.push({ key: 'script', kind: 'script', label: 'test script', path: config.tests.script, text });
   }
   const samples = new Set(parseIndexList(config.tests.samples ?? ''));
   const planErrors: string[] = [];
@@ -349,26 +433,52 @@ export async function localItems(judge: Judge, ctx: ProblemCtx): Promise<LocalIt
   for (const ts of testsetsOf(config).filter((t) => t.name !== TESTSET)) {
     const errs: string[] = [];
     const tests: Record<string, string> = {};
+    const paths: Record<string, string> = {};
+    const statements: NonNullable<TestsetContent['statements']> = {};
+    const scriptStatements: NonNullable<TestsetContent['scriptStatements']> = {};
+    // Statement files of the generated samples (present or not), so they count as tracked.
+    const statementFiles: string[] = [];
+    const tsSampleSet = new Set(parseIndexList(ts.samples ?? ''));
     for (const p of await planTests(ctx, errs, ts.name)) {
-      if (p.origin === 'manual' && p.manualPath) tests[p.index] = await readText(path.relative(dir, p.manualPath).split(path.sep).join('/'));
+      if (p.origin !== 'manual' || !p.manualPath) {
+        if (!tsSampleSet.has(p.index)) continue;
+        const sp = scriptStatementPaths(p.index, ts.name);
+        statementFiles.push(sp.input, sp.output);
+        const st = statementEntry(await statementMeta(dir, sp));
+        if (st) scriptStatements[p.index] = st;
+        continue;
+      }
+      const rel = path.relative(dir, p.manualPath).split(path.sep).join('/');
+      tests[p.index] = await readText(rel);
+      paths[p.index] = rel;
+      const st = statementEntry(await statementMeta(dir, statementPaths(rel)));
+      if (st) statements[p.index] = st;
     }
     warnings.push(...errs.map((e) => `${ts.name}: ${e}`));
+    const tsSamples = compressRanges(parseIndexList(ts.samples ?? ''));
     const content: TestsetContent = {
       script: ts.script ? await readText(ts.script).catch(() => '') : '',
       tests,
       ...testsetGroups(ts, !!config.tests.points),
+      ...(tsSamples ? { samples: tsSamples } : {}),
+      ...(Object.keys(statements).length ? { statements } : {}),
+      ...(Object.keys(scriptStatements).length ? { scriptStatements } : {}),
     };
-    items.push({ key: `testset:${ts.name}`, kind: 'testset', label: `testset ${ts.name}`, path: 'problem.toml', text: testsetText(content), extra: { testset: ts.name, content } });
+    items.push({ key: `testset:${ts.name}`, kind: 'testset', label: `testset ${ts.name}`, path: 'problem.toml', text: testsetText(content), extra: { testset: ts.name, content, paths, statementFiles } });
   }
 
   // ---- validator / checker self-tests ----
   const vt = (await listFiles(path.join(dir, 'validator-tests'))).filter((f) => hasToken(f, 'valid') || hasToken(f, 'invalid'));
-  for (const [i, f] of vt.entries()) {
+  const vtIndex = selfTestIndices(vt);
+  for (const [k, f] of vt.entries()) {
+    const i = vtIndex[k] - 1;
     const verdict = hasToken(f, 'invalid') ? 'INVALID' : 'VALID';
     items.push({ key: `validatorTest:${i + 1}`, kind: 'validatorTest', label: `validator test ${i + 1} (${f})`, path: `validator-tests/${f}`, text: await readText(`validator-tests/${f}`), meta: { verdict }, extra: { index: i + 1 } });
   }
   const ctNames = (await listFiles(path.join(dir, 'checker-tests'))).filter((f) => f.endsWith('.in')).map((f) => f.slice(0, -3));
-  for (const [i, name] of ctNames.entries()) {
+  const ctIndex = selfTestIndices(ctNames);
+  for (const [k, name] of ctNames.entries()) {
+    const i = ctIndex[k] - 1;
     const read = async (ext: string) => ((await exists(path.join(dir, 'checker-tests', `${name}.${ext}`))) ? readText(`checker-tests/${name}.${ext}`) : '');
     let v = (await read('verdict')).trim().split(/\s+/)[0]?.toLowerCase();
     if (!v) v = ['ok', 'wa', 'pe', 'fail'].find((w) => hasToken(name, w)) ?? '';
@@ -404,8 +514,11 @@ function splitCheckerTestText(t: string) {
 // ---------------------------------------------------------------------------
 // Remote side
 
-/** Polygon has no call that lists testsets: the extra ones known locally are fetched by name. */
-export async function remoteItems(client: PolygonClient, problemId: number, extraTestsets: string[] = []): Promise<Item[]> {
+/**
+ * Polygon has no call that lists testsets: the extra ones known locally are fetched by
+ * name, and `probe` names (e.g. "pretests") are fetched when Polygon has them.
+ */
+export async function remoteItems(client: PolygonClient, problemId: number, extraTestsets: string[] = [], probe: string[] = []): Promise<Item[]> {
   const pid = { problemId };
   const items: Item[] = [];
   const info = await client.call('problem.info', pid);
@@ -434,7 +547,7 @@ export async function remoteItems(client: PolygonClient, problemId: number, extr
   ]);
 
   const pointsByGroup = new Map<string, number>();
-  for (const t of tests) if (t.group) pointsByGroup.set(t.group, (pointsByGroup.get(t.group) ?? 0) + Number(t.points ?? 0));
+  for (const t of tests) if (t.group) pointsByGroup.set(t.group, roundPoints((pointsByGroup.get(t.group) ?? 0) + Number(t.points ?? 0)));
   const anyPoints = tests.some((t) => Number(t.points ?? 0) > 0);
   items.push({
     key: 'config',
@@ -456,7 +569,8 @@ export async function remoteItems(client: PolygonClient, problemId: number, extr
   });
   const mapping: Record<string, string> = {};
   for (const t of tests) if (t.group) mapping[t.index] = String(t.group);
-  if (Object.keys(mapping).length) items.push({ key: 'groups', kind: 'groups', label: 'test groups', path: 'problem.toml', meta: { mapping } });
+  const pk = anyPoints ? pointsKey(Object.fromEntries(tests.filter((t) => t.group).map((t) => [t.index, Number(t.points ?? 0)]))) : {};
+  if (Object.keys(mapping).length) items.push({ key: 'groups', kind: 'groups', label: 'test groups', path: 'problem.toml', meta: { mapping, ...(Object.keys(pk).length ? { points: pk } : {}) } });
 
   for (const f of files.sourceFiles ?? []) {
     const text = await client.text('problem.viewFile', { ...pid, type: 'source', name: f.name });
@@ -485,16 +599,10 @@ export async function remoteItems(client: PolygonClient, problemId: number, extr
   if (script.trim()) items.push({ key: 'script', kind: 'script', label: 'test script', text: script.replace(/\r\n/g, '\n') });
   for (const t of tests) {
     if (t.manual) {
-      const input = typeof t.input === 'string' ? t.input : t.inputBase64 ? Buffer.from(t.inputBase64, 'base64').toString('utf8') : await client.text('problem.testInput', { ...pid, testset: TESTSET, testIndex: t.index });
-      const stmt: Record<string, string> = {};
-      if (typeof t.inputForStatement === 'string' && t.inputForStatement.trim()) stmt.statementInput = normStmt(t.inputForStatement);
-      if (typeof t.outputForStatement === 'string' && t.outputForStatement.trim()) stmt.statementOutput = normStmt(t.outputForStatement);
-      items.push({ key: `test:${t.index}`, kind: 'test', label: `manual test ${t.index}`, text: input.replace(/\r\n/g, '\n'), meta: { sample: !!t.useInStatements, ...stmt }, extra: { index: t.index } });
-    } else if (t.useInStatements) {
-      const stmt: Record<string, string> = {};
-      if (typeof t.inputForStatement === 'string' && t.inputForStatement.trim()) stmt.statementInput = normStmt(t.inputForStatement);
-      if (typeof t.outputForStatement === 'string' && t.outputForStatement.trim()) stmt.statementOutput = normStmt(t.outputForStatement);
-      items.push({ key: `sample:${t.index}`, kind: 'sample', label: `test ${t.index} is a sample`, path: 'problem.toml', meta: { sample: true, ...stmt }, extra: { index: t.index } });
+      const input = await remoteInput(client, problemId, TESTSET, t);
+      items.push({ key: `test:${t.index}`, kind: 'test', label: `manual test ${t.index}`, text: input.replace(/\r\n/g, '\n'), meta: { sample: isSample(t), ...remoteStatementMeta(t) }, extra: { index: t.index } });
+    } else if (isSample(t)) {
+      items.push({ key: `sample:${t.index}`, kind: 'sample', label: `test ${t.index} is a sample`, path: 'problem.toml', meta: { sample: true, ...remoteStatementMeta(t) }, extra: { index: t.index } });
     }
   }
   for (const v of vtests) {
@@ -510,22 +618,42 @@ export async function remoteItems(client: PolygonClient, problemId: number, extr
       extra: { index: c.index },
     });
   }
-  for (const name of extraTestsets) {
-    const [script, tests, groupDefs] = await Promise.all([
+  // Testsets cannot be listed: ask for each name; Polygon answers FAILED for a testset it does not have.
+  const probeOnly = new Set(probe.filter((n) => !extraTestsets.includes(n)));
+  for (const name of [...new Set([...extraTestsets, ...probe])]) {
+    if (name === TESTSET || !TESTSET_NAME_RE.test(name)) continue;
+    let tests: any[];
+    try {
+      tests = (await client.call<any[]>('problem.tests', { ...pid, testset: name, noInputs: false })) ?? [];
+    } catch (e) {
+      if (e instanceof PolygonError) continue;
+      throw e;
+    }
+    const [script, groupDefs] = await Promise.all([
       opt(client.text('problem.script', { ...pid, testset: name }), ''),
-      opt(client.call<any[]>('problem.tests', { ...pid, testset: name, noInputs: false }), []),
       opt(client.call<any[]>('problem.viewTestGroup', { ...pid, testset: name }), []),
     ]);
-    if (!script.trim() && !tests.length && !groupDefs.length) continue;
+    // A probed name (not a local testset) that exists but is empty is not worth a local testset.
+    if (probeOnly.has(name) && !script.trim() && !tests.length && !groupDefs.length) continue;
     const manual: Record<string, string> = {};
+    const statements: NonNullable<TestsetContent['statements']> = {};
+    const scriptStatements: NonNullable<TestsetContent['scriptStatements']> = {};
     for (const t of tests) {
-      if (!t.manual) continue;
-      const input = typeof t.input === 'string' ? t.input : await client.text('problem.testInput', { ...pid, testset: name, testIndex: t.index });
-      manual[t.index] = input.replace(/\r\n/g, '\n');
+      if (!t.manual) {
+        // Only samples have statement files locally (as for the "tests" testset).
+        const st = isSample(t) ? statementEntry(remoteStatementMeta(t)) : undefined;
+        if (st) scriptStatements[t.index] = st;
+        continue;
+      }
+      manual[t.index] = (await remoteInput(client, problemId, name, t)).replace(/\r\n/g, '\n');
+      const st = statementEntry(remoteStatementMeta(t));
+      if (st) statements[t.index] = st;
     }
     const byGroup = new Map<string, number[]>();
     for (const t of tests) if (t.group) byGroup.set(String(t.group), [...(byGroup.get(String(t.group)) ?? []), t.index]);
     const anyPoints = tests.some((t) => Number(t.points ?? 0) > 0);
+    const points = anyPoints ? pointsKey(Object.fromEntries(tests.filter((t) => t.group).map((t) => [t.index, Number(t.points ?? 0)]))) : {};
+    const samples = compressRanges(tests.filter(isSample).map((t) => Number(t.index)));
     const content: TestsetContent = {
       script: script.replace(/\r\n/g, '\n'),
       tests: manual,
@@ -536,15 +664,39 @@ export async function remoteItems(client: PolygonClient, problemId: number, extr
           name: String(g.name),
           pointsPolicy: g.pointsPolicy ?? 'COMPLETE_GROUP',
           dependencies: [...(g.dependencies ?? [])].map(String).sort(),
-          ...(anyPoints ? { points: idx.reduce((a, i) => a + Number(tests.find((t) => t.index === i)?.points ?? 0), 0) } : {}),
+          ...(anyPoints ? { points: roundPoints(idx.reduce((a, i) => a + Number(tests.find((t) => t.index === i)?.points ?? 0), 0)) } : {}),
           tests: compressRanges(idx),
         };
       }),
-      ...(anyPoints ? { points: Object.fromEntries(tests.filter((t) => t.group).map((t) => [t.index, Number(t.points ?? 0)])) } : {}),
+      ...(Object.keys(points).length ? { points } : {}),
+      ...(samples ? { samples } : {}),
+      ...(Object.keys(statements).length ? { statements } : {}),
+      ...(Object.keys(scriptStatements).length ? { scriptStatements } : {}),
     };
     items.push({ key: 'testset:' + name, kind: 'testset', label: 'testset ' + name, text: testsetText(content), extra: { testset: name, content } });
   }
   return items;
+}
+
+const isSample = (t: any) => t.useInStatements === true || t.useInStatements === 'true';
+
+/** Exact input of a manual test: Base64 when given (`input` is a lossy UTF-8 view). */
+async function remoteInput(client: PolygonClient, problemId: number, testset: string, t: any): Promise<string> {
+  if (typeof t.inputBase64 === 'string') return Buffer.from(t.inputBase64, 'base64').toString('utf8');
+  if (typeof t.input === 'string') return t.input;
+  return client.text('problem.testInput', { problemId, testset, testIndex: t.index });
+}
+
+/** Statement input / output of a Polygon test, as sync metadata (absent when empty). */
+function remoteStatementMeta(t: any): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, v] of [
+    ['statementInput', t.inputForStatement ?? t.inputForStatements],
+    ['statementOutput', t.outputForStatement ?? t.outputForStatements],
+  ] as const) {
+    if (typeof v === 'string' && v.trim()) out[key] = normStmt(v);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -557,6 +709,15 @@ export interface PushContext {
 }
 
 const fileBuf = (it: Item) => it.bytes ?? Buffer.from(it.text ?? '', 'utf8');
+
+/** Points of the given tests (missing = 0); a failure fails the item, so it is sent again. */
+async function savePoints(pc: PushContext, testset: string, indices: string[], points: Record<string, number>) {
+  const failed: string[] = [];
+  for (const i of [...indices].sort((a, b) => Number(a) - Number(b))) {
+    await pc.client.call('problem.saveTest', { problemId: pc.problemId, testset, testIndex: Number(i), testPoints: roundPoints(points[i] ?? 0) }).catch((err: Error) => failed.push(`${i}: ${err.message}`));
+  }
+  if (failed.length) throw new Error(`${testset === TESTSET ? '' : `${testset}: `}points of tests ${failed.join('; ')}`);
+}
 
 /** Push an item; `deleted` pushes clear the remote value where Polygon allows it. */
 export async function pushItem(pc: PushContext, it: Item, deleted = false): Promise<void> {
@@ -592,9 +753,9 @@ export async function pushItem(pc: PushContext, it: Item, deleted = false): Prom
       const byGroup = new Map<string, number[]>();
       for (const [i, g] of Object.entries(mapping)) byGroup.set(g, [...(byGroup.get(g) ?? []), Number(i)]);
       for (const [g, idx] of byGroup) await client.call('problem.setTestGroup', { ...pid, testset: TESTSET, testGroup: g, testIndices: idx.sort((a, b) => a - b).join(',') });
-      for (const [i, pts] of Object.entries((e.points ?? {}) as Record<string, number>)) {
-        await client.call('problem.saveTest', { ...pid, testset: TESTSET, testIndex: Number(i), testPoints: pts }).catch((err: Error) => pc.warn(`points of test ${i}: ${err.message}`));
-      }
+      const points = (e.points ?? (it.meta as any)?.points ?? {}) as Record<string, number>;
+      // Every grouped test, so a test whose points went to 0 is reset too; ≤ 2 decimals as Polygon wants.
+      if (e.pointsEnabled ?? Object.keys(points).length > 0) await savePoints(pc, TESTSET, Object.keys(mapping), points);
       return;
     }
     case 'solution':
@@ -607,7 +768,8 @@ export async function pushItem(pc: PushContext, it: Item, deleted = false): Prom
       await client.call('problem.saveStatement', { ...pid, lang: e.lang, encoding: 'UTF-8', [e.section]: deleted ? '' : it.text ?? '' });
       return;
     case 'script':
-      await client.call('problem.saveScript', { ...pid, testset: TESTSET, source: it.text ?? '' });
+      if ((it.text ?? '').trim()) await client.call('problem.saveScript', { ...pid, testset: TESTSET, source: it.text ?? '' });
+      else await client.call('problem.clearScript', { ...pid, testset: TESTSET });
       return;
     case 'test':
       {
@@ -648,26 +810,123 @@ export async function pushItem(pc: PushContext, it: Item, deleted = false): Prom
       // The testset itself has to exist on Polygon (Tests → testset list); the API cannot create it.
       const testset: string = e.testset;
       const c = e.content as TestsetContent;
-      await client.call('problem.saveScript', { ...pid, testset, source: c.script }).catch((err: Error) => {
+      const missing = (err: Error) => {
         throw new Error(`${err.message} — create the testset "${testset}" on Polygon first (Tests page → testsets), then push again`);
-      });
-      for (const [i, text] of Object.entries(c.tests)) await client.call('problem.saveTest', { ...pid, testset, testIndex: Number(i), testInput: text });
+      };
+      const listTests = async () => {
+        const r = await client.call<any[]>('problem.tests', { ...pid, testset, noInputs: true });
+        return Array.isArray(r) ? r : [];
+      };
+      const before = await listTests().catch(missing);
+      // Manual tests that are gone locally go on Polygon too (before the script renumbers "> $").
+      const stale = before.filter((t) => t.manual && c.tests[t.index] === undefined).map((t) => Number(t.index));
+      if (stale.length) await client.call('problem.deleteTest', { ...pid, testset, testIndices: stale.join(',') });
+      // A manual test cannot take the index of a generated one: drop those first.
+      if (before.some((t) => !t.manual && c.tests[t.index] !== undefined)) await client.call('problem.clearScript', { ...pid, testset });
+      const samples = new Set(parseIndexList(c.samples ?? ''));
+      for (const [i, text] of Object.entries(c.tests)) {
+        const st = c.statements?.[i];
+        await client.call('problem.saveTest', {
+          ...pid, testset, testIndex: Number(i), testInput: text, testUseInStatements: samples.has(Number(i)),
+          testInputForStatements: st?.input ?? '', testOutputForStatements: st?.output ?? '', verifyInputOutputForStatements: false,
+        });
+      }
+      if (c.script.trim()) await client.call('problem.saveScript', { ...pid, testset, source: c.script }).catch(missing);
+      else await client.call('problem.clearScript', { ...pid, testset }).catch(missing);
+      // Generated tests exist only now: set their sample flags and statement input / output.
+      for (const t of await listTests()) {
+        if (t.manual) continue;
+        const sample = samples.has(Number(t.index));
+        const want = sample ? c.scriptStatements?.[t.index] : undefined;
+        const have = statementEntry(remoteStatementMeta(t));
+        if (isSample(t) === sample && (want?.input ?? '') === (have?.input ?? '') && (want?.output ?? '') === (have?.output ?? '')) continue;
+        await client.call('problem.saveTest', {
+          ...pid, testset, testIndex: Number(t.index), testUseInStatements: sample,
+          testInputForStatements: want?.input ?? '', testOutputForStatements: want?.output ?? '', verifyInputOutputForStatements: false,
+        });
+      }
       await client.call('problem.enableGroups', { ...pid, testset, enable: c.groupsEnabled });
+      const grouped: string[] = [];
       for (const g of c.groups) {
         await client.call('problem.saveTestGroup', { ...pid, testset, group: g.name, pointsPolicy: g.pointsPolicy, dependencies: g.dependencies.join(',') || undefined });
         const idx = parseIndexList(g.tests);
+        grouped.push(...idx.map(String));
         if (idx.length) await client.call('problem.setTestGroup', { ...pid, testset, testGroup: g.name, testIndices: idx.join(',') });
       }
-      for (const [i, pts] of Object.entries(c.points ?? {})) {
-        await client.call('problem.saveTest', { ...pid, testset, testIndex: Number(i), testPoints: pts }).catch((err: Error) => pc.warn(`${testset}: points of test ${i}: ${err.message}`));
-      }
+      if (c.groups.some((g) => g.points !== undefined) || Object.keys(c.points ?? {}).length) await savePoints(pc, testset, [...new Set([...grouped, ...Object.keys(c.points ?? {})])], c.points ?? {});
       return;
     }
   }
 }
 
-/** Kinds whose local deletion can be expressed on Polygon (by clearing the value). */
-export const DELETABLE_KINDS = new Set<SyncItemKind>(['statement', 'sample']);
+/** Kinds whose local deletion can be expressed on Polygon (deleting or clearing it there). */
+export const DELETABLE_KINDS = new Set<SyncItemKind>(['statement', 'sample', 'solution', 'source', 'resource', 'statementResource', 'validatorTest', 'checkerTest', 'test', 'script', 'groups']);
+
+/** Resource files Polygon refuses to delete. */
+const UNDELETABLE_RESOURCES = new Set(['olymp.sty', 'problem.tex', 'statements.ftl']);
+
+/** Parts of a sync key: `kind:name` (names may contain ":"), `statement:lang:section`. */
+export function splitKey(key: string): { kind: SyncItemKind; name: string } {
+  const at = key.indexOf(':');
+  return at < 0 ? { kind: key as SyncItemKind, name: '' } : { kind: key.slice(0, at) as SyncItemKind, name: key.slice(at + 1) };
+}
+
+/**
+ * Remove on Polygon an item deleted locally since the last sync. A statement section is
+ * cleared (the whole language goes with `problem.deleteStatement`, see sync); groups go
+ * with the config item (enableGroups).
+ */
+export async function deleteItem(pc: PushContext, key: string): Promise<void> {
+  const { client, problemId } = pc;
+  const pid = { problemId };
+  const { kind, name } = splitKey(key);
+  switch (kind) {
+    case 'statement': {
+      const [lang, section] = [name.slice(0, name.lastIndexOf(':')), name.slice(name.lastIndexOf(':') + 1)];
+      return pushItem(pc, { key, kind, label: key, extra: { lang, section } }, true);
+    }
+    case 'sample':
+      return pushItem(pc, { key, kind, label: key, extra: { index: Number(name) } }, true);
+    case 'solution':
+      await client.call('problem.deleteSolution', { ...pid, name });
+      return;
+    case 'source':
+      await client.call('problem.deleteFile', { ...pid, type: 'source', name });
+      return;
+    case 'resource':
+      if (UNDELETABLE_RESOURCES.has(name)) return;
+      await client.call('problem.deleteFile', { ...pid, type: 'resource', name });
+      return;
+    case 'statementResource':
+      await client.call('problem.deleteStatementResource', { ...pid, name });
+      return;
+    case 'validatorTest':
+      await client.call('problem.deleteValidatorTest', { ...pid, testIndex: Number(name) });
+      return;
+    case 'checkerTest':
+      await client.call('problem.deleteCheckerTest', { ...pid, testIndex: Number(name) });
+      return;
+    case 'test':
+      await client.call('problem.deleteTest', { ...pid, testset: TESTSET, testIndex: Number(name) });
+      return;
+    case 'script':
+      await client.call('problem.clearScript', { ...pid, testset: TESTSET });
+      return;
+    case 'groups':
+      return;
+    default:
+      throw new Error(`${key}: cannot be deleted on Polygon`);
+  }
+}
+
+/** Polygon's answer when the object to delete is not there (any more): nothing left to do. */
+export const alreadyGone = (e: unknown) => {
+  if (!(e instanceof PolygonError)) return false;
+  // problem.deleteTest: "Some tests can not be deleted." with a reason per test.
+  const failures = (e.result as { failures?: { reason?: string }[] } | undefined)?.failures;
+  if (Array.isArray(failures) && failures.length) return failures.every((f) => f?.reason === 'NOT_FOUND');
+  return /not found|no such|does not exist|doesn't exist|there is no|not exist/i.test(e.message);
+};
 
 // ---------------------------------------------------------------------------
 // Apply: write a remote item into the local problem
@@ -685,13 +944,18 @@ export interface ApplyContext {
 }
 
 async function writeRel(ac: ApplyContext, rel: string, data: string | Buffer) {
-  const abs = path.join(ac.dir, rel);
+  const abs = safeJoin(ac.dir, rel);
   await fsp.mkdir(path.dirname(abs), { recursive: true });
   await fsp.writeFile(abs, typeof data === 'string' && data && !data.endsWith('\n') ? `${data}\n` : data);
   ac.written.add(rel);
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
+
+/** Remove a problem file (never outside the problem folder). */
+async function rmRel(ac: Pick<ApplyContext, 'dir'>, rel: string) {
+  await fsp.rm(safeJoin(ac.dir, rel), { force: true });
+}
 
 function samplesSet(doc: Record<string, any>): Set<number> {
   return new Set(parseIndexList(doc.tests?.samples ?? ''));
@@ -723,9 +987,9 @@ export async function applyItem(ac: ApplyContext, it: Item): Promise<void> {
       const m = it.meta as any;
       const toLocal = (name: string | null, keep?: string) => {
         if (!name) return null;
-        if (name.startsWith('std::')) return `${STD_PREFIX}${name.slice(5).replace(/\.cpp$/, '')}`;
+        if (name.startsWith('std::')) return `${STD_PREFIX}${safeName('checker', name.slice(5)).replace(/\.cpp$/, '')}`;
         if (keep && path.posix.basename(keep) === name) return keep;
-        return sourcePlacement(name, m);
+        return sourcePlacement(safeName('source', name), m);
       };
       for (const role of ['validator', 'checker', 'interactor'] as const) {
         const v = toLocal(m[role], doc[role]?.source);
@@ -761,7 +1025,7 @@ export async function applyItem(ac: ApplyContext, it: Item): Promise<void> {
       return;
     }
     case 'source': {
-      const rel = ac.local?.path ?? sourcePlacement(e.name, ac.remoteConfig);
+      const rel = ac.local?.path ?? sourcePlacement(safeName('source', e.name), ac.remoteConfig);
       await writeRel(ac, rel, it.text ?? '');
       applySourceType(ac, rel, e.sourceType);
       if (rel.startsWith('generators/')) {
@@ -772,10 +1036,10 @@ export async function applyItem(ac: ApplyContext, it: Item): Promise<void> {
       return;
     }
     case 'resource':
-      await writeRel(ac, ac.local?.path ?? `files/${e.name}`, it.bytes ?? Buffer.alloc(0));
+      await writeRel(ac, ac.local?.path ?? `files/${safeName('resource', e.name)}`, it.bytes ?? Buffer.alloc(0));
       return;
     case 'solution': {
-      const rel = ac.local?.path ?? `solutions/${e.name}`;
+      const rel = ac.local?.path ?? `solutions/${safeName('solution', e.name)}`;
       await writeRel(ac, rel, it.text ?? '');
       applySourceType(ac, rel, e.sourceType);
       const tag: SolutionTag = TAG_FROM_POLYGON[String((it.meta as any)?.tag)] ?? 'RJ';
@@ -789,15 +1053,17 @@ export async function applyItem(ac: ApplyContext, it: Item): Promise<void> {
     }
     case 'statement': {
       const lang = LANG_FROM_POLYGON[e.lang] ?? e.lang;
+      if (!/^[A-Za-z][\w-]{0,31}$/.test(lang) || lang === 'images') throw new UnsafeNameError('statement language', String(e.lang));
       if (e.section === 'name') {
         doc.problem.title = { ...(doc.problem.title ?? {}), [lang]: it.text ?? '' };
         return;
       }
+      if (!(STATEMENT_SECTIONS as readonly string[]).includes(e.section)) throw new UnsafeNameError('statement section', String(e.section));
       await writeRel(ac, `statement/${lang}/${e.section}.tex`, it.text ?? '');
       return;
     }
     case 'statementResource':
-      await writeRel(ac, `statement/images/${e.name}`, it.bytes ?? Buffer.alloc(0));
+      await writeRel(ac, `statement/images/${safeName('statement resource', e.name)}`, it.bytes ?? Buffer.alloc(0));
       return;
     case 'script': {
       const rel = doc.tests.script || 'tests/script.txt';
@@ -806,44 +1072,30 @@ export async function applyItem(ac: ApplyContext, it: Item): Promise<void> {
       return;
     }
     case 'test': {
-      const rel = ac.local?.path ?? `tests/manual/${pad(e.index)}.in`;
+      const index = safeIndex(e.index);
+      const rel = ac.local?.path ?? `tests/manual/${pad(index)}.in`;
       await writeRel(ac, rel, it.text ?? '');
-      const m = (it.meta ?? {}) as { statementInput?: string; statementOutput?: string };
-      const sp = statementPaths(rel);
-      for (const [text, file] of [
-        [m.statementInput, sp.input],
-        [m.statementOutput, sp.output],
-      ] as const) {
-        if (text !== undefined) await writeRel(ac, file, text);
-        else await fsp.rm(path.join(ac.dir, file), { force: true });
-      }
+      await writeStatementIo(ac, statementPaths(rel), it.meta);
       const s = samplesSet(doc);
-      if ((it.meta as any)?.sample) s.add(e.index);
-      else s.delete(e.index);
+      if ((it.meta as any)?.sample) s.add(index);
+      else s.delete(index);
       saveSamples(doc, s);
       return;
     }
     case 'sample': {
+      const index = safeIndex(e.index);
       const s = samplesSet(doc);
-      s.add(e.index);
+      s.add(index);
       saveSamples(doc, s);
-      const m = (it.meta ?? {}) as { statementInput?: string; statementOutput?: string };
-      const sp = scriptStatementPaths(e.index);
-      for (const [text, file] of [
-        [m.statementInput, sp.input],
-        [m.statementOutput, sp.output],
-      ] as const) {
-        if (text !== undefined) await writeRel(ac, file, text);
-        else await fsp.rm(path.join(ac.dir, file), { force: true });
-      }
+      await writeStatementIo(ac, scriptStatementPaths(index), it.meta);
       return;
     }
     case 'validatorTest': {
-      const verdict = String((it.meta as any)?.verdict ?? 'VALID').toLowerCase();
-      const want = `validator-tests/${pad(e.index)}.${verdict}.in`;
+      const verdict = String((it.meta as any)?.verdict ?? 'VALID').toLowerCase() === 'invalid' ? 'invalid' : 'valid';
+      const want = `validator-tests/${pad(safeIndex(e.index))}.${verdict}.in`;
       const old = ac.local?.path;
       const keep = old && hasToken(old, verdict) && (verdict === 'invalid' || !hasToken(old, 'invalid'));
-      if (old && !keep) await fsp.rm(path.join(ac.dir, old), { force: true });
+      if (old && !keep) await rmRel(ac, old);
       await writeRel(ac, keep ? old! : want, it.text ?? '');
       return;
     }
@@ -851,8 +1103,8 @@ export async function applyItem(ac: ApplyContext, it: Item): Promise<void> {
       const parts = splitCheckerTestText(it.text ?? '');
       const word = CHECKER_VERDICT_FROM_POLY[String((it.meta as any)?.verdict)] ?? 'ok';
       const oldName: string | undefined = ac.local?.extra?.name;
-      if (oldName) for (const ext of ['in', 'out', 'ans', 'verdict']) await fsp.rm(path.join(ac.dir, 'checker-tests', `${oldName}.${ext}`), { force: true });
-      const base = `checker-tests/${pad(e.index)}.${word}`;
+      if (oldName) for (const ext of ['in', 'out', 'ans', 'verdict']) await rmRel(ac, `checker-tests/${oldName}.${ext}`);
+      const base = `checker-tests/${pad(safeIndex(e.index))}.${word}`;
       await writeRel(ac, `${base}.in`, parts.input);
       await writeRel(ac, `${base}.out`, parts.output);
       await writeRel(ac, `${base}.ans`, parts.answer);
@@ -860,16 +1112,40 @@ export async function applyItem(ac: ApplyContext, it: Item): Promise<void> {
     }
     case 'testset': {
       const name: string = e.testset;
+      if (!TESTSET_NAME_RE.test(String(name)) || name === TESTSET) throw new UnsafeNameError('testset', String(name));
       const c = e.content as TestsetContent;
       doc.testsets ??= {};
       const t: Record<string, any> = (doc.testsets[name] ??= {});
       // Manual tests live in tests/<name>/ by default, so the script goes next to it.
-      const manual: string = t.manual ?? `tests/${name}`;
+      const manual: string = String(t.manual ?? `tests/${name}`).replace(/\/+$/, '');
       if (c.script.trim()) {
         t.script ??= `tests/script-${name}.txt`;
         await writeRel(ac, t.script, c.script);
+      } else if (t.script) {
+        await rmRel(ac, t.script);
+        delete t.script;
       }
-      for (const [i, text] of Object.entries(c.tests)) await writeRel(ac, `${manual}/${pad(Number(i))}.in`, text);
+      const paths = (ac.local?.extra?.paths ?? {}) as Record<string, string>;
+      // Manual tests Polygon does not have any more go, with their statement input / output.
+      for (const [i, rel] of Object.entries(paths)) {
+        if (c.tests[i] !== undefined) continue;
+        for (const f of [rel, ...Object.values(statementPaths(rel))]) await rmRel(ac, f);
+      }
+      for (const [i, text] of Object.entries(c.tests)) {
+        const rel = paths[i] ?? `${manual}/${pad(safeIndex(i))}.in`;
+        await writeRel(ac, rel, text);
+        const st = c.statements?.[i];
+        await writeStatementIo(ac, statementPaths(rel), { statementInput: st?.input, statementOutput: st?.output });
+      }
+      // Statement input / output of generated samples: the old files go, the new ones are written.
+      for (const rel of (ac.local?.extra?.statementFiles ?? []) as string[]) await rmRel(ac, rel);
+      for (const i of parseIndexList(c.samples ?? '')) {
+        if (c.tests[i] !== undefined) continue;
+        const st = c.scriptStatements?.[i];
+        await writeStatementIo(ac, scriptStatementPaths(safeIndex(i), name), { statementInput: st?.input, statementOutput: st?.output });
+      }
+      if (c.samples) t.samples = c.samples;
+      else delete t.samples;
       if (c.groupsEnabled) t.groups = true;
       else delete t.groups;
       const existing: any[] = Array.isArray(t.group) ? t.group : [];
@@ -909,6 +1185,7 @@ export async function untrackedItems(dir: string, config: ProblemToml, items: It
     if (it.path) covered.add(it.path);
     if (it.kind === 'test' && it.path) for (const rel of Object.values(statementPaths(it.path))) covered.add(rel);
     if (it.kind === 'sample') for (const rel of Object.values(scriptStatementPaths(it.extra?.index))) covered.add(rel);
+    if (it.kind === 'testset') for (const rel of (it.extra?.statementFiles ?? []) as string[]) covered.add(rel);
     if (it.kind === 'checkerTest') for (const ext of ['in', 'out', 'ans', 'verdict']) covered.add(`checker-tests/${it.extra?.name}.${ext}`);
   }
   // Further testsets are one item each: their script and manual tests.
@@ -916,9 +1193,13 @@ export async function untrackedItems(dir: string, config: ProblemToml, items: It
     if (ts.script) covered.add(ts.script);
     coveredDirs.push(`${ts.manual.replace(/\/+$/, '')}/`);
   }
+  // An empty script is no item, but it is still the problem's script.
+  if (config.tests.script) covered.add(config.tests.script);
   const out: Item[] = [];
   for (const rel of await listFiles(dir)) {
     if (rel.split('/').some((seg) => HIDDEN_DIRS.has(seg)) || NOT_PROBLEM_FILES.test(rel) || covered.has(rel) || coveredDirs.some((d) => rel.startsWith(d))) continue;
+    // OI-only statement parts are local by design, not something Polygon lacks.
+    if (isOiOnlyFile(rel)) continue;
     // Statement sections are synced when they have text; empty ones are placeholders.
     const sec = rel.match(/^statement\/[^/]+\/([a-z]+)\.tex$/)?.[1];
     if (sec && (STATEMENT_SECTIONS as readonly string[]).includes(sec)) continue;
@@ -933,33 +1214,44 @@ export async function removeLocal(ac: ApplyContext, it: Item): Promise<void> {
   const { doc } = ac;
   switch (it.kind) {
     case 'file':
-      if (it.path) await fsp.rm(path.join(ac.dir, it.path), { force: true });
+      // Never a file this pull has just written (e.g. a sample's statement input), nor an OI-only one.
+      if (it.path && !ac.written.has(it.path) && !isOiOnlyFile(it.path)) await rmRel(ac, it.path);
       return;
     case 'sample':
     case 'test': {
       const s = samplesSet(doc);
       s.delete(it.extra?.index);
       saveSamples(doc, s);
-      if (it.kind === 'test' && it.path) await fsp.rm(path.join(ac.dir, it.path), { force: true });
-      if (it.kind === 'sample') for (const rel of Object.values(scriptStatementPaths(it.extra?.index))) await fsp.rm(path.join(ac.dir, rel), { force: true });
+      if (it.kind === 'test' && it.path) for (const rel of [it.path, ...Object.values(statementPaths(it.path))]) await rmRel(ac, rel);
+      if (it.kind === 'sample') for (const rel of Object.values(scriptStatementPaths(it.extra?.index))) await rmRel(ac, rel);
       return;
     }
     case 'solution':
-      if (it.path) await fsp.rm(path.join(ac.dir, it.path), { force: true });
+      if (it.path) await rmRel(ac, it.path);
       doc.solutions = (doc.solutions ?? []).filter((s: any) => s.source !== it.path);
       return;
     case 'statement':
       if (it.extra?.section === 'name') {
         const lang = LANG_FROM_POLYGON[it.extra.lang] ?? it.extra.lang;
         if (doc.problem?.title) delete doc.problem.title[lang];
-      } else if (it.path) await fsp.rm(path.join(ac.dir, it.path), { force: true });
+      } else if (it.path) await rmRel(ac, it.path);
       return;
     case 'checkerTest':
-      for (const ext of ['in', 'out', 'ans', 'verdict']) await fsp.rm(path.join(ac.dir, 'checker-tests', `${it.extra?.name}.${ext}`), { force: true });
+      for (const ext of ['in', 'out', 'ans', 'verdict']) await rmRel(ac, `checker-tests/${it.extra?.name}.${ext}`);
       return;
+    case 'testset': {
+      const name = String(it.extra?.testset ?? '');
+      const t = doc.testsets?.[name];
+      if (!t) return;
+      for (const rel of Object.values((it.extra?.paths ?? {}) as Record<string, string>)) for (const f of [rel, ...Object.values(statementPaths(rel))]) await rmRel(ac, f);
+      for (const rel of (it.extra?.statementFiles ?? []) as string[]) await rmRel(ac, rel);
+      if (t.script) await rmRel(ac, t.script);
+      delete doc.testsets[name];
+      return;
+    }
     case 'source':
       if (it.path) {
-        await fsp.rm(path.join(ac.dir, it.path), { force: true });
+        await rmRel(ac, it.path);
         // Unregister it too, so problem.toml does not point to a missing file.
         if (Array.isArray(doc.generators)) doc.generators = doc.generators.filter((g: any) => g?.source !== it.path);
         for (const role of ['validator', 'checker', 'interactor']) if (doc[role]?.source === it.path) delete doc[role];
@@ -969,11 +1261,24 @@ export async function removeLocal(ac: ApplyContext, it: Item): Promise<void> {
     case 'statementResource':
     case 'script':
     case 'validatorTest':
-      if (it.path) await fsp.rm(path.join(ac.dir, it.path), { force: true });
+      if (it.path) await rmRel(ac, it.path);
+      if (it.kind === 'script' && doc.tests?.script === it.path) delete doc.tests.script;
       return;
   }
 }
 
+
+/** Write (or remove, when absent) a sample's statement input / output files. */
+async function writeStatementIo(ac: ApplyContext, sp: { input: string; output: string }, meta: unknown) {
+  const m = (meta ?? {}) as { statementInput?: string; statementOutput?: string };
+  for (const [text, file] of [
+    [m.statementInput, sp.input],
+    [m.statementOutput, sp.output],
+  ] as const) {
+    if (text !== undefined && text !== '') await writeRel(ac, file, text);
+    else await rmRel(ac, file);
+  }
+}
 
 /** Statement input / output text as compared and stored: LF, one trailing newline. */
 function normStmt(v: string): string {

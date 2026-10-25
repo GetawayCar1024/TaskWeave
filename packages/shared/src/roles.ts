@@ -49,7 +49,8 @@ export function classifyFile(path: string, config: ProblemToml | null): FileRole
   if (path.startsWith('tests/')) return 'test';
   if (path.startsWith('validator-tests/')) return 'validator-test';
   if (path.startsWith('checker-tests/')) return 'checker-test';
-  if (path.startsWith('files/')) return 'resource';
+  // Registered roles win over the files/ convention, so a source registered from
+  // files/ is shown under its role rather than hidden among the resources.
   if (config) {
     if (sameFile(config.validator?.source, path)) return 'validator';
     if (sameFile(config.checker?.source, path)) return 'checker';
@@ -57,6 +58,7 @@ export function classifyFile(path: string, config: ProblemToml | null): FileRole
     if (config.solutions.some((s) => sameFile(s.source, path))) return 'solution';
     if (config.generators.some((g) => sameFile(g.source, path))) return 'generator';
   }
+  if (path.startsWith('files/')) return 'resource';
   if (path.startsWith('solutions/')) return 'solution';
   if (path.startsWith('generators/')) return 'generator';
   const base = path.includes('/') ? '' : path.replace(SOURCE_EXT, '');

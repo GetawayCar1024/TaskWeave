@@ -2,6 +2,7 @@ import type {
   ContestPullPreview,
   ContestPullRequest,
   ContestPullResult,
+  ContestRepullRequest,
   ContestSyncRow,
   ContestSyncStatus,
   PolygonProblem,
@@ -11,7 +12,7 @@ import { judgeMode, polygonFeatureWarnings } from '@polyforge/shared';
 import type { Judge } from '../judge/index.js';
 import { HttpError } from '../util/fs.js';
 import type { ContestRegistry } from '../workspace/contests.js';
-import type { PolygonSync } from './sync.js';
+import { deletedMessage, type PolygonSync } from './sync.js';
 
 interface Deps {
   judge: Judge;
@@ -34,7 +35,13 @@ export async function contestSyncStatus(deps: Deps, contestId: string): Promise<
   const warnings: string[] = [];
   const revisions = new Map<number, number | undefined>();
   const uncommitted = new Set<number>();
-  for (const p of await client.call<PolygonProblem[]>('problems.list', {})) {
+  const deleted = new Set<number>();
+  // showDeleted: a deleted problem is told apart from one without access.
+  for (const p of (await client.call<PolygonProblem[]>('problems.list', { showDeleted: true })) ?? []) {
+    if (p.deleted) {
+      deleted.add(p.id);
+      continue;
+    }
     revisions.set(p.id, p.revision);
     if (p.modified) uncommitted.add(p.id);
   }
@@ -65,7 +72,10 @@ export async function contestSyncStatus(deps: Deps, contestId: string): Promise<
     const row: ContestSyncRow = { index: p.index, problem: p.problem, polygonId, state: 'unbound', localChanges: local.changes, tomlChanged: local.tomlChanged || undefined, syncedRevision: local.syncedRevision };
     row.blocked = polygonFeatureWarnings(ctx.config).length > 0;
     if (polygonId !== undefined) {
-      if (!revisions.has(polygonId)) row.state = 'unreachable';
+      if (deleted.has(polygonId)) {
+        row.state = 'deleted';
+        warnings.push(`${p.index} · ${deletedMessage(polygonId)}`);
+      } else if (!revisions.has(polygonId)) row.state = 'unreachable';
       else {
         row.remoteRevision = revisions.get(polygonId);
         row.remoteUncommitted = uncommitted.has(polygonId) || undefined;
@@ -109,7 +119,7 @@ export async function contestPullPreview(deps: Deps, contestId: string, problems
     job.signal.throwIfAborted();
     job.progress(i, list.length, `${p.index} · ${p.problem}`);
     try {
-      const pre = await sync.pullPreview(await judge.ctx(p.problem));
+      const pre = await sync.pullPreview(await judge.ctx(p.problem), {}, job.signal);
       out.problems.push({
         index: p.index,
         problem: p.problem,
@@ -141,7 +151,8 @@ export async function contestPull(deps: Deps, contestId: string, req: ContestPul
     job.progress(i, todo.length, `${index} · ${x.problem}`);
     try {
       const ctx = await judge.ctx(x.problem);
-      const r = await sync.pull(ctx, { take: x.take });
+      // Conflicts belong to the problem's own sync dialog: such a problem is left alone.
+      const r = await sync.pull(ctx, { take: x.take }, { refuseConflicts: true });
       out.problems.push({ problem: x.problem, index, applied: r.applied.length + r.merged.length, warnings: r.warnings });
     } catch (e) {
       if (job.signal.aborted) throw e;
@@ -149,5 +160,37 @@ export async function contestPull(deps: Deps, contestId: string, req: ContestPul
     }
   }
   job.progress(todo.length, todo.length, 'done');
+  return out;
+}
+
+/**
+ * Make every bound problem of the contest a copy of Polygon again: all remote changes,
+ * conflicts and local edits of synced items take Polygon's version. Items Polygon does not
+ * have are deleted only with `deleteLocal`.
+ */
+export async function contestRepull(deps: Deps, contestId: string, req: ContestRepullRequest, job: JobCtx): Promise<ContestPullResult> {
+  const { judge, contests, sync } = deps;
+  const { config } = await contests.config(contestId);
+  if (config.contest.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI contests cannot sync with Polygon');
+  const list = config.problems.filter((p) => !req.problems?.length || req.problems.includes(p.problem));
+  const out: ContestPullResult = { problems: [] };
+  for (const [i, p] of list.entries()) {
+    job.signal.throwIfAborted();
+    job.progress(i, list.length, `${p.index} · ${p.problem}`);
+    try {
+      const ctx = await judge.ctx(p.problem);
+      if (ctx.config.polygon.id === undefined || judgeMode(ctx.config.problem) === 'grader') continue;
+      const pre = await sync.pullPreview(ctx, {}, job.signal);
+      const take = pre.items
+        .filter((it) => it.kind !== 'toml' && (['remote', 'remote-only', 'conflict', 'local'].includes(it.status) || (req.deleteLocal && it.status === 'local-only')))
+        .map((it) => it.key);
+      const r = await sync.pull(ctx, { take });
+      out.problems.push({ problem: p.problem, index: p.index, applied: r.applied.length, warnings: r.warnings });
+    } catch (e) {
+      if (job.signal.aborted) throw e;
+      out.problems.push({ problem: p.problem, index: p.index, applied: 0, warnings: [], error: (e as Error).message.split('\n')[0] });
+    }
+  }
+  job.progress(list.length, list.length, 'done');
   return out;
 }

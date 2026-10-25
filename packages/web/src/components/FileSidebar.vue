@@ -134,6 +134,9 @@ const roleTree = computed<Node[]>(() => {
       byLang.get(lang)!.push({ ...n, label: m ? m[2] : n.label });
     }
     const order = (p: string) => {
+      // OI-only files: sample explanations after the samples, constraints before the notes.
+      if (p.startsWith('samples/')) return 3.5;
+      if (p === 'constraints.tex') return 4.5;
       const i = (STATEMENT_SECTIONS as readonly string[]).indexOf(p.replace(/\.tex$/, ''));
       return i < 0 ? 99 : i;
     };
@@ -206,6 +209,18 @@ watch(
     fresh.forEach((k) => seenLangKeys.add(k));
     localStorage.setItem('polyforge-tree-seen-langs', JSON.stringify([...seenLangKeys]));
     expanded.value = [...new Set([...expanded.value, ...fresh])];
+  },
+  { immediate: true },
+);
+// A file whose role changes (e.g. the previous checker after another file is chosen)
+// moves to another group; expand that group so the file does not seem to vanish.
+let lastRoles = new Map<string, FileRole>();
+watch(
+  () => props.ws.files.value.map((f) => [f.path, props.ws.roleOf(f.path)] as const),
+  (now) => {
+    const moved = lastRoles.size ? now.filter(([p, r]) => lastRoles.has(p) && lastRoles.get(p) !== r).map(([, r]) => `group:${r}`) : [];
+    lastRoles = new Map(now);
+    if (moved.some((k) => !expanded.value.includes(k))) expanded.value = [...new Set([...expanded.value, ...moved])];
   },
   { immediate: true },
 );

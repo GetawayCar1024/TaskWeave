@@ -15,6 +15,13 @@ name = "C++20 (GCC)"
 extensions = [".cpp"]
 compile = "g++ -std=c++20 -O2 -Wall -static -DONLINE_JUDGE -DFOR_LINUX -Wl,--stack=268435456 -isystem {shared} -o {exe} {src}"
 run = "{exe}"
+polygon = "cpp.gcc13-64-winlibs-g++20"
+
+[cpp23]
+name = "C++23 (GCC)"
+extensions = [".cpp"]
+compile = "g++ -std=c++23 -O2 -Wall -static -DONLINE_JUDGE -DFOR_LINUX -Wl,--stack=268435456 -isystem {shared} -o {exe} {src}"
+run = "{exe}"
 polygon = "cpp.gcc14-64-msys2-g++23"
 
 [py3]

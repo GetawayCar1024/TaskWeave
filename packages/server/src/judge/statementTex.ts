@@ -10,9 +10,37 @@ import { contestStatements } from './contest.js';
 import type { Judge } from './index.js';
 
 const HEAD: Record<string, Record<string, string>> = {
-  zh: { input: '输入格式', output: '输出格式', interaction: '交互', scoring: '评分', notes: '说明', examples: '样例', tutorial: '题解', stdin: '标准输入', stdout: '标准输出', inFile: '输入', outFile: '输出' },
-  en: { input: 'Input', output: 'Output', interaction: 'Interaction', scoring: 'Scoring', notes: 'Note', examples: 'Examples', tutorial: 'Tutorial', stdin: 'standard input', stdout: 'standard output', inFile: 'input', outFile: 'output' },
+  zh: { input: '输入格式', output: '输出格式', interaction: '交互', scoring: '评分', constraints: '数据范围', notes: '说明', examples: '样例', tutorial: '题解', stdin: '标准输入', stdout: '标准输出', inFile: '输入', outFile: '输出' },
+  en: { input: 'Input', output: 'Output', interaction: 'Interaction', scoring: 'Scoring', constraints: 'Constraints', notes: 'Note', examples: 'Examples', tutorial: 'Tutorial', stdin: 'standard input', stdout: 'standard output', inFile: 'input', outFile: 'output' },
 };
+
+/** Tables are centred, unless already inside center / flushleft / flushright or another box. */
+function centerTables(tex: string): string {
+  const re = /\\(begin|end)\{(center|flushleft|flushright|tabular\*?|tabularx|minipage|verbatim|lstlisting|OIsample)\}/g;
+  const stack: string[] = [];
+  let out = '', last = 0, start = -1, m: RegExpExecArray | null;
+  while ((m = re.exec(tex))) {
+    const [token, kind, name] = m;
+    if (kind === 'begin' && /^(verbatim|lstlisting|OIsample)$/.test(name)) {
+      const close = tex.indexOf(`\\end{${name}}`, re.lastIndex);
+      if (close < 0) break;
+      re.lastIndex = close + name.length + 6;
+      continue;
+    }
+    if (kind === 'begin') {
+      if (name.startsWith('tabular') && !stack.length) start = m.index;
+      stack.push(name);
+      continue;
+    }
+    stack.pop();
+    if (name.startsWith('tabular') && !stack.length && start >= 0) {
+      const end = m.index + token.length;
+      out += `${tex.slice(last, start)}\\begin{center}\n${tex.slice(start, end)}\n\\end{center}`;
+      last = end; start = -1;
+    }
+  }
+  return out + tex.slice(last);
+}
 
 /**
  * The contest's statements (or tutorials) in one language as a self-contained LaTeX
@@ -33,8 +61,9 @@ export async function contestTex(
   const { ref, config } = await contests.config(contestId);
   const statements = await contestStatements(judge, contests, contestId, lang);
   const oi = config.contest.type === 'oi';
-  const h: Record<string, string> = { ...(HEAD[lang] ?? HEAD.en), ...(oi && lang === 'zh' ? { scoring: '数据范围与约定', notes: '样例解释' } : {}) };
   const zh = lang === 'zh';
+  // OI headings follow the OI document (cnoiDocument.ts).
+  const h: Record<string, string> = { ...(HEAD[lang] ?? HEAD.en), ...(oi && !zh ? { notes: 'Notes' } : {}) };
   const title = config.contest.title[lang] || config.contest.title.en || config.contest.name;
   const images = new Map<string, string>(); // zip path -> absolute file
   const sharedDir = judge.global.sharedDir;
@@ -54,7 +83,13 @@ export async function contestTex(
       if (dir) images.set(zipPath, path.join(dir, 'statement', 'images', file));
       return `\\includegraphics${opt ?? '[width=0.6\\textwidth]'}{${zipPath}}`;
     });
-    return t.trim();
+    return centerTables(t.trim());
+  };
+  /** A titled section; empty ones (blank or only comments) are left out unless `always`. */
+  const titled = async (s: ContestStatement, title: string, text: string | undefined, always = false) => {
+    const t = text?.trim() ? await section(s, text) : '';
+    if (!always && !t.replace(/(^|[^\\])%[^\n]*/g, '$1').trim()) return;
+    body.push(`\\pfsection{${title}}`, t, '');
   };
 
   const body: string[] = [];
@@ -66,7 +101,8 @@ export async function contestTex(
     images.set(dest, abs);
     notesTex = notesTex.replace(match[0], match[0].replace(`{${match[1]}}`, `{${dest}}`));
   }
-  const instructions = notesTex.trim() ? [`\\pfsection{${lang === 'zh' ? '注意事项' : 'Instructions'}}`, notesTex] : [];
+  // Instructions follow the contents table, with some room above them.
+  const instructions = notesTex.trim() ? ['\\bigskip', `\\pfsection{${lang === 'zh' ? '注意事项' : 'Instructions'}}`, centerTables(notesTex)] : [];
   const opts = config.statement;
   if (!oi) body.push(`\\begin{center}{\\LARGE ${esc(doc === 'tutorials' ? `${title} — ${h.tutorial}` : title)}}\\end{center}`, '');
   else if (toc) {
@@ -139,31 +175,33 @@ export async function contestTex(
       `{\\small ${tl}\\\\${ml}${io(s.input, 'stdin', h.inFile)}${io(s.output, 'stdout', h.outFile)}}\\end{center}`,
       '',
     );
-    if (oi && s.body !== undefined) {
+    // An empty statement.tex falls back to the section files (as in cnoiDocument.ts).
+    if (oi && s.body) {
       body.push(await section(s, s.body), '');
       continue;
     }
-    if (s.sections.legend) {
-      if (oi) body.push(`\\pfsection{${zh ? '题目描述' : 'Description'}}`);
-      body.push(await section(s, s.sections.legend), '');
-    }
-    for (const key of (oi ? ['input', 'output', 'interaction'] : ['input', 'output', 'interaction', 'scoring']) as ('input' | 'output' | 'interaction' | 'scoring')[]) {
-      if (s.sections[key]) body.push(`\\pfsection{${h[key]}}`, await section(s, s.sections[key]), '');
-    }
+    // OI: the description is always shown; other empty sections are left out.
+    if (oi) await titled(s, zh ? '题目描述' : 'Description', s.sections.legend, true);
+    else if (s.sections.legend?.trim()) body.push(await section(s, s.sections.legend), '');
+    for (const key of oi ? ['input', 'output', 'interaction'] : ['input', 'output', 'interaction', 'scoring']) await titled(s, h[key], s.sections[key]);
     if (s.samples.length) {
       if (!oi) body.push(`\\pfsection{${h.examples}}`);
       for (const [i, x] of s.samples.entries()) {
-        if (x.large) { body.push(`\\pfsection{${zh ? '样例' : 'Sample'} ${x.number ?? i + 1}}`, esc(largeSampleNotice(x, lang, x.number ?? i + 1))); continue; }
-        if (oi) {
+        const number = x.number ?? i + 1;
+        if (x.large) body.push(`\\pfsection{${zh ? '样例' : 'Sample'} ${number}}`, esc(largeSampleNotice(x, lang, number)));
+        else if (oi) {
           for (const [label, text] of [[zh ? '输入' : 'Input', x.input], [zh ? '输出' : 'Output', x.output]]) {
-            body.push(`\\pfsection{${zh ? '样例' : 'Sample'} ${i + 1} ${label}}`, '\\begin{OIsample}', text.replace(/\r\n/g, '\n').replace(/\n$/, ''), '\\end{OIsample}');
+            body.push(`\\pfsection{${zh ? '样例' : 'Sample'} ${number} ${label}}`, '\\begin{OIsample}', text.replace(/\r\n/g, '\n').replace(/\n$/, ''), '\\end{OIsample}');
           }
         } else body.push(sampleTex(x.input, x.output, h.stdin, h.stdout));
+        // OI only: the explanation of this sample.
+        if (oi) await titled(s, zh ? `样例 ${number} 解释` : `Explanation for sample ${number}`, x.note);
       }
       body.push('');
     }
-    if (s.sections.notes) body.push(`\\pfsection{${h.notes}}`, await section(s, s.sections.notes), '');
-    if (oi && s.sections.scoring) body.push(`\\pfsection{${h.scoring}}`, await section(s, s.sections.scoring), '');
+    // OI: constraints (OI-only section) right before the notes.
+    if (oi) for (const key of ['scoring', 'constraints']) await titled(s, h[key], s.sections[key]);
+    await titled(s, h.notes, s.sections.notes);
   }
 
   const tex = [
@@ -179,7 +217,8 @@ export async function contestTex(
     '\\usepackage{verbatim}',
     ...STATEMENT_LATEX_PREAMBLE,
     '\\setlength{\\parindent}{0pt}',
-    '\\setlength{\\parskip}{0.6em}',
+    // Latin text: slightly tighter paragraphs.
+    `\\setlength{\\parskip}{${zh ? '0.6em' : '0.45em'}}`,
     '\\pagestyle{plain}',
     '% Polygon statement commands',
     '\\renewcommand{\\t}[1]{\\texttt{#1}}',

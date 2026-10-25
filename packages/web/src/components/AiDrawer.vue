@@ -11,7 +11,6 @@ import {
   NDrawerContent,
   NEmpty,
   NInput,
-  NModal,
   NPopconfirm,
   NScrollbar,
   NSelect,
@@ -29,9 +28,12 @@ import { CONTEST_PRESETS, PRESETS, pastedStatementPrompt, type ContestPreset } f
 import { renderMarkdown } from '../lib/markdown';
 import { languageForPath } from '../lib/monaco';
 import TextDiff from './TextDiff.vue';
+import ToolWindow from './ToolWindow.vue';
 import { Check, ChevronDown, ChevronRight, Circle as CircleIcon, Lightbulb, Minus, Play, Plus, RotateCw, Trash2, X } from 'lucide-vue-next';
 import { FALLBACK_TOOL_ICON, TOOL_ICONS } from '../lib/icons';
 import { fmtMoney, fmtTokens } from '../lib/usageFormat';
+import { vKeepScroll } from '../lib/keepScroll';
+import { useResizable } from '../lib/resize';
 import type { Workspace } from '../lib/workspace';
 
 /** problemId: the owner of the sessions — a problem id, or "contest:<id>" for the contest AI. */
@@ -51,21 +53,10 @@ const tab = ref<AiSessionMode>('agent');
 watch(() => props.ai.state.current?.mode, mode => { if (mode) tab.value = mode; });
 const checks = ref<LocalCheck[] | null>(null);
 const isContest = computed(() => props.problemId.startsWith('contest:'));
-const checksBox = ref<HTMLElement>();
-const findingsBox = ref<HTMLElement>();
-for (const [element, name] of [[checksBox, 'checks'], [findingsBox, 'findings']] as const) {
-  watch(element, (box, _, cleanup) => {
-    if (!box) return;
-    const key = `polyforge-ai-${isContest.value ? 'contest' : 'problem'}-${name}-height`;
-    const saved = Number(localStorage.getItem(key));
-    if (saved >= 60) box.style.height = `${saved}px`;
-    const observer = new ResizeObserver(() => {
-      if (box.offsetHeight >= 60) localStorage.setItem(key, String(box.offsetHeight));
-    });
-    observer.observe(box);
-    cleanup(() => observer.disconnect());
-  });
-}
+/** Local checks and AI findings: heights set by dragging their bottom border (kept). */
+const sizeKey = (name: string) => `polyforge-ai-${isContest.value ? 'contest' : 'problem'}-${name}-height`;
+const checksSize = useResizable(sizeKey('checks'), { edge: 'bottom', initial: 170, min: 48, max: () => window.innerHeight * 0.5 });
+const findingsSize = useResizable(sizeKey('findings'), { edge: 'bottom', initial: 180, min: 48, max: () => window.innerHeight * 0.55 });
 
 async function loadChecks() {
   // A contest check gets every problem's local checks in its first message instead.
@@ -258,22 +249,7 @@ async function review(accept: boolean, paths = [...picked.value]) {
 const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } as const;
 
 /** Height limit of the change list, set by dragging its top edge (kept across sessions). */
-const changesHeight = ref(Number(localStorage.getItem('polyforge-ai-changes-height')) || 180);
-function startResize(e: PointerEvent) {
-  e.preventDefault();
-  const y0 = e.clientY;
-  const h0 = changesHeight.value;
-  const move = (ev: PointerEvent) => {
-    changesHeight.value = Math.round(Math.min(Math.max(h0 + (y0 - ev.clientY), 80), window.innerHeight * 0.8));
-  };
-  const up = () => {
-    window.removeEventListener('pointermove', move);
-    window.removeEventListener('pointerup', up);
-    localStorage.setItem('polyforge-ai-changes-height', String(changesHeight.value));
-  };
-  window.addEventListener('pointermove', move);
-  window.addEventListener('pointerup', up);
-}
+const changesSize = useResizable('polyforge-ai-changes-height', { edge: 'top', initial: 180, min: 80, max: () => window.innerHeight * 0.45 });
 
 /** Token breakdown for the usage line tooltip. */
 const usageTitle = computed(() => {
@@ -304,7 +280,8 @@ const usageTitle = computed(() => {
           <n-radio-button value="agent">{{ t('ai.tabChat') }}</n-radio-button>
           <n-radio-button value="review">{{ t('ai.tabReview') }}</n-radio-button>
         </n-radio-group>
-        <div v-if="tab === 'review' && !isContest" ref="checksBox" class="checks" :title="t('improve.resize')">
+        <div v-if="tab === 'review' && !isContest" class="sized" :style="{ height: `${checksSize.size.value}px` }">
+        <div v-keep-scroll="`ai-checks:${problemId}`" class="checks">
           <div class="checks-head">
             <strong>{{ t('ai.localChecks') }}</strong>
             <n-button size="tiny" quaternary @click="loadChecks"><rotate-cw :size="13" /></n-button>
@@ -316,6 +293,8 @@ const usageTitle = computed(() => {
             <a v-if="c.file && ws" class="mono path" @click="openAt(c.file, c.line)">{{ c.file }}</a>
           </div>
         </div>
+          <div class="pf-resize-handle bottom" :class="{ active: checksSize.dragging.value }" :title="t('improve.resize')" @pointerdown="checksSize.start" @dblclick="checksSize.reset" />
+        </div>
         <div v-if="!s.loading && !s.endpoints.length && tab === 'review'" class="small dim">{{ t('ai.reviewNeedsAi') }}</div>
         <div v-if="!s.loading && !s.endpoints.length && tab === 'agent'" class="empty">
           <n-empty :description="t('ai.noEndpoint')">
@@ -325,6 +304,8 @@ const usageTitle = computed(() => {
           </n-empty>
         </div>
         <template v-else>
+          <!-- Main area shrinks with the window; the input below always stays visible. -->
+          <div class="ai-main">
           <div v-if="tab === 'review'" class="bar">
             <n-button size="small" type="primary" :loading="ai.running.value && s.current?.mode === 'review'" :disabled="ai.running.value" @click="startReview">
               {{ t('ai.startReview') }}
@@ -381,7 +362,8 @@ const usageTitle = computed(() => {
             </div>
           </div>
 
-          <div v-if="tab === 'review' && findings.length" ref="findingsBox" class="findings" :title="t('improve.resize')">
+          <div v-if="tab === 'review' && findings.length" class="sized" :style="{ height: `${findingsSize.size.value}px` }">
+          <div v-keep-scroll="`ai-findings:${problemId}:${s.current?.id ?? ''}`" class="findings">
             <div v-for="f in findings" :key="f.id" class="finding" :class="f.severity">
               <div class="finding-head">
                 <n-tag size="tiny" :type="SEV_TYPE[f.severity]" :bordered="false">{{ t(`ai.sev.${f.severity}`) }}</n-tag>
@@ -394,7 +376,9 @@ const usageTitle = computed(() => {
               <a v-if="f.file" class="mono path small" @click="openAt(f.file, f.line)">{{ f.file }}{{ f.line ? `:${f.line}` : '' }}</a>
             </div>
           </div>
-          <n-scrollbar ref="scroller" class="log">
+            <div class="pf-resize-handle bottom" :class="{ active: findingsSize.dragging.value }" :title="t('improve.resize')" @pointerdown="findingsSize.start" @dblclick="findingsSize.reset" />
+          </div>
+          <n-scrollbar ref="scroller" v-keep-scroll="`ai-log:${problemId}:${s.current?.id ?? tab}`" class="log">
             <div v-if="!ai.transcript.value.length" class="hint">{{ tab === 'review' ? t(isContest ? 'ai.contestReviewIntro' : 'ai.reviewIntro') : t(isContest ? 'ai.contestIntro' : 'ai.intro') }}</div>
             <template v-for="(item, i) in ai.transcript.value" :key="i">
               <div v-if="item.kind === 'user'" class="msg user">{{ item.text }}</div>
@@ -420,10 +404,12 @@ const usageTitle = computed(() => {
             </template>
             <div v-if="ai.running.value" class="working"><n-spin :size="14" /> {{ t('ai.working') }}</div>
           </n-scrollbar>
+          </div>
 
+          <div class="ai-foot">
           <div v-if="tab === 'agent' && s.changes.length" class="changes-wrap">
-            <div class="changes-grip" :title="t('ai.resizeChanges')" @pointerdown="startResize" />
-            <div class="changes" :style="{ maxHeight: `${changesHeight}px` }">
+            <div class="pf-resize-handle top" :class="{ active: changesSize.dragging.value }" :title="t('ai.resizeChanges')" @pointerdown="changesSize.start" @dblclick="changesSize.reset" />
+            <div class="changes" :style="{ maxHeight: `${changesSize.size.value}px` }">
               <div class="changes-head">
                 <strong>{{ t('ai.changes', { n: s.changes.length }) }}</strong>
                 <n-space size="small">
@@ -465,14 +451,15 @@ const usageTitle = computed(() => {
             <n-button v-if="ai.running.value" type="warning" @click="ai.cancel()">{{ t('ai.stop') }}</n-button>
             <n-button v-else type="primary" :disabled="!input.trim()" @click="send()">{{ t('ai.send') }}</n-button>
           </div>
+          </div>
         </template>
       </div>
     </component>
   </component>
 
-  <n-modal :show="!!diff" preset="card" :title="diff?.path" style="width: 90vw" @update:show="(v: boolean) => !v && (diff = null)">
+  <tool-window :show="!!diff" :title="diff?.path ?? ''" size="full" @update:show="(v: boolean) => !v && (diff = null)">
     <template v-if="diff">
-      <div class="labels">
+      <div class="labels pf-label">
         <span>{{ t('ai.original') }}</span>
         <span>{{ t('ai.proposed') }}</span>
       </div>
@@ -481,12 +468,10 @@ const usageTitle = computed(() => {
       </div>
     </template>
     <template #footer>
-      <n-space justify="end">
-        <n-button @click="diff && review(false, [diff.path])">{{ t('ai.reject') }}</n-button>
-        <n-button type="primary" @click="diff && review(true, [diff.path])">{{ t('ai.acceptOne') }}</n-button>
-      </n-space>
+      <n-button @click="diff && review(false, [diff.path])">{{ t('ai.reject') }}</n-button>
+      <n-button type="primary" @click="diff && review(true, [diff.path])">{{ t('ai.acceptOne') }}</n-button>
     </template>
-  </n-modal>
+  </tool-window>
 </template>
 
 <style scoped>
@@ -517,16 +502,52 @@ const usageTitle = computed(() => {
 .mode-tabs {
   flex-shrink: 0;
 }
+/* A box whose height is dragged at its bottom border; it gives way when the window is small. */
+.sized {
+  position: relative;
+  flex: 0 1 auto;
+  min-height: 48px;
+  margin-bottom: 4px;
+}
+.ai-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+}
+.ai-main > .bar,
+.ai-main > .usage-line {
+  flex-shrink: 0;
+}
+.ai-foot {
+  flex-shrink: 0;
+  max-height: 65%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+.ai-foot > .changes-wrap,
+.ai-foot > .paste {
+  min-height: 0;
+  flex: 0 1 auto;
+}
+.ai-foot > .changes-wrap {
+  display: flex;
+  flex-direction: column;
+}
+.ai-foot > .input,
+.ai-foot > .presets {
+  flex-shrink: 0;
+}
 .checks {
   border: 1px solid rgba(128, 128, 128, 0.25);
   border-radius: 4px;
   padding: 4px 8px;
-  height: 170px;
-  min-height: 60px;
-  max-height: 45%;
-  resize: vertical;
+  height: 100%;
   overflow: auto;
-  flex-shrink: 0;
 }
 .checks-head {
   display: flex;
@@ -542,15 +563,11 @@ const usageTitle = computed(() => {
   padding: 1px 0;
 }
 .findings {
-  height: 180px;
-  min-height: 60px;
-  max-height: 50%;
-  resize: vertical;
+  height: 100%;
   overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  flex-shrink: 0;
 }
 .finding {
   border-left: 3px solid rgba(128, 128, 128, 0.5);
@@ -583,7 +600,7 @@ const usageTitle = computed(() => {
   opacity: 0.65;
 }
 .good {
-  color: #63e2b7;
+  color: light-dark(#16804a, #63e2b7);
 }
 .bar {
   display: flex;
@@ -600,7 +617,7 @@ const usageTitle = computed(() => {
   opacity: 0.6;
 }
 .step.in_progress {
-  color: #63e2b7;
+  color: light-dark(#16804a, #63e2b7);
 }
 .mark {
   display: inline-flex;
@@ -618,7 +635,11 @@ const usageTitle = computed(() => {
 }
 .log {
   flex: 1;
-  min-height: 0;
+  min-height: 80px;
+}
+.ai-main > .plan {
+  max-height: 30%;
+  overflow: auto;
 }
 .hint {
   font-size: 12px;
@@ -633,7 +654,7 @@ const usageTitle = computed(() => {
   word-break: break-word;
 }
 .msg.user {
-  background: rgba(99, 226, 183, 0.12);
+  background: var(--pf-selected);
   border-radius: 6px;
   padding: 6px 10px;
   white-space: pre-wrap;
@@ -712,7 +733,7 @@ const usageTitle = computed(() => {
   opacity: 0.85;
 }
 .bad {
-  color: #e88080;
+  color: light-dark(#c53b3b, #e88080);
 }
 .notice {
   margin: 4px 0;
@@ -730,21 +751,8 @@ const usageTitle = computed(() => {
 .changes-wrap {
   position: relative;
 }
-/* Drag the top edge to make the list taller or shorter. */
-.changes-grip {
-  position: absolute;
-  top: -4px;
-  left: 0;
-  right: 0;
-  height: 8px;
-  cursor: ns-resize;
-  z-index: 1;
-}
-.changes-grip:hover {
-  border-top: 2px solid rgba(240, 160, 32, 0.8);
-  top: -1px;
-}
 .changes {
+  min-height: 0;
   border: 1px solid rgba(240, 160, 32, 0.45);
   border-radius: 4px;
   padding: 4px 8px;
@@ -788,8 +796,7 @@ const usageTitle = computed(() => {
 .labels {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  font-size: 12px;
-  opacity: 0.7;
+  margin-bottom: 4px;
 }
 .diff-box {
   height: 65vh;

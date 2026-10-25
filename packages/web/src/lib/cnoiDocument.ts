@@ -1,7 +1,7 @@
 import type { ContestStatement } from '@polyforge/shared';
 import { rawUrl } from './api';
 import { renderLatex, type MacroTable } from './latex';
-let sectionId = 0;
+import { ENDNOTE } from './cnoiTemplate';
 
 /** Content adapter only. All page, heading, table, code and formula layout is upstream. */
 export function cnoiMarkdown(source: string, macros: MacroTable, imageUrl: (name: string) => string, lang = 'zh'): string {
@@ -13,20 +13,21 @@ export function cnoiMarkdown(source: string, macros: MacroTable, imageUrl: (name
 function cnoiHtmlMarkdown(root: HTMLElement, lang: string): string {
   if (root.querySelector('.tex-unknown,.tex-error,.katex-error')) throw new Error(lang === 'zh' ? '题面含未支持或错误的 TeX，请先在普通预览中修复后再生成 OI PDF。' : 'Unsupported or invalid TeX. Fix the errors in the regular preview before exporting OI.');
   const block = (s: string) => `\n\n${s.trim()}\n\n`;
-  const footnotePrefix = `pf-${++sectionId}-`;
-  let footnote = 0;
-  let definition = 0;
   const escape = (s: string) => s.replace(/([\\`*_{}\[\]<>!|#$~])/g, '\\$1');
   const children = (n: Node): string => [...n.childNodes].map(walk).join('');
+  const mark = (n: Element | null | undefined) => (n?.textContent ?? '').trim().replace(/[^\p{L}\p{N}\p{S}\p{P}]|["\\]/gu, '');
   function walk(n: Node): string {
     if (n.nodeType === Node.TEXT_NODE) return escape((n.textContent ?? '').replace(/[\t\r\n ]+/g, ' '));
     if (!(n instanceof HTMLElement)) return '';
-    if (n.matches('.footnote-ref')) return `[^${footnotePrefix}${++footnote}]`;
-    if (n.matches('.footnotes')) return block([...n.children].map(entry => {
+    // Footnotes stay at the end of their section, as in the CF statements.
+    if (n.matches('.footnote-ref')) return ENDNOTE.ref(mark(n));
+    if (n.matches('.footnotes')) return block([ENDNOTE.start, ...[...n.children].map(entry => {
       const copy = entry.cloneNode(true) as HTMLElement;
-      copy.querySelector('sup')?.remove();
-      return `[^${footnotePrefix}${++definition}]: ${children(copy).trim().replace(/\n/g, '\n    ')}`;
-    }).join('\n\n'));
+      const sup = copy.querySelector(':scope > sup');
+      const symbol = mark(sup);
+      sup?.remove();
+      return `${ENDNOTE.entry(symbol)}\n\n${children(copy).trim()}`;
+    }), ENDNOTE.end].join('\n\n'));
     if (n.matches('.math-display,.katex-display,.katex')) {
       const tex = n.querySelector('annotation[encoding="application/x-tex"]')?.textContent;
       if (tex) return n.matches('.math-display,.katex-display') ? block(`$$\n${tex}\n$$`) : `$${tex}$`;
@@ -85,11 +86,13 @@ export function cnoiProblemMarkdown(s: ContestStatement, doc: 'statements' | 'tu
 /** Semantic content for both the upstream adapter and the shared Markdown exporter. */
 export function cnoiProblemElement(s: ContestStatement, doc: 'statements' | 'tutorials', lang: string, macros: MacroTable): HTMLElement {
   const root = document.createElement('div');
-  const section = (label: string, source: string) => {
-    if (!source.trim()) return;
-    if (label) { const h = document.createElement('h2'); h.textContent = label; root.append(h); }
+  const zh = lang === 'zh';
+  /** Empty sections (blank or only comments) are left out; the description is always shown. */
+  const section = (label: string, source: string, always = false) => {
     const div = document.createElement('div');
-    div.innerHTML = renderLatex(source, { macros, imageUrl: n => rawUrl(s.problem, `statement/images/${n}`) }).html;
+    if (source.trim()) div.innerHTML = renderLatex(source, { macros, imageUrl: n => rawUrl(s.problem, `statement/images/${n}`) }).html;
+    if (!always && !div.textContent?.trim() && !div.querySelector('img,table,pre,hr,.katex')) return;
+    if (label) { const h = document.createElement('h2'); h.textContent = label; root.append(h); }
     // Keep multi-paragraph footnotes in one text column in Markdown HTML too.
     for (const footnote of div.querySelectorAll<HTMLElement>('.footnote')) {
       const body = document.createElement('div');
@@ -102,25 +105,31 @@ export function cnoiProblemElement(s: ContestStatement, doc: 'statements' | 'tut
   };
   if (doc === 'tutorials') { section('', s.sections.tutorial ?? ''); return root; }
   if (s.body) { section('', s.body); return root; }
-  const labels = lang === 'zh' ? ['题目描述', '输入格式', '输出格式', '交互', '数据范围与约定', '样例解释'] : ['Description', 'Input', 'Output', 'Interaction', 'Constraints', 'Notes'];
-  ['legend', 'input', 'output', 'interaction'].forEach((key, i) => section(labels[i], s.sections[key] ?? ''));
+  const labels: Record<string, string> = zh
+    ? { legend: '题目描述', input: '输入格式', output: '输出格式', interaction: '交互', scoring: '评分', constraints: '数据范围', notes: '说明' }
+    : { legend: 'Description', input: 'Input', output: 'Output', interaction: 'Interaction', scoring: 'Scoring', constraints: 'Constraints', notes: 'Notes' };
+  section(labels.legend, s.sections.legend ?? '', true);
+  for (const key of ['input', 'output', 'interaction']) section(labels[key], s.sections[key] ?? '');
   s.samples.forEach((sample, i) => {
     const number = sample.number ?? i + 1;
     if (sample.large) {
-      const h = document.createElement('h2'); h.textContent = `${lang === 'zh' ? '样例' : 'Sample'} ${number}`;
+      const h = document.createElement('h2'); h.textContent = `${zh ? '样例' : 'Sample'} ${number}`;
       const p = document.createElement('p');
-      p.append(lang === 'zh' ? `样例 ${number} 见选手目录下的 ` : `Sample ${number}: see `);
+      p.append(zh ? `样例 ${number} 见选手目录下的 ` : `Sample ${number}: see `);
       const input = document.createElement('em'); input.textContent = sample.inputFile ?? '';
       const output = document.createElement('em'); output.textContent = sample.outputFile ?? '';
-      p.append(input, lang === 'zh' ? ' 与 ' : ' and ', output, lang === 'zh' ? '。' : ' in the contestant directory.');
-      root.append(h, p); return;
+      p.append(input, zh ? ' 与 ' : ' and ', output, zh ? '。' : ' in the contestant directory.');
+      root.append(h, p);
+    } else {
+      for (const [label, value] of [[zh ? '样例输入' : 'Sample input', sample.input], [zh ? '样例输出' : 'Sample output', sample.output]]) {
+        const h = document.createElement('h2'); h.textContent = `${label} ${number}`;
+        const pre = document.createElement('pre'); pre.textContent = value;
+        root.append(h, pre);
+      }
     }
-    for (const [label, value] of [[lang === 'zh' ? '样例输入' : 'Sample input', sample.input], [lang === 'zh' ? '样例输出' : 'Sample output', sample.output]]) {
-      const h = document.createElement('h2'); h.textContent = `${label} ${number}`;
-      const pre = document.createElement('pre'); pre.textContent = value;
-      root.append(h, pre);
-    }
+    section(zh ? `样例 ${number} 解释` : `Explanation for sample ${number}`, sample.note ?? '');
   });
-  for (const [key, label] of [['notes', labels[5]], ['scoring', labels[4]]]) section(label, s.sections[key] ?? '');
+  // OI order: constraints right before the notes.
+  for (const key of ['scoring', 'constraints', 'notes']) section(labels[key], s.sections[key] ?? '');
   return root;
 }

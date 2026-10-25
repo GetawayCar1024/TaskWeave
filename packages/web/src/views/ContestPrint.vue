@@ -8,7 +8,6 @@ import { ArrowLeft, FileDown, Printer } from 'lucide-vue-next';
 import katex from 'katex';
 import { exportMarkdown } from '../lib/markdownExport';
 import { fitPrintMath } from '../lib/printMath';
-import { serverText } from '../lib/serverText';
 import { STATEMENT_SECTIONS, type ContestDetail, type ContestStatement, type StatementSection } from '@polyforge/shared';
 import StatementDoc from '../components/StatementDoc.vue';
 import OiContestPreview from '../components/OiContestPreview.vue';
@@ -16,6 +15,7 @@ import { api, errorMessage, rawUrl, token } from '../lib/api';
 import { getDefs } from '../lib/defs';
 import { waitJob } from '../lib/jobs';
 import { buildMacros, renderLatex, type MacroTable } from '../lib/latex';
+import { desktop } from '../lib/desktop';
 
 /**
  * The statements, or the tutorials, of a contest in one language as a separate
@@ -52,7 +52,7 @@ async function prepareDown() {
     if (!await load()) return;
     await nextTick();
     if (alive) downRequest.value++;
-  } catch (e) { if (alive) message.error(serverText(errorMessage(e))); }
+  } catch (e) { if (alive) message.error(errorMessage(e)); }
   finally { preparingDown.value = false; }
 }
 const lang = ref((typeof route.query.lang === 'string' && route.query.lang) || localStorage.getItem('polyforge-print-lang') || 'zh');
@@ -118,6 +118,13 @@ async function fitMath() {
 }
 watch([rendered, doc], fitMath, { flush: 'post' });
 const print = async () => { await fitMath(); window.print(); };
+/** The desktop app saves through Chromium's PDF output (selectable text, clickable links). */
+async function savePdf() {
+  if (!desktop?.printToPdf) return print();
+  await fitMath();
+  const saved = await desktop.printToPdf(baseName());
+  if (saved) message.success(t('contest.pdfSaved', { path: saved }));
+}
 async function markdown() {
   const fragment = document.createElement('article');
   const instructions = document.querySelector('.sheet .contest-notes');
@@ -158,11 +165,11 @@ async function onExport(key: string) {
   exporting.value = true;
   try {
     if (key === 'tex') await api.contestTex(props.id, lang.value, doc.value, pageBreaks.value, withToc.value);
-    else if (key === 'pdf') await print();
+    else if (key === 'pdf') await savePdf();
     else if (key === 'markdown') await markdown();
     else await exportHtml();
   } catch (e) {
-    message.error(serverText(errorMessage(e)));
+    message.error(errorMessage(e));
   } finally {
     exporting.value = false;
   }
@@ -286,7 +293,7 @@ onBeforeUnmount(() => {
         <n-radio-button value="tutorials">{{ t('contest.docTutorials') }}</n-radio-button>
       </n-radio-group>
       <n-radio-group v-model:value="style" size="small" :disabled="preparingDown"><n-radio-button value="cf">CF</n-radio-button><n-radio-button value="oi">OI</n-radio-button></n-radio-group>
-      <label v-if="style === 'cf'" class="opt"><n-switch v-model:value="withToc" size="small" /> {{ t('contest.toc') }}</label>
+      <label v-if="style === 'cf' || doc === 'statements'" class="opt"><n-switch v-model:value="withToc" size="small" :disabled="preparingDown" /> {{ t('contest.toc') }}</label>
       <label v-if="style === 'cf'" class="opt"><n-switch v-model:value="pageBreaks" size="small" /> {{ t('contest.pageBreaks') }}</label>
       <n-tag v-if="doc === 'statements' && problemsMissing.length" size="small" type="error" :bordered="false">{{ t('contest.noStatementIn', { lang, list: problemsMissing.join(', ') }) }}</n-tag>
       <n-tag v-if="doc === 'tutorials' && tutorialsMissing.length" size="small" type="warning" :bordered="false">
@@ -303,7 +310,7 @@ onBeforeUnmount(() => {
     <n-alert v-if="preparingDown" type="info" class="no-print">{{ t('oiFeatures.preparingDown') }}</n-alert>
     <div v-if="loading && !statements.length" class="center no-print"><n-spin /></div>
     <n-alert v-else-if="!statements.length" type="info" :show-icon="false" class="no-print empty">{{ t('contest.noProblems') }}</n-alert>
-    <oi-contest-preview v-else-if="style === 'oi' && detail" :detail="detail" :statements="statements" :lang="lang" :doc="doc" :notes="notes" :macros="macros" :loading="loading" :preparing-down="preparingDown" :down-request="downRequest" @prepare-down="prepareDown" />
+    <oi-contest-preview v-else-if="style === 'oi' && detail" :detail="detail" :statements="statements" :lang="lang" :doc="doc" :notes="notes" :macros="macros" :toc="withToc" :loading="loading" :preparing-down="preparingDown" :down-request="downRequest" @prepare-down="prepareDown" />
     <div v-else class="sheet" :class="{ breaks: pageBreaks, 'with-toc': withToc }">
       <h1 class="contest-title">{{ docTitle }}</h1>
       <section v-if="withToc && shown.length" class="toc">
@@ -445,6 +452,10 @@ onBeforeUnmount(() => {
 .toc .num {
   text-align: right;
   white-space: nowrap;
+}
+/* Instructions under the contents table. */
+.toc .contest-notes {
+  margin-top: 36px;
 }
 .with-toc .toc + .problem {
   margin-top: 40px;

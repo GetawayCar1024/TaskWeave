@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_TESTSET, checkTag, type Invocation, type InvocationCell, type InvocationSummary } from '@polyforge/shared';
+import { DEFAULT_TESTSET, checkTag, invocationOutputName, invocationRefs, testsetsOf, type Invocation, type InvocationCell, type InvocationSelection, type InvocationSummary, type InvocationTestRef, type SolutionScore, type TestInfo } from '@polyforge/shared';
 import type { JobCtx } from '../jobs.js';
 import { atomicWrite, exists, HttpError } from '../util/fs.js';
 import type { Program } from './compiler.js';
@@ -15,6 +15,9 @@ export const runsDir = (ctx: ProblemCtx) => path.join(ctx.work, 'runs');
 const invPath = (ctx: ProblemCtx, id: string) => path.join(runsDir(ctx), `${id}.json`);
 export const outputPath = (ctx: ProblemCtx, id: string, sol: number, test: number) =>
   path.join(runsDir(ctx), id, String(sol), `${test}.out`);
+/** Saved output of a test of any testset of the invocation. */
+export const refOutputPath = (ctx: ProblemCtx, inv: Pick<Invocation, 'id' | 'testset'>, sol: number, ref: InvocationTestRef) =>
+  path.join(runsDir(ctx), inv.id, String(sol), ...invocationOutputName(inv, ref).split('/'));
 
 function newId(): string {
   const d = new Date();
@@ -44,6 +47,10 @@ export async function listInvocations(ctx: ProblemCtx): Promise<InvocationSummar
         solutions: inv.solutions.length,
         tests: inv.tests.length,
         testset: inv.testset,
+        ...(() => {
+          const names = [...new Set(invocationRefs(inv).map((r) => r.testset))];
+          return names.length > 1 ? { testsets: names } : {};
+        })(),
         ok: inv.solutions.every((s) => s.expectation?.ok !== false && s.compile?.ok !== false),
       });
     } catch {
@@ -65,8 +72,22 @@ export async function runInvocation(
   job: JobCtx,
   onStart: (id: string) => void,
   testset = DEFAULT_TESTSET,
+  /** Tests of any testsets (overrides `onlyTests` / `testset`). */
+  selection?: InvocationSelection,
 ): Promise<string> {
-  const ts = requireTestset(ctx, testset);
+  // Wanted tests per testset (null = all), in the order of the problem's testsets.
+  const wanted = new Map<string, Set<number> | null>();
+  if (selection?.length) {
+    for (const s of selection) {
+      const name = requireTestset(ctx, s.testset).name;
+      const prev = wanted.get(name);
+      if (!s.tests || prev === null) wanted.set(name, null);
+      else wanted.set(name, new Set([...(prev ?? []), ...s.tests]));
+    }
+  } else wanted.set(requireTestset(ctx, testset).name, onlyTests ? new Set(onlyTests) : null);
+  const order = testsetsOf(ctx.config).map((x) => x.name);
+  const testsetNames = [...wanted.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const ts = requireTestset(ctx, testsetNames[0]);
   if (sources.length === 0) throw new HttpError(400, 'no_solutions', 'Select at least one solution');
   const id = newId();
   const inv: Invocation = {
@@ -77,6 +98,7 @@ export async function runInvocation(
     memoryLimit: ctx.limits.memoryLimitMb,
     testset: ts.name,
     tests: [],
+    refs: [],
     solutions: sources.map((source) => ({ source, tag: ctx.config.solutions.find((s) => s.source === source)?.tag })),
     cells: [],
   };
@@ -94,10 +116,14 @@ export async function runInvocation(
 
   try {
     job.progress(0, 0, 'generating tests');
-    const manifest = await generateTests(judge, ctx, { signal: job.signal, progress: (d, t) => job.progress(0, 0, `generating tests ${d}/${t}`) }, ts.name);
-    const wanted = onlyTests ? new Set(onlyTests) : null;
-    const tests = manifest.tests.filter((t) => !wanted || wanted.has(t.index));
+    const tests: (TestInfo & { testset: string })[] = [];
+    for (const name of testsetNames) {
+      const manifest = await generateTests(judge, ctx, { signal: job.signal, progress: (d, t) => job.progress(0, 0, `generating tests ${d}/${t}`) }, name);
+      const only = wanted.get(name);
+      for (const t of manifest.tests) if (!only || only.has(t.index)) tests.push({ ...t, testset: name });
+    }
     inv.tests = tests.map((t) => t.index);
+    inv.refs = tests.map((t) => ({ testset: t.testset, index: t.index }));
     inv.cells = sources.map(() => tests.map(() => null));
     await save();
     job.progress(0, sources.length, 'compiling solutions');
@@ -136,8 +162,8 @@ export async function runInvocation(
         tasks.push(
           async () => {
             job.signal.throwIfAborted();
-            const inFile = inputPath(ctx, t.index, ts.name);
-            const ansFile = answerPath(ctx, t.index, ts.name);
+            const inFile = inputPath(ctx, t.index, t.testset);
+            const ansFile = answerPath(ctx, t.index, t.testset);
             if (t.error || t.valid === false || !(await exists(inFile)) || !(await exists(ansFile))) {
               setCell({ verdict: 'SKIP', timeMs: 0, memoryKb: 0, message: t.error ?? (t.valid === false ? 'invalid test' : 'no answer') });
               return;
@@ -160,7 +186,7 @@ export async function runInvocation(
               }
               const st = await fsp.stat(r.outputFile).catch(() => null);
               if (st && st.size <= MAX_SAVED_OUTPUT) {
-                const dest = outputPath(ctx, id, si, t.index);
+                const dest = refOutputPath(ctx, inv, si, { testset: t.testset, index: t.index });
                 await fsp.mkdir(path.dirname(dest), { recursive: true });
                 await fsp.copyFile(r.outputFile, dest);
                 cell.hasOutput = true;
@@ -196,10 +222,27 @@ export async function runInvocation(
     if (inv.status === 'done' && scoringEnabled(ctx)) {
       for (const [i, s] of inv.solutions.entries()) {
         if (s.compile?.ok === false) continue;
-        s.score = groupScore(scoringInput(ctx, ts, inv.tests, inv.cells[i] ?? []));
+        s.score = invocationScore(ctx, inv, inv.cells[i] ?? []);
       }
     }
     await save();
   }
   return id;
+}
+
+/** Group scores per testset; several testsets are summed and also reported one by one. */
+function invocationScore(ctx: ProblemCtx, inv: Invocation, cells: (InvocationCell | null)[]): SolutionScore {
+  const refs = invocationRefs(inv);
+  const names = [...new Set(refs.map((r) => r.testset))];
+  const parts = names.map((name) => {
+    const pos = refs.flatMap((r, k) => (r.testset === name ? [k] : []));
+    return { name, score: groupScore(scoringInput(ctx, requireTestset(ctx, name), pos.map((k) => refs[k].index), pos.map((k) => cells[k] ?? null))) };
+  });
+  if (parts.length === 1) return parts[0].score;
+  return {
+    total: parts.reduce((a, p) => a + p.score.total, 0),
+    max: parts.reduce((a, p) => a + p.score.max, 0),
+    groups: parts.flatMap((p) => p.score.groups.map((g) => ({ ...g, testset: p.name }))),
+    testsets: parts.map((p) => ({ testset: p.name, total: p.score.total, max: p.score.max })),
+  };
 }

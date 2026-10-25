@@ -1,7 +1,7 @@
 import type OpenAI from 'openai';
 import type { AiTestResult } from '@polyforge/shared';
 import { OpenAiProvider } from './openai.js';
-import { cleanApiError, ToolInputParseError, type Block, type ChatRequest, type ChatResponse } from './provider.js';
+import { cleanApiError, ToolInputParseError, type Block, type ChatRequest, type ChatResponse, type StopReason } from './provider.js';
 
 /** Stateless Responses conversations: replay output items, including encrypted reasoning. */
 export class ResponsesProvider extends OpenAiProvider {
@@ -48,11 +48,14 @@ export class ResponsesProvider extends OpenAiProvider {
       }
     }
     const u = response.usage;
-    const cached = u?.input_tokens_details.cached_tokens ?? 0;
+    const cached = u?.input_tokens_details?.cached_tokens ?? 0;
+    const incomplete = response.status === 'incomplete' ? response.incomplete_details?.reason ?? 'incomplete' : undefined;
+    const stopReason: StopReason = incomplete === 'max_output_tokens' ? 'max_tokens' : incomplete === 'content_filter' || refused ? 'refusal' : incomplete ? 'other' : content.some(b => b.type === 'tool_use') ? 'tool_use' : 'end_turn';
     return {
       message: { role: 'assistant', content, raw: { protocol: 'openai-responses', model: req.model, content: response.output } },
-      stopReason: response.status === 'incomplete' ? 'max_tokens' : refused ? 'refusal' : content.some(b => b.type === 'tool_use') ? 'tool_use' : 'end_turn',
-      usage: u ? { input: u.input_tokens - cached, output: u.output_tokens, cacheRead: cached } : undefined,
+      stopReason,
+      stopDetail: incomplete ?? (refused ? 'refusal' : undefined),
+      usage: u ? { input: (u.input_tokens ?? 0) - cached, output: u.output_tokens ?? 0, cacheRead: cached } : undefined,
     };
   }
 

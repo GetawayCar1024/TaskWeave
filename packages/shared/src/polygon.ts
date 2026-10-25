@@ -75,6 +75,8 @@ export interface SyncItem {
 
 export interface PushItem extends SyncItem {
   status: PushStatus;
+  /** A `deleted` item that a push can delete on Polygon too. */
+  deletable?: boolean;
 }
 
 export interface PushPreview {
@@ -111,6 +113,13 @@ export interface PullPreview {
   polygonId: number;
   items: PullItem[];
   warnings: string[];
+  /** Testsets other than "tests" found on Polygon (the API cannot list them: known names are probed). */
+  testsets?: string[];
+}
+
+export interface PullPreviewRequest {
+  /** Further testset names to look for on Polygon (besides the local ones and "pretests"). */
+  testsets?: string[];
 }
 
 export interface PullRequest {
@@ -146,6 +155,8 @@ export interface PolygonProblem {
   accessType?: string;
   revision?: number;
   modified?: boolean;
+  /** Deleted on Polygon (listed with showDeleted only). */
+  deleted?: boolean;
 }
 
 export interface SecretsResponse {

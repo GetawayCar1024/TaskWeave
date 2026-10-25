@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { groupLayout, judgeMode, parseIndexList, PROBLEM_NAME_RE, testsetOf, type ProblemToml } from '@polyforge/shared';
+import { DEFAULT_TESTSET, groupLayout, judgeMode, parseIndexList, PROBLEM_NAME_RE, testsetOf, testsetsOf, type ProblemToml } from '@polyforge/shared';
 import type { JobCtx } from '../jobs.js';
 import { exists, HttpError, safeJoin, toPosix } from '../util/fs.js';
 import type { ZipWriter } from '../util/zip.js';
@@ -17,42 +17,62 @@ export interface LemonTestCase {
 }
 const fail = (message: string): never => { throw new HttpError(400, 'lemonlime_export', message); };
 
-export function lemonTestCases(config: ProblemToml, indices: number[], folder: string): LemonTestCase[] {
-  const ts = testsetOf(config)!;
+/** `total` split into `n` integers adding up exactly (the last ones get one more). */
+export function splitScore(total: number, n: number): number[] {
+  const each = Math.floor(total / n), extra = total - each * n;
+  return Array.from({ length: n }, (_, i) => each + (i >= n - extra ? 1 : 0));
+}
+
+/** Data file stem of a test: "tests" keeps the plain index, other testsets are prefixed. */
+export const testFileStem = (testset: string, index: number) => (testset === DEFAULT_TESTSET ? `${index}` : `${testset}-${index}`);
+
+/**
+ * Test cases of one testset. `offset` is the number of test cases before it (dependency
+ * flags refer to 1-based test case numbers of the whole task).
+ */
+export function lemonTestCases(config: ProblemToml, indices: number[], folder: string, testset = DEFAULT_TESTSET, offset = 0): LemonTestCase[] {
+  const ts = testsetOf(config, testset);
+  if (!ts) return fail(`Unknown testset: ${testset}`);
+  const where = testset === DEFAULT_TESTSET ? '' : `${testset}: `;
   const available = new Set(indices);
   const result: LemonTestCase[] = [];
   const make = (tests: number[], score: number, dependencies: number[] = []) => {
     if (!Number.isSafeInteger(score) || score < 0 || score > 2147483647) fail('LemonLime requires nonnegative integer scores (up to 2147483647).');
     result.push({ fullScore: score, timeLimit: config.problem.time_limit, memoryLimit: config.problem.memory_limit,
-      inputFiles: [...tests.map(i => `${folder}/${i}.in`), ...dependencies.map(i => `${i}_lemon_SUbtaskDEPENDENCE_fLAg`)],
-      outputFiles: tests.map(i => `${folder}/${i}.ans`) });
+      inputFiles: [...tests.map(i => `${folder}/${testFileStem(testset, i)}.in`), ...dependencies.map(i => `${i}_lemon_SUbtaskDEPENDENCE_fLAg`)],
+      outputFiles: tests.map(i => `${folder}/${testFileStem(testset, i)}.ans`) });
   };
-  if (!indices.length) fail('No tests to export.');
+  if (!indices.length) fail(`${where}No tests to export.`);
   if (!ts.groups) {
-    if (config.tests.points) fail('Points are enabled but there are no subtasks. Configure subtask scores before exporting.');
-    const each = Math.floor(100 / indices.length);
-    indices.forEach((index, i) => make([index], each + (i === indices.length - 1 ? 100 - each * indices.length : 0)));
+    if (config.tests.points) fail(`${where}Points are enabled but there are no subtasks. Configure subtask scores before exporting.`);
+    const scores = splitScore(100, indices.length);
+    indices.forEach((index, i) => make([index], scores[i]));
     return result;
   }
-  if (!config.tests.points) fail('Subtasks are enabled without scores. Enable points and set each subtask score before exporting.');
-  const groups = checkGroups('tests', ts.group);
+  if (!config.tests.points) fail(`${where}Subtasks are enabled without scores. Enable points and set each subtask score before exporting.`);
+  const groups = checkGroups(testset, ts.group);
   const layout = groupLayout(ts, true);
-  if (indices.some(i => !layout.mapping[i])) fail('Some tests do not belong to a subtask. Assign all tests before exporting.');
+  if (indices.some(i => !layout.mapping[i])) fail(`${where}Some tests do not belong to a subtask. Assign all tests before exporting.`);
   const byName = new Map(groups.map(g => [g.name, g]));
   const exported = new Map<string, number[]>();
+  // Dependencies are listed transitively, so the order and Lemon's own propagation do not matter.
+  const closure = (name: string, seen = new Set<string>()): Set<string> => {
+    for (const d of byName.get(name)?.dependencies ?? []) if (!seen.has(d)) { seen.add(d); closure(d, seen); }
+    return seen;
+  };
   const addGroup = (name: string) => {
     if (exported.has(name)) return;
     const g = byName.get(name)!;
     for (const dep of g.dependencies ?? []) addGroup(dep);
     const tests = [...new Set(parseIndexList(g.tests ?? ''))].sort((a,b) => a-b);
-    if (!tests.length || tests.some(i => !available.has(i))) fail(`Subtask ${name} is empty or refers to missing tests.`);
-    if (g.points === undefined) fail(`Subtask ${name} has no score.`);
-    if (!Number.isSafeInteger(g.points)) fail(`Subtask ${name}: LemonLime requires integer scores.`);
-    const deps = (g.dependencies ?? []).flatMap(d => exported.get(d)!);
+    if (!tests.length || tests.some(i => !available.has(i))) fail(`${where}Subtask ${name} is empty or refers to missing tests.`);
+    if (g.points === undefined) fail(`${where}Subtask ${name} has no score.`);
+    if (!Number.isSafeInteger(g.points)) fail(`${where}Subtask ${name}: LemonLime requires integer scores.`);
+    const deps = [...closure(name)].flatMap(d => exported.get(d)!).sort((a, b) => a - b);
     const first = result.length;
     if (g.policy === 'EACH_TEST') tests.forEach(i => make([i], layout.points[i] ?? 0, deps));
     else make(tests, g.points!, deps);
-    exported.set(name, Array.from({length: result.length - first}, (_, i) => first + i + 1));
+    exported.set(name, Array.from({length: result.length - first}, (_, i) => offset + first + i + 1));
   };
   for (const g of groups) addGroup(g.name);
   return result;
@@ -78,15 +98,15 @@ export async function preflightLemonChecker(judge: Judge, ctx: ProblemCtx, index
   return checker;
 }
 
-async function checkLemonProtocol(judge: Judge, ctx: ProblemCtx, checker: Program, test: number, index: string, job: JobCtx) {
+async function checkLemonProtocol(judge: Judge, ctx: ProblemCtx, checker: Program, test: number, index: string, job: JobCtx, testset = DEFAULT_TESTSET) {
   await fs.mkdir(ctx.work, { recursive: true });
   const dir = await fs.mkdtemp(path.join(ctx.work, 'lemon-check-'));
   try {
     // Protect the original data from checker side effects and use a fresh score path for every run.
     const input = path.join(dir, 'input'), output = path.join(dir, 'output'), answer = path.join(dir, 'answer');
-    await fs.copyFile(inputPath(ctx, test), input);
-    await fs.copyFile(answerPath(ctx, test), output);
-    await fs.copyFile(answerPath(ctx, test), answer);
+    await fs.copyFile(inputPath(ctx, test, testset), input);
+    await fs.copyFile(answerPath(ctx, test, testset), output);
+    await fs.copyFile(answerPath(ctx, test, testset), answer);
     const score = path.join(dir, 'score'), message = path.join(dir, 'message');
     const stats = await judge.runner.run({ argv: [...checker.argv, input, output, answer, '100', score, message], build: checker.build,
       cwd: dir, stdout: path.join(dir, 'stdout'), stderr: path.join(dir, 'stderr'), timeLimitMs: 10000, wallLimitMs: 15000,
@@ -125,19 +145,41 @@ async function addCheckerSources(judge: Judge, ctx: ProblemCtx, checker: Program
   for (const file of ['LICENSE', 'README.md']) zip.add(`data/${folder}/checker-sources/shared/lemon/${file}`, await fs.readFile(path.join(judge.global.sharedDir, 'lemon', file)));
 }
 
-export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: string, zip: ZipWriter, job: JobCtx) {
+/** Selected testsets of a problem ("tests" by default), generated and in problem.toml order. */
+export function exportTestsets(ctx: ProblemCtx, index: string, wanted?: string[]): string[] {
+  const all = testsetsOf(ctx.config).map(ts => ts.name);
+  const list = wanted?.length ? wanted : [DEFAULT_TESTSET];
+  for (const name of list) if (!all.includes(name)) fail(`${index}: unknown testset ${name}.`);
+  return all.filter(name => list.includes(name));
+}
+
+export async function exportedTests(judge: Judge, ctx: ProblemCtx, testsets: string[], index: string, job: JobCtx) {
+  const out: { name: string; tests: number[] }[] = [];
+  for (const name of testsets) {
+    const manifest = await generateTests(judge, ctx, job, name);
+    if (!manifest.ok) fail(`${index}: test generation failed${name === DEFAULT_TESTSET ? '' : ` (${name})`}.\n${manifest.errors.join('\n')}`);
+    if (!manifest.tests.length) fail(`${index}: ${name === DEFAULT_TESTSET ? '' : `${name}: `}No tests to export.`);
+    out.push({ name, tests: manifest.tests.map(t => t.index) });
+  }
+  return out;
+}
+
+export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: string, zip: ZipWriter, job: JobCtx, testsets = [DEFAULT_TESTSET]) {
   const { config } = ctx, p = config.problem, mode = judgeMode(p);
   const checker = await preflightLemonChecker(judge, ctx, index);
-  const manifest = await generateTests(judge, ctx, job);
-  if (!manifest.ok) fail(`${index}: test generation failed.\n${manifest.errors.join('\n')}`);
   const folder = p.name;
-  const testCases = lemonTestCases(config, manifest.tests.map(t => t.index), folder);
-  await checkLemonProtocol(judge, ctx, checker, manifest.tests[0].index, index, job);
-  for (const test of manifest.tests) {
-    job.signal.throwIfAborted();
-    for (const [extension, file] of [['in', inputPath(ctx, test.index)], ['ans', answerPath(ctx, test.index)]]) {
-      const bytes = await fs.readFile(file).catch(() => fail(`${index}: missing ${extension} for test ${test.index}.`));
-      zip.add(`data/${folder}/${test.index}.${extension}`, bytes);
+  const testCases: LemonTestCase[] = [];
+  let count = 0;
+  for (const { name, tests } of await exportedTests(judge, ctx, testsets, index, job)) {
+    testCases.push(...lemonTestCases(config, tests, folder, name, testCases.length));
+    if (!count) await checkLemonProtocol(judge, ctx, checker, tests[0], index, job, name);
+    count += tests.length;
+    for (const test of tests) {
+      job.signal.throwIfAborted();
+      for (const [extension, file] of [['in', inputPath(ctx, test, name)], ['ans', answerPath(ctx, test, name)]]) {
+        const bytes = await fs.readFile(file).catch(() => fail(`${index}: missing ${extension} for test ${test}${name === DEFAULT_TESTSET ? '' : ` (${name})`}.`));
+        zip.add(`data/${folder}/${testFileStem(name, test)}.${extension}`, bytes);
+      }
     }
   }
   const checkerName = `${folder}/checker${process.platform === 'win32' ? '.exe' : ''}`;
@@ -182,7 +224,7 @@ export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: stri
       }
     }
   }
-  return { task, tests: manifest.tests.length };
+  return { task, tests: count };
 }
 
-export const lemonReadme = (platform: string) => `LemonLime contest package\n\nOpen the .cdf file in LemonLime (JSON CDF version 1.0).\nContestants: source/<contestant>/<problem>/<problem>.cpp\nThe source directory is deliberately empty.\nInputs, answers, checkers and supplied grader files are in data/.\nOnly the default tests testset is exported. Problems without point settings total 100 points.\nSubtasks are ordered by dependencies; bundled tests share one score.\nChecker executables target ${platform}; other platforms must rebuild them from checker-sources/problem/ with -I checker-sources/shared/. The Lemon checker uses Testlib for Lemons (registerLemonChecker), independently of the Polygon checker. Preserve the included header license. Configure your C++ compiler in LemonLime.\nGrader problems use LemonLime Communication mode.\n`;
+export const lemonReadme = (platform: string) => `LemonLime contest package\n\nOpen the .cdf file in LemonLime (JSON CDF version 1.0).\nContestants: source/<contestant>/<problem>/<problem>.cpp\nThe source directory is deliberately empty.\nInputs, answers, checkers and supplied grader files are in data/.\nThe selected testsets of each problem are exported one after another (files of testsets other than "tests" are prefixed with the testset name); each testset is scored by its own subtasks, and a testset without point settings totals 100 points.\nSubtasks are ordered by dependencies; bundled tests share one score.\nChecker executables target ${platform}; other platforms must rebuild them from checker-sources/problem/ with -I checker-sources/shared/. The Lemon checker uses Testlib for Lemons (registerLemonChecker), independently of the Polygon checker. Preserve the included header license. Configure your C++ compiler in LemonLime.\nGrader problems use LemonLime Communication mode.\n`;

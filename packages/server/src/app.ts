@@ -30,6 +30,7 @@ import { samePath } from './global.js';
 import { listShared, stdRefToPath } from './sharedFiles.js';
 import { createLemonChecker } from './judge/lemonChecker.js';
 import { detectTools, listDirs } from './tools.js';
+import { findSystemFont, systemFontStatus } from './systemFonts.js';
 import { HttpError, exists, safeJoin, validateFileName } from './util/fs.js';
 import { FileService } from './workspace/files.js';
 import { ProblemRegistry } from './workspace/problems.js';
@@ -59,9 +60,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const agent = new AgentService(deps.judge, hub, deps.contests);
   let requests = 0;
   let clearingCache = false;
+  let relocating = false;
   app.addHook('onRequest', async req => {
     if (!req.url.startsWith('/ws')) requests++;
     if (clearingCache && req.url.startsWith('/api/')) throw new HttpError(409, 'busy', 'Cache maintenance in progress');
+    if (relocating && req.url.startsWith('/api/')) throw new HttpError(409, 'busy', 'A problem is being moved to another root; try again shortly');
   });
   app.addHook('onResponse', async req => { if (!req.url.startsWith('/ws')) requests--; });
   const idle = () => !agent.running && !deps.jobs.list().some(j => j.status === 'running');
@@ -89,8 +92,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const isApi = req.url.startsWith('/api/');
     const isWs = req.url.startsWith('/ws');
     if (!isApi && !isWs) return;
-    // WebSockets and <img src> (statement images) cannot send headers.
-    const queryOk = isWs || /^\/api\/problems\/[^/]+\/raw\//.test(req.url) || /^\/api\/contests\/[^/]+\/file\/raw\?/.test(req.url);
+    // WebSockets and <img src> (statement images) cannot send headers; nor can the OI worker's font loader.
+    const queryOk = isWs || /^\/api\/problems\/[^/]+\/raw\//.test(req.url) || /^\/api\/contests\/[^/]+\/file\/raw\?/.test(req.url) || /^\/api\/system-fonts\/[a-z]+\?/.test(req.url);
     const given = req.headers[TOKEN_HEADER] ?? (queryOk ? new URL(req.url, 'http://x').searchParams.get('token') : null);
     if (given !== token) return reply.code(401).send({ error: 'unauthorized', message: 'Missing or invalid token' });
   });
@@ -134,14 +137,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.post<{ Params: { id: string }; Body: { root: string } }>('/api/problems/:id/relocate', async req => {
     if (!idle()) throw new HttpError(409, 'busy', 'Wait for running tasks before moving a problem');
     if (typeof req.body?.root !== 'string') throw new HttpError(400, 'invalid_root', 'Destination root required');
-    clearingCache = true;
+    if (relocating || clearingCache) throw new HttpError(409, 'busy', 'Another maintenance operation is running');
+    relocating = true;
     await watcher.stop();
     try {
       const result = await moveProblem(registry, req.params.id, req.body.root);
       agent.forgetIdle();
       hub.broadcast({ type: 'problems:changed' });
       return result;
-    } finally { clearingCache = false; await watcher.start(); }
+    } finally { relocating = false; await watcher.start(); }
   });
   app.post('/api/shutdown/stop-ai', async () => { await agent.stopAll(true); return { ok: true }; });
 
@@ -171,6 +175,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   app.post('/api/tools/detect', async () => detectTools(global.sharedDir));
+
+  app.get('/api/system-fonts', async () => systemFontStatus(global.dir));
+  app.get<{ Params: { key: string } }>('/api/system-fonts/:key', async (req, reply) => {
+    const file = await findSystemFont(global.dir, req.params.key);
+    if (!file) throw new HttpError(404, 'font_not_found', `Font ${req.params.key} is not installed`);
+    const stat = await fsp.stat(file);
+    const etag = `"${stat.size.toString(36)}-${Math.floor(stat.mtimeMs).toString(36)}"`;
+    reply.header('cache-control', 'private, max-age=86400').header('etag', etag).header('x-content-type-options', 'nosniff');
+    if (req.headers['if-none-match'] === etag) return reply.code(304).send();
+    return reply.type('application/octet-stream').send(await fsp.readFile(file));
+  });
 
   app.get<{ Querystring: { path?: string } }>('/api/fs/dirs', async (req) => {
     try {
@@ -254,6 +269,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     const ref = await registry.get(req.params.id);
     const busy = deps.jobs.list(ref.id).find((j) => j.status === 'running');
     if (busy) throw new HttpError(409, 'busy', `A ${busy.kind} job is running for this problem`);
+    // Contest batches and contest AI sessions work on every problem of the contest.
+    const owners = new Set([ref.id, ...(await deps.contests.list()).filter(c => c.problems.some(p => p.problem === ref.id)).map(c => `contest:${c.id}`)]);
+    if (deps.jobs.list().some(j => j.status === 'running' && j.problemId !== ref.id && owners.has(j.problemId))) {
+      throw new HttpError(409, 'busy', 'A contest task using this problem is running');
+    }
+    if (agent.runningFor(owners)) throw new HttpError(409, 'busy', 'An AI session is working on this problem');
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
     const dest = path.join(global.dir, 'trash', `${path.basename(ref.dir)}-${stamp}`);
     await fsp.mkdir(path.dirname(dest), { recursive: true });
@@ -297,6 +318,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (typeof req.body?.content !== 'string') throw new HttpError(400, 'bad_request', 'content required');
     const hash = await files.write(ref.dir, req.params['*'], req.body.content, req.body.baseHash);
     if (req.params['*'] !== 'problem.toml') await registry.fileChanged(ref.id, req.params['*']);
+    else {
+      // The watcher suppresses our own writes; other views (lists, contests) must still refresh.
+      hub.broadcast({ type: 'problem:changed', problemId: ref.id });
+      hub.broadcast({ type: 'problems:changed' });
+    }
     return { hash };
   });
 
@@ -316,13 +342,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     });
     const ext = path.extname(abs).toLowerCase();
     const types: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.svg': 'image/svg+xml', '.pdf': 'application/pdf' };
-    return reply.type(types[ext] ?? 'application/octet-stream').header('cache-control', 'no-cache').send(data);
+    // The token travels in the query string: never let a file (SVG especially) run script.
+    // PDFs are left without CSP: Chromium's viewer refuses to render sandboxed documents.
+    reply.type(types[ext] ?? 'application/octet-stream').header('cache-control', 'no-cache').header('x-content-type-options', 'nosniff');
+    if (ext !== '.pdf') reply.header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox");
+    return reply.send(data);
   });
 
   judgeRoutes(app, deps.judge, deps.jobs);
   const sync = new PolygonSync(deps.judge);
   polygonRoutes(app, deps.judge, sync, deps.jobs, hub);
-  contestRoutes(app, { judge: deps.judge, contests: deps.contests, sync, afterImport: () => watcher.start() }, deps.jobs, hub);
+  contestRoutes(app, { judge: deps.judge, contests: deps.contests, sync, afterImport: () => watcher.start(), aiRunning: owner => agent.runningFor(new Set([owner])) }, deps.jobs, hub);
   aiRoutes(app, global, agent);
 
   app.delete<{ Params: { id: string } }>('/api/problems/:id/cache', async req => {

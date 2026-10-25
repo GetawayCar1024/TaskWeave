@@ -1,11 +1,14 @@
 import type { DefsToml } from './latex';
+import { serverText } from './serverText';
 import {
   TOKEN_HEADER,
+  type SystemFontStatus,
   type UsageStats,
   type ContestBatchRequest,
   type ContestDetail,
   type ContestImportRequest,
   type ContestPullRequest,
+  type ContestRepullRequest,
   type ContestSyncStatus,
   type ContestStatement,
   type ContestSummary,
@@ -103,7 +106,7 @@ const aiBase = (owner: string) => (owner.startsWith('contest:') ? `/contests/${p
 const tsq = (ts?: string) => (ts && ts !== 'tests' ? `?testset=${encodeURIComponent(ts)}` : '');
 
 export const api = {
-  statementSamples: (id: string) => request<import('@polyforge/shared').StatementSample[]>('GET', `/problems/${pid(id)}/statement-samples`),
+  statementSamples: (id: string, lang?: string) => request<import('@polyforge/shared').StatementSample[]>('GET', `/problems/${pid(id)}/statement-samples${lang ? `?lang=${encodeURIComponent(lang)}` : ''}`),
   contestDown: async (id: string, lang: string, pdf: Blob, statements: ContestStatement[], notes: string) => {
     const base64 = await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1]); r.onerror = reject; r.readAsDataURL(pdf); });
     const res = await fetch(`/api/contests/${pid(id)}/down`, { method: 'POST', headers: { [TOKEN_HEADER]: token, 'Content-Type': 'application/json' }, body: JSON.stringify({ lang, pdf: base64, statements, notes }) });
@@ -128,6 +131,7 @@ export const api = {
   languages: () => request<LanguagesResponse>('GET', '/languages'),
   saveLanguages: (text: string) => request<LanguagesResponse>('PUT', '/languages', { text }),
   detectTools: () => request<ToolProbe[]>('POST', '/tools/detect'),
+  systemFonts: () => request<SystemFontStatus>('GET', '/system-fonts'),
   listDirs: (path: string) =>
     request<{ path: string; parent: string | null; dirs: string[] }>('GET', `/fs/dirs?path=${encodeURIComponent(path)}`),
 
@@ -172,12 +176,12 @@ export const api = {
   testFile: (id: string, n: number, kind: 'in' | 'ans' | 'overview' | 'statement-in' | 'statement-out', testset?: string) =>
     request<TestFileResponse>('GET', `/problems/${pid(id)}/tests/${n}/${kind}${tsq(testset)}`),
   run: (id: string, req: QuickRunRequest) => request<QuickRunResponse>('POST', `/problems/${pid(id)}/run`, req),
-  startInvocation: (id: string, sources: string[], tests?: number[], testset?: string) =>
-    request<{ job: JobInfo; invocationId: string }>('POST', `/problems/${pid(id)}/invocations`, { sources, tests, testset }),
+  startInvocation: (id: string, sources: string[], tests?: number[], testset?: string, selection?: import('@polyforge/shared').InvocationSelection) =>
+    request<{ job: JobInfo; invocationId: string }>('POST', `/problems/${pid(id)}/invocations`, { sources, tests, testset, selection }),
   invocations: (id: string) => request<InvocationSummary[]>('GET', `/problems/${pid(id)}/invocations`),
   invocation: (id: string, inv: string) => request<Invocation>('GET', `/problems/${pid(id)}/invocations/${encodeURIComponent(inv)}`),
-  invocationOutput: (id: string, inv: string, sol: number, test: number) =>
-    request<TestFileResponse>('GET', `/problems/${pid(id)}/invocations/${encodeURIComponent(inv)}/output/${sol}/${test}`),
+  invocationOutput: (id: string, inv: string, sol: number, test: number, testset?: string) =>
+    request<TestFileResponse>('GET', `/problems/${pid(id)}/invocations/${encodeURIComponent(inv)}/output/${sol}/${test}${testset ? `?testset=${encodeURIComponent(testset)}` : ''}`),
   validatorTests: (id: string) => request<JobInfo>('POST', `/problems/${pid(id)}/validator-tests`),
   checkerTests: (id: string) => request<JobInfo>('POST', `/problems/${pid(id)}/checker-tests`),
   jobs: (problemId: string) => request<JobInfo[]>('GET', `/jobs?problem=${encodeURIComponent(problemId)}`),
@@ -191,7 +195,7 @@ export const api = {
   polygonProblems: () => request<PolygonProblem[]>('GET', '/polygon/problems'),
   pushPreview: (id: string) => request<PushPreview>('POST', `/problems/${pid(id)}/polygon/diff`),
   push: (id: string, req: PushRequest) => request<JobInfo>('POST', `/problems/${pid(id)}/polygon/push`, req),
-  pullPreview: (id: string) => request<PullPreview>('POST', `/problems/${pid(id)}/polygon/pull-preview`),
+  pullPreview: (id: string, testsets: string[] = []) => request<PullPreview>('POST', `/problems/${pid(id)}/polygon/pull-preview`, { testsets }),
   pull: (id: string, take: string[], merge: string[] = []) =>
     request<{ applied: string[]; merged: string[]; conflicts: string[]; warnings: string[] }>('POST', `/problems/${pid(id)}/polygon/pull`, { take, merge }),
   syncContent: (id: string, key: string) => request<ItemContent>('GET', `/problems/${pid(id)}/polygon/content?key=${encodeURIComponent(key)}`),
@@ -230,6 +234,7 @@ export const api = {
   contestSyncStatus: (id: string) => request<ContestSyncStatus>('GET', `/contests/${pid(id)}/polygon/status`),
   contestPullPreview: (id: string, problems: string[]) => request<JobInfo>('POST', `/contests/${pid(id)}/polygon/pull-preview`, { problems }),
   contestPull: (id: string, req: ContestPullRequest) => request<JobInfo>('POST', `/contests/${pid(id)}/polygon/pull`, req),
+  contestRepull: (id: string, req: ContestRepullRequest) => request<JobInfo>('POST', `/contests/${pid(id)}/polygon/repull`, req),
   contestTex: (id: string, lang: string, doc: string, breaks: boolean, toc: boolean) =>
     download(`/api/contests/${pid(id)}/tex?lang=${encodeURIComponent(lang)}&doc=${encodeURIComponent(doc)}&breaks=${breaks ? 1 : 0}&toc=${toc ? 1 : 0}`, `${id}-${doc}-${lang}.tex`),
   downloadContestExport: (id: string, file: string) => download(`/api/contests/${pid(id)}/export/${encodeURIComponent(file)}`, file),
@@ -278,6 +283,7 @@ export function rawUrl(id: string, path: string): string {
   return `/api/problems/${pid(id)}/raw/${encPath(path)}?token=${encodeURIComponent(token)}`;
 }
 
+/** An error for display, in the UI language (server texts are translated). */
 export function errorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
+  return serverText(e instanceof Error ? e.message : String(e));
 }

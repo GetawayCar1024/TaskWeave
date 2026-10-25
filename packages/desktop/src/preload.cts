@@ -11,4 +11,6 @@ contextBridge.exposeInMainWorld('polyforgeDesktop', {
     return () => ipcRenderer.removeListener('polyforge:request-close', listener);
   },
   confirmClose: () => ipcRenderer.send('polyforge:confirm-close'),
+  /** Saves the current page as PDF (print media); resolves to the path, or null when cancelled. */
+  printToPdf: (name: string): Promise<string | null> => ipcRenderer.invoke('polyforge:print-pdf', name),
 });

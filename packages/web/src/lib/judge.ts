@@ -2,6 +2,7 @@ import { reactive, watch, onBeforeUnmount } from 'vue';
 import type {
   CheckerTestResult,
   CompileResult,
+  InvocationSelection,
   JobInfo,
   JobKind,
   SelfTestReport,
@@ -47,8 +48,15 @@ export function useJudge(problemId: string, ws: Workspace) {
   async function init() {
     await loadManifest();
     for (const j of await api.jobs(problemId).catch(() => [] as JobInfo[])) trackJob(j);
+    // Coming back to the problem: results of self tests that finished meanwhile.
+    const vt = state.jobs['validator-tests'];
+    if (vt?.status === 'done' && vt.result) state.validatorReport ??= vt.result as SelfTestReport<ValidatorTestResult>;
+    const ct = state.jobs['checker-tests'];
+    if (ct?.status === 'done' && ct.result) state.checkerReport ??= ct.result as SelfTestReport<CheckerTestResult>;
     const recent = await api.invocations(problemId).catch(() => []);
-    if (recent[0]) state.invocationId = recent[0].id;
+    // Prefer the invocation still running (if any) so it can be followed live.
+    const live = running('invocation') ? recent.find((x) => x.status === 'running') : undefined;
+    if (live ?? recent[0]) state.invocationId = (live ?? recent[0]).id;
   }
 
   /** Jobs known to have finished; a later "running" snapshot of them is stale. */
@@ -101,8 +109,8 @@ export function useJudge(problemId: string, ws: Workspace) {
     trackJob(await api.generateTests(problemId, testset));
   }
 
-  async function startInvocation(sources: string[], tests?: number[], testset?: string) {
-    const r = await api.startInvocation(problemId, sources, tests, testset);
+  async function startInvocation(sources: string[], tests?: number[], testset?: string, selection?: InvocationSelection) {
+    const r = await api.startInvocation(problemId, sources, tests, testset, selection);
     trackJob(r.job);
     state.invocationId = r.invocationId;
     state.invocationVersion++;
@@ -133,8 +141,9 @@ export function useJudge(problemId: string, ws: Workspace) {
   let disposed = false;
   onBeforeUnmount(() => { disposed = true; clearTimeout(regenTimer); });
   const generationConfig = (c: ProblemToml | null | undefined) => c ? JSON.stringify({
-    problem: { ...c.problem, title: undefined }, tests: { ...c.tests, samples: undefined },
-    testsets: c.testsets, solutions: c.solutions, validator: c.validator, interactor: c.interactor,
+    problem: { ...c.problem, title: undefined }, tests: { ...c.tests, samples: undefined, large_samples: undefined },
+    // The tests API marks samples itself: changing them needs no regeneration.
+    testsets: Object.fromEntries(Object.entries(c.testsets ?? {}).map(([k, v]) => [k, { ...v, samples: undefined, large_samples: undefined }])), solutions: c.solutions, validator: c.validator, interactor: c.interactor,
     generators: c.generators, source_languages: c.source_languages,
   }) : '';
   watch(() => ws.state.detail?.config, (next, prev) => {
@@ -177,7 +186,7 @@ export function useJudge(problemId: string, ws: Workspace) {
     }
   }
 
-  return { state, init, loadManifest, build, generate, startInvocation, validatorTests, checkerTests, cancel, running, onWsEvent, refreshMarkers };
+  return { state, init, loadManifest, build, generate, startInvocation, validatorTests, checkerTests, cancel, running, onWsEvent, refreshMarkers, trackJob };
 }
 
 export type Judge = ReturnType<typeof useJudge>;

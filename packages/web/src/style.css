@@ -57,3 +57,50 @@ pre.md-code, pre.verbatim { font-family: Consolas, monospace; line-height: 1.5; 
 .hljs-comment { color: light-dark(#5d7250, #86a66e); }
 .hljs-title, .hljs-built_in { color: light-dark(#00639c, #73c6e8); }
 .diff-options { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-bottom: 6px; }
+
+/* Drag a panel border to resize it (lib/resize.ts); the panel needs position: relative. */
+.pf-resize-handle { position: absolute; z-index: 2; touch-action: none; }
+.pf-resize-handle.top, .pf-resize-handle.bottom { left: 0; right: 0; height: 8px; cursor: ns-resize; }
+.pf-resize-handle.top { top: -4px; }
+.pf-resize-handle.bottom { bottom: -4px; }
+.pf-resize-handle.left, .pf-resize-handle.right { top: 0; bottom: 0; width: 8px; cursor: ew-resize; }
+.pf-resize-handle.left { left: -4px; }
+.pf-resize-handle.right { right: -4px; }
+.pf-resize-handle::after { content: ''; position: absolute; inset: 3px 0; border-radius: 1px; transition: background 120ms; }
+.pf-resize-handle.left::after, .pf-resize-handle.right::after { inset: 0 3px; }
+.pf-resize-handle:hover::after, .pf-resize-handle.active::after { background: var(--pf-accent); }
+/* Split panes look like the drag borders above. */
+.n-split { --n-resize-trigger-color: var(--pf-border) !important; --n-resize-trigger-color-hover: var(--pf-accent) !important; }
+body.pf-resizing-y, body.pf-resizing-y * { cursor: ns-resize !important; user-select: none !important; }
+body.pf-resizing-x, body.pf-resizing-x * { cursor: ew-resize !important; user-select: none !important; }
+
+/* A job is running in the background (toolbar buttons that open its window). */
+.pf-run-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--pf-accent); margin-right: 6px; vertical-align: 1px; animation: pf-pulse 1.2s ease-in-out infinite; }
+@keyframes pf-pulse { 50% { opacity: 0.35; transform: scale(0.8); } }
+
+/* Shared pieces of dialogs, tool windows and panels (components/ToolWindow.vue frames them). */
+.pf-hint { font-size: 12px; color: var(--pf-text-secondary); }
+.pf-empty { padding: 24px 12px; text-align: center; font-size: 12px; color: var(--pf-text-secondary); }
+.pf-center { display: flex; align-items: center; justify-content: center; flex: 1; padding: 24px; }
+.pf-section-title { font-size: 13px; font-weight: 600; }
+.pf-dialog-note { margin: 0 0 12px; font-size: 12px; }
+.pf-label { font-size: 12px; color: var(--pf-text-secondary); }
+/* Selectable rows in lists (files, items, testsets …). */
+.pf-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+.pf-row:hover { background: rgba(128, 128, 128, 0.1); }
+.pf-row.active { background: var(--pf-selected); box-shadow: inset 2px 0 var(--pf-accent); }
+/* Program output, logs and test data. */
+.pf-box { margin: 0; padding: 6px 8px; font-family: Consolas, 'Cascadia Code', monospace; font-size: 12px; background: rgba(128, 128, 128, 0.1); border: 1px solid var(--pf-border); border-radius: 4px; overflow: auto; }
+.pf-log { margin: 0; white-space: pre-wrap; font-family: Consolas, 'Cascadia Code', monospace; font-size: 12px; max-height: 300px; overflow: auto; }
+kbd.pf-kbd { font-family: Consolas, monospace; font-size: 11px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--pf-border); color: var(--pf-text-secondary); }
+.pf-good { color: light-dark(#16804a, #63e2b7); }
+.pf-warn { color: light-dark(#986415, #e8b060); }
+.pf-bad { color: light-dark(#c53b3b, #e88080); }
+
+/* Verdict cells shared by the judging windows (lib/verdict.ts verdictClass), readable in both themes. */
+.pf-v-success { background: light-dark(#e3f5ea, #1f3a2b); color: light-dark(#126b3c, #7fe0a8); }
+.pf-v-warning { background: light-dark(#fdf0d8, #3d3220); color: light-dark(#8a5a08, #f2c26b); }
+.pf-v-error { background: light-dark(#fbe3e6, #45252b); color: light-dark(#b02a3f, #ff9aa8); }
+.pf-v-info { background: light-dark(#ece6fc, #322a4d); color: light-dark(#5a3cc0, #b9a5ff); }
+.pf-verdict-pill { padding: 1px 8px; border-radius: 4px; font-weight: 700; }
+.pf-v-default { background: light-dark(#f0f0f3, #2e2e31); color: var(--pf-text-secondary); }

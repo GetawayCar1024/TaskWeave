@@ -214,13 +214,29 @@ export class ContestRegistry {
     return this.detail(id);
   }
 
-  /** Remove contest.toml (the problems are untouched); the folder goes too if nothing else is left. */
+  /**
+   * Delete the contest's own folder (contest.toml, files/, .polyforge/) so the name can
+   * be used again. Referenced problems live elsewhere and are never touched; a folder
+   * that is (or contains) a problem only loses the contest's own entries.
+   */
   async remove(id: string): Promise<void> {
     const ref = await this.get(id);
-    await fsp.rm(path.join(ref.dir, CONTEST_FILE), { force: true });
-    await fsp.rm(path.join(ref.dir, '.polyforge'), { recursive: true, force: true });
-    const left = await fsp.readdir(ref.dir).catch(() => ['?']);
-    if (!left.length) await fsp.rmdir(ref.dir).catch(() => {});
+    const inside = (dir: string) => {
+      const rel = path.relative(ref.dir, dir);
+      return rel === '' || (rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel));
+    };
+    const problems = await this.problems.scan();
+    const sharesProblem = await exists(path.join(ref.dir, 'problem.toml')) || problems.some(p => inside(p.dir))
+      || this.problems.roots.some(r => inside(r));
+    if ((await fsp.lstat(ref.dir)).isSymbolicLink()) {
+      await fsp.unlink(ref.dir);
+    } else if (sharesProblem || !samePath(path.dirname(ref.dir), this.dir)) {
+      for (const entry of [CONTEST_FILE, 'files', '.polyforge']) await fsp.rm(path.join(ref.dir, entry), { recursive: true, force: true });
+      const left = await fsp.readdir(ref.dir).catch(() => ['?']);
+      if (!left.length) await fsp.rmdir(ref.dir).catch(() => {});
+    } else {
+      await fsp.rm(ref.dir, { recursive: true, force: true, maxRetries: 3 });
+    }
     await this.scan();
   }
 

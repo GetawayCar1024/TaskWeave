@@ -8,8 +8,8 @@ import { settings } from '../lib/settings';
 import { SHARED_TAB, type Tab, type Workspace } from '../lib/workspace';
 import StatementPreview from './StatementPreview.vue';
 import FilePreview from './FilePreview.vue';
-import { isSourceFile } from '@polyforge/shared';
-import { Lock, X } from 'lucide-vue-next';
+import { EDITOR_BASE_OPTIONS, editorOptions as sharedEditorOptions, tabHints, type EditorTabItem } from '../lib/editorOptions';
+import EditorTabBar from './EditorTabBar.vue';
 import type { SidebarAction } from './FileSidebar.vue';
 
 const props = defineProps<{ ws: Workspace; judge: Judge; problemId: string }>();
@@ -34,24 +34,12 @@ function rememberView() {
   if (state) viewStates.set(current.path, state);
 }
 
-function editorOptions(): monaco.editor.IEditorOptions & monaco.editor.IGlobalEditorOptions {
-  const ed = settings.config!.editor;
-  return {
-    fontSize: ed.font_size,
-    tabSize: ed.tab_size,
-    wordWrap: ed.word_wrap || !isSourceFile(props.ws.activeTab.value?.path ?? '') ? 'on' : 'off',
-    minimap: { enabled: ed.minimap },
-    theme: settings.config!.ui.theme === 'light' ? 'vs' : 'vs-dark',
-  };
-}
+const editorOptions = () => sharedEditorOptions(props.ws.activeTab.value?.path ?? '');
 
 onMounted(() => {
   editor = monaco.editor.create(host.value!, {
     model: null,
-    automaticLayout: true,
-    scrollBeyondLastLine: false,
-    fontFamily: "Consolas, 'Cascadia Code', 'Courier New', monospace",
-    renderWhitespace: 'selection',
+    ...EDITOR_BASE_OPTIONS,
     ...editorOptions(),
   });
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => current && emit('save', current.path));
@@ -112,61 +100,28 @@ onBeforeUnmount(() => {
 
 const label = (path: string) => (path.startsWith(SHARED_TAB) ? `std:${path.split('/').pop()}` : path.split('/').pop());
 
-/**
- * Tabs with the same name (statement/zh/input.tex, statement/en/input.tex) get the
- * shortest part of their folder that tells them apart, as a dim hint: "zh", "en".
- */
-const hints = computed(() => {
-  const out = new Map<string, string>();
-  const groups = new Map<string, string[]>();
-  for (const t of props.ws.state.tabs) {
-    const name = label(t.path) ?? t.path;
-    groups.set(name, [...(groups.get(name) ?? []), t.path]);
-  }
-  for (const paths of groups.values()) {
-    if (paths.length < 2) continue;
-    const dirs = paths.map((p) => p.split('/').slice(0, -1));
-    const max = Math.max(...dirs.map((d) => d.length));
-    for (let depth = 1; depth <= max; depth++) {
-      const tails = dirs.map((d) => d.slice(-depth).join('/'));
-      if (new Set(tails).size === tails.length || depth === max) {
-        paths.forEach((p, i) => out.set(p, tails[i] || '/'));
-        break;
-      }
-    }
-  }
-  return out;
+const tabItems = computed<EditorTabItem[]>(() => {
+  const hints = tabHints(props.ws.state.tabs.map((tab) => tab.path), (p) => label(p) ?? p);
+  return props.ws.state.tabs.map((tab) => ({
+    path: tab.path,
+    label: label(tab.path) ?? tab.path,
+    hint: hints.get(tab.path),
+    dirty: tab.dirty,
+    readOnly: tab.readOnly,
+    gone: tab.disk === 'deleted',
+  }));
 });
-
-function onTabAuxClick(e: MouseEvent, path: string) {
-  if (e.button === 1) {
-    e.preventDefault();
-    emit('close', path);
-  }
-}
 </script>
 
 <template>
   <div class="pane">
-    <div class="tabs" v-if="ws.state.tabs.length">
-      <div
-        v-for="tab in ws.state.tabs"
-        :key="tab.path"
-        class="tab"
-        :class="{ active: tab.path === ws.state.active }"
-        :title="tab.path"
-        @click="ws.state.active = tab.path"
-        @mousedown.middle.prevent
-        @auxclick="onTabAuxClick($event, tab.path)"
-      >
-        <span class="name" :class="{ gone: tab.disk === 'deleted' }">{{ label(tab.path) }}</span>
-        <span v-if="hints.get(tab.path)" class="hint">{{ hints.get(tab.path) }}</span>
-        <lock v-if="tab.readOnly" :size="11" class="ro" />
-        <span class="close" :class="{ dirty: tab.dirty }" @click.stop="emit('close', tab.path)">
-          <span class="dot" /><x class="x" :size="12" />
-        </span>
-      </div>
-    </div>
+    <editor-tab-bar
+      v-if="ws.state.tabs.length"
+      :tabs="tabItems"
+      :active="ws.state.active"
+      @select="(p: string) => (ws.state.active = p)"
+      @close="(p: string) => emit('close', p)"
+    />
 
     <template v-if="ws.activeTab.value">
       <n-alert v-if="ws.activeTab.value.disk === 'changed'" type="warning" :show-icon="false" class="banner">
@@ -224,82 +179,6 @@ function onTabAuxClick(e: MouseEvent, path: string) {
   display: flex;
   flex-direction: column;
   min-width: 0;
-}
-.tabs {
-  display: flex;
-  overflow-x: auto;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--pf-border);
-  background: var(--pf-toolbar-bg);
-  padding: 5px 6px 0;
-  gap: 3px;
-  scrollbar-width: thin;
-}
-.tab {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px 6px 12px;
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-  border-radius: 7px 7px 0 0;
-  opacity: 0.7;
-  user-select: none;
-}
-.tab.active {
-  opacity: 1;
-  background: var(--pf-selected);
-  box-shadow: inset 0 -2px 0 var(--pf-accent);
-}
-.tab:hover { background: var(--pf-selected); opacity: 1; }
-.name.gone {
-  text-decoration: line-through;
-}
-.hint {
-  margin-left: 4px;
-  font-size: 11px;
-  opacity: 0.55;
-}
-.ro {
-  opacity: 0.6;
-}
-.close {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  width: 16px;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 3px;
-}
-.close .dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: currentColor;
-}
-.close:hover {
-  background: rgba(128, 128, 128, 0.3);
-}
-.close .dot {
-  display: none;
-}
-.close.dirty .dot {
-  display: inline-block;
-}
-.close.dirty .x {
-  display: none;
-}
-.close.dirty:hover .dot {
-  display: none;
-}
-.close.dirty:hover .x {
-  display: inline-block;
 }
 .banner {
   border-radius: 0;

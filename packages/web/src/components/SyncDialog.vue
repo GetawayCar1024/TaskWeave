@@ -9,8 +9,6 @@ import {
   NInput,
   NInputNumber,
   NSelect,
-  NModal,
-  NProgress,
   NScrollbar,
   NSpace,
   NSpin,
@@ -25,6 +23,7 @@ import { api, errorMessage } from '../lib/api';
 import { waitJob } from '../lib/jobs';
 import type { Workspace } from '../lib/workspace';
 import TextDiff from './TextDiff.vue';
+import ToolWindow from './ToolWindow.vue';
 
 /** initialTab: open on the pull tab (sent here from the contest sync to resolve a conflict). */
 const props = defineProps<{ show: boolean; ws: Workspace; problemId: string; initialTab?: 'push' | 'pull' }>();
@@ -58,7 +57,7 @@ async function loadPush() {
   try {
     preview.value = await api.pushPreview(props.problemId);
     selected.value = new Set(
-      preview.value.items.filter((i) => i.kind !== 'toml' && (i.status === 'new' || i.status === 'modified' || (i.status === 'deleted' && ['statement', 'sample'].includes(i.kind)))).map((i) => i.key),
+      preview.value.items.filter((i) => i.kind !== 'toml' && (i.status === 'new' || i.status === 'modified' || (i.status === 'deleted' && i.deletable))).map((i) => i.key),
     );
   } catch (e) {
     error.value = errorMessage(e);
@@ -84,15 +83,18 @@ async function doPush() {
     pushJob.value = job;
     const done = await waitJob(job, (j) => (pushJob.value = j));
     pushJob.value = done;
+    let failed = '';
     if (done.status === 'done') {
       pushResult.value = done.result as { pushed: string[]; warnings: string[] };
       if (pushResult.value.warnings.length) message.warning(pushResult.value.warnings.map(serverText).join('\n'), { duration: 10000 });
       else message.success(t('sync.pushed', { n: pushResult.value.pushed.length }));
     } else {
-      error.value = done.error ?? done.status;
+      failed = done.error ?? done.status;
     }
     await props.ws.loadDetail();
     await loadPush();
+    // loadPush clears the error: show the push failure after it.
+    if (failed) error.value = failed;
   } catch (e) {
     error.value = errorMessage(e);
   }
@@ -115,12 +117,15 @@ const merge = ref(new Set<string>());
 const diffMode = ref<'compare' | 'merged'>('compare');
 const showSame = ref(false);
 const pulling = ref(false);
+/** Testset names to look for on Polygon besides the local ones (the API cannot list them). */
+const extraTestsets = ref('');
 
 async function loadPull() {
   pullLoading.value = true;
   error.value = '';
   try {
-    pullPreview.value = await api.pullPreview(props.problemId);
+    const names = extraTestsets.value.split(/[\s,，]+/).map((s) => s.trim()).filter(Boolean);
+    pullPreview.value = await api.pullPreview(props.problemId, names);
     take.value = new Set(pullPreview.value.items.filter((i) => i.takeRemote).map((i) => i.key));
     // Conflicts that merge without overlapping edits are merged by default.
     merge.value = new Set(pullPreview.value.items.filter((i) => i.status === 'conflict' && i.mergeable && i.mergeConflicts === 0).map((i) => i.key));
@@ -167,7 +172,7 @@ function setTake(key: string, v: boolean) {
 }
 
 // ---- select all / none (only rows that can be checked, among those shown) ----
-const pushSelectable = computed(() => pushItems.value.filter((it) => it.kind !== 'toml' && !(it.status === 'deleted' && !['statement', 'sample'].includes(it.kind))).map((it) => it.key));
+const pushSelectable = computed(() => pushItems.value.filter((it) => it.kind !== 'toml' && !(it.status === 'deleted' && !it.deletable)).map((it) => it.key));
 const pullSelectable = computed(() => pullItems.value.filter((it) => it.status !== 'same' && it.kind !== 'toml').map((it) => it.key));
 const allState = (keys: string[], set: Set<string>) => {
   const n = keys.filter((k) => set.has(k)).length;
@@ -210,6 +215,7 @@ watch(
     content.value = null;
     pushResult.value = null;
     error.value = '';
+    if (pushJob.value?.status !== 'running') pushJob.value = null;
     // Fresh pull preview each time the dialog opens (loaded when the tab is shown).
     pullPreview.value = null;
     tab.value = props.initialTab === 'pull' && bound.value ? 'pull' : 'push';
@@ -235,11 +241,18 @@ const PULL_TYPE: Record<PullItem['status'], 'info' | 'warning' | 'error' | 'defa
 
 // Known from the problem right away, before the push preview has loaded.
 const bound = computed(() => (preview.value?.polygonId ?? props.ws.state.detail?.summary.status.polygonId) !== undefined);
-const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((pushJob.value.progress.done / pushJob.value.progress.total) * 100) : 0));
 </script>
 
 <template>
-  <n-modal :show="show" preset="card" :title="t('sync.title')" style="width: min(1200px, 96vw)" @update:show="emit('update:show', $event)">
+  <tool-window
+    :show="show"
+    :title="t('sync.title')"
+    size="xl"
+    :status="pushJob?.status ?? null"
+    :progress="pushJob?.progress ?? null"
+    :error="error"
+    @update:show="emit('update:show', $event)"
+  >
     <div class="head">
       <template v-if="preview">
         <span v-if="bound">
@@ -255,11 +268,9 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
       </template>
     </div>
 
-    <n-alert v-if="error" type="error" :show-icon="false" class="alert">{{ error }}</n-alert>
-
     <n-tabs v-model:value="tab" type="line" size="small">
       <n-tab-pane name="push" :tab="t('sync.push')">
-        <div v-if="pushLoading && !preview" class="center"><n-spin /></div>
+        <div v-if="pushLoading && !preview" class="pf-center"><n-spin /></div>
         <template v-else-if="preview">
           <n-alert v-for="(w, i) in preview.warnings" :key="i" type="warning" :show-icon="false" class="alert small">{{ serverText(w) }}</n-alert>
           <div class="body">
@@ -279,11 +290,11 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
                 </n-space>
               </n-space>
               <n-scrollbar style="max-height: 52vh">
-                <div v-if="!pushItems.length" class="dim small empty">{{ t('sync.nothing') }}</div>
-                <div v-for="it in pushItems" :key="it.key" class="row" :class="{ active: active === it.key }" @click="openItem(it.key)">
+                <div v-if="!pushItems.length" class="pf-empty">{{ t('sync.nothing') }}</div>
+                <div v-for="it in pushItems" :key="it.key" class="pf-row" :class="{ active: active === it.key }" @click="openItem(it.key)">
                   <n-checkbox
                     :checked="selected.has(it.key)"
-                    :disabled="it.kind === 'toml' || (it.status === 'deleted' && !['statement', 'sample'].includes(it.kind))"
+                    :disabled="it.kind === 'toml' || (it.status === 'deleted' && !it.deletable)"
                     @click.stop
                     @update:checked="(v: boolean) => (selected = toggle(selected, it.key, v))"
                   />
@@ -293,27 +304,12 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
               </n-scrollbar>
             </div>
             <div class="diff-pane">
-              <div class="labels"><span>{{ content?.remoteIsLastSync ? t('sync.lastSynced') : 'Polygon' }}</span><span>{{ t('sync.local') }}</span></div>
-              <div v-if="contentLoading" class="center"><n-spin /></div>
-              <div v-else-if="!content" class="dim small center">{{ t('sync.pickItem') }}</div>
-              <div v-else-if="content.binary" class="dim small center">{{ t('sync.binary') }}</div>
+              <div class="labels pf-label"><span>{{ content?.remoteIsLastSync ? t('sync.lastSynced') : 'Polygon' }}</span><span>{{ t('sync.local') }}</span></div>
+              <div v-if="contentLoading" class="pf-center"><n-spin /></div>
+              <div v-else-if="!content" class="pf-center pf-hint">{{ t('sync.pickItem') }}</div>
+              <div v-else-if="content.binary" class="pf-center pf-hint">{{ t('sync.binary') }}</div>
               <text-diff v-else :original="content.remote ?? ''" :modified="content.local ?? ''" class="diff" />
             </div>
-          </div>
-          <div class="foot">
-            <n-space align="center">
-              <n-checkbox v-model:checked="commit">{{ t('sync.commit') }}</n-checkbox>
-              <n-input v-model:value="commitMessage" size="small" :disabled="!commit" :placeholder="t('sync.commitMessage')" style="width: 280px" />
-              <n-checkbox v-model:checked="buildPackage" :disabled="!commit">{{ t('sync.buildPackage') }}</n-checkbox>
-              <n-select v-if="buildPackage" v-model:value="packageType" :options="[{label:'Standard',value:'standard'},{label:'Full',value:'full'}]" size="small" style="width: 120px" />
-            </n-space>
-            <n-button type="primary" :loading="pushJob?.status === 'running'" :disabled="preview.blocked || (!selected.size && !buildPackage && !commit)" @click="doPush">
-              {{ bound ? t('sync.pushN', { n: selected.size }) : t('sync.createAndPush', { n: selected.size }) }}
-            </n-button>
-          </div>
-          <div v-if="pushJob?.status === 'running'" class="progress">
-            <n-progress type="line" :percentage="pushPercent" :height="4" :show-indicator="false" />
-            <span class="small dim">{{ serverText(pushJob.progress.message) }}</span>
           </div>
           <n-alert v-if="pushResult?.warnings.length" type="warning" :show-icon="false" class="alert small">
             <div v-for="(w, i) in pushResult.warnings" :key="i">{{ serverText(w) }}</div>
@@ -322,9 +318,14 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
       </n-tab-pane>
 
       <n-tab-pane name="pull" :tab="t('sync.pull')" :disabled="!bound">
-        <div v-if="pullLoading && !pullPreview" class="center"><n-spin /></div>
+        <div v-if="pullLoading && !pullPreview" class="pf-center"><n-spin /></div>
         <template v-else-if="pullPreview">
           <n-alert v-for="(w, i) in pullPreview.warnings" :key="i" type="warning" :show-icon="false" class="alert small">{{ serverText(w) }}</n-alert>
+          <n-space align="center" size="small" class="testsets small">
+            <span :title="t('sync.extraTestsetsHint')">{{ t('sync.extraTestsets') }}</span>
+            <n-input v-model:value="extraTestsets" size="tiny" placeholder="pretests, …" :title="t('sync.extraTestsetsHint')" style="width: 200px" @keyup.enter="loadPull" />
+            <span v-if="pullPreview.testsets?.length" class="dim">{{ t('sync.foundTestsets', { list: pullPreview.testsets.join(', ') }) }}</span>
+          </n-space>
           <div class="body">
             <div class="list">
               <n-space align="center" justify="space-between" class="list-head">
@@ -344,8 +345,8 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
                 </n-space>
               </n-space>
               <n-scrollbar style="max-height: 52vh">
-                <div v-if="!pullItems.length" class="dim small empty">{{ t('sync.inSync') }}</div>
-                <div v-for="it in pullItems" :key="it.key" class="row" :class="{ active: active === it.key, conflict: it.status === 'conflict' }" @click="openItem(it.key)">
+                <div v-if="!pullItems.length" class="pf-empty">{{ t('sync.inSync') }}</div>
+                <div v-for="it in pullItems" :key="it.key" class="pf-row" :class="{ active: active === it.key, conflict: it.status === 'conflict' }" @click="openItem(it.key)">
                   <n-checkbox :checked="take.has(it.key)" :disabled="it.status === 'same' || it.kind === 'toml'" @click.stop @update:checked="(v: boolean) => setTake(it.key, v)" />
                   <n-tag size="tiny" :type="PULL_TYPE[it.status]" :bordered="false">{{ t(`sync.pull_${it.status.replace('-', '_')}`) }}</n-tag>
                   <span class="label" :title="it.key">{{ serverText(it.label) }}</span>
@@ -364,7 +365,7 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
               <div class="hint small dim">{{ t('sync.pullHint') }}</div>
             </div>
             <div class="diff-pane">
-              <div class="labels">
+              <div class="labels pf-label">
                 <span>{{ t('sync.local') }}</span>
                 <span v-if="content?.merged !== undefined" class="mode">
                   <n-button size="tiny" text :type="diffMode === 'compare' ? 'primary' : 'default'" @click="diffMode = 'compare'">Polygon</n-button>
@@ -373,9 +374,9 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
                 </span>
                 <span v-else>{{ content?.remoteIsLastSync ? t('sync.lastSynced') : 'Polygon' }}</span>
               </div>
-              <div v-if="contentLoading" class="center"><n-spin /></div>
-              <div v-else-if="!content" class="dim small center">{{ t('sync.pickItem') }}</div>
-              <div v-else-if="content.binary" class="dim small center">{{ t('sync.binary') }}</div>
+              <div v-if="contentLoading" class="pf-center"><n-spin /></div>
+              <div v-else-if="!content" class="pf-center pf-hint">{{ t('sync.pickItem') }}</div>
+              <div v-else-if="content.binary" class="pf-center pf-hint">{{ t('sync.binary') }}</div>
               <text-diff
                 v-else
                 :original="content.local ?? ''"
@@ -384,14 +385,28 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
               />
             </div>
           </div>
-          <div class="foot">
-            <span class="small dim">{{ t('sync.takeCount', { n: take.size }) }}<template v-if="merge.size"> · {{ t('sync.mergeCount', { n: merge.size }) }}</template></span>
-            <n-button type="primary" :loading="pulling" :disabled="!take.size && !merge.size" @click="doPull">{{ t('sync.apply') }}</n-button>
-          </div>
         </template>
       </n-tab-pane>
     </n-tabs>
-  </n-modal>
+
+    <template #footer-left>
+      <div v-if="tab === 'push' && preview" class="push-options">
+        <n-checkbox v-model:checked="commit">{{ t('sync.commit') }}</n-checkbox>
+        <n-input v-model:value="commitMessage" size="small" :disabled="!commit" :placeholder="t('sync.commitMessage')" style="width: 280px" />
+        <n-checkbox v-model:checked="buildPackage" :disabled="!commit">{{ t('sync.buildPackage') }}</n-checkbox>
+        <n-select v-if="buildPackage" v-model:value="packageType" :options="[{label:'Standard',value:'standard'},{label:'Full',value:'full'}]" size="small" style="width: 120px" />
+      </div>
+      <template v-else-if="tab === 'pull' && pullPreview">
+        {{ t('sync.takeCount', { n: take.size }) }}<template v-if="merge.size"> · {{ t('sync.mergeCount', { n: merge.size }) }}</template>
+      </template>
+    </template>
+    <template #footer>
+      <n-button v-if="tab === 'push'" type="primary" :loading="pushJob?.status === 'running'" :disabled="!preview || preview.blocked || pulling || (!selected.size && !buildPackage && !commit)" @click="doPush">
+        {{ bound ? t('sync.pushN', { n: selected.size }) : t('sync.createAndPush', { n: selected.size }) }}
+      </n-button>
+      <n-button v-else type="primary" :loading="pulling" :disabled="!pullPreview || pushJob?.status === 'running' || (!take.size && !merge.size)" @click="doPull">{{ t('sync.apply') }}</n-button>
+    </template>
+  </tool-window>
 </template>
 
 <style scoped>
@@ -412,23 +427,11 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
 .list-head {
   margin-bottom: 4px;
 }
-.row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 6px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 13px;
+.testsets {
+  margin-bottom: 6px;
 }
-.row:hover {
-  background: rgba(128, 128, 128, 0.12);
-}
-.row.active {
-  background: rgba(99, 226, 183, 0.15);
-}
-.row.conflict .label {
-  color: #e88080;
+.pf-row.conflict .label {
+  color: light-dark(#c53b3b, #e88080);
 }
 .merge-btn {
   margin-left: auto;
@@ -442,39 +445,20 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
 .diff-pane {
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(128, 128, 128, 0.25);
+  border: 1px solid var(--pf-border);
   border-radius: 4px;
   min-height: 52vh;
 }
 .labels {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  font-size: 12px;
-  opacity: 0.7;
   padding: 2px 8px;
 }
-.diff {
-  flex: 1;
-}
-.foot {
+.push-options {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   align-items: center;
-  margin-top: 10px;
-}
-.progress {
-  margin-top: 6px;
-}
-.center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1;
-  padding: 24px;
-}
-.empty {
-  padding: 16px;
-  text-align: center;
+  gap: 8px 12px;
 }
 .hint {
   margin-top: 6px;
@@ -483,6 +467,6 @@ const pushPercent = computed(() => (pushJob.value?.progress.total ? Math.round((
   font-size: 12px;
 }
 .dim {
-  opacity: 0.65;
+  color: var(--pf-text-secondary);
 }
 </style>

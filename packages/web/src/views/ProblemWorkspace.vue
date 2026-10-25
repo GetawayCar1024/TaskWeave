@@ -5,7 +5,7 @@ import { registerExitGuard, exitApproved } from '../lib/exitGuards';
 import { unsavedChoice } from '../lib/confirmUnsaved';
 import { useI18n } from 'vue-i18n';
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
-import { NButton, NDropdown, NInput, NModal, NResult, NSelect, NScrollbar, NSpace, NSpin, NSplit, NTabPane, NTabs, NTooltip, useDialog, useMessage } from 'naive-ui';
+import { NButton, NDropdown, NInput, NResult, NSelect, NScrollbar, NSpin, NSplit, NTabPane, NTabs, NTooltip, useDialog, useMessage } from 'naive-ui';
 import { isSourceFile, statementLanguages } from '@polyforge/shared';
 import DirPicker from '../components/DirPicker.vue';
 import { loadSettings } from '../lib/settings';
@@ -14,7 +14,8 @@ import DiffDialog from '../components/DiffDialog.vue';
 import EditorPane from '../components/EditorPane.vue';
 import FileSidebar, { type SidebarAction } from '../components/FileSidebar.vue';
 import InfoPanel from '../components/InfoPanel.vue';
-import InvocationDrawer from '../components/InvocationDrawer.vue';
+import InvocationWindow from '../components/InvocationWindow.vue';
+import { vKeepScroll } from '../lib/keepScroll';
 import SyncDialog from '../components/SyncDialog.vue';
 import AiDrawer from '../components/AiDrawer.vue';
 import CommandPalette, { type Command } from '../components/CommandPalette.vue';
@@ -32,6 +33,7 @@ import QuickOpen from '../components/QuickOpen.vue';
 import RunPanel from '../components/RunPanel.vue';
 import SelfTestPanel from '../components/SelfTestPanel.vue';
 import TestsPanel from '../components/TestsPanel.vue';
+import ToolWindow from '../components/ToolWindow.vue';
 import { api, errorMessage } from '../lib/api';
 import { problemTitle } from '../lib/format';
 import { useJudge } from '../lib/judge';
@@ -516,12 +518,13 @@ onBeforeUnmount(() => {
       <template #right>
         <n-tooltip>
           <template #trigger>
-            <n-button size="small" :loading="judge.running('generate')" @click="generate">{{ t('toolbar.generate') }}</n-button>
+            <n-button size="small" @click="generate"><span v-if="judge.running('generate')" class="pf-run-dot" />{{ t('toolbar.generate') }}</n-button>
           </template>
           Ctrl+Shift+G
         </n-tooltip>
-        <n-button size="small" :loading="judge.running('invocation')" @click="showInvocation = true">{{ t('toolbar.invocation') }}</n-button>
-        <n-button size="small" :loading="judge.running('stress')" @click="showStress = true">{{ t('toolbar.stress') }}</n-button>
+        <!-- No :loading here: a loading button ignores clicks, and the window must stay reachable while its job runs. -->
+        <n-button size="small" :type="judge.running('invocation') ? 'primary' : 'default'" :secondary="judge.running('invocation')" @click="showInvocation = true"><span v-if="judge.running('invocation')" class="pf-run-dot" />{{ t('toolbar.invocation') }}</n-button>
+        <n-button size="small" :type="judge.running('stress') ? 'primary' : 'default'" :secondary="judge.running('stress')" @click="showStress = true"><span v-if="judge.running('stress')" class="pf-run-dot" />{{ t('toolbar.stress') }}</n-button>
         <n-tooltip>
           <template #trigger>
             <n-button size="small" @click="showSync = true">{{ t('toolbar.sync') }}</n-button>
@@ -529,7 +532,7 @@ onBeforeUnmount(() => {
           Ctrl+Shift+U
         </n-tooltip>
         <n-dropdown trigger="click" :options="moreOptions" @select="onMore">
-          <n-button size="small" :loading="exporting" icon-placement="right"><template #icon><chevron-down /></template>{{ t('toolbar.more') }}</n-button>
+          <n-button size="small" icon-placement="right"><template #icon><chevron-down /></template><span v-if="exporting" class="pf-run-dot" />{{ t('toolbar.more') }}</n-button>
         </n-dropdown>
         <n-tooltip>
           <template #trigger>
@@ -551,7 +554,7 @@ onBeforeUnmount(() => {
     <div v-else-if="!ws.state.detail" class="center"><n-spin /></div>
     <n-split v-else direction="horizontal" :default-size="0.17" :min="0.1" :max="0.4" class="split">
       <template #1>
-        <file-sidebar :ws="ws" @action="onAction" />
+        <file-sidebar v-keep-scroll="`files:${id}`" :ws="ws" @action="onAction" />
       </template>
       <template #2>
         <n-split direction="horizontal" v-model:size="rightSplitSize" :min="0.35" :max="0.9" class="split">
@@ -574,16 +577,16 @@ onBeforeUnmount(() => {
           <template #2>
             <n-tabs v-model:value="rightTab" type="line" size="small" class="right-tabs" pane-class="right-pane">
               <n-tab-pane key="info" name="info" :tab="t('panel.info')">
-                <info-panel :ws="ws" :judge="judge" />
+                <info-panel v-keep-scroll="`info:${id}`" :ws="ws" :judge="judge" />
               </n-tab-pane>
               <n-tab-pane key="tests" name="tests" :tab="t('panel.tests')">
-                <n-scrollbar style="height: 100%"><tests-panel :ws="ws" :judge="judge" :problem-id="id" @run-on-test="runOnTest" /></n-scrollbar>
+                <n-scrollbar v-keep-scroll="`tests:${id}`" style="height: 100%"><tests-panel :ws="ws" :judge="judge" :problem-id="id" @run-on-test="runOnTest" /></n-scrollbar>
               </n-tab-pane>
               <n-tab-pane key="run" name="run" :tab="t('panel.run')" display-directive="show">
-                <n-scrollbar style="height: 100%"><run-panel ref="runPanel" :ws="ws" :judge="judge" :problem-id="id" /></n-scrollbar>
+                <n-scrollbar v-keep-scroll="`run:${id}`" style="height: 100%"><run-panel ref="runPanel" :ws="ws" :judge="judge" :problem-id="id" /></n-scrollbar>
               </n-tab-pane>
               <n-tab-pane key="selftest" name="selftest" :tab="t('panel.selftest')">
-                <n-scrollbar style="height: 100%"><self-test-panel :ws="ws" :judge="judge" /></n-scrollbar>
+                <n-scrollbar v-keep-scroll="`selftest:${id}`" style="height: 100%"><self-test-panel :ws="ws" :judge="judge" /></n-scrollbar>
               </n-tab-pane>
               <n-tab-pane key="ai" name="ai" tab="AI" display-directive="show">
                 <aside class="ai-sidebar" :aria-label="t('palette.aiChat')">
@@ -607,25 +610,26 @@ onBeforeUnmount(() => {
     <command-palette v-model:show="showPalette" :commands="commands" />
     <shortcuts-dialog v-model:show="showShortcuts" />
     <lint-dialog v-model:show="showLint" :ws="ws" :problem-id="id" />
-    <stress-dialog v-model:show="showStress" :ws="ws" :problem-id="id" />
-    <invocation-drawer v-model:show="showInvocation" :ws="ws" :judge="judge" :problem-id="id" />
+    <stress-dialog v-model:show="showStress" :ws="ws" :judge="judge" :problem-id="id" />
+    <invocation-window v-model:show="showInvocation" :ws="ws" :judge="judge" :problem-id="id" />
     <sync-dialog v-model:show="showSync" :ws="ws" :problem-id="id" :initial-tab="syncTab" />
     <diff-dialog v-model:show="diff.show" :path="diff.path" :disk="diff.disk" :mine="diff.mine" @keep-mine="keepMine" @use-disk="useDisk" />
 
     <dir-picker v-model:show="movePicker" :initial="summary?.root" @pick="moveTo" />
-    <n-modal v-model:show="languageDialog" preset="card" :title="t('improve.language')" style="width: 420px">
+    <tool-window v-model:show="languageDialog" :title="t('improve.language')" size="sm">
       <n-select v-model:value="languageCode" filterable tag :options="languageOptions" :placeholder="t('improve.selectLanguage')" />
-      <template #footer><n-button type="primary" :disabled="!/^[a-z]{2,8}$/.test(languageCode) || languageCode === 'images'" @click="createLanguage">{{ t('common.create') }}</n-button></template>
-    </n-modal>
-    <n-modal v-model:show="prompt.show" preset="card" :title="prompt.title" style="width: 480px" @after-leave="prompt.resolve(null)">
+      <template #footer>
+        <n-button @click="languageDialog = false">{{ t('common.cancel') }}</n-button>
+        <n-button type="primary" :disabled="!/^[a-z]{2,8}$/.test(languageCode) || languageCode === 'images'" @click="createLanguage">{{ t('common.create') }}</n-button>
+      </template>
+    </tool-window>
+    <tool-window v-model:show="prompt.show" :title="prompt.title" size="sm" @after-leave="prompt.resolve(null)">
       <n-input v-model:value="prompt.value" class="mono" autofocus @keyup.enter="finishPrompt(true)" />
       <template #footer>
-        <n-space justify="end">
-          <n-button @click="finishPrompt(false)">{{ t('common.cancel') }}</n-button>
-          <n-button type="primary" @click="finishPrompt(true)">{{ t('common.ok') }}</n-button>
-        </n-space>
+        <n-button @click="finishPrompt(false)">{{ t('common.cancel') }}</n-button>
+        <n-button type="primary" @click="finishPrompt(true)">{{ t('common.ok') }}</n-button>
       </template>
-    </n-modal>
+    </tool-window>
   </div>
 </template>
 

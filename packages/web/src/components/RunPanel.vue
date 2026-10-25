@@ -6,6 +6,7 @@ import { isSourceFile, type QuickRunResponse } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 import type { Judge } from '../lib/judge';
 import { fmtMem, verdictType } from '../lib/verdict';
+import { useResizable } from '../lib/resize';
 import type { Workspace } from '../lib/workspace';
 
 const props = defineProps<{ ws: Workspace; judge: Judge; problemId: string }>();
@@ -31,6 +32,10 @@ watch(
 watch(sources, (s) => {
   if (!source.value || !s.includes(source.value)) source.value = props.ws.state.detail?.config?.solutions.find((x) => x.tag === 'MA')?.source ?? s[0] ?? null;
 }, { immediate: true });
+
+/** Output boxes: height limits set by dragging their bottom border. */
+const outSize = useResizable('polyforge-run-stdout-height', { edge: 'bottom', initial: 240, min: 60 });
+const errSize = useResizable('polyforge-run-stderr-height', { edge: 'bottom', initial: 240, min: 60 });
 
 const testOptions = computed(() => (props.judge.state.manifest?.tests ?? []).map((x) => ({ label: `#${x.index}  ${x.source}`, value: x.index })));
 
@@ -83,7 +88,7 @@ defineExpose({ run, runOnTest });
 
     <template v-if="result">
       <n-alert v-if="!result.compile.ok" type="error" :show-icon="false" :title="t('run.compileError')" class="alert">
-        <pre class="log mono">{{ result.compile.log }}</pre>
+        <pre class="pf-log">{{ result.compile.log }}</pre>
       </n-alert>
       <template v-else>
         <n-space align="center" size="small">
@@ -93,15 +98,21 @@ defineExpose({ run, runOnTest });
           <span v-if="result.compile.cached" class="small dim">{{ t('run.cached') }}</span>
         </n-space>
         <div v-if="result.checker?.message" class="small msg">{{ result.checker.message }}</div>
-        <div class="label">{{ t('run.stdout') }}<span v-if="result.stdoutTruncated" class="dim"> ({{ t('run.truncated') }})</span></div>
-        <pre class="out mono">{{ result.stdout }}</pre>
+        <div class="pf-label">{{ t('run.stdout') }}<span v-if="result.stdoutTruncated" class="dim"> ({{ t('run.truncated') }})</span></div>
+        <div class="out-wrap">
+          <pre class="pf-box out" :style="{ maxHeight: `${outSize.size.value}px` }">{{ result.stdout }}</pre>
+          <div class="pf-resize-handle bottom" :class="{ active: outSize.dragging.value }" :title="t('improve.resize')" @pointerdown="outSize.start" @dblclick="outSize.reset" />
+        </div>
         <template v-if="result.stderr">
-          <div class="label">{{ t('run.stderr') }}</div>
-          <pre class="out mono err">{{ result.stderr }}</pre>
+          <div class="pf-label">{{ t('run.stderr') }}</div>
+          <div class="out-wrap">
+            <pre class="pf-box out err" :style="{ maxHeight: `${errSize.size.value}px` }">{{ result.stderr }}</pre>
+            <div class="pf-resize-handle bottom" :class="{ active: errSize.dragging.value }" :title="t('improve.resize')" @pointerdown="errSize.start" @dblclick="errSize.reset" />
+          </div>
         </template>
         <details v-if="result.compile.log" class="small">
           <summary class="dim">{{ t('run.compileLog') }}</summary>
-          <pre class="log mono">{{ result.compile.log }}</pre>
+          <pre class="pf-log">{{ result.compile.log }}</pre>
         </details>
       </template>
     </template>
@@ -118,29 +129,14 @@ defineExpose({ run, runOnTest });
 .alert {
   padding: 4px 8px;
 }
-.log {
-  margin: 0;
-  white-space: pre-wrap;
-  font-size: 12px;
-  max-height: 300px;
-  overflow: auto;
-}
-.label {
-  font-size: 12px;
-  opacity: 0.7;
-}
 .out {
-  margin: 0;
-  padding: 6px;
-  font-size: 12px;
-  background: rgba(128, 128, 128, 0.12);
-  border-radius: 4px;
-  max-height: 240px;
-  overflow: auto;
   white-space: pre;
 }
+.out-wrap {
+  position: relative;
+}
 .out.err {
-  color: #e8a080;
+  color: light-dark(#b0482a, #e8a080);
 }
 .msg {
   word-break: break-word;
@@ -149,6 +145,6 @@ defineExpose({ run, runOnTest });
   font-size: 12px;
 }
 .dim {
-  opacity: 0.6;
+  color: var(--pf-text-secondary);
 }
 </style>

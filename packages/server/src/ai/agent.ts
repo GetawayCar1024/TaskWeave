@@ -94,6 +94,8 @@ interface Scope {
 export class AgentService {
   private shuttingDown = false;
   get running() { return [...this.live.values()].some(l => l.state === 'running'); }
+  /** Whether a running session belongs to one of these owners (problem ids or `contest:<id>`). */
+  runningFor(owners: Set<string>) { return [...this.live.values()].some(l => l.state === 'running' && owners.has(l.data.problemId)); }
   forgetIdle() { if (!this.running) this.live.clear(); }
   async stopAll(shutdown = false) {
     if (shutdown) this.shuttingDown = true;

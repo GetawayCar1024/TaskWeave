@@ -6,13 +6,14 @@ import { useRouter, useRoute } from 'vue-router';
 import {
   NAlert,
   NButton,
+  NCheckbox,
+  NCheckboxGroup,
   NDataTable,
   NEmpty,
   NForm,
   NFormItem,
   NInput,
   NInputNumber,
-  NModal,
   NProgress,
   NSelect,
   NSpace,
@@ -34,6 +35,7 @@ import {
   ClipboardCheck,
   FileText,
   FlaskConical,
+  FolderOpen,
   Package,
   Pencil,
   Play,
@@ -45,11 +47,12 @@ import {
   MemoryStick,
   ListOrdered,
 } from 'lucide-vue-next';
-import { CONTEST_INDEX_RE, PROBLEM_NAME_RE, type ContestAction, type ContestBatchItem, type ContestBatchResult, type ContestDetail, type JobInfo, type ProblemSummary } from '@polyforge/shared';
+import { CONTEST_INDEX_RE, PROBLEM_NAME_RE, testsetsOf, type LuoguAggregate, type ContestAction, type ContestBatchItem, type ContestBatchResult, type ContestDetail, type JobInfo, type ProblemSummary } from '@polyforge/shared';
 import AppHeader from '../components/AppHeader.vue';
 import AiDrawer from '../components/AiDrawer.vue';
 import ContestSyncDialog from '../components/ContestSyncDialog.vue';
 import ContestFiles from '../components/ContestFiles.vue';
+import ToolWindow from '../components/ToolWindow.vue';
 import { useAi } from '../lib/ai';
 import { api, errorMessage } from '../lib/api';
 import { problemTitle } from '../lib/format';
@@ -58,6 +61,7 @@ import { confirmDeleteContest } from '../lib/deleteProblem';
 import { checklist, progress } from '../lib/progress';
 import { onWs } from '../lib/ws';
 import { desktop } from '../lib/desktop';
+import { vKeepScroll } from '../lib/keepScroll';
 
 const props = defineProps<{ id: string }>();
 const { t, locale } = useI18n();
@@ -133,7 +137,7 @@ async function saveProblems(list: Entry[]): Promise<boolean> {
     detail.value = await api.updateContest(props.id, { problems: list });
     return true;
   } catch (e) {
-    message.error(serverText(errorMessage(e)));
+    message.error(errorMessage(e));
     return false;
   } finally {
     saving.value = false;
@@ -183,20 +187,23 @@ async function addProblems() {
 const showEdit = ref(false);
 const edit = reactive({ name: '', zh: '', en: '', polygonId: null as number | null });
 const savingEdit = ref(false);
+const editError = ref('');
 const editNameValid = computed(() => PROBLEM_NAME_RE.test(edit.name.trim()));
 function openEdit() {
   const s = summary.value!;
   Object.assign(edit, { name: s.name, zh: s.title.zh ?? '', en: s.title.en ?? '', polygonId: s.polygonId ?? null });
+  editError.value = '';
   showEdit.value = true;
 }
 async function saveEdit() {
   if (!editNameValid.value || savingEdit.value) return;
   savingEdit.value = true;
+  editError.value = '';
   try {
     detail.value = await api.updateContest(props.id, { name: edit.name.trim(), title: { ...summary.value!.title, zh: edit.zh, en: edit.en }, polygonId: edit.polygonId });
     showEdit.value = false;
   } catch (e) {
-    message.error(serverText(errorMessage(e)));
+    editError.value = errorMessage(e);
   } finally {
     savingEdit.value = false;
   }
@@ -219,10 +226,35 @@ const job = ref<JobInfo | null>(null);
 const running = computed(() => job.value?.status === 'running');
 const result = ref<ContestBatchResult | null>(null);
 const showExport = ref(false);
-const exportFormat = ref<'polygon' | 'lemonlime'>('lemonlime');
+const exportFormat = ref<'polygon' | 'lemonlime' | 'luogu'>('lemonlime');
+// LemonLime / Luogu: testsets per problem (default "tests"), and Luogu's time / memory aggregation.
+const exportTestsets = ref<Record<string, { all: string[]; chosen: string[] }>>({});
+const luoguTime = ref<LuoguAggregate>('sum');
+const luoguMemory = ref<LuoguAggregate>('max');
+const aggOptions = computed(() => (['sum', 'min', 'max'] as const).map((value) => ({ value, label: t(`contest.agg.${value}`) })));
+async function loadExportTestsets() {
+  const out: typeof exportTestsets.value = {};
+  await Promise.all(rows.value.map(async (r) => {
+    const config = await api.problem(r.problem).then((d) => d.config).catch(() => null);
+    const all = config ? testsetsOf(config).map((x) => x.name) : ['tests'];
+    out[r.problem] = { all, chosen: exportTestsets.value[r.problem]?.chosen.filter((x) => all.includes(x)) ?? ['tests'] };
+  }));
+  exportTestsets.value = out;
+}
+const multiTestsets = computed(() => rows.value.filter((r) => (exportTestsets.value[r.problem]?.all.length ?? 0) > 1));
 const resultByProblem = computed(() => new Map((result.value?.items ?? []).map((x) => [x.problem, x])));
+/** The export job, shown in the export window while it runs. */
+const exportJobId = ref<string | null>(null);
+const exportJob = computed(() => (job.value && job.value.id === exportJobId.value ? job.value : null));
+const exportError = ref('');
 async function run(action: ContestAction) {
-  if (action === 'export') { showExport.value = true; return; }
+  if (action === 'export') {
+    if (!running.value) exportJobId.value = null;
+    exportError.value = '';
+    showExport.value = true;
+    loadExportTestsets();
+    return;
+  }
   try {
     // Pushing to Polygon lives in the sync dialog (with its commit message).
     const started = await api.contestBatch(props.id, { action });
@@ -232,15 +264,24 @@ async function run(action: ContestAction) {
   }
 }
 async function exportContest() {
-  try { follow(await api.contestBatch(props.id, { action: 'export', exportFormat: exportFormat.value })); showExport.value = false; }
-  catch (e) { message.error(errorMessage(e)); }
+  const testsets = exportFormat.value === 'polygon' ? undefined : Object.fromEntries(Object.entries(exportTestsets.value).map(([k, v]) => [k, v.chosen.length ? v.chosen : ['tests']]));
+  const luogu = exportFormat.value === 'luogu' ? { time: luoguTime.value, memory: luoguMemory.value } : undefined;
+  exportError.value = '';
+  try {
+    const started = await api.contestBatch(props.id, { action: 'export', exportFormat: exportFormat.value, testsets, luogu });
+    exportJobId.value = started.id;
+    await follow(started);
+    if (exportJob.value?.status === 'done') showExport.value = false;
+  } catch (e) {
+    exportError.value = errorMessage(e);
+  }
 }
 async function follow(started: JobInfo) {
   job.value = started;
   result.value = null;
   const done = await waitJob(started, (j) => (job.value = j));
   job.value = done;
-  if (done.status === 'failed') return message.error(done.error ?? 'failed');
+  if (done.status === 'failed') return message.error(done.error ? serverText(done.error) : t('tool.status.failed'));
   if (done.status !== 'done') return;
   const r = done.result as ContestBatchResult;
   result.value = r;
@@ -365,7 +406,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
       <span v-if="summary" class="mono sub">{{ summary.name }}</span>
       <n-tag v-if="summary?.polygonId" size="small" :bordered="false">Polygon #{{ summary.polygonId }}</n-tag>
       <template #right>
-        <n-button size="small" :disabled="!summary" @click="showFiles = true">比赛文件</n-button>
+        <n-button size="small" :disabled="!summary" @click="showFiles = true"><template #icon><folder-open /></template>{{ t('contest.files') }}</n-button>
         <n-button size="small" :disabled="!summary" @click="router.push({ name: 'contest-print', params: { id } })">
           <template #icon><file-text /></template>{{ t('contest.statements') }}
         </n-button>
@@ -381,9 +422,9 @@ const columns = computed<DataTableColumns<Row>>(() => [
 
     <n-split v-model:size="contentSplitSize" direction="horizontal" :min="0.35" :max="showAi ? 0.8 : 1" :disabled="!showAi" :resize-trigger-size="showAi ? 3 : 0" class="content-split">
       <template #1>
-        <main class="body">
+        <main v-keep-scroll="`contest:${id}`" class="body">
           <n-alert v-if="loadError" type="error" :show-icon="false">{{ loadError }}</n-alert>
-          <n-alert v-if="summary?.error" type="error" :show-icon="false">{{ summary.error }}</n-alert>
+          <n-alert v-if="summary?.error" type="error" :show-icon="false">{{ serverText(summary.error) }}</n-alert>
           <template v-if="detail">
             <section class="contest-overview">
               <div><div class="eyebrow"><list-ordered :size="15" />{{ t('contest.lineup') }}</div><h1>{{ title }}</h1></div>
@@ -402,8 +443,8 @@ const columns = computed<DataTableColumns<Row>>(() => [
                 <n-button v-if="running" size="small" type="warning" ghost @click="cancel">{{ t('common.cancel') }}</n-button>
               </n-space>
               <div v-if="running && job" class="progress">
-                <n-progress type="line" :percentage="job.progress.total ? Math.round((job.progress.done / job.progress.total) * 100) : 0" :height="4" :show-indicator="false" />
-                <span class="sub">{{ serverText(job.progress.message) }}</span>
+                <n-progress type="line" :percentage="job.progress.total ? Math.round((job.progress.done / job.progress.total) * 100) : 0" :height="4" :show-indicator="false" :processing="true" />
+                <span class="pf-hint">{{ serverText(job.progress.message) }}<template v-if="job.progress.total"> · {{ job.progress.done }}/{{ job.progress.total }}</template></span>
               </div>
             </div>
 
@@ -438,32 +479,62 @@ const columns = computed<DataTableColumns<Row>>(() => [
           <n-tabs v-model:value="sidebarTab" class="contest-side-tabs" pane-class="contest-side-pane" type="line" size="small">
             <n-tab-pane name="ai" tab="AI" display-directive="show"><ai-drawer embedded embedded-header :show="showAi && sidebarTab === 'ai'" @update:show="showAi = $event" :ai="ai" :problem-id="`contest:${id}`" /></n-tab-pane>
             <n-tab-pane name="results" :tab="t('improve.results')" display-directive="show">
-              <div class="check-results"><div v-for="item in result?.items ?? []" :key="item.problem"><strong>{{ rows.find(r => r.problem === item.problem)?.index ?? item.index }} · {{ item.problem }}</strong><div v-for="(line, i) in detailLines(item)" :key="i" :class="{ bad: line.bad }">{{ line.text }}</div></div></div>
+              <div v-keep-scroll="`contest-results:${id}`" class="check-results"><div v-for="item in result?.items ?? []" :key="item.problem"><strong>{{ rows.find(r => r.problem === item.problem)?.index ?? item.index }} · {{ item.problem }}</strong><div v-for="(line, i) in detailLines(item)" :key="i" :class="{ bad: line.bad }">{{ line.text }}</div></div></div>
             </n-tab-pane>
           </n-tabs>
         </aside>
       </template>
     </n-split>
 
-    <n-modal v-model:show="showExport" preset="card" :title="t('oiFeatures.exportTitle')" style="width: min(520px, 94vw)">
-      <n-select v-model:value="exportFormat" :options="[{ value: 'lemonlime', label: 'LemonLime (.cdf + data + source)' }, { value: 'polygon', label: t('oiFeatures.polygon') }]" />
-      <n-alert v-if="exportFormat === 'lemonlime'" type="info" style="margin-top: 12px">{{ t('oiFeatures.exportHint') }}</n-alert>
-      <template #footer><n-space justify="end"><n-button @click="showExport = false">{{ t('common.cancel') }}</n-button><n-button type="primary" :disabled="running" @click="exportContest">{{ t('contest.export') }}</n-button></n-space></template>
-    </n-modal>
-    <n-modal v-model:show="showNumbering" preset="card" :title="t('improve.numbering')" style="width: 560px">
-      <div style="max-height: 60vh; overflow: auto">
+    <tool-window
+      v-model:show="showExport"
+      :title="t('oiFeatures.exportTitle')"
+      size="md"
+      :status="exportJob?.status ?? null"
+      :progress="exportJob?.progress ?? null"
+      :error="exportError"
+    >
+      <n-form label-placement="left" label-width="auto" size="small" :show-feedback="false" :disabled="running" class="export-form">
+        <n-form-item :label="t('contest.exportFormat')">
+          <n-select v-model:value="exportFormat" :options="[{ value: 'lemonlime', label: 'LemonLime (.cdf + data + source)' }, { value: 'luogu', label: t('contest.luoguFormat') }, { value: 'polygon', label: t('oiFeatures.polygon') }]" />
+        </n-form-item>
+        <n-alert v-if="exportFormat === 'lemonlime'" type="info" :show-icon="false" class="pf-dialog-note">{{ t('oiFeatures.exportHint') }}</n-alert>
+        <n-alert v-if="exportFormat === 'luogu'" type="info" :show-icon="false" class="pf-dialog-note">{{ t('contest.luoguHint') }}</n-alert>
+        <template v-if="exportFormat === 'luogu'">
+          <n-form-item :label="t('contest.luoguTime')"><n-select v-model:value="luoguTime" :options="aggOptions" /></n-form-item>
+          <n-form-item :label="t('contest.luoguMemory')"><n-select v-model:value="luoguMemory" :options="aggOptions" /></n-form-item>
+        </template>
+      </n-form>
+      <div v-if="exportFormat !== 'polygon' && multiTestsets.length" class="export-testsets">
+        <div class="pf-label">{{ t('contest.exportTestsets') }}</div>
+        <div v-for="r in multiTestsets" :key="r.problem" class="export-testset">
+          <strong>{{ r.index }}</strong>
+          <n-checkbox-group v-model:value="exportTestsets[r.problem].chosen" :disabled="running">
+            <n-space size="small"><n-checkbox v-for="ts in exportTestsets[r.problem].all" :key="ts" :value="ts" :label="ts" /></n-space>
+          </n-checkbox-group>
+        </div>
+      </div>
+      <template #footer>
+        <n-button @click="showExport = false">{{ exportJob?.status === 'running' ? t('common.close') : t('common.cancel') }}</n-button>
+        <n-button type="primary" :disabled="running" :loading="exportJob?.status === 'running'" @click="exportContest">{{ t('contest.export') }}</n-button>
+      </template>
+    </tool-window>
+    <tool-window v-model:show="showNumbering" :title="t('improve.numbering')" size="md">
+      <n-form label-placement="left" label-width="auto" size="small" :show-feedback="false" class="numbering">
         <n-form-item v-for="entry in numberDraft" :key="entry.problem" :label="entry.problem">
           <n-input v-model:value="entry.index" :disabled="saving" />
         </n-form-item>
-      </div>
-      <n-alert v-if="numberingSubmitted && numberError" type="warning">{{ t('improve.numberError') }}</n-alert>
-      <template #footer><n-space justify="end">
+      </n-form>
+      <n-alert v-if="numberingSubmitted && numberError" type="warning" :show-icon="false" class="pf-dialog-note">{{ t('improve.numberError') }}</n-alert>
+      <template #footer-left>
         <n-button :disabled="saving" @click="numberDraft = numberDraft.map((e, i) => ({ ...e, index: letter(i) }))">{{ t('contest.renumber') }}</n-button>
+      </template>
+      <template #footer>
         <n-button @click="showNumbering = false">{{ t('common.cancel') }}</n-button>
         <n-button type="primary" :disabled="running" :loading="saving" @click="saveNumbering">{{ t('common.save') }}</n-button>
-      </n-space></template>
-    </n-modal>
-    <n-modal v-model:show="showEdit" preset="card" :title="t('contest.edit')" style="width: 460px">
+      </template>
+    </tool-window>
+    <tool-window v-model:show="showEdit" :title="t('contest.edit')" size="sm" :error="editError">
       <n-form label-placement="left" label-width="auto">
         <n-form-item :label="t('create.name')" :feedback="editNameValid ? undefined : t('create.nameRule')" :validation-status="editNameValid ? undefined : 'error'"><n-input v-model:value="edit.name" :disabled="savingEdit" /></n-form-item>
         <n-form-item :label="t('create.titleZh')"><n-input v-model:value="edit.zh" /></n-form-item>
@@ -473,12 +544,10 @@ const columns = computed<DataTableColumns<Row>>(() => [
         </n-form-item>
       </n-form>
       <template #footer>
-        <n-space justify="end">
-          <n-button @click="showEdit = false">{{ t('common.cancel') }}</n-button>
-          <n-button type="primary" :loading="savingEdit" :disabled="!editNameValid" @click="saveEdit">{{ t('common.save') }}</n-button>
-        </n-space>
+        <n-button @click="showEdit = false">{{ t('common.cancel') }}</n-button>
+        <n-button type="primary" :loading="savingEdit" :disabled="!editNameValid" @click="saveEdit">{{ t('common.save') }}</n-button>
       </template>
-    </n-modal>
+    </tool-window>
   </div>
 </template>
 
@@ -504,7 +573,8 @@ const columns = computed<DataTableColumns<Row>>(() => [
 .contest-side-tabs { height: 100%; display: flex; flex-direction: column; }
 .contest-side-tabs :deep(.n-tabs-nav) { padding: 0 12px; }
 .contest-side-tabs :deep(.n-tabs-pane-wrapper) { flex: 1; min-height: 0; }
-.contest-side-tabs :deep(.contest-side-pane) { height: 100%; padding: 0; }
+/* flex: 1 rather than height: 100% — the tab bar above takes room too (the AI input would end below the window). */
+.contest-side-tabs :deep(.contest-side-pane) { flex: 1; min-height: 0; padding: 0; }
 .check-results { height: 100%; overflow: auto; padding: 12px; box-sizing: border-box; white-space: pre-wrap; }
 .content-split { flex: 1; min-height: 0; }
 .ai-sidebar {
@@ -529,6 +599,25 @@ const columns = computed<DataTableColumns<Row>>(() => [
 }
 .grow {
   flex: 1;
+}
+.export-form,
+.numbering {
+  display: grid;
+  gap: 10px;
+}
+.export-testsets {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.export-testset {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.export-testset strong {
+  min-width: 2em;
 }
 :deep(.index-input input) {
   font-weight: bold;

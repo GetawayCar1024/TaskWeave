@@ -1,16 +1,21 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
-import { NAlert, NButton, NForm, NFormItem, NInput, NInputNumber, NModal, NProgress, NSelect, NSpace, NTag, useMessage } from 'naive-ui';
+import { NAlert, NButton, NForm, NFormItem, NInput, NInputNumber, NSelect, NSpace, useMessage } from 'naive-ui';
 import type { JobInfo, StressResult } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
+import type { Judge } from '../lib/judge';
 import { waitJob } from '../lib/jobs';
-import { verdictType } from '../lib/verdict';
+import { verdictClass } from '../lib/verdict';
 import type { Workspace } from '../lib/workspace';
+import ToolWindow from './ToolWindow.vue';
 
-/** 对拍: random tests until a solution disagrees with the reference. */
-const props = defineProps<{ show: boolean; ws: Workspace; problemId: string }>();
+/**
+ * 对拍: random tests until a solution disagrees with the reference. With `judge` the
+ * job is the problem's stress job, so it can be closed and reopened (even after
+ * leaving the problem) and still shows the running or finished job.
+ */
+const props = defineProps<{ show: boolean; ws: Workspace; problemId: string; judge?: Judge }>();
 const emit = defineEmits<{ 'update:show': [boolean] }>();
 const { t } = useI18n();
 const message = useMessage();
@@ -24,10 +29,28 @@ const generators = computed(() => {
 });
 const solutions = computed(() => (config.value?.solutions ?? []).map((s) => ({ label: `${s.source} (${s.tag})`, value: s.source })));
 
+// The last settings of the problem are kept.
+const FORM_KEY = `polyforge-stress-${props.problemId}`;
 const form = reactive({ generator: '', args: '10 1000', solution: '', reference: '', maxIterations: 1000, timeLimitSec: 60 });
-const job = ref<JobInfo | null>(null);
-const result = ref<StressResult | null>(null);
-const error = ref('');
+try {
+  Object.assign(form, JSON.parse(localStorage.getItem(FORM_KEY) ?? '{}'));
+} catch {
+  /* ignore */
+}
+watch(form, (f) => localStorage.setItem(FORM_KEY, JSON.stringify(f)), { deep: true });
+const localJob = ref<JobInfo | null>(null);
+const job = computed<JobInfo | null>(() => props.judge?.state.jobs.stress ?? localJob.value);
+const result = computed<StressResult | null>(() => (job.value?.status === 'done' ? ((job.value.result as StressResult | undefined) ?? null) : null));
+const startError = ref('');
+const error = computed(() => startError.value || (job.value?.status === 'failed' ? job.value.error ?? '' : ''));
+const counterexampleLoaded = new Set<string>();
+// A counterexample was saved as a test: show it in the file tree.
+watch(result, (r) => {
+  if (r?.found && job.value && !counterexampleLoaded.has(job.value.id)) {
+    counterexampleLoaded.add(job.value.id);
+    void props.ws.loadDetail();
+  }
+});
 
 watch(
   () => props.show,
@@ -43,18 +66,18 @@ watch(
 const running = computed(() => job.value?.status === 'running');
 
 async function start() {
-  result.value = null;
-  error.value = '';
+  startError.value = '';
   try {
-    job.value = await api.stress(props.problemId, { ...form, reference: form.reference || undefined });
-    const done = await waitJob(job.value, (j) => (job.value = j));
-    job.value = done;
-    if (done.status === 'done') {
-      result.value = done.result as StressResult;
-      if (result.value.found) await props.ws.loadDetail();
-    } else if (done.status === 'failed') error.value = done.error ?? '';
+    const started = await api.stress(props.problemId, { ...form, reference: form.reference || undefined });
+    if (props.judge) {
+      // Progress and the result arrive with the problem's job events.
+      props.judge.trackJob(started);
+      return;
+    }
+    localJob.value = started;
+    localJob.value = await waitJob(started, (j) => (localJob.value = j));
   } catch (e) {
-    error.value = errorMessage(e);
+    startError.value = errorMessage(e);
   }
 }
 
@@ -77,8 +100,8 @@ async function saveCounterexample() {
 </script>
 
 <template>
-  <n-modal :show="show" preset="card" :title="t('stress.title')" style="width: min(960px, 94vw)" @update:show="emit('update:show', $event)">
-    <n-form label-placement="left" label-width="auto" size="small">
+  <tool-window :show="show" :title="t('stress.title')" size="lg" :status="job?.status ?? null" :progress="job?.progress ?? null" :error="error" @update:show="emit('update:show', $event)">
+    <n-form label-placement="left" label-width="auto" size="small" :disabled="running">
       <n-form-item :label="t('stress.generator')">
         <n-space>
           <n-select v-model:value="form.generator" :options="generators" filterable tag style="width: 200px" />
@@ -100,18 +123,13 @@ async function saveCounterexample() {
       </n-form-item>
     </n-form>
 
-    <div v-if="running && job" class="progress">
-      <n-progress type="line" :percentage="job.progress.total ? Math.round((job.progress.done / job.progress.total) * 100) : 0" :height="6" :show-indicator="false" />
-      <span class="hint">{{ job.progress.done }} / {{ job.progress.total }} · {{ serverText(job.progress.message) }}</span>
-    </div>
-    <n-alert v-if="error" type="error" :show-icon="false" class="alert"><pre class="log">{{ error }}</pre></n-alert>
     <template v-if="result">
       <n-alert v-if="!result.found" type="success" :show-icon="false" class="alert">
         {{ t('stress.noDiff', { n: result.iterations }) }}<template v-if="result.stoppedBy !== 'iterations'"> ({{ t(`stress.stopped.${result.stoppedBy}`) }})</template>
       </n-alert>
       <template v-else-if="result.counterexample">
         <n-space align="center" class="found">
-          <n-tag :type="verdictType(result.counterexample.verdict)" :bordered="false">{{ result.counterexample.verdict }}</n-tag>
+          <span class="pf-verdict-pill" :class="verdictClass(result.counterexample.verdict)">{{ result.counterexample.verdict }}</span>
           <span>{{ t('stress.found', { n: result.iterations }) }}</span>
           <span class="mono hint">{{ form.generator }} {{ result.counterexample.args }}</span>
           <n-button v-if="result.counterexample.savedAs" size="tiny" @click="ws.openFile(result.counterexample.savedAs!)">{{ t('stress.saved', { path: result.counterexample.savedAs }) }}</n-button>
@@ -120,51 +138,38 @@ async function saveCounterexample() {
         <div v-if="result.counterexample.message" class="hint mono">{{ result.counterexample.message }}</div>
         <div class="three">
           <div>
-            <div class="label">{{ t('inv.input') }}</div>
-            <pre class="box mono">{{ result.counterexample.input.slice(0, 20000) }}</pre>
+            <div class="pf-label">{{ t('inv.input') }}</div>
+            <pre class="pf-box box">{{ result.counterexample.input.slice(0, 20000) }}</pre>
           </div>
           <div>
-            <div class="label">{{ t('stress.expected') }}</div>
-            <pre class="box mono">{{ result.counterexample.expected }}</pre>
+            <div class="pf-label">{{ t('stress.expected') }}</div>
+            <pre class="pf-box box">{{ result.counterexample.expected }}</pre>
           </div>
           <div>
-            <div class="label">{{ t('inv.output') }}</div>
-            <pre class="box mono">{{ result.counterexample.output }}</pre>
+            <div class="pf-label">{{ t('inv.output') }}</div>
+            <pre class="pf-box box">{{ result.counterexample.output }}</pre>
           </div>
         </div>
       </template>
     </template>
 
     <template #footer>
-      <n-space justify="end">
-        <n-button v-if="running" @click="cancel">{{ t('common.cancel') }}</n-button>
-        <n-button type="primary" :loading="running" :disabled="!form.generator || !form.solution" @click="start">{{ t('stress.start') }}</n-button>
-      </n-space>
+      <n-button v-if="running" @click="cancel">{{ t('inv.stop') }}</n-button>
+      <n-button type="primary" :disabled="running || !form.generator || !form.solution" @click="start">{{ t('stress.start') }}</n-button>
     </template>
-  </n-modal>
+  </tool-window>
 </template>
 
 <style scoped>
 .hint {
   font-size: 12px;
-  opacity: 0.65;
+  color: var(--pf-text-secondary);
 }
 .hint:not(.mono) {
   margin: -6px 0 10px;
 }
-.progress {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 8px 0;
-}
 .alert {
   margin-top: 8px;
-}
-.log {
-  margin: 0;
-  white-space: pre-wrap;
-  font-size: 12px;
 }
 .found {
   margin: 8px 0 4px;
@@ -175,17 +180,7 @@ async function saveCounterexample() {
   gap: 8px;
   margin-top: 6px;
 }
-.label {
-  font-size: 12px;
-  opacity: 0.7;
-}
 .box {
-  margin: 0;
-  padding: 6px;
-  font-size: 12px;
-  background: rgba(128, 128, 128, 0.12);
-  border-radius: 4px;
   max-height: 260px;
-  overflow: auto;
 }
 </style>
