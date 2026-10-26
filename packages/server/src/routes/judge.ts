@@ -11,8 +11,12 @@ import { exportDir, exportPackage } from '../judge/package.js';
 import { localChecks } from '../judge/checks.js';
 import { runCheckerTests, runValidatorTests } from '../judge/selftest.js';
 import { addManualTest, removeTest, answerPath, generateTests, inputPath, overviewPath, publicManifest, readManifest, requireTestset, sampleStatementPaths } from '../judge/tests.js';
-import { HttpError, safeJoin, exists } from '../util/fs.js';
+import { HttpError, safeJoin, exists, atomicWrite } from '../util/fs.js';
 import { readSamples } from '../judge/samples.js';
+import { luoguData } from '../judge/luogu.js';
+import { exportTestsets } from '../judge/lemonlime.js';
+import { requireFullProblem } from '../judge/index.js';
+import type { LuoguAggregate } from '@polyforge/shared';
 
 const PREVIEW = 64 * 1024;
 
@@ -44,6 +48,7 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
   /** Compile the given sources, or every program referenced by problem.toml. */
   app.post<P & { Body: { sources?: string[] } }>('/api/problems/:id/build', async (req) => {
     const ctx = await judge.ctx(req.params.id);
+    requireFullProblem(ctx);
     let sources = req.body?.sources;
     if (!sources?.length) {
       const c = ctx.config;
@@ -68,10 +73,10 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
   });
 
   /** Add a manual test (optionally as a sample) with the next suitable index. */
-  app.post<P & { Body: { input?: string; sample?: boolean; testset?: string; statementInput?: string; statementOutput?: string } }>('/api/problems/:id/tests/manual', async (req) => {
+  app.post<P & { Body: { input?: string; answer?: string; sample?: boolean; testset?: string; statementInput?: string; statementOutput?: string } }>('/api/problems/:id/tests/manual', async (req) => {
     const ctx = await judge.ctx(req.params.id);
     if (typeof req.body?.input !== 'string') throw new HttpError(400, 'bad_request', 'input required');
-    const r = await addManualTest(ctx, req.body.input, { sample: req.body.sample, testset: req.body.testset, statementInput: req.body.statementInput, statementOutput: req.body.statementOutput });
+    const r = await addManualTest(ctx, req.body.input, { answer: req.body.answer, sample: req.body.sample, testset: req.body.testset, statementInput: req.body.statementInput, statementOutput: req.body.statementOutput });
     if (r.samples !== undefined) await judge.registry.patch(ctx.ref.id, { testsets: { [r.testset]: { samples: r.samples, largeSamples: r.largeSamples ?? '' } } });
     return r;
   });
@@ -131,6 +136,7 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
   /** Body: one testset (`testset` + optional `tests`), or `selection` spanning several testsets. */
   app.post<P & { Body: { sources: string[]; tests?: number[]; testset?: string; selection?: InvocationSelection } }>('/api/problems/:id/invocations', async (req) => {
     const ctx = await judge.ctx(req.params.id);
+    requireFullProblem(ctx);
     const sources = req.body?.sources ?? [];
     const testset = requireTestset(ctx, req.body?.testset).name;
     const selection = Array.isArray(req.body?.selection) ? req.body.selection : undefined;
@@ -192,8 +198,20 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
   app.get<P>('/api/problems/:id/checks', async (req) => localChecks(judge, await judge.ctx(req.params.id)));
 
   /** Polygon-style package (zip) with tests, statements and all programs. */
-  app.post<P>('/api/problems/:id/export', async (req) => {
+  app.post<P & { Body: { format?: 'polygon' | 'luogu'; testsets?: string[]; luogu?: { time?: LuoguAggregate; memory?: LuoguAggregate } } }>('/api/problems/:id/export', async (req) => {
     const ctx = await judge.ctx(req.params.id);
+    if (req.body?.format === 'luogu') {
+      const time = req.body.luogu?.time ?? 'sum', memory = req.body.luogu?.memory ?? 'max';
+      if (![time, memory].every(v => ['sum', 'min', 'max'].includes(v))) throw new HttpError(400, 'bad_request', 'Unknown time / memory aggregation');
+      const sets = exportTestsets(ctx, ctx.config.problem.name, req.body.testsets);
+      return jobs.start('export', ctx.ref.id, async job => {
+        const result = await luoguData(judge, ctx, ctx.config.problem.name, job, sets, { time, memory });
+        const file = `data-${Date.now()}.zip`;
+        await atomicWrite(path.join(exportDir(ctx), file), result.data);
+        return { file, size: result.data.length, tests: result.tests, warnings: result.warnings };
+      });
+    }
+    if (req.body?.format && req.body.format !== 'polygon') throw new HttpError(400, 'bad_request', 'Unknown export format');
     return jobs.start('export', ctx.ref.id, (job) => exportPackage(judge, ctx, job));
   });
   app.get<{ Params: { id: string; file: string } }>('/api/problems/:id/export/:file', async (req, reply) => {
@@ -202,7 +220,7 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     const data = await fsp.readFile(path.join(exportDir(ctx), req.params.file)).catch(() => {
       throw new HttpError(404, 'file_not_found', 'Export not found');
     });
-    return reply.type('application/zip').header('content-disposition', `attachment; filename="${req.params.file}"`).send(data);
+    return reply.type('application/zip').header('content-disposition', `attachment; filename="${/^data-\d+\.zip$/.test(req.params.file) ? 'data.zip' : req.params.file}"`).send(data);
   });
 
   app.get<{ Querystring: { problem?: string } }>('/api/jobs', async (req) => jobs.list(req.query.problem));

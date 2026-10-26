@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import { DEFAULT_TESTSET, judgeMode, parseIndexList, PROBLEM_NAME_RE, STD_PREFIX, testsetOf, type LuoguAggregate, type ProblemToml } from '@polyforge/shared';
 import type { JobCtx } from '../jobs.js';
 import { HttpError, safeJoin } from '../util/fs.js';
-import type { ZipWriter } from '../util/zip.js';
+import { ZipWriter } from '../util/zip.js';
 import { checkGroups } from '../workspace/problems.js';
 import type { Judge, ProblemCtx } from './index.js';
 import { exportedTests, splitScore } from './lemonlime.js';
@@ -56,7 +56,13 @@ export function luoguLayout(config: ProblemToml, sets: { name: string; tests: nu
     for (const e of entries) {
       const id = subtasks.length === 0 && !e.name ? 0 : (subtasks.length ? subtasks[subtasks.length - 1].id + 1 : 1);
       if (e.name) ids.set(e.name, id);
-      splitScore(e.points, e.tests.length).forEach((s, i) => score.set(e.tests[i], s));
+      const explicit = e.policy === 'EACH_TEST' && e.tests.every(i => ts.cases?.[i]?.points !== undefined);
+      if (explicit) for (const i of e.tests) {
+        const points = ts.cases![i].points!;
+        if (!Number.isInteger(points)) fail(`${where}Luogu requires integer per-test scores.`);
+        score.set(i, points);
+      }
+      else splitScore(e.points, e.tests.length).forEach((s, i) => score.set(e.tests[i], s));
       e.tests.forEach(i => of.set(i, `#${id}`));
       subtasks.push({ id, label: e.name ? `${where}${e.name}` : `${where}—`, points: e.points, policy: e.policy, dependencies: [] });
     }
@@ -103,26 +109,32 @@ export function luoguScript(subtasks: LuoguSubtask[], agg: { time: LuoguAggregat
 }
 
 export function luoguConfig(config: ProblemToml, cases: LuoguCase[]): string {
-  const name = config.problem.name;
-  return cases.map(c => `${name}${c.k}.in:\n  timeLimit: ${config.problem.time_limit}\n  memoryLimit: ${config.problem.memory_limit * 1024}\n  score: ${c.score}\n  subtaskId: ${c.subtask}\n`).join('\n');
+  return cases.map(c => {
+    const test = testsetOf(config, c.testset)?.cases?.[c.index];
+    return `${c.k}.in:\n  timeLimit: ${test?.time_limit ?? config.problem.time_limit}\n  memoryLimit: ${(test?.memory_limit ?? config.problem.memory_limit) * 1024}\n  score: ${c.score}\n  subtaskId: ${c.subtask}\n${test?.pretest || c.testset === 'pretests' ? '  isPretest: true\n' : ''}`;
+  }).join('\n');
 }
 
-export async function addLuoguProblem(judge: Judge, ctx: ProblemCtx, index: string, zip: ZipWriter, job: JobCtx, testsets: string[], agg: { time: LuoguAggregate; memory: LuoguAggregate }) {
+export async function luoguData(judge: Judge, ctx: ProblemCtx, index: string, job: JobCtx, testsets: string[], agg: { time: LuoguAggregate; memory: LuoguAggregate }) {
   const { config } = ctx, p = config.problem, mode = judgeMode(p);
   if (!PROBLEM_NAME_RE.test(p.name)) fail(`${index}: invalid problem name.`);
   const warnings: string[] = [];
   const sets = await exportedTests(judge, ctx, testsets, index, job);
   const { cases, subtasks } = luoguLayout(config, sets, warnings);
   const folder = p.name;
+  const zip = new ZipWriter();
   for (const c of cases) {
     job.signal.throwIfAborted();
     for (const [extension, file] of [['in', inputPath(ctx, c.index, c.testset)], ['out', answerPath(ctx, c.index, c.testset)]]) {
       const bytes = await fs.readFile(file).catch(() => fail(`${index}: missing ${extension === 'in' ? 'input' : 'answer'} for test ${c.index}${c.testset === DEFAULT_TESTSET ? '' : ` (${c.testset})`}.`));
-      zip.add(`${folder}/${folder}${c.k}.${extension}`, bytes);
+      zip.add(`${c.k}.${extension}`, bytes);
     }
   }
-  zip.add(`${folder}/config.yml`, luoguConfig(config, cases));
-  zip.add(`${folder}/scoring-script.txt`, luoguScript(subtasks, agg));
+  // YAML comments are ignored by Luogu, and let our own importer restore policies,
+  // dependency edges and sample flags without evaluating arbitrary scoring scripts.
+  const metadata = { version: 1, subtasks, aggregation: agg, samples: cases.filter(c => parseIndexList(testsetOf(config, c.testset)?.samples ?? '').includes(c.index)).map(c => c.k) };
+  zip.add('config.yml', `# polyforge-scoring: ${JSON.stringify(metadata)}\n` + luoguConfig(config, cases));
+  zip.add('score.txt', luoguScript(subtasks, agg));
   if (p.input !== 'stdin' || p.output !== 'stdout') warnings.push(`${index}: Luogu uses standard input / output; file input / output (${p.input} / ${p.output}) is not exported.`);
   const read = (source: string) => fs.readFile(judge.compiler.resolveSource(ctx.ref.dir, source).srcPath, 'utf8');
   const localIncludes = (text: string) => [...text.matchAll(/^\s*#\s*include\s*"([^"\r\n]+)"/gm)].map(m => m[1]).filter(h => h !== 'testlib.h');
@@ -130,31 +142,39 @@ export async function addLuoguProblem(judge: Judge, ctx: ProblemCtx, index: stri
   if (mode === 'io') {
     if (!config.interactor) fail(`${index}: interactive problem without an interactor.`);
     checker = await read(config.interactor!.source);
-    zip.add(`${folder}/interactive_lib.cpp`, '');
+    zip.add('interactive_lib.cpp', '');
     warnings.push(`${index}: I/O interactive: the interactor is packaged as checker.cpp; on Luogu it must decide the verdict itself (the Polygon checker is not run).`);
   } else if (config.checker) checker = await read(config.checker.source);
   if (mode === 'grader') {
     const sources = config.grader?.sources ?? [];
     if (sources.length !== 1) fail(`${index}: Luogu needs exactly one grader source (interactive_lib.cpp).`);
     const lib = await fs.readFile(safeJoin(ctx.ref.dir, sources[0]), 'utf8');
-    zip.add(`${folder}/interactive_lib.cpp`, lib);
+    zip.add('interactive_lib.cpp', lib);
     if (config.grader!.headers.length || localIncludes(lib).length) warnings.push(`${index}: grader headers are not supported by Luogu; paste their declarations into interactive_lib.cpp.`);
     // Luogu's SPJ for function interaction talks to the library instead of reading the input itself.
     if (config.checker?.source.startsWith(STD_PREFIX)) checker = '';
     else if (config.checker) warnings.push(`${index}: grader problem with a custom checker: on Luogu the checker must forward the input to interactive_lib.cpp; check checker.cpp.`);
   }
   if (checker) {
-    zip.add(`${folder}/checker.cpp`, checker);
+    zip.add('checker.cpp', checker);
     if (localIncludes(checker).length) warnings.push(`${index}: checker.cpp includes ${localIncludes(checker).join(', ')}; Luogu only provides testlib.h.`);
   }
-  zip.add(`${folder}/README.txt`, luoguReadme(config, { cases: cases.length, subtasks, spj: !!checker, mode, agg, sets: sets.map(s => s.name) }));
-  return { tests: cases.length, warnings };
+  const readme = luoguReadme(config, { cases: cases.length, subtasks, spj: !!checker, mode, agg, sets: sets.map(s => s.name) });
+  warnings.push('Luogu does not automatically install score.txt. Paste its contents into the whole-problem scoring script after uploading data.zip.');
+  return { data: zip.finish(), readme, tests: cases.length, warnings };
+}
+
+export async function addLuoguProblem(judge: Judge, ctx: ProblemCtx, index: string, zip: ZipWriter, job: JobCtx, testsets: string[], agg: { time: LuoguAggregate; memory: LuoguAggregate }) {
+  const result = await luoguData(judge, ctx, index, job, testsets, agg);
+  zip.add(`${ctx.config.problem.name}/data.zip`, result.data);
+  zip.add(`${ctx.config.problem.name}/README.txt`, result.readme);
+  return { tests: result.tests, warnings: result.warnings };
 }
 
 export const luoguContestReadme = (title: string, indices: string[]) => `洛谷数据包：${title}
 
 每道题（${indices.join('、')}）一个文件夹，以题目英文名命名。
-每个文件夹中的 README.txt 说明了如何上传测试数据、配置 Subtask、粘贴计分脚本以及 Special Judge / 交互库的设置。
+每个文件夹中的 data.zip 可以直接上传。README.txt 说明了配置 Subtask、粘贴 score.txt 计分脚本以及 Special Judge / 交互库的设置。
 `;
 
 const AGG: Record<LuoguAggregate, string> = { sum: '求和', min: '取最小值', max: '取最大值' };
@@ -165,13 +185,13 @@ export function luoguReadme(config: ProblemToml, o: { cases: number; subtasks: L
   return `洛谷题目数据包：${name}
 
 一、上传测试数据
-1. 将本文件夹中除 README.txt 和 scoring-script.txt 以外的所有文件（${name}1.in … ${name}${o.cases}.out、config.yml${o.spj ? '、checker.cpp' : ''}${o.mode !== 'batch' ? '、interactive_lib.cpp' : ''}）直接压缩为一个 zip（不要包含文件夹），在洛谷题目管理的“测试信息 / 上传测试数据”中上传。
+1. 在洛谷题目管理的“测试信息 / 上传测试数据”中上传 data.zip。压缩包根目录包含 1.in … ${o.cases}.out、config.yml 和 score.txt${o.spj ? '、checker.cpp' : ''}${o.mode !== 'batch' ? '、interactive_lib.cpp' : ''}。score.txt 是计分脚本副本，洛谷没有文档保证自动读取它；如上传器拒绝额外文件，取出 score.txt 后上传数据与 config.yml。
 2. config.yml 设置了每个测试点的时间限制（${config.problem.time_limit} ms）、内存限制（${config.problem.memory_limit * 1024} KB）、分值和所属 Subtask。上传后网页上的设置会覆盖配置文件，请以网页显示为准。
 3. 导出的测试集：${o.sets.join('、')}（共 ${o.cases} 个测试点，按顺序编号）。
 
 二、子任务与计分脚本
 ${st}
-4. 将 scoring-script.txt 的内容粘贴到题目的“计分脚本”（整题计分脚本）中。脚本实现了捆绑测试、子任务依赖（含间接依赖）和总分，满分时整题状态为 AC。
+4. 将 score.txt 的内容粘贴到题目的“计分脚本”（整题计分脚本）中。脚本实现了捆绑测试、子任务依赖（含间接依赖）和总分，满分时整题状态为 AC。
 5. 各 Subtask 的计分方式请保持默认的“求和”，脚本中按测试点累加的子任务使用 @scoreX。
 6. 用时按子任务${AGG[o.agg.time]}、内存按子任务${AGG[o.agg.memory]}汇总。
 ${o.spj ? `

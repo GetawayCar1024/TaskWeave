@@ -5,7 +5,7 @@ import type { JobCtx } from '../jobs.js';
 import { atomicWrite, exists, HttpError } from '../util/fs.js';
 import type { Program } from './compiler.js';
 import { runChecker, runSolution, withTmp } from './execute.js';
-import type { Judge, ProblemCtx } from './index.js';
+import { requireFullProblem, type Judge, type ProblemCtx } from './index.js';
 import { groupScore, scoringEnabled, scoringInput } from './scoring.js';
 import { answerPath, generateTests, inputPath, requireTestset } from './tests.js';
 
@@ -75,6 +75,7 @@ export async function runInvocation(
   /** Tests of any testsets (overrides `onlyTests` / `testset`). */
   selection?: InvocationSelection,
 ): Promise<string> {
+  requireFullProblem(ctx);
   // Wanted tests per testset (null = all), in the order of the problem's testsets.
   const wanted = new Map<string, Set<number> | null>();
   if (selection?.length) {
@@ -87,6 +88,7 @@ export async function runInvocation(
   } else wanted.set(requireTestset(ctx, testset).name, onlyTests ? new Set(onlyTests) : null);
   const order = testsetsOf(ctx.config).map((x) => x.name);
   const testsetNames = [...wanted.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  if (testsetNames.some(name => requireTestset(ctx, name).unresolvedScoring)) throw new HttpError(400, 'unresolved_scoring', 'Imported scoring is not representable. Edit the subtask configuration before judging or exporting.');
   const ts = requireTestset(ctx, testsetNames[0]);
   if (sources.length === 0) throw new HttpError(400, 'no_solutions', 'Select at least one solution');
   const id = newId();
@@ -169,7 +171,8 @@ export async function runInvocation(
               return;
             }
             await withTmp(ctx.ref.dir, async (tmp) => {
-              const r = await runSolution(judge.runner, prog, inFile, ctx.limits, tmp, { interactor, signal: job.signal });
+              const limits = { ...ctx.limits, timeLimitMs: t.timeLimit ?? ctx.limits.timeLimitMs, memoryLimitMb: t.memoryLimit ?? ctx.limits.memoryLimitMb };
+              const r = await runSolution(judge.runner, prog, inFile, limits, tmp, { interactor, signal: job.signal });
               const cell: InvocationCell = {
                 verdict: r.verdict,
                 timeMs: r.run.timeMs,

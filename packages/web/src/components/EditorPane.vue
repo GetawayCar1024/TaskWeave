@@ -13,10 +13,11 @@ import EditorTabBar from './EditorTabBar.vue';
 import type { SidebarAction } from './FileSidebar.vue';
 
 const props = defineProps<{ ws: Workspace; judge: Judge; problemId: string }>();
-const emit = defineEmits<{ save: [path: string]; close: [path: string]; quickOpen: []; showDiff: [path: string]; run: []; generate: []; action: [SidebarAction]; lint: []; palette: [] }>();
+const emit = defineEmits<{ save: [path: string]; close: [path: string]; quickOpen: []; showDiff: [path: string]; run: []; generate: []; action: [SidebarAction]; lint: []; palette: []; convertStatement: [lang: string, mode: 'whole' | 'sections'] }>();
 
 // Statement tabs get a live preview next to the source (DESIGN §6.1).
-const statementLang = computed(() => props.ws.activeTab.value?.path.match(/^statement\/([^/]+)\/(legend|input|output|interaction|scoring|notes|tutorial)\.tex$/)?.[1] ?? null);
+const statementLang = computed(() => props.ws.activeTab.value?.path.match(/^statement\/([^/]+)\/(statement|legend|input|output|interaction|scoring|notes|tutorial)\.tex$/)?.[1] ?? null);
+const wholeStatement = computed(() => props.ws.files.value.some(f => f.path === `statement/${statementLang.value}/statement.tex`));
 const previewable = computed(() => /\.(tex|md)$/i.test(props.ws.activeTab.value?.path ?? ''));
 const previewHost = ref<HTMLDivElement>();
 const syncScroll = ref(true);
@@ -121,7 +122,11 @@ const tabItems = computed<EditorTabItem[]>(() => {
       :active="ws.state.active"
       @select="(p: string) => (ws.state.active = p)"
       @close="(p: string) => emit('close', p)"
-    />
+    >
+      <template v-if="statementLang && !ws.activeTab.value?.path.endsWith('/tutorial.tex')" #actions>
+        <n-button size="tiny" quaternary @click="emit('convertStatement', statementLang, wholeStatement ? 'sections' : 'whole')">{{ t(wholeStatement ? 'statementMode.toSections' : 'statementMode.toWhole') }}</n-button>
+      </template>
+    </editor-tab-bar>
 
     <template v-if="ws.activeTab.value">
       <n-alert v-if="ws.activeTab.value.disk === 'changed'" type="warning" :show-icon="false" class="banner">

@@ -1,4 +1,5 @@
-import { crc32, deflateRawSync } from 'node:zlib';
+import { crc32, deflateRawSync, inflateRawSync } from 'node:zlib';
+import { HttpError, validateFileName } from './fs.js';
 
 interface Entry {
   name: Buffer;
@@ -84,4 +85,76 @@ export class ZipWriter {
     end.writeUInt32LE(this.offset, 16);
     return Buffer.concat([...this.parts, ...central, end]);
   }
+}
+
+/** Read the central directory (including ZIPs with data descriptors). No extraction side effects. */
+export function readZip(data: Buffer, maxBytes = 512 * 1024 * 1024): Map<string, Buffer> {
+  const fail = (message: string): never => { throw new HttpError(400, 'invalid_zip', message); };
+  const check = (offset: number, length: number) => {
+    if (offset < 0 || length < 0 || offset + length > data.length) fail('Truncated ZIP archive.');
+  };
+  let end = -1;
+  for (let i = data.length - 22; i >= Math.max(0, data.length - 65557); i--) {
+    if (data.readUInt32LE(i) === 0x06054b50 && i + 22 + data.readUInt16LE(i + 20) === data.length) { end = i; break; }
+  }
+  if (end < 0) fail('Not a ZIP archive.');
+  const count = data.readUInt16LE(end + 10), size = data.readUInt32LE(end + 12), start = data.readUInt32LE(end + 16);
+  if (data.readUInt32LE(end + 4) || data.readUInt16LE(end + 8) !== count || count === 65535 || start === 0xffffffff) fail('Multi-volume and ZIP64 archives are not supported.');
+  if (count > 20000) fail('Too many files in ZIP (maximum 20000).');
+  check(start, size);
+  if (start + size > end) fail('Invalid ZIP central directory.');
+  const out = new Map<string, Buffer>(), names = new Set<string>();
+  let at = start, total = 0;
+  for (let n = 0; n < count; n++) {
+    check(at, 46);
+    if (data.readUInt32LE(at) !== 0x02014b50) fail('Invalid ZIP entry.');
+    const flags = data.readUInt16LE(at + 8), method = data.readUInt16LE(at + 10);
+    const crc = data.readUInt32LE(at + 16), compressed = data.readUInt32LE(at + 20), length = data.readUInt32LE(at + 24);
+    const nameLength = data.readUInt16LE(at + 28), extraLength = data.readUInt16LE(at + 30), commentLength = data.readUInt16LE(at + 32);
+    const attributes = data.readUInt32LE(at + 38), local = data.readUInt32LE(at + 42);
+    check(at + 46, nameLength + extraLength + commentLength);
+    const rawName = data.subarray(at + 46, at + 46 + nameLength);
+    let name = rawName.toString('utf8');
+    // Info-ZIP Unicode Path extra field takes precedence for legacy-name ZIPs.
+    for (let p = at + 46 + nameLength, stop = p + extraLength; p + 4 <= stop;) {
+      const id = data.readUInt16LE(p), len = data.readUInt16LE(p + 2);
+      if (p + 4 + len > stop) fail('Invalid ZIP extra field.');
+      if (id === 0x7075 && len >= 5 && data[p + 4] === 1 && data.readUInt32LE(p + 5) === crc32(rawName)) name = data.subarray(p + 9, p + 4 + len).toString('utf8');
+      p += 4 + len;
+    }
+    if (name.includes('\ufffd')) fail('ZIP file names must be UTF-8; re-create the archive with UTF-8 names.');
+    name = name.replace(/\\/g, '/').replace(/^(?:\.\/)+/, '');
+    const directory = name.endsWith('/');
+    const clean = directory ? name.slice(0, -1) : name;
+    if (clean) validateFileName(clean);
+    else if (!directory) fail('Empty ZIP file name.');
+    const identity = clean.toLowerCase();
+    if (identity && names.has(identity)) fail(`Duplicate ZIP path: ${clean}`);
+    names.add(identity);
+    if (((attributes >>> 16) & 0xf000) === 0xa000) fail(`Symbolic links are not supported: ${clean}`);
+    if (flags & 1 || ![0, 8].includes(method)) fail(`Unsupported ZIP compression or encryption: ${clean}`);
+    total += length;
+    if (total > maxBytes) fail(`ZIP expands beyond ${maxBytes / 1024 / 1024} MiB.`);
+    check(local, 30);
+    if (data.readUInt32LE(local) !== 0x04034b50) fail('Missing ZIP local header.');
+    const offset = local + 30 + data.readUInt16LE(local + 26) + data.readUInt16LE(local + 28);
+    check(offset, compressed);
+    if (offset + compressed > start) fail('ZIP data overlaps the central directory.');
+    if (!directory) {
+      const packed = data.subarray(offset, offset + compressed);
+      let bytes: Buffer;
+      try { bytes = method === 0 ? Buffer.from(packed) : inflateRawSync(packed, { maxOutputLength: Math.max(1, length) }); }
+      catch { fail(`Cannot decompress ${name}.`); }
+      if (bytes!.length !== length || crc32(bytes!) !== crc) fail(`ZIP checksum mismatch: ${name}`);
+      out.set(name, bytes!);
+    }
+    at += 46 + nameLength + extraLength + commentLength;
+  }
+  if (at !== start + size) fail('Invalid ZIP directory size.');
+  const fileNames = new Set([...out.keys()].map(n => n.toLowerCase()));
+  for (const name of out.keys()) {
+    const parts = name.toLowerCase().split('/');
+    for (let i = 1; i < parts.length; i++) if (fileNames.has(parts.slice(0, i).join('/'))) fail(`ZIP file/directory collision: ${name}`);
+  }
+  return out;
 }

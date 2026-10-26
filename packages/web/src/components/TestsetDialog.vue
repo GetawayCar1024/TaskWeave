@@ -25,6 +25,7 @@ interface EditGroup {
   validator: string;
 }
 interface EditTestset {
+  answers: 'provided' | 'generated';
   name: string;
   isNew: boolean;
   script: string;
@@ -48,6 +49,7 @@ function reset() {
   form.deleted = [];
   form.sets = testsetsOf(c).map((ts) => ({
     name: ts.name,
+    answers: ts.answers ?? (c.problem.data_only ? 'provided' : 'generated'),
     isNew: false,
     script: ts.script ?? '',
     manual: ts.manual,
@@ -70,7 +72,7 @@ function addTestset() {
   const name = newName.value.trim();
   if (!TESTSET_NAME_RE.test(name)) return message.error(t('testsets.badName'));
   if (form.sets.some((s) => s.name === name)) return message.error(t('testsets.exists', { name }));
-  form.sets.push({ name, isNew: true, script: '', manual: `tests/${name}`, groups: false, group: [] });
+  form.sets.push({ name, isNew: true, answers: cfg.value?.problem.data_only ? 'provided' : 'generated', script: '', manual: `tests/${name}`, groups: false, group: [] });
   form.deleted = form.deleted.filter((d) => d !== name);
   current.value = name;
   newName.value = '';
@@ -129,8 +131,9 @@ async function save() {
     const testsets: Record<string, TestsetPatch | null> = {};
     for (const s of form.sets) {
       testsets[s.name] = {
+        answers: cfg.value?.problem.data_only ? 'provided' : s.answers,
         // A cleared select sets null.
-        script: (s.script ?? '').trim() || null,
+        script: s.answers === 'provided' ? null : (s.script ?? '').trim() || null,
         groups: s.groups,
         group: s.group.map(
           (g): TestGroup => ({
@@ -185,10 +188,13 @@ const policyOptions = computed(() => GROUP_POLICIES.map((p) => ({ label: t(`test
       </aside>
 
       <section class="detail">
+        <n-alert v-if="cfg && testsetsOf(cfg).find(ts => ts.name === current)?.unresolvedScoring" type="warning" :show-icon="false">{{ t('packages.unresolvedScoring') }}</n-alert>
+        <div class="row"><span class="label">{{ t('packages.answers') }}</span><n-select v-model:value="set.answers" size="small" :disabled="!!cfg?.problem.data_only" :options="[{ value: 'generated', label: t('packages.generatedAnswers') }, { value: 'provided', label: t('packages.providedAnswers') }]" /></div>
         <div class="row">
           <span class="label">{{ t('testsets.script') }}</span>
           <n-select
             v-model:value="set.script"
+            :disabled="set.answers === 'provided'"
             size="small"
             filterable
             tag

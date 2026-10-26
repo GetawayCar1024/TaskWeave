@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NForm, NFormItem, NInput, NInputNumber, NSelect, NButton } from 'naive-ui';
-import { PROBLEM_NAME_RE, type JudgeMode, type ProblemSummary } from '@polyforge/shared';
+import { PROBLEM_NAME_RE, type JudgeMode, type ProblemSummary, type StatementMode } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 import ToolWindow from './ToolWindow.vue';
 
@@ -10,7 +10,7 @@ const props = defineProps<{ show: boolean; roots: string[] }>();
 const emit = defineEmits<{ 'update:show': [boolean]; created: [ProblemSummary] }>();
 const { t } = useI18n();
 
-const blank = () => ({ name: '', titleZh: '', titleEn: '', timeLimit: 1000, memoryLimit: 256, judgeMode: 'batch' as JudgeMode, root: props.roots[0] ?? '' });
+const blank = () => ({ name: '', titleZh: '', titleEn: '', timeLimit: 1000, memoryLimit: 256, judgeMode: 'batch' as JudgeMode, statementMode: 'sections' as StatementMode, dataOnly: false, root: props.roots[0] ?? '' });
 const form = reactive(blank());
 const busy = ref(false);
 const error = ref('');
@@ -38,7 +38,9 @@ async function submit() {
       title: { zh: form.titleZh, en: form.titleEn },
       timeLimit: form.timeLimit,
       memoryLimit: form.memoryLimit,
-      judgeMode: form.judgeMode,
+      judgeMode: form.dataOnly ? 'batch' : form.judgeMode,
+      dataOnly: form.dataOnly,
+      statementMode: form.statementMode,
     });
     emit('update:show', false);
     emit('created', p);
@@ -72,7 +74,10 @@ async function submit() {
           <template #suffix>MB</template>
         </n-input-number>
       </n-form-item>
-      <n-form-item :label="t('oiFeatures.mode')"><n-select v-model:value="form.judgeMode" :options="['batch', 'io', 'grader'].map(value => ({ value, label: t(`oiFeatures.${value}`) }))" /></n-form-item>
+      <n-form-item :label="t('dataOnly.authoringMode')"><n-select :value="form.dataOnly ? 'data' : 'full'" :options="[{ value: 'full', label: t('dataOnly.full') }, { value: 'data', label: t('dataOnly.title') }]" @update:value="value => form.dataOnly = value === 'data'" /></n-form-item>
+      <n-alert v-if="form.dataOnly" type="warning" :show-icon="false" class="pf-dialog-note">{{ t('dataOnly.warning') }}</n-alert>
+      <n-form-item v-if="!form.dataOnly" :label="t('statementMode.title')"><n-select v-model:value="form.statementMode" :options="[{ value: 'sections', label: t('statementMode.sections') }, { value: 'whole', label: t('statementMode.whole') }]" /></n-form-item>
+      <n-form-item v-if="!form.dataOnly" :label="t('oiFeatures.mode')"><n-select v-model:value="form.judgeMode" :options="['batch', 'io', 'grader'].map(value => ({ value, label: t(`oiFeatures.${value}`) }))" /></n-form-item>
       <n-alert v-if="form.judgeMode === 'grader'" type="warning" :show-icon="false" class="pf-dialog-note">{{ t('oiFeatures.graderWarning') }}</n-alert>
       <n-form-item v-if="roots.length > 1" :label="t('create.root')">
         <n-select v-model:value="form.root" :options="rootOptions" />

@@ -2,6 +2,7 @@ import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import {
   LANG_TO_POLYGON,
+  contestTomlSchema,
   judgeMode,
   OI_SECTIONS,
   parseIndexList,
@@ -16,6 +17,7 @@ import {
   type ContestStatement,
   type ContestSummary,
   type PolygonProblem,
+  type ContestDetail,
 } from '@polyforge/shared';
 import type { JobCtx } from '../jobs.js';
 import type { PolygonSync } from '../polygon/sync.js';
@@ -23,13 +25,14 @@ import { atomicWrite, exists, safeJoin, HttpError } from '../util/fs.js';
 import { ZipWriter } from '../util/zip.js';
 import type { ContestRegistry, ContestRef } from '../workspace/contests.js';
 import { localChecks } from './checks.js';
-import type { Judge, ProblemCtx } from './index.js';
+import { requireFullProblem, type Judge, type ProblemCtx } from './index.js';
 import { readInvocation, runInvocation } from './invocation.js';
 import { exportPackage } from './package.js';
 import { readSamples } from './samples.js';
 import { addLemonProblem, exportTestsets, lemonReadme, preflightLemonChecker } from './lemonlime.js';
 import { addLuoguProblem, luoguContestReadme } from './luogu.js';
 import { generateTests, readManifest } from './tests.js';
+import { readStatementSections } from '../workspace/statements.js';
 
 export const contestExportDir = (ref: ContestRef) => path.join(ref.dir, '.polyforge', 'export');
 
@@ -126,6 +129,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
           break;
         }
         case 'invocation': {
+          requireFullProblem(ctx);
           const sources = ctx.config.solutions.filter((s) => s.tag !== 'NR').map((s) => s.source);
           if (!sources.length) {
             item.message = 'no solutions';
@@ -266,6 +270,10 @@ export function equalTestPoints(config: ProblemToml, tests: number[]): boolean {
     const idx = [...new Set(parseIndexList(g.tests ?? ''))].filter(i => present.has(i) && !grouped.has(i));
     if (!idx.length) continue;
     idx.forEach(i => grouped.add(i));
+    if (g.policy === 'EACH_TEST' && idx.every(i => ts.cases?.[i]?.points !== undefined)) {
+      values.push(...idx.map(i => ts.cases![i].points!));
+      continue;
+    }
     const each = (g.points ?? 0) / idx.length;
     if (Math.abs(each * 100 - Math.round(each * 100)) > 1e-6) return false;
     values.push(each);
@@ -275,8 +283,15 @@ export function equalTestPoints(config: ProblemToml, tests: number[]): boolean {
 }
 
 /** Statement sources of every problem in one language, for the combined / print view. */
-export async function contestStatements(judge: Judge, contests: ContestRegistry, contestId: string, lang: string): Promise<ContestStatement[]> {
-  const { config } = await contests.config(contestId);
+export async function singleProblemDocument(judge: Judge, id: string) {
+  const ref = await judge.registry.get(id), summary = await judge.registry.summary(ref);
+  const config = contestTomlSchema.parse({ contest: { name: summary.name, title: summary.title, type: summary.type }, problems: [{ index: 'A', problem: id }] });
+  const detail: ContestDetail = { summary: { ...ref, name: summary.name, title: summary.title, type: summary.type, statement: config.statement, problems: [{ index: 'A', problem: id, found: true }] }, problems: [{ index: 'A', problem: id, summary }] };
+  return { ref, config, detail };
+}
+
+export async function contestStatements(judge: Judge, contests: ContestRegistry, contestId: string, lang: string, single = false): Promise<ContestStatement[]> {
+  const { config } = single ? await singleProblemDocument(judge, contestId) : await contests.config(contestId);
   const out: ContestStatement[] = [];
   for (const p of config.problems) {
     let ctx: ProblemCtx;
@@ -289,15 +304,12 @@ export async function contestStatements(judge: Judge, contests: ContestRegistry,
     const c = ctx.config;
     if (config.contest.type === 'cf' && c.problem.type === 'oi') throw new HttpError(400, 'incompatible_problem_type', `CF contests cannot import OI problem: ${p.problem}`);
     if (config.contest.type === 'oi' && c.problem.type === 'cf') throw new HttpError(400, 'conversion_required', 'Convert CF problems to OI before exporting this contest');
-    const sections: Record<string, string> = {};
-    for (const s of [...STATEMENT_SECTIONS, ...OI_SECTIONS]) {
-      const text = await fsp.readFile(path.join(ctx.ref.dir, 'statement', lang, `${s}.tex`), 'utf8').catch(() => '');
-      if (text.trim()) sections[s] = text;
-    }
+    const sections = await readStatementSections(ctx.ref.dir, lang);
     const manifest = await readManifest(ctx);
     const samples = (await readSamples(ctx, false, lang)).map(row => row.sample);
     const body = c.problem.type === 'oi' ? await fsp.readFile(safeJoin(ctx.ref.dir, `statement/${lang}/statement.tex`), 'utf8').catch(() => '') : undefined;
     out.push({
+      ...(await exists(path.join(ctx.ref.dir, 'statement', lang, 'statement.tex')) ? { statementMode: 'whole' as const } : {}),
       index: p.index,
       problem: p.problem,
       title: c.problem.title[lang] || c.problem.title.en || c.problem.name,
@@ -326,6 +338,7 @@ export async function contestStatements(judge: Judge, contests: ContestRegistry,
 export async function importContest(deps: ContestDeps, req: ContestImportRequest, job: JobCtx): Promise<{ contest: ContestSummary; warnings: string[] }> {
   const { judge, contests, sync } = deps;
   const name = req.name?.trim() ?? '';
+  judge.registry.requireRoot();
   await contests.checkNew(name);
   const client = await sync.client();
   job.progress(0, 0, 'contest.problems');

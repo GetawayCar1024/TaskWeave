@@ -21,6 +21,11 @@ export async function readSamples(ctx: ProblemCtx, strict = false, lang?: string
       const test = manifest?.tests.find(t => t.index === index);
       if (!test) { if (strict) throw new HttpError(400, 'missing_sample', `Sample test ${label(index)} has not been generated.`); continue; }
       const overrides = sampleStatementPaths(test, ts.name);
+      if (lang) {
+        const prefix = sampleNotePath(lang, index, ts.name).replace(/\.tex$/, '');
+        if (await exists(safeJoin(ctx.ref.dir, prefix + '.in'))) overrides.input = prefix + '.in';
+        if (await exists(safeJoin(ctx.ref.dir, prefix + '.out'))) overrides.output = prefix + '.out';
+      }
       const customInput = await exists(safeJoin(ctx.ref.dir, overrides.input));
       const customOutput = await exists(safeJoin(ctx.ref.dir, overrides.output));
       const read = async (file: string) => fs.readFile(file).catch(() => {

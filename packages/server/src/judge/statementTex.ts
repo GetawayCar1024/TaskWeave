@@ -6,7 +6,7 @@ import { exists } from '../util/fs.js';
 import { ZipWriter } from '../util/zip.js';
 import type { ContestRegistry } from '../workspace/contests.js';
 import { contestNotes, contestFile } from '../workspace/contestFiles.js';
-import { contestStatements } from './contest.js';
+import { contestStatements, singleProblemDocument } from './contest.js';
 import type { Judge } from './index.js';
 
 const HEAD: Record<string, Record<string, string>> = {
@@ -57,9 +57,10 @@ export async function contestTex(
   doc: 'statements' | 'tutorials',
   pageBreaks: boolean,
   toc = true,
+  single = false,
 ): Promise<{ data: Buffer; ext: 'tex' | 'zip' }> {
-  const { ref, config } = await contests.config(contestId);
-  const statements = await contestStatements(judge, contests, contestId, lang);
+  const { ref, config } = single ? await singleProblemDocument(judge, contestId) : await contests.config(contestId);
+  const statements = await contestStatements(judge, contests, contestId, lang, single);
   const oi = config.contest.type === 'oi';
   const zh = lang === 'zh';
   // OI headings follow the OI document (cnoiDocument.ts).
@@ -93,7 +94,7 @@ export async function contestTex(
   };
 
   const body: string[] = [];
-  const notesSource = await contestNotes(ref.dir);
+  const notesSource = single ? '' : await contestNotes(ref.dir, lang);
   let notesTex = await expandMacros(sharedDir, convertStatement(notesSource, 'latex').tex, lang);
   for (const match of [...notesTex.matchAll(/\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}/g)]) {
     const abs = await contestFile(ref.dir, match[1].trim());
@@ -155,7 +156,7 @@ export async function contestTex(
   for (const [k, s] of shown.entries()) {
     if (k > 0) body.push(pageBreaks || oi ? '\\clearpage' : '\\bigskip\\hrule\\bigskip');
     const name = s.name ?? s.problem;
-    const heading = oi ? `${esc(s.title)}${zh ? '（' : ' ('}${esc(name)}${zh ? '）' : ')'}` : `${esc(s.index)}. ${esc(s.title)}`;
+    const heading = oi ? `${esc(s.title)}${zh ? '（' : ' ('}${esc(name)}${zh ? '）' : ')'}` : `${single ? '' : `${esc(s.index)}. `}${esc(s.title)}`;
     if (oi) body.push(
       `\\fancyhead[L]{\\fontsize{10}{12}\\selectfont ${esc([title, opts.subtitle].filter(Boolean).join(' '))}}`,
       `\\fancyhead[R]{\\fontsize{10}{12}\\selectfont ${esc(opts.session)} ${heading}}`,
@@ -181,7 +182,7 @@ export async function contestTex(
       continue;
     }
     // OI: the description is always shown; other empty sections are left out.
-    if (oi) await titled(s, zh ? '题目描述' : 'Description', s.sections.legend, true);
+    if (oi && s.statementMode !== 'whole') await titled(s, zh ? '题目描述' : 'Description', s.sections.legend, true);
     else if (s.sections.legend?.trim()) body.push(await section(s, s.sections.legend), '');
     for (const key of oi ? ['input', 'output', 'interaction'] : ['input', 'output', 'interaction', 'scoring']) await titled(s, h[key], s.sections[key]);
     if (s.samples.length) {

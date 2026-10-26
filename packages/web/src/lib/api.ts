@@ -1,4 +1,5 @@
 import type { DefsToml } from './latex';
+import type { PackageCandidate, PackageImportOptions, PackageImportResult } from '@polyforge/shared';
 import { serverText } from './serverText';
 import {
   TOKEN_HEADER,
@@ -105,14 +106,33 @@ const aiBase = (owner: string) => (owner.startsWith('contest:') ? `/contests/${p
 /** ?testset= for anything but the default testset. */
 const tsq = (ts?: string) => (ts && ts !== 'tests' ? `?testset=${encodeURIComponent(ts)}` : '');
 
+async function uploadPackage<T>(url: string, file: File, options: PackageImportOptions, preview = false): Promise<T> {
+  const query = new URLSearchParams(Object.entries(options).filter((entry): entry is [string, string] => entry[1] !== undefined));
+  if (preview) query.set('preview', '1');
+  const res = await fetch(`/api${url}?${query}`, { method: 'POST', headers: { [TOKEN_HEADER]: token, 'Content-Type': 'application/zip' }, body: file });
+  const data = await res.json();
+  if (!res.ok) throw new ApiError(res.status, data.error ?? 'import_failed', data.message ?? res.statusText);
+  return data;
+}
+
 export const api = {
+  packageCandidates: (file: File, options: PackageImportOptions) => uploadPackage<PackageCandidate[]>('/problems/import/package', file, options, true),
+  importPackage: (file: File, options: PackageImportOptions, id?: string) => uploadPackage<PackageImportResult>(id ? `/problems/${pid(id)}/import/data` : '/problems/import/package', file, options),
   statementSamples: (id: string, lang?: string) => request<import('@polyforge/shared').StatementSample[]>('GET', `/problems/${pid(id)}/statement-samples${lang ? `?lang=${encodeURIComponent(lang)}` : ''}`),
-  contestDown: async (id: string, lang: string, pdf: Blob, statements: ContestStatement[], notes: string) => {
+  contestDown: async (id: string, lang: string, pdf: Blob, statements: ContestStatement[], notes: string, single = false) => {
     const base64 = await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1]); r.onerror = reject; r.readAsDataURL(pdf); });
-    const res = await fetch(`/api/contests/${pid(id)}/down`, { method: 'POST', headers: { [TOKEN_HEADER]: token, 'Content-Type': 'application/json' }, body: JSON.stringify({ lang, pdf: base64, statements, notes }) });
+    const res = await fetch(`/api/${single ? 'problems' : 'contests'}/${pid(id)}/down`, { method: 'POST', headers: { [TOKEN_HEADER]: token, 'Content-Type': 'application/json' }, body: JSON.stringify({ lang, pdf: base64, statements, notes }) });
     if (!res.ok) throw new Error((await res.json()).message ?? res.statusText);
     const url = URL.createObjectURL(await res.blob()); const a = document.createElement('a'); a.href = url; a.download = 'down.zip'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
   },
+  downSamples: async (id: string, lang: string, single = false) => {
+    const res = await fetch(`/api/${single ? 'problems' : 'contests'}/${pid(id)}/down`, { method: 'POST', headers: { [TOKEN_HEADER]: token, 'Content-Type': 'application/json' }, body: JSON.stringify({ lang, samplesOnly: true }) });
+    if (!res.ok) throw new Error((await res.json()).message ?? res.statusText);
+    const url = URL.createObjectURL(await res.blob()); const a = document.createElement('a'); a.href = url; a.download = 'down.zip'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
+  },
+  problemDocument: (id: string) => request<ContestDetail>('GET', `/problems/${pid(id)}/document`),
+  problemStatements: (id: string, lang: string) => request<ContestStatement[]>('GET', `/problems/${pid(id)}/statements?lang=${encodeURIComponent(lang)}`),
+  problemTex: (id: string, lang: string, doc: string) => download(`/api/problems/${pid(id)}/tex?lang=${encodeURIComponent(lang)}&doc=${encodeURIComponent(doc)}`, `${id}-${doc}-${lang}.tex`),
   exportMarkdown: async (name: string, markdown: string, images: { problem: string; path: string; name: string }[]) => {
     const res = await fetch('/api/export/markdown', { method: 'POST', headers: { [TOKEN_HEADER]: token, 'Content-Type': 'application/json' }, body: JSON.stringify({ name, markdown, images }) });
     if (!res.ok) throw new Error((await res.json()).message ?? res.statusText);
@@ -149,6 +169,7 @@ export const api = {
     return detail;
   },
   patchProblem: (id: string, req: PatchProblemRequest) => request<ProblemDetail>('PATCH', `/problems/${pid(id)}`, req),
+  statementMode: (id: string, lang: string, mode: 'whole' | 'sections') => request<ProblemDetail>('POST', `/problems/${pid(id)}/statement-mode`, { lang, mode }),
   /** Moves the problem folder to the global trash. */
   deleteProblem: (id: string) => request<{ ok: true; trash: string }>('DELETE', `/problems/${pid(id)}`),
 
@@ -164,7 +185,7 @@ export const api = {
   // ---- judge (M2) ----
   build: (id: string, sources?: string[]) => request<CompileResult[]>('POST', `/problems/${pid(id)}/build`, { sources }),
   generateTests: (id: string, testset?: string) => request<JobInfo>('POST', `/problems/${pid(id)}/tests/generate${tsq(testset)}`),
-  addManualTest: (id: string, req: { input: string; sample?: boolean; testset?: string; statementInput?: string; statementOutput?: string }) =>
+  addManualTest: (id: string, req: { input: string; answer?: string; sample?: boolean; testset?: string; statementInput?: string; statementOutput?: string }) =>
     request<{ index: number; path: string; samples?: string }>('POST', `/problems/${pid(id)}/tests/manual`, req),
   /** `source` is the test as last seen (the server refuses if the test at `n` is another one). */
   removeTest: (id: string, n: number, source: string, testset?: string) =>
@@ -204,7 +225,7 @@ export const api = {
 
   // ---- M5 ----
   stress: (id: string, req: StressRequest) => request<JobInfo>('POST', `/problems/${pid(id)}/stress`, req),
-  exportPackage: (id: string) => request<JobInfo>('POST', `/problems/${pid(id)}/export`),
+  exportPackage: (id: string, options?: { format?: 'polygon' | 'luogu'; testsets?: string[]; luogu?: { time: import('@polyforge/shared').LuoguAggregate; memory: import('@polyforge/shared').LuoguAggregate } }) => request<JobInfo>('POST', `/problems/${pid(id)}/export`, options),
   checks: (id: string) => request<LocalCheck[]>('GET', `/problems/${pid(id)}/checks`),
   startReview: (id: string, req: CreateAiSessionRequest) => request<AiSessionDetail>('POST', `${aiBase(id)}/ai/review`, req),
   /** Download an exported package through fetch (the token travels in a header). */
@@ -226,7 +247,7 @@ export const api = {
   saveContestFile: (id: string, path: string, content: string, hash?: string) => request<{ hash: string }>('PUT', `/contests/${pid(id)}/file?path=${encodeURIComponent(path)}`, { content, hash }),
   uploadContestFile: (id: string, path: string, base64: string) => request('POST', `/contests/${pid(id)}/file?path=${encodeURIComponent(path)}`, { base64 }),
   deleteContestFile: (id: string, path: string) => request('DELETE', `/contests/${pid(id)}/file?path=${encodeURIComponent(path)}`),
-  contestNotes: (id: string) => request<{ content: string }>('GET', `/contests/${pid(id)}/notes`),
+  contestNotes: (id: string, lang?: string) => request<{ content: string }>('GET', `/contests/${pid(id)}/notes${lang ? `?lang=${encodeURIComponent(lang)}` : ''}`),
   generateContestDocument: (id: string, lang: string, doc: 'statements' | 'tutorials') => request<{ path: string }>('POST', `/contests/${pid(id)}/generate-document`, { lang, doc }),
   downloadContestFile: (id: string, path: string) => download(`/api/contests/${pid(id)}/file/raw?path=${encodeURIComponent(path)}`, path.split('/').pop()!),
   contestBatch: (id: string, req: ContestBatchRequest) => request<JobInfo>('POST', `/contests/${pid(id)}/batch`, req),

@@ -22,7 +22,15 @@ export async function ensureContestFiles(dir: string) {
   await fs.writeFile(notes, '', { flag: 'wx' }).catch((e: NodeJS.ErrnoException) => { if (e.code !== 'EEXIST') throw e; });
 }
 
-export async function contestNotes(dir: string): Promise<string> {
+export async function contestNotes(dir: string, lang?: string): Promise<string> {
   await ensureContestFiles(dir);
+  if (lang !== undefined) {
+    if (!/^[a-z]{2,8}$/.test(lang)) throw new HttpError(400, 'bad_lang', 'Invalid notes language');
+    const translated = await fs.readFile(await contestFile(dir, `notes.${lang}.tex`), 'utf8').catch((e: NodeJS.ErrnoException) => {
+      if (e.code === 'ENOENT') return undefined; throw e;
+    });
+    // An intentionally empty translation suppresses the language-neutral fallback.
+    if (translated !== undefined) return translated;
+  }
   return fs.readFile(await contestFile(dir, 'notes.tex'), 'utf8');
 }

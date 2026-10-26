@@ -61,7 +61,7 @@ test('Luogu layout and scoring script: bundles, transitive dependencies, loose t
   assert.match(script, /@final_time = @time0 \+ @time1 \+ @time2 \+ @time3;/);
   assert.match(script, /@final_memory = @memory0;\nif @memory1 > @final_memory; then\n {4}@final_memory = @memory1;\nfi/);
   assert.ok(!/;\s*fi;/.test(script), 'fi takes no semicolon');
-  assert.match(luoguConfig(c, cases), /^p1\.in:\n {2}timeLimit: 1000\n {2}memoryLimit: 262144\n {2}score: 15\n {2}subtaskId: 3\n/);
+  assert.match(luoguConfig(c, cases), /^1\.in:\n {2}timeLimit: 1000\n {2}memoryLimit: 262144\n {2}score: 15\n {2}subtaskId: 3\n/);
   // Fractional points are rounded with a warning; without points 100 is split over the tests.
   c.tests.group![2].points = 15.5;
   luoguLayout(c, [{ name: 'tests', tests: [1, 2, 3, 4, 5] }], warnings);

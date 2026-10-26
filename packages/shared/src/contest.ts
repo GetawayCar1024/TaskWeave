@@ -137,6 +137,8 @@ export interface ContestImportRequest {
 
 /** Statement sources of one problem for the combined contest view. */
 export interface ContestStatement {
+  /** Whole-file text is already structured by its author; do not add a Description heading. */
+  statementMode?: 'whole' | 'sections';
   type?: ProblemType;
   /** OI: the complete statement, including sample descriptions, in one LaTeX file. */
   body?: string;

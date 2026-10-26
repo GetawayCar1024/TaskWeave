@@ -9,6 +9,7 @@ const router = createRouter({
   routes: [
     { path: '/', name: 'problems', component: () => import('./views/ProblemList.vue') },
     { path: '/p/:id', name: 'problem', component: () => import('./views/ProblemWorkspace.vue'), props: true },
+    { path: '/p/:id/print', name: 'problem-print', component: () => import('./views/ContestPrint.vue'), props: route => ({ id: route.params.id, single: true }) },
     { path: '/c/:id', name: 'contest', component: () => import('./views/ContestView.vue'), props: true },
     { path: '/c/:id/print', name: 'contest-print', component: () => import('./views/ContestPrint.vue'), props: true },
     { path: '/settings', name: 'settings', component: () => import('./views/SettingsView.vue') },

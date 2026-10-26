@@ -38,6 +38,8 @@ export interface CompileResult {
 }
 
 export interface TestInfo {
+  timeLimit?: number;
+  memoryLimit?: number;
   largeSample?: boolean;
   index: number;
   origin: 'manual' | 'script';
@@ -396,11 +398,15 @@ export function groupLayout(ts: TestsetConfig, pointsEnabled: boolean): { mappin
   for (const g of ts.group) {
     const idx = [...new Set(parseIndexList(g.tests ?? ''))].sort((a, b) => a - b);
     idx.forEach((i) => (mapping[i] = g.name));
-    if (pointsEnabled && g.points && idx.length) {
+    if (pointsEnabled && g.points !== undefined && idx.length) {
       if ((g.policy ?? 'COMPLETE_GROUP') === 'COMPLETE_GROUP') {
         idx.forEach((i) => (points[i] = 0));
         points[idx[idx.length - 1]] = g.points;
       } else {
+        if (idx.every(i => ts.cases?.[i]?.points !== undefined)) {
+          idx.forEach(i => points[i] = ts.cases![i].points!);
+          continue;
+        }
         // Integer shares that add up exactly: the last tests get one point more.
         const whole = Math.floor(g.points);
         const each = Math.floor(whole / idx.length);

@@ -19,6 +19,10 @@ export interface ProblemCtx {
   buildRoot?: string;
 }
 
+export function requireFullProblem(ctx: ProblemCtx) {
+  if (ctx.config.problem.data_only) throw new HttpError(400, 'data_only', 'This feature requires full authoring. Complete the statement, validator, checker and main solution, then leave data-only mode.');
+}
+
 export class Judge {
   readonly compiler: Compiler;
   readonly runner: Runner;
@@ -63,6 +67,7 @@ export class Judge {
   }
 
   async compile(ctx: ProblemCtx, source: string, solution = ctx.config.solutions.some(s => s.source === source) || source.startsWith('solutions/')): Promise<CompileOutcome> {
+    requireFullProblem(ctx);
     const grader = solution && judgeMode(ctx.config.problem) === 'grader' ? ctx.config.grader ?? { sources: [], headers: [] } : undefined;
     const out = await this.compiler.compile(ctx.ref.dir, source, this.langOf(ctx.config, source), ctx.buildRoot, grader);
     this.hub.broadcast({ type: 'build:done', problemId: ctx.ref.id, result: out.result });

@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NDataTable, NInput, NProgress, NScrollbar, NSelect, NSpace, NSwitch, NTabPane, NTabs, NTag, useDialog, useMessage, type DataTableColumns } from 'naive-ui';
 import { compressRanges, parseIndexList, testsetsOf, type TestFileResponse, type TestInfo } from '@polyforge/shared';
 import TestsetDialog from './TestsetDialog.vue';
+import PackageImportDialog from './PackageImportDialog.vue';
 import ToolWindow from './ToolWindow.vue';
 import { api, errorMessage } from '../lib/api';
 import { formatSize } from '../lib/format';
@@ -28,10 +29,19 @@ watch(testset, (ts) => ts !== 'tests' && props.judge.loadManifest(ts), { immedia
 const manifest = computed(() => (testset.value === 'tests' ? props.judge.state.manifest : props.judge.state.manifests[testset.value] ?? null));
 const pointsOn = computed(() => !!props.ws.state.detail?.config?.tests.points);
 const showTestsets = ref(false);
+const showImport = ref(false);
+const dataOnly = computed(() => !!props.ws.state.detail?.summary.dataOnly);
+const provided = computed(() => dataOnly.value || testsetConfig()?.answers === 'provided');
+async function imported() { await props.ws.loadDetail(); await props.judge.loadManifest(testset.value); }
+function importData() {
+  if (props.ws.hasDirty.value) return message.warning(t('tree.saveFirst'));
+  showImport.value = true;
+}
 
 // ---- add a manual test / sample ----
 const showAdd = ref(false);
 const addInput = ref('');
+const addAnswer = ref('');
 const addAsSample = ref(false);
 const addStmtIn = ref('');
 const addStmtOut = ref('');
@@ -41,6 +51,7 @@ const adding = ref(false);
 let selectAfterGenerate: number | null = null;
 function openAdd() {
   addInput.value = '';
+  addAnswer.value = '';
   addStmtIn.value = '';
   addStmtOut.value = '';
   addAsSample.value = false;
@@ -50,7 +61,7 @@ async function addTest() {
   adding.value = true;
   try {
     const sample = addAsSample.value;
-    const r = await api.addManualTest(props.problemId, { input: addInput.value, sample, testset: testset.value, statementInput: sample ? addStmtIn.value : undefined, statementOutput: sample ? addStmtOut.value : undefined });
+    const r = await api.addManualTest(props.problemId, { input: addInput.value, answer: provided.value ? addAnswer.value : undefined, sample, testset: testset.value, statementInput: sample ? addStmtIn.value : undefined, statementOutput: sample ? addStmtOut.value : undefined });
     message.success(t(sample ? 'tests.sampleAdded' : 'tests.testAdded', { n: r.index }));
     showAdd.value = false;
     selectAfterGenerate = r.index;
@@ -254,7 +265,8 @@ watch(
   <div class="panel">
     <n-space align="center" justify="space-between">
       <n-space size="small">
-        <n-button size="small" type="primary" :loading="running" @click="generate">{{ t('toolbar.generate') }}</n-button>
+        <n-button size="small" type="primary" :loading="running" @click="generate">{{ t(provided ? 'dataOnly.refresh' : 'toolbar.generate') }}</n-button>
+        <n-button size="small" :disabled="running" @click="importData">{{ t('packages.importData') }}</n-button>
         <n-button v-if="running" size="small" @click="judge.cancel('generate')">{{ t('common.cancel') }}</n-button>
         <n-select
           v-if="testsets.length > 1"
@@ -314,7 +326,7 @@ watch(
               :title="(w === 'in' ? current.statementInput : current.statementOutput) ? t('tests.statementActiveHint', { file: w === 'in' ? current.statementInput : current.statementOutput }) : t('tests.statementCreateHint')"
               @click="statementButton(current, w)">{{ t(w === 'in' ? 'tests.statementInputBtn' : 'tests.statementOutputBtn') }}</n-button>
           </template>
-          <n-button v-if="testset === 'tests'" size="tiny" @click="emit('runOnTest', current.index)">{{ t('tests.runHere') }}</n-button>
+          <n-button v-if="testset === 'tests'" size="tiny" :disabled="dataOnly" @click="emit('runOnTest', current.index)">{{ t('tests.runHere') }}</n-button>
           <n-button size="tiny" quaternary :disabled="running" :title="t('tests.remove')" @click="removeTest(current)"><trash2 :size="13" /></n-button>
         </n-space>
       </n-space>
@@ -333,6 +345,7 @@ watch(
     </div>
     <div v-else-if="manifest" class="pf-empty">{{ t('tests.pickOne') }}</div>
     <testset-dialog v-model:show="showTestsets" :ws="ws" :judge="judge" :initial="testset" />
+    <package-import-dialog v-model:show="showImport" :problem-id="problemId" :testset="testset" @imported="imported" />
     <tool-window v-model:show="showAdd" :title="t('tests.addTest')" size="md">
       <n-input
         v-model:value="addInput"
@@ -342,6 +355,7 @@ watch(
         :placeholder="t('tests.addInputPlaceholder')"
         autofocus
       />
+      <template v-if="provided"><div class="add-label small">{{ t('packages.answer') }}</div><n-input v-model:value="addAnswer" type="textarea" class="mono" :autosize="{ minRows: 3, maxRows: 12 }" /></template>
       <template v-if="addAsSample">
         <div class="add-label small">{{ t('tests.statementInput') }}</div>
         <n-input
@@ -366,7 +380,7 @@ watch(
       </template>
       <template #footer>
         <n-button @click="showAdd = false">{{ t('common.cancel') }}</n-button>
-        <n-button type="primary" :loading="adding" :disabled="!addInput.trim() || (interactive && addAsSample && (!addStmtIn.trim() || !addStmtOut.trim()))" @click="addTest">{{ t('tests.add') }}</n-button>
+        <n-button type="primary" :loading="adding" :disabled="(!provided && !addInput.trim()) || (interactive && addAsSample && (!addStmtIn.trim() || !addStmtOut.trim()))" @click="addTest">{{ t('tests.add') }}</n-button>
       </template>
     </tool-window>
   </div>

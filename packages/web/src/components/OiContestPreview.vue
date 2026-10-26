@@ -10,7 +10,7 @@ import { exportMarkdown } from '../lib/markdownExport';
 import { api, token } from '../lib/api';
 import { serverText } from '../lib/serverText';
 
-const props = defineProps<{ detail: ContestDetail; statements: ContestStatement[]; lang: string; doc: 'statements' | 'tutorials'; notes: string; macros: MacroTable; toc?: boolean; loading?: boolean; preparingDown?: boolean; downRequest?: number }>();
+const props = defineProps<{ detail: ContestDetail; statements: ContestStatement[]; lang: string; doc: 'statements' | 'tutorials'; notes: string; macros: MacroTable; toc?: boolean; loading?: boolean; preparingDown?: boolean; downRequest?: number; single?: boolean }>();
 const emit = defineEmits<{ prepareDown: [] }>();
 let pendingDown = false;
 watch(() => props.downRequest, value => { if (value) pendingDown = true; });
@@ -70,7 +70,7 @@ async function generate() {
       extraContents: { precaution: { markdown: notesBody.value.trim() ? `**${word('注意事项（请仔细阅读）', 'Instructions (please read carefully)')}**\n\n` + cnoiMarkdown(notesBody.value, props.macros, notesImage, props.lang) : '' } },
     };
     const key = settingsKey();
-    if (key !== savedSettings) {
+    if (!props.single && key !== savedSettings) {
       const statement = { ...props.detail.summary.statement!, subtitle: subtitle.value, session: dayname.value, compileOptions: options.value, schedule: `${start.value}/${end.value}` };
       saveQueue = saveQueue.catch(() => {}).then(async () => { await api.updateContest(props.detail.summary.id, { statement }); savedSettings = key; });
       await saveQueue;
@@ -97,7 +97,7 @@ async function exportDown() {
   if (busy.value || stale.value || !pdf.value || props.doc !== 'statements') return;
   const snapshot = { id: props.detail.summary.id, lang: props.lang, url: pdf.value, statements: JSON.parse(JSON.stringify(props.statements)) as ContestStatement[], notes: props.notes };
   exporting.value = true;
-  try { await api.contestDown(snapshot.id, snapshot.lang, await (await fetch(snapshot.url)).blob(), snapshot.statements, snapshot.notes); }
+  try { await api.contestDown(snapshot.id, snapshot.lang, await (await fetch(snapshot.url)).blob(), snapshot.statements, snapshot.notes, props.single); }
   catch (e) { message.error(serverText(e instanceof Error ? e.message : String(e))); }
   finally { exporting.value = false; }
 }

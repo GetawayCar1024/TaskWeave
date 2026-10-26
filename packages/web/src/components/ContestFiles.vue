@@ -22,7 +22,7 @@ import englishNotesTemplate from '../lib/cnoi-notes.en.md?raw';
 
 const props = defineProps<{ id: string; show: boolean; detail: ContestDetail | null }>();
 const emit = defineEmits<{ 'update:show': [boolean] }>();
-const message = useMessage(); const dialog = useDialog(); const route = useRoute(); const { t } = useI18n();
+const message = useMessage(); const dialog = useDialog(); const route = useRoute(); const { t, locale } = useI18n();
 // Open files are tabs, like the problem editor; each keeps its own unsaved text.
 interface OpenFile { path: string; text: string; original: string; loaded: FileContent }
 const paths = ref<string[]>([]); const openFiles = ref<OpenFile[]>([]); const selected = ref('');
@@ -47,7 +47,13 @@ const fileLang = ref('zh');
 // Stored metadata also survives renaming; infer the language for snapshots created by older versions.
 const snapshotLang = computed(() => text.value.match(/^%\s*polyforge-language:\s*([a-z]{2,8})\s*$/m)?.[1]
   ?? selected.value.match(/^(?:statements|tutorials)-([a-z]{2,8})-\d+-/)?.[1]);
-const previewLang = computed(() => snapshotLang.value ?? fileLang.value);
+const isNotes = computed(() => /^notes(?:\.[a-z]{2,8})?\.tex$/.test(selected.value));
+const notesLang = computed(() => selected.value.match(/^notes\.([a-z]{2,8})\.tex$/)?.[1] ?? 'default');
+const notesLanguages = computed(() => [
+  { value: 'default', label: t('contest.notesDefault') },
+  ...[...new Set(['zh', 'en', ...paths.value.flatMap(p => p.match(/^notes\.([a-z]{2,8})\.tex$/)?.[1] ?? [])])].map(value => ({ value, label: value })),
+]);
+const previewLang = computed(() => isNotes.value && notesLang.value !== 'default' ? notesLang.value : snapshotLang.value ?? fileLang.value);
 const previewLanguages = computed(() => [...new Set(['zh', 'en', previewLang.value])].map(value => ({ value, label: value })));
 const macros = ref<MacroTable>(new Map());
 const dirty = computed(() => !!current.value && isDirty(current.value));
@@ -145,6 +151,14 @@ async function create() {
   try { const name = newName.value.trim(); await api.uploadContestFile(props.id, name, ''); newName.value = ''; await refresh(); await open(name); }
   catch (e) { message.error(errorMessage(e)); }
 }
+async function openNotes(lang: string) {
+  if (lang !== 'default' && !/^[a-z]{2,8}$/.test(lang)) return;
+  const name = lang === 'default' ? 'notes.tex' : `notes.${lang}.tex`;
+  try {
+    if (!paths.value.includes(name)) { await api.uploadContestFile(props.id, name, ''); await refresh(); }
+    await open(name);
+  } catch (e) { message.error(errorMessage(e)); }
+}
 async function uploadFiles(event: Event) {
   const input = event.target as HTMLInputElement;
   try {
@@ -172,11 +186,12 @@ async function generate(doc: 'statements' | 'tutorials') {
 }
 function remove() {
   const path = selected.value;
-  dialog.warning({ title: path === 'notes.tex' ? t('contest.filesClearNotes') : t('contest.filesDeleteFile'), content: path, positiveText: t('common.ok'), negativeText: t('common.cancel'), onPositiveClick: async () => {
+  const notes = /^notes(?:\.[a-z]{2,8})?\.tex$/.test(path);
+  dialog.warning({ title: notes ? t('contest.filesClearNotes') : t('contest.filesDeleteFile'), content: path, positiveText: t('common.ok'), negativeText: t('common.cancel'), onPositiveClick: async () => {
     try {
       await api.deleteContestFile(props.id, path);
       const file = openFiles.value.find(f => f.path === path);
-      if (file && path === 'notes.tex') { file.text = file.original = ''; file.loaded = await api.contestFile(props.id, path); }
+      if (file && notes) { file.text = file.original = ''; file.loaded = await api.contestFile(props.id, path); }
       else if (file) { file.original = file.text; await closeTab(path); }
       await refresh();
     }
@@ -201,7 +216,8 @@ watch(() => props.show, async show => {
       if (!isDirty(file)) { file.loaded = fresh; file.text = file.original = fresh.content; }
     }
     if (!openFiles.value.some(f => f.path === selected.value)) selected.value = openFiles.value[0]?.path ?? '';
-    await open(typeof route.query.contestFile === 'string' ? route.query.contestFile : selected.value || 'notes.tex'); }
+    const translated = `notes.${locale.value === 'zh-CN' ? 'zh' : 'en'}.tex`;
+    await open(typeof route.query.contestFile === 'string' ? route.query.contestFile : selected.value || (paths.value.includes(translated) ? translated : 'notes.tex')); }
   catch (e) { message.error(errorMessage(e)); }
 }, { immediate: true });
 watch(() => route.query.contestFile, file => { if (props.show && typeof file === 'string') void open(file); });
@@ -235,11 +251,11 @@ watch(previewLang, async (value, _old, onCleanup) => {
         <editor-tab-bar v-if="openFiles.length" :tabs="tabItems" :active="selected || null" @select="p => (selected = p)" @close="closeTab">
           <template v-if="current" #actions>
             <n-button size="tiny" quaternary @click="api.downloadContestFile(id, selected).catch(e => message.error(errorMessage(e)))">{{ t('contest.filesDownload') }}</n-button>
-            <n-button size="tiny" quaternary type="error" :disabled="busy" @click="remove">{{ selected === 'notes.tex' ? t('contest.filesClear') : t('contest.filesDelete') }}</n-button>
+             <n-button size="tiny" quaternary type="error" :disabled="busy" @click="remove">{{ isNotes ? t('contest.filesClear') : t('contest.filesDelete') }}</n-button>
             <n-button size="tiny" type="primary" :disabled="readonly || !dirty || busy" :title="'Ctrl+S'" @click="save()">{{ t('common.save') }}</n-button>
           </template>
         </editor-tab-bar>
-        <div v-if="selected === 'notes.tex' && current" class="notes-help"><span>{{ t('contest.filesNotesHelp') }}</span><n-button size="tiny" secondary :disabled="busy" @click="insertTemplate">{{ previewLang === 'zh' ? t('contest.filesInsertNotes') : t('contest.filesInsertNotesEn') }}</n-button></div>
+        <div v-if="isNotes && current" class="notes-help"><span>{{ t('contest.notesLanguageHelp') }}</span><n-select :value="notesLang" :aria-label="t('contest.notesLanguage')" filterable tag size="small" style="width: 140px" :options="notesLanguages" :disabled="busy" @update:value="openNotes" /><n-button size="tiny" secondary :disabled="busy" @click="insertTemplate">{{ previewLang === 'zh' ? t('contest.filesInsertNotes') : t('contest.filesInsertNotesEn') }}</n-button></div>
         <div v-if="opening && !current" class="empty-editor">{{ t('contest.filesLoading') }}</div>
         <n-alert v-else-if="current && readonly" type="info" :show-icon="false" class="banner">{{ t('contest.filesReadonly') }}</n-alert>
         <div v-else-if="current" class="body">
@@ -273,7 +289,7 @@ watch(previewLang, async (value, _old, onCleanup) => {
           </section>
           <section v-if="selected" class="info-card document-settings">
             <h3>{{ t('contest.filesCurrent') }}</h3><p class="directory">files/{{ selected }}</p>
-            <label>{{ t('contest.filesPreviewLang') }}</label><n-select :value="previewLang" :aria-label="t('contest.filesPreviewLang')" size="small" :disabled="!!snapshotLang || busy" :options="previewLanguages" @update:value="value => fileLang = value" />
+            <label>{{ t('contest.filesPreviewLang') }}</label><n-select :value="previewLang" :aria-label="t('contest.filesPreviewLang')" size="small" :disabled="!!snapshotLang || (isNotes && notesLang !== 'default') || busy" :options="previewLanguages" @update:value="value => fileLang = value" />
             <p class="help">{{ snapshotLang ? t('contest.filesSnapshotLangHelp') : t('contest.filesPreviewLangHelp') }}</p>
           </section>
         </div>
@@ -314,7 +330,7 @@ aside { display: flex; flex-direction: column; min-height: 0; border-right: 1px 
 .preview-toggle { position: absolute; right: 18px; bottom: 10px; z-index: 5; display: flex; gap: 6px; }
 .hint { font-size: 12px; opacity: 0.6; }
 .notes-help { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 6px 10px; padding: 8px 10px; background: var(--pf-toolbar-bg); border-bottom: 1px solid var(--pf-border); font-size: 11px; color: var(--pf-text-secondary); }
-.preview { flex: 1; min-width: 0; overflow: auto; background: white; color: #111; padding: 20px; border-left: 1px solid rgba(128, 128, 128, 0.25); }
+.preview { flex: 1; min-width: 0; overflow: auto; background: var(--pf-surface); color: var(--pf-text); padding: 20px; border-left: 1px solid var(--pf-border); }
 .empty-editor { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--pf-text-secondary); font-size: 13px; }
 .info-sidebar { border-right: 0; border-left: 1px solid var(--pf-border); }
 .info-scroll { padding: 10px; overflow: auto; }

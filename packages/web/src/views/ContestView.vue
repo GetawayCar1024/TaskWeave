@@ -123,6 +123,15 @@ onUnmounted(() => {
 });
 
 const summary = computed(() => detail.value?.summary);
+const hasDataOnly = computed(() => !!detail.value?.problems.some(p => p.summary?.dataOnly));
+const downloadingDown = ref(false);
+async function exportDown() {
+  if (!hasDataOnly.value) return router.push({ name: 'contest-print', params: { id: props.id }, query: { style: 'oi', down: '1', doc: 'statements' } });
+  downloadingDown.value = true;
+  try { await api.downSamples(props.id, locale.value === 'zh-CN' ? 'zh' : 'en'); message.info(t('dataOnly.downSamples')); }
+  catch (e) { message.error(errorMessage(e)); }
+  finally { downloadingDown.value = false; }
+}
 const title = computed(() => (summary.value ? problemTitle(summary.value.title, locale.value) || summary.value.name : ''));
 
 // ---- problem list editing ----
@@ -433,13 +442,13 @@ const columns = computed<DataTableColumns<Row>>(() => [
             <section class="problem-list">
             <div class="toolbar">
               <n-space size="small">
-                <n-button v-for="a in ACTIONS" :key="a.action" size="small" :disabled="running || !rows.length" @click="run(a.action)">
+                <n-button v-for="a in ACTIONS" :key="a.action" size="small" :disabled="running || !rows.length || hasDataOnly && a.action === 'invocation'" @click="run(a.action)">
                   <template #icon><component :is="a.icon" /></template>{{ t(`contest.action.${a.action}`) }}
                 </n-button>
-                <n-button size="small" :disabled="running || !rows.length" @click="showSync = true">
+                <n-button size="small" :disabled="running || !rows.length || hasDataOnly" @click="showSync = true">
                   <template #icon><refresh-cw /></template>{{ t('toolbar.sync') }}
                 </n-button>
-                <n-button size="small" :disabled="running || !rows.length" @click="router.push({ name: 'contest-print', params: { id }, query: { style: 'oi', down: '1', doc: 'statements' } })">{{ t('oiFeatures.down') }}</n-button>
+                <n-button size="small" :disabled="running || !rows.length" :loading="downloadingDown" :title="hasDataOnly ? t('dataOnly.downSamples') : ''" @click="exportDown">{{ t('oiFeatures.down') }}</n-button>
                 <n-button v-if="running" size="small" type="warning" ghost @click="cancel">{{ t('common.cancel') }}</n-button>
               </n-space>
               <div v-if="running && job" class="progress">
@@ -496,10 +505,11 @@ const columns = computed<DataTableColumns<Row>>(() => [
     >
       <n-form label-placement="left" label-width="auto" size="small" :show-feedback="false" :disabled="running" class="export-form">
         <n-form-item :label="t('contest.exportFormat')">
-          <n-select v-model:value="exportFormat" :options="[{ value: 'lemonlime', label: 'LemonLime (.cdf + data + source)' }, { value: 'luogu', label: t('contest.luoguFormat') }, { value: 'polygon', label: t('oiFeatures.polygon') }]" />
+          <n-select v-model:value="exportFormat" :options="[{ value: 'lemonlime', label: 'LemonLime (.cdf + data + source)' }, { value: 'luogu', label: t('contest.luoguFormat') }, { value: 'polygon', label: t('oiFeatures.polygon'), disabled: hasDataOnly }]" />
         </n-form-item>
         <n-alert v-if="exportFormat === 'lemonlime'" type="info" :show-icon="false" class="pf-dialog-note">{{ t('oiFeatures.exportHint') }}</n-alert>
-        <n-alert v-if="exportFormat === 'luogu'" type="info" :show-icon="false" class="pf-dialog-note">{{ t('contest.luoguHint') }}</n-alert>
+        <n-alert v-if="exportFormat === 'lemonlime' && hasDataOnly" type="warning" :show-icon="false" class="pf-dialog-note">{{ t('dataOnly.lemonHint') }}</n-alert>
+        <n-alert v-if="exportFormat === 'luogu'" type="info" :show-icon="false" class="pf-dialog-note">{{ t('packages.luoguHint') }}</n-alert>
         <template v-if="exportFormat === 'luogu'">
           <n-form-item :label="t('contest.luoguTime')"><n-select v-model:value="luoguTime" :options="aggOptions" /></n-form-item>
           <n-form-item :label="t('contest.luoguMemory')"><n-select v-model:value="luoguMemory" :options="aggOptions" /></n-form-item>

@@ -20,6 +20,7 @@ import { PolygonClient, PolygonError } from '../src/polygon/client.js';
 import { applyItem, untrackedItems, localItems } from '../src/polygon/items.js';
 import { contestPull, contestRepull, contestSyncStatus } from '../src/polygon/contestSync.js';
 import { UsageLog } from '../src/ai/usage.js';
+import { convertStatementMode } from '../src/workspace/statements.js';
 import { problems as mockState, startMockPolygon } from './mock-polygon.js';
 
 let mock: Awaited<ReturnType<typeof startMockPolygon>>;
@@ -65,6 +66,28 @@ async function pullTaken(id: string, req = {}) {
   return { pre, res: await sync.pull(await judge.ctx(id), { take }) };
 }
 const statusOf = (pre: { items: { key: string; status: string; takeRemote: boolean }[] }, key: string) => pre.items.find((i) => i.key === key);
+
+test('whole statements warn in preview and automatically become legend when pushing or pulling Polygon', async () => {
+  const p = await registry.create({ name: 'whole-sync', title: { en: 'Whole' } });
+  await pushAll(p.id);
+  await convertStatementMode(p.dir, 'en', 'whole');
+  const body = await fs.readFile(path.join(p.dir, 'statement/en/statement.tex'), 'utf8');
+  const preview = await sync.pushPreview(await judge.ctx(p.id));
+  assert.ok(preview.warnings.some(w => w.includes('Whole statements')));
+  assert.equal(await fs.readFile(path.join(p.dir, 'statement/en/statement.tex'), 'utf8'), body, 'preview is read-only');
+  const { result } = await pushAll(p.id);
+  assert.ok(result.warnings.some(w => w.includes('Whole statements')));
+  await assert.rejects(fs.access(path.join(p.dir, 'statement/en/statement.tex')));
+  assert.equal(await fs.readFile(path.join(p.dir, 'statement/en/legend.tex'), 'utf8'), body);
+  assert.equal(mockState.get(result.polygonId)!.statements.english.input ?? '', '');
+  await convertStatementMode(p.dir, 'en', 'whole');
+  await poly.call('problem.saveStatement', { problemId: result.polygonId, lang: 'english', legend: 'Changed remotely' });
+  await sync.pullPreview(await judge.ctx(p.id));
+  const pulled = await sync.pull(await judge.ctx(p.id), { take: ['statement:english:legend'] });
+  assert.ok(pulled.warnings.some(w => w.includes('Whole statements')));
+  assert.match(await fs.readFile(path.join(p.dir, 'statement/en/legend.tex'), 'utf8'), /Changed remotely/);
+  await assert.rejects(fs.access(path.join(p.dir, 'statement/en/statement.tex')));
+});
 
 test('samples and their statement input / output are pulled from Polygon (manual and generated tests)', async () => {
   const p = await registry.create({ name: 'psync-samples', title: { en: 'Samples' } });

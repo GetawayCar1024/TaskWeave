@@ -8,6 +8,7 @@ import AppHeader from '../components/AppHeader.vue';
 import ContestDialog from '../components/ContestDialog.vue';
 import CreateProblemDialog from '../components/CreateProblemDialog.vue';
 import ImportDialog from '../components/ImportDialog.vue';
+import PackageImportDialog from '../components/PackageImportDialog.vue';
 import { api, errorMessage } from '../lib/api';
 import { onWs } from '../lib/ws';
 import { problemTitle } from '../lib/format';
@@ -24,10 +25,14 @@ const message = useMessage();
 const problems = ref<ProblemSummary[]>([]);
 const contests = ref<ContestSummary[]>([]);
 const roots = ref<string[]>([]);
+const polygonReady = ref(false);
+const importDisabled = computed(() => loading.value || !roots.value.length || !polygonReady.value);
+const importHint = computed(() => !roots.value.length ? t('list.noRootsHint') : !polygonReady.value ? t('import.credentialsRequired') : '');
 const loading = ref(true);
 const filter = ref('');
 const showCreate = ref(false);
 const showImport = ref(false);
+const showPackageImport = ref(false);
 const contestDialog = ref<'create' | 'import' | null>(null);
 
 const tab = ref<'problems' | 'contests'>(route.query.tab === 'contests' ? 'contests' : 'problems');
@@ -35,10 +40,11 @@ watch(tab, (v) => router.replace({ query: v === 'contests' ? { tab: v } : {} }))
 
 async function load() {
   try {
-    const [r, c] = await Promise.all([api.problems(), api.contests()]);
+    const [r, c, secrets] = await Promise.all([api.problems(), api.contests(), api.secrets()]);
     problems.value = r.problems;
     contests.value = c;
     roots.value = r.roots;
+    polygonReady.value = secrets.polygon.hasKey && secrets.polygon.hasSecret;
   } catch (e) {
     message.error(errorMessage(e));
   } finally {
@@ -139,11 +145,12 @@ function openContest(c: ContestSummary) {
       <template #right>
         <template v-if="tab === 'problems'">
           <n-button size="small" type="primary" :disabled="roots.length === 0" @click="showCreate = true">{{ t('list.new') }}</n-button>
-          <n-button size="small" :disabled="roots.length === 0" @click="showImport = true">{{ t('list.import') }}</n-button>
+          <n-button size="small" :disabled="importDisabled" :title="importHint" @click="showImport = true">{{ t('list.import') }}</n-button>
+          <n-button size="small" :disabled="!roots.length" @click="showPackageImport = true">{{ t('packages.importLocal') }}</n-button>
         </template>
         <template v-else>
           <n-button size="small" type="primary" :disabled="roots.length === 0" @click="contestDialog = 'create'">{{ t('contest.new') }}</n-button>
-          <n-button size="small" @click="contestDialog = 'import'">{{ t('list.import') }}</n-button>
+          <n-button size="small" :disabled="importDisabled" :title="importHint" @click="contestDialog = 'import'">{{ t('list.import') }}</n-button>
         </template>
         <n-button size="small" @click="router.push({ name: 'settings' })">{{ t('nav.settings') }}</n-button>
       </template>
@@ -239,6 +246,7 @@ function openContest(c: ContestSummary) {
               <span class="check-tag"><span class="ci"><check v-if="c.ok" :size="11" /><circle-icon v-else :size="7" /></span><span>{{ t(`check.${c.label ?? c.key}`) }}</span></span>
             </n-tag>
             <n-tag v-if="p.interactive" size="small" type="info" :bordered="false">{{ t('problem.interactive') }}</n-tag>
+            <n-tag v-if="p.dataOnly" size="small" type="warning" :bordered="false">{{ t('dataOnly.title') }}</n-tag>
           </div>
           <div v-if="contestsOf.get(p.id)" class="in-contest">
             <a v-for="c in contestsOf.get(p.id)" :key="c.id" class="link" @click.stop="openContest(c.contest)">{{ c.label }}</a>
@@ -249,11 +257,13 @@ function openContest(c: ContestSummary) {
     </main>
 
     <create-problem-dialog v-model:show="showCreate" :roots="roots" @created="open" />
-    <import-dialog v-model:show="showImport" :roots="roots" @imported="open" />
+    <import-dialog v-model:show="showImport" :roots="roots" :polygon-ready="polygonReady" @imported="open" />
+    <package-import-dialog v-model:show="showPackageImport" :roots="roots" @imported="result => open(result.problem)" />
     <contest-dialog
       :show="contestDialog !== null"
       :mode="contestDialog ?? 'create'"
       :roots="roots"
+      :polygon-ready="polygonReady"
       :problems="problems"
       @update:show="(v: boolean) => !v && (contestDialog = null)"
       @created="openContest"

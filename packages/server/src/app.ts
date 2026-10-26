@@ -37,6 +37,10 @@ import { ProblemRegistry } from './workspace/problems.js';
 import { moveProblem } from './workspace/move.js';
 import type { ProblemWatcher } from './workspace/watcher.js';
 import type { WsHub } from './ws.js';
+import { convertStatementMode } from './workspace/statements.js';
+import { importPackage, packageCandidates } from './imports/packages.js';
+import { readZip } from './util/zip.js';
+import type { PackageImportOptions } from '@polyforge/shared';
 
 export interface AppDeps {
   global: GlobalStore;
@@ -61,6 +65,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   let requests = 0;
   let clearingCache = false;
   let relocating = false;
+  let importing = false;
   app.addHook('onRequest', async req => {
     if (!req.url.startsWith('/ws')) requests++;
     if (clearingCache && req.url.startsWith('/api/')) throw new HttpError(409, 'busy', 'Cache maintenance in progress');
@@ -84,6 +89,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       done(err, undefined);
     }
   });
+  app.addContentTypeParser('application/zip', { parseAs: 'buffer', bodyLimit: 256 * 1024 * 1024 }, (_req, body, done) => done(null, body));
 
   // DESIGN §8: reject DNS-rebinding hosts and require the launch token on API/WS.
   app.addHook('onRequest', async (req, reply) => {
@@ -242,6 +248,24 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
   app.get('/api/problems', async () => ({ roots: registry.roots, problems: await registry.list() }));
 
+  const loadPackage = async (bytes: Buffer, options: PackageImportOptions, id?: string) => {
+    if (!Buffer.isBuffer(bytes)) throw new HttpError(400, 'bad_request', 'Upload a ZIP file.');
+    if (!idle() || importing) throw new HttpError(409, 'busy', 'Wait for running tasks before importing data');
+    importing = true;
+    try {
+      const result = await importPackage(deps.judge, bytes, options, id);
+      hub.broadcast({ type: 'problems:changed' });
+      if (id) hub.broadcast({ type: 'problem:changed', problemId: id });
+      return result;
+    } finally { importing = false; }
+  };
+  app.post<{ Body: Buffer; Querystring: PackageImportOptions & { preview?: string } }>('/api/problems/import/package', { bodyLimit: 256 * 1024 * 1024 }, async req => {
+    if (req.query.preview === '1') return packageCandidates(readZip(req.body), req.query);
+    registry.requireRoot(req.query.root);
+    return loadPackage(req.body, req.query);
+  });
+  app.post<{ Params: { id: string }; Body: Buffer; Querystring: PackageImportOptions }>('/api/problems/:id/import/data', { bodyLimit: 256 * 1024 * 1024 }, async req => loadPackage(req.body, req.query, req.params.id));
+
   app.post<{ Body: CreateProblemRequest }>('/api/problems', async (req, reply) => {
     const summary = await registry.create(req.body ?? ({} as CreateProblemRequest));
     hub.broadcast({ type: 'problems:changed' });
@@ -249,6 +273,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   app.get<{ Params: { id: string } }>('/api/problems/:id', async (req) => registry.detail(req.params.id));
+  app.post<{ Params: { id: string }; Body: { lang: string; mode: 'whole' | 'sections' } }>('/api/problems/:id/statement-mode', async req => {
+    if (!idle()) throw new HttpError(409, 'busy', 'Wait for running tasks before converting the statement');
+    const ref = await registry.get(req.params.id);
+    await convertStatementMode(ref.dir, req.body?.lang, req.body?.mode);
+    hub.broadcast({ type: 'problem:changed', problemId: ref.id });
+    return registry.detail(ref.id);
+  });
   app.post<{ Params: { id: string } }>('/api/problems/:id/lemon-checker', async req => {
     const result = await createLemonChecker(deps.judge, req.params.id);
     hub.broadcast({ type: 'problem:changed', problemId: req.params.id });

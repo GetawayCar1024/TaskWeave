@@ -8,7 +8,7 @@ import { ArrowLeft, FileDown, Printer } from 'lucide-vue-next';
 import katex from 'katex';
 import { exportMarkdown } from '../lib/markdownExport';
 import { fitPrintMath } from '../lib/printMath';
-import { STATEMENT_SECTIONS, type ContestDetail, type ContestStatement, type StatementSection } from '@polyforge/shared';
+import { STATEMENT_SECTIONS, testsetsOf, type ContestDetail, type ContestStatement, type StatementSection } from '@polyforge/shared';
 import StatementDoc from '../components/StatementDoc.vue';
 import OiContestPreview from '../components/OiContestPreview.vue';
 import { api, errorMessage, rawUrl, token } from '../lib/api';
@@ -21,7 +21,7 @@ import { desktop } from '../lib/desktop';
  * The statements, or the tutorials, of a contest in one language as a separate
  * document, laid out as A4 pages for printing (browser print → PDF).
  */
-const props = defineProps<{ id: string }>();
+const props = defineProps<{ id: string; single?: boolean }>();
 const { t } = useI18n();
 const router = useRouter();
 const route = useRoute();
@@ -42,12 +42,29 @@ async function prepareDown() {
   if (preparingDown.value) return;
   preparingDown.value = true;
   try {
-    const job = await api.contestBatch(props.id, { action: 'generate' });
+    if (detail.value?.problems.some(p => p.summary?.dataOnly)) {
+      await api.downSamples(props.id, lang.value, props.single);
+      message.info(t('dataOnly.downSamples'));
+      return;
+    }
+    const job = props.single ? await api.generateTests(props.id) : await api.contestBatch(props.id, { action: 'generate' });
     const done = await waitJob(job, () => {});
     if (done.status !== 'done') throw new Error(done.error ?? 'Sample generation cancelled.');
-    const result = done.result as import('@polyforge/shared').ContestBatchResult;
-    const errors = result.items.filter(item => !item.ok);
-    if (errors.length) throw new Error(errors.map(item => `${item.index}: ${item.message}\n${(item.details ?? []).join('\n')}`).join('\n'));
+    if (props.single) {
+      const result = done.result as import('@polyforge/shared').TestsManifest;
+      if (!result.ok) throw new Error(result.errors.join('\n'));
+      const config = (await api.problem(props.id)).config;
+      for (const ts of config ? testsetsOf(config).filter(ts => ts.name !== 'tests' && ts.samples?.trim()) : []) {
+        const extra = await waitJob(await api.generateTests(props.id, ts.name));
+        if (extra.status !== 'done') throw new Error(extra.error ?? extra.status);
+        const manifest = extra.result as import('@polyforge/shared').TestsManifest;
+        if (!manifest.ok) throw new Error(manifest.errors.join('\n'));
+      }
+    } else {
+      const result = done.result as import('@polyforge/shared').ContestBatchResult;
+      const errors = result.items.filter(item => !item.ok);
+      if (errors.length) throw new Error(errors.map(item => `${item.index}: ${item.message}\n${(item.details ?? []).join('\n')}`).join('\n'));
+    }
     if (!alive) return;
     if (!await load()) return;
     await nextTick();
@@ -61,7 +78,7 @@ const doc = ref<'statements' | 'tutorials'>(route.query.doc === 'tutorials' ? 't
 watch(doc, (d) => router.replace({ query: { ...route.query, doc: d === 'tutorials' ? d : undefined } }));
 const pageBreaks = ref(true);
 /** Contents page: contest title and the list of problems, before the first problem. */
-const withToc = ref(localStorage.getItem('polyforge-print-toc') !== '0');
+const withToc = ref(!props.single && localStorage.getItem('polyforge-print-toc') !== '0');
 watch(withToc, (v) => localStorage.setItem('polyforge-print-toc', v ? '1' : '0'));
 
 const langs = computed(() => {
@@ -76,7 +93,11 @@ async function load() {
   const language = lang.value;
   loading.value = true;
   try {
-    const [d, s, defs, instructions] = await Promise.all([api.contest(props.id), api.contestStatements(props.id, language), getDefs(), api.contestNotes(props.id)]);
+    const [d, s, defs, instructions] = await Promise.all([
+      props.single ? api.problemDocument(props.id) : api.contest(props.id),
+      props.single ? api.problemStatements(props.id, language) : api.contestStatements(props.id, language),
+      getDefs(), props.single ? Promise.resolve({ content: '' }) : api.contestNotes(props.id, language),
+    ]);
     if (version !== loadVersion) return false;
     notes.value = instructions.content;
     detail.value = d;
@@ -164,7 +185,10 @@ const baseName = () => `${detail.value?.summary.name ?? props.id}-${doc.value}-$
 async function onExport(key: string) {
   exporting.value = true;
   try {
-    if (key === 'tex') await api.contestTex(props.id, lang.value, doc.value, pageBreaks.value, withToc.value);
+    if (key === 'tex') {
+      if (props.single) await api.problemTex(props.id, lang.value, doc.value);
+      else await api.contestTex(props.id, lang.value, doc.value, pageBreaks.value, withToc.value);
+    }
     else if (key === 'pdf') await savePdf();
     else if (key === 'markdown') await markdown();
     else await exportHtml();
@@ -282,8 +306,8 @@ onBeforeUnmount(() => {
 <template>
   <div class="print-page">
     <div class="toolbar no-print">
-      <n-button size="small" quaternary @click="router.push({ name: 'contest', params: { id } })">
-        <template #icon><arrow-left /></template>{{ t('nav.contest') }}
+      <n-button size="small" quaternary @click="router.push({ name: single ? 'problem' : 'contest', params: { id } })">
+        <template #icon><arrow-left /></template>{{ t(single ? 'packages.backToProblem' : 'nav.contest') }}
       </n-button>
       <n-radio-group v-model:value="lang" size="small" :disabled="preparingDown">
         <n-radio-button v-for="l in langs.length ? langs : [lang]" :key="l" :value="l">{{ l }}</n-radio-button>
@@ -310,9 +334,9 @@ onBeforeUnmount(() => {
     <n-alert v-if="preparingDown" type="info" class="no-print">{{ t('oiFeatures.preparingDown') }}</n-alert>
     <div v-if="loading && !statements.length" class="center no-print"><n-spin /></div>
     <n-alert v-else-if="!statements.length" type="info" :show-icon="false" class="no-print empty">{{ t('contest.noProblems') }}</n-alert>
-    <oi-contest-preview v-else-if="style === 'oi' && detail" :detail="detail" :statements="statements" :lang="lang" :doc="doc" :notes="notes" :macros="macros" :toc="withToc" :loading="loading" :preparing-down="preparingDown" :down-request="downRequest" @prepare-down="prepareDown" />
+    <oi-contest-preview v-else-if="style === 'oi' && detail" :single="single" :detail="detail" :statements="statements" :lang="lang" :doc="doc" :notes="notes" :macros="macros" :toc="withToc" :loading="loading" :preparing-down="preparingDown" :down-request="downRequest" @prepare-down="prepareDown" />
     <div v-else class="sheet" :class="{ breaks: pageBreaks, 'with-toc': withToc }">
-      <h1 class="contest-title">{{ docTitle }}</h1>
+      <h1 v-if="!single" class="contest-title">{{ docTitle }}</h1>
       <section v-if="withToc && shown.length" class="toc">
         <table>
           <thead>
@@ -347,13 +371,13 @@ onBeforeUnmount(() => {
         <statement-doc
           v-if="doc === 'statements'"
           :lang="lang"
-          :index="r.s.index"
+          :index="single ? undefined : r.s.index"
           :title="r.s.title"
           :limits="r.s"
           :sections="r.sections"
           :samples="r.s.samples"
         />
-        <statement-doc v-else :tutorial-suffix="false" :lang="lang" :index="r.s.index" :title="r.s.title" :sections="r.sections" :samples="[]" mode="tutorial" />
+        <statement-doc v-else :tutorial-suffix="false" :lang="lang" :index="single ? undefined : r.s.index" :title="r.s.title" :sections="r.sections" :samples="[]" mode="tutorial" />
       </section>
     </div>
   </div>

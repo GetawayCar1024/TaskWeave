@@ -1,4 +1,54 @@
 {
+  "dataOnly": {
+    "title": "纯数据模式",
+    "authoringMode": "造题模式",
+    "full": "完整造题（推荐）",
+    "warning": "不推荐使用纯数据模式造题：此模式仅管理输入、答案、分数和样例，可导出数据与选手样例包。补全题面、validator、checker 和标程后才能启用评测、对拍、Polygon 同步等完整功能。",
+    "refresh": "刷新数据",
+    "completeHint": "可以在左侧新建题面、validator.cpp 和 solutions/std.cpp，在信息面板中登记程序角色并选择 checker。保存后启用完整造题。",
+    "missing": "尚未补全：",
+    "enable": "启用完整造题",
+    "enabled": "已启用完整造题模式",
+    "downSamples": "纯数据题目的 down.zip 包含已设置的样例文件，不包含题面 PDF。",
+    "lemonHint": "纯数据题目默认使用 LemonLime 自带的逐行比较（忽略多余空格和制表符），无需 checker 源码。该比较器也会忽略行内多余空白。建议补全造题文件后使用完整模式。"
+  },
+  "statementMode": {
+    "title": "题面编写方式",
+    "sections": "分段编写",
+    "whole": "整体编写（statement.tex）",
+    "toWhole": "合并为整体题面",
+    "toSections": "转为分段题面",
+    "lossWarning": "合并后保留所有正文内容及可读的章节标题，但会丢失原始分段信息。以后转回分段时，全部内容会放入 legend。题解和 OI 专用文件单独保留。是否继续？",
+    "splitHint": "整体内容将全部放入 legend.tex，其他正文段落为空。你可以随后手动拆分。同步到 Polygon 时也会自动执行此转换。"
+  },
+  "packages": {
+    "importLocal": "导入本地包",
+    "importData": "导入数据",
+    "exportProblem": "导出单题",
+    "format": "格式",
+    "luogu-data": "洛谷数据包（仅数据）",
+    "hydro-data": "Hydro 数据包（仅数据）",
+    "hydro-problem": "Hydro 题目包（整题）",
+    "wholeHint": "导入题面、多语言、样例、数据、分数和程序配置。额外文件保留在“其他文件”中；缺少造题文件时以纯数据模式打开。",
+    "dataHint": "仅导入 .in/.out 或 .in/.ans 及计分配置。配置文件与多余文件保留在“其他文件”中。",
+    "file": "ZIP 文件",
+    "choose": "选择 ZIP…",
+    "tooLarge": "ZIP 文件不能超过 256 MiB。",
+    "noHydroProblem": "包中没有 problem.yaml，请确认选择了 Hydro 整题包。",
+    "problem": "包中的题目",
+    "testset": "目标测试集",
+    "replaceData": "将替换目标测试集的数据与计分配置，不改变题面和程序。原始数据文件保留，旧 problem.toml 备份到 .polyforge/import-backups。",
+    "imported": "已导入 {n} 个测试点，保留 {extras} 个额外文件",
+    "luoguExport": "洛谷 data.zip",
+    "luoguHint": "每道题导出 data.zip，根目录包含全部选中数据、config.yml 和 score.txt。上传洛谷后，需要把 score.txt 粘贴到整题计分脚本中；不会自动安装脚本。",
+    "documents": "题面 / 题解（PDF、HTML、Markdown、TeX）",
+    "backToProblem": "返回题目",
+    "answers": "答案来源",
+    "providedAnswers": "使用已有 .out / .ans",
+    "generatedAnswers": "使用标程生成",
+    "answer": "参考答案（允许为空）",
+    "unresolvedScoring": "原包包含当前子任务模型不能表达的计分脚本或规则。原文件已保留；请编辑并保存子任务计分配置后再评测或导出。"
+  },
   "oiFeatures": {
     "convertChecker": "从普通检查器转换",
     "saveCheckerFirst": "请先保存检查器源码和题目信息。",
@@ -427,6 +477,7 @@
     "noTutorial": "{lang} 还没有题解，点击创建"
   },
   "import": {
+    "credentialsRequired": "请先在设置 → Polygon 中填写 API key 与 secret。",
     "title": "从 Polygon 导入",
     "search": "搜索名称、ID 或作者…",
     "none": "没有匹配的题目",
@@ -664,6 +715,9 @@
     }
   },
   "contest": {
+    "notesDefault": "通用（旧版兼容）",
+    "notesLanguage": "注意事项语言",
+    "notesLanguageHelp": "每种语言保存在 notes.<语言>.tex。导出时使用对应语言；不存在时回退到通用 notes.tex。选择新语言可创建独立文件。",
     "filesPreviewLangHelp": "用于宏定义与注意事项模板，与整场文档生成语言独立。",
     "filesSnapshotLangHelp": "预览使用生成文件的语言，宏定义随文件语言展开。",
     "filesPreviewLang": "预览语言",

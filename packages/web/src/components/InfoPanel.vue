@@ -36,6 +36,14 @@ const streamOptions = (std: 'stdin' | 'stdout', cur: string) => [
   ...(cur && cur !== std ? [{ label: cur, value: cur }] : []),
 ];
 const cfg = computed(() => props.ws.state.detail?.config ?? null);
+const completion = computed(() => {
+  const status = props.ws.state.detail?.summary.status;
+  return ['statement', 'validator', 'checker', 'std'].filter(key => !status?.[key as 'statement' | 'validator' | 'checker' | 'std']);
+});
+async function completeProblem() {
+  try { await props.ws.patch({ dataOnly: false }); message.success(t('dataOnly.enabled')); }
+  catch (e) { message.error(errorMessage(e)); }
+}
 
 const form = reactive({
   titleZh: '',
@@ -177,6 +185,11 @@ const activeInfo = computed(() => {
 <template>
   <n-scrollbar style="height: 100%">
     <div class="panel">
+      <n-card v-if="cfg?.problem.data_only" size="small" :title="t('dataOnly.title')">
+        <p class="small">{{ t('dataOnly.completeHint') }}</p>
+        <p v-if="completion.length" class="small">{{ t('dataOnly.missing') }} {{ completion.map(key => t(`check.${key}`)).join(' / ') }}</p>
+        <n-button size="small" type="primary" :disabled="!!completion.length || dirty || ws.hasDirty.value" @click="completeProblem">{{ t('dataOnly.enable') }}</n-button>
+      </n-card>
       <n-card v-if="activeInfo" size="small" :title="t('info.file')">
         <n-descriptions :column="1" size="small" label-placement="left">
           <n-descriptions-item :label="t('info.path')"><span class="mono small">{{ activeInfo.path }}</span></n-descriptions-item>

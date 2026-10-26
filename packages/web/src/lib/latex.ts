@@ -449,7 +449,7 @@ class Parser {
       case 'href': {
         const u = (this.readGroupRaw() ?? '').replace(/\\([%#&_{}])/g, '$1');
         const text = this.readGroupRaw() ?? u;
-        return `<a href="${esc(safeUrl(u))}" target="_blank" rel="noreferrer">${this.sub(text)}</a>`;
+        return `<a href="${esc(u.startsWith('file://') ? this.opts.imageUrl(u.slice(7)) : safeUrl(u))}" target="_blank" rel="noreferrer">${this.sub(text)}</a>`;
       }
       case 'includegraphics': {
         const opt = this.readOptRaw() ?? '';

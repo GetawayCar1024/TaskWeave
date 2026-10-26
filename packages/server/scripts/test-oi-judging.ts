@@ -138,6 +138,7 @@ test('grader builds, cache invalidation, real judging, Polygon rejection and com
     const lemonBuild=await preflightLemonChecker(judge,lemonCtx,'B');
     await fs.appendFile(path.join(global.sharedDir,'lemon','testlib.h'),'\n// updated header\n');
     const lemonRebuild=await preflightLemonChecker(judge,lemonCtx,'B');
+    assert.ok(lemonBuild && lemonRebuild);
     assert.notEqual(lemonBuild.hash,lemonRebuild.hash);
     assert.equal(lemonBuild.argv[0],lemonRebuild.argv[0]);
     const result=await runContestBatch({judge,contests,sync},contest.id,{action:'export',exportFormat:'lemonlime'},job);
@@ -156,7 +157,8 @@ test('grader builds, cache invalidation, real judging, Polygon rejection and com
     for(let i=0;i<task.graderFilesPath.length;i++) await fs.writeFile(path.join(runDir,task.graderFilesName[i]),archive.get('data/'+task.graderFilesPath[i])!);
     await fs.copyFile(path.join(p.dir,'solutions/std.cpp'),path.join(runDir,'grader-demo.cpp'));
     const exe=path.join(runDir,process.platform==='win32'?'grader-demo.exe':'grader-demo');
-    execFileSync('g++',['-std=c++17','-o',exe,'grader-demo.cpp',...task.graderFilesName],{cwd:runDir,windowsHide:true});
+    // Like PolyForge's Windows compiler preset, make the standalone fixture independent of MinGW runtime DLLs.
+    execFileSync('g++',['-std=c++17',...(process.platform === 'win32' ? ['-static'] : []),'-o',exe,'grader-demo.cpp',...task.graderFilesName],{cwd:runDir,windowsHide:true});
     assert.equal(execFileSync(exe,[],{input:'2 3\n',windowsHide:true}).toString().trim(),'5');
     // The packaged checker speaks Lemon's six-argument protocol and rejects wrong output.
     const checkerExe=path.join(runDir,path.basename(task.specialJudge));

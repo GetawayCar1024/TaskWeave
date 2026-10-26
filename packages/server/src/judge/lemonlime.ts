@@ -38,7 +38,10 @@ export function lemonTestCases(config: ProblemToml, indices: number[], folder: s
   const result: LemonTestCase[] = [];
   const make = (tests: number[], score: number, dependencies: number[] = []) => {
     if (!Number.isSafeInteger(score) || score < 0 || score > 2147483647) fail('LemonLime requires nonnegative integer scores (up to 2147483647).');
-    result.push({ fullScore: score, timeLimit: config.problem.time_limit, memoryLimit: config.problem.memory_limit,
+    const timeLimit = ts.cases?.[tests[0]]?.time_limit ?? config.problem.time_limit;
+    const memoryLimit = ts.cases?.[tests[0]]?.memory_limit ?? config.problem.memory_limit;
+    if (tests.some(i => (ts.cases?.[i]?.time_limit ?? config.problem.time_limit) !== timeLimit || (ts.cases?.[i]?.memory_limit ?? config.problem.memory_limit) !== memoryLimit)) fail(`${where}LemonLime bundled tests must use the same time and memory limits.`);
+    result.push({ fullScore: score, timeLimit, memoryLimit,
       inputFiles: [...tests.map(i => `${folder}/${testFileStem(testset, i)}.in`), ...dependencies.map(i => `${i}_lemon_SUbtaskDEPENDENCE_fLAg`)],
       outputFiles: tests.map(i => `${folder}/${testFileStem(testset, i)}.ans`) });
   };
@@ -89,9 +92,12 @@ export async function preflightLemonChecker(judge: Judge, ctx: ProblemCtx, index
     if (file && file !== standard && (!/^[\w.-]+$/.test(file) || file === '.' || file === '..')) fail(`${index}: input/output file names must be simple file names for LemonLime.`);
   }
   const source = config.lemon_checker?.source;
+  if (p.data_only && !source) return null;
   if (!source) fail(`${index}: no Lemon checker configured. Select a Testlib for Lemons source in Information > Lemon checker.`);
   safeJoin(ctx.ref.dir, source!);
-  const compiled = await judge.compile(ctx, source!, false);
+  const compiled = p.data_only
+    ? await judge.compiler.compile(ctx.ref.dir, source!, judge.langOf(config, source!), ctx.buildRoot)
+    : await judge.compile(ctx, source!, false);
   if (!compiled.program) fail(`${index}: Lemon checker compilation failed.\n${compiled.result.log}`);
   const checker = compiled.program!;
   if (checker.argv.length !== 1 || !checker.build) fail(`${index}: LemonLime requires a compiled native checker executable.`);
@@ -156,6 +162,7 @@ export function exportTestsets(ctx: ProblemCtx, index: string, wanted?: string[]
 export async function exportedTests(judge: Judge, ctx: ProblemCtx, testsets: string[], index: string, job: JobCtx) {
   const out: { name: string; tests: number[] }[] = [];
   for (const name of testsets) {
+    if (testsetOf(ctx.config, name)?.unresolvedScoring) fail(`${index}: imported scoring is not representable. Edit the subtask configuration before exporting.`);
     const manifest = await generateTests(judge, ctx, job, name);
     if (!manifest.ok) fail(`${index}: test generation failed${name === DEFAULT_TESTSET ? '' : ` (${name})`}.\n${manifest.errors.join('\n')}`);
     if (!manifest.tests.length) fail(`${index}: ${name === DEFAULT_TESTSET ? '' : `${name}: `}No tests to export.`);
@@ -172,7 +179,7 @@ export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: stri
   let count = 0;
   for (const { name, tests } of await exportedTests(judge, ctx, testsets, index, job)) {
     testCases.push(...lemonTestCases(config, tests, folder, name, testCases.length));
-    if (!count) await checkLemonProtocol(judge, ctx, checker, tests[0], index, job, name);
+    if (!count && checker) await checkLemonProtocol(judge, ctx, checker, tests[0], index, job, name);
     count += tests.length;
     for (const test of tests) {
       job.signal.throwIfAborted();
@@ -183,12 +190,14 @@ export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: stri
     }
   }
   const checkerName = `${folder}/checker${process.platform === 'win32' ? '.exe' : ''}`;
-  await withBuildLocks([checker.build!.dir], async () => {
-    await verifyBuild(checker.build);
-    zip.add(`data/${checkerName}`, await fs.readFile(checker.argv[0]), true);
-  }, 'read');
-  // Keep sources to allow rebuilding checkers when moving to another platform.
-  await addCheckerSources(judge, ctx, checker, folder, zip);
+  if (checker) {
+    await withBuildLocks([checker.build!.dir], async () => {
+      await verifyBuild(checker.build);
+      zip.add(`data/${checkerName}`, await fs.readFile(checker.argv[0]), true);
+    }, 'read');
+    // Keep sources to allow rebuilding checkers when moving to another platform.
+    await addCheckerSources(judge, ctx, checker, folder, zip);
+  }
   const main = judge.mainSolution(config) ?? `${p.name}.cpp`;
   const compile = pickLanguage((await judge.global.readLanguages()).languages, main, judge.langOf(config, main))?.lang.compile ?? '';
   const standard = compile.match(/-std=(?:c|gnu)\+\+(98|03|11|14|17|20)\b/)?.[1];
@@ -200,8 +209,8 @@ export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: stri
     outputFileName: p.output === 'stdout' ? `${p.name}.out` : p.output,
     standardInputCheck: !p.input || p.input === 'stdin', standardOutputCheck: !p.output || p.output === 'stdout',
     taskType: mode === 'grader' ? 3 : 0, subFolderCheck: true,
-    comparisonMode: 4, diffArguments: '--ignore-space-change --text --brief', realPrecision: 6,
-    specialJudge: checkerName, compilerConfiguration: { 'g++': cppConfiguration }, answerFileExtension: 'ans', testCases,
+    comparisonMode: checker ? 4 : 1, diffArguments: '--ignore-space-change --text --brief', realPrecision: 6,
+    specialJudge: checker ? checkerName : '', compilerConfiguration: { 'g++': cppConfiguration }, answerFileExtension: 'ans', testCases,
     ...(mode === 'grader' ? { sourceFilesPath: [`${p.name}.cpp`], sourceFilesName: [`${p.name}.cpp`], graderFilesPath: [] as string[], graderFilesName: [] as string[] } : {}),
   };
   if (mode === 'grader') {

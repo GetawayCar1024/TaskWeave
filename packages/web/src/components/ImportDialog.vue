@@ -7,7 +7,7 @@ import { api, errorMessage } from '../lib/api';
 import { waitJob } from '../lib/jobs';
 import ToolWindow from './ToolWindow.vue';
 
-const props = defineProps<{ show: boolean; roots: string[] }>();
+const props = defineProps<{ show: boolean; roots: string[]; polygonReady: boolean }>();
 const emit = defineEmits<{ 'update:show': [boolean]; imported: [ProblemSummary] }>();
 const { t } = useI18n();
 
@@ -24,7 +24,7 @@ const error = ref('');
 watch(
   () => props.show,
   async (s) => {
-    if (!s) return;
+    if (!s || !props.polygonReady || !props.roots.length) return;
     polygonId.value = null;
     name.value = '';
     root.value = props.roots[0] ?? '';
@@ -51,13 +51,14 @@ function pick(p: PolygonProblem) {
 }
 
 const nameOk = computed(() => !name.value || PROBLEM_NAME_RE.test(name.value));
+const canSubmit = computed(() => !busy.value && props.polygonReady && props.roots.includes(root.value) && !!polygonId.value && nameOk.value);
 
 async function submit() {
-  if (!polygonId.value || !nameOk.value) return;
+  if (!canSubmit.value) return;
   busy.value = true;
   error.value = '';
   try {
-    const started = await api.importPolygon({ polygonId: polygonId.value, name: name.value || undefined, root: root.value || undefined });
+    const started = await api.importPolygon({ polygonId: polygonId.value!, name: name.value || undefined, root: root.value || undefined });
     job.value = started;
     const done = await waitJob(started, (j) => (job.value = j));
     job.value = done;
@@ -107,7 +108,7 @@ async function submit() {
     </n-form>
     <template #footer>
       <n-button @click="emit('update:show', false)">{{ t('common.cancel') }}</n-button>
-      <n-button type="primary" :disabled="!polygonId || !nameOk" :loading="busy" @click="submit">{{ t('import.run') }}</n-button>
+      <n-button type="primary" :disabled="!canSubmit" :loading="busy" @click="submit">{{ t('import.run') }}</n-button>
     </template>
   </tool-window>
 </template>

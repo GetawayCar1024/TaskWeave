@@ -108,7 +108,7 @@ export function cnoiProblemElement(s: ContestStatement, doc: 'statements' | 'tut
   const labels: Record<string, string> = zh
     ? { legend: '题目描述', input: '输入格式', output: '输出格式', interaction: '交互', scoring: '评分', constraints: '数据范围', notes: '说明' }
     : { legend: 'Description', input: 'Input', output: 'Output', interaction: 'Interaction', scoring: 'Scoring', constraints: 'Constraints', notes: 'Notes' };
-  section(labels.legend, s.sections.legend ?? '', true);
+  section(s.statementMode === 'whole' ? '' : labels.legend, s.sections.legend ?? '', true);
   for (const key of ['input', 'output', 'interaction']) section(labels[key], s.sections[key] ?? '');
   s.samples.forEach((sample, i) => {
     const number = sample.number ?? i + 1;

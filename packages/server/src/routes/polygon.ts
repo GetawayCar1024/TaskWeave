@@ -11,7 +11,11 @@ export function polygonRoutes(app: FastifyInstance, judge: Judge, sync: PolygonS
   type P = { Params: { id: string } };
 
   app.get('/api/secrets', async () => judge.global.maskedSecrets());
-  app.put<{ Body: SaveSecretsRequest }>('/api/secrets', async (req) => judge.global.saveSecrets(req.body ?? { polygon: {} }));
+  app.put<{ Body: SaveSecretsRequest }>('/api/secrets', async (req) => {
+    const result = await judge.global.saveSecrets(req.body ?? { polygon: {} });
+    hub.broadcast({ type: 'settings:changed' });
+    return result;
+  });
 
   app.post('/api/polygon/test', async () => sync.testConnection());
   app.get('/api/polygon/problems', async () => sync.listProblems());
@@ -53,6 +57,8 @@ export function polygonRoutes(app: FastifyInstance, judge: Judge, sync: PolygonS
   app.post<{ Body: ImportRequest }>('/api/problems/import/polygon', async (req) => {
     const body = req.body;
     if (!body || !Number.isInteger(body.polygonId)) throw new HttpError(400, 'bad_request', 'polygonId required');
+    judge.registry.requireRoot(body.root);
+    await sync.client();
     return jobs.start('polygon-import', '', async (job) => {
       const summary = await sync.importProblem(body, job);
       hub.broadcast({ type: 'problems:changed' });

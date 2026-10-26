@@ -12,7 +12,7 @@ import { Plus } from 'lucide-vue-next';
 import { loadSettings } from '../lib/settings';
 import { waitJob } from '../lib/jobs';
 
-const props = defineProps<{ show: boolean; mode: 'create' | 'import'; roots: string[]; problems: ProblemSummary[] }>();
+const props = defineProps<{ show: boolean; mode: 'create' | 'import'; roots: string[]; polygonReady: boolean; problems: ProblemSummary[] }>();
 const emit = defineEmits<{ 'update:show': [boolean]; created: [ContestSummary] }>();
 const { t, locale } = useI18n();
 const message = useMessage();
@@ -37,7 +37,7 @@ watch(
 );
 
 const nameValid = computed(() => PROBLEM_NAME_RE.test(form.name));
-const canSubmit = computed(() => nameValid.value && (props.mode === 'create' || (!!form.contestId && !!form.root.trim())));
+const canSubmit = computed(() => !busy.value && nameValid.value && props.roots.length > 0 && (props.mode === 'create' || (props.polygonReady && !!form.contestId && !!form.root.trim())));
 const pickedRoots = ref<string[]>([]);
 const rootOptions = computed(() => [...new Set([...props.roots, ...pickedRoots.value])].map((r) => ({ label: r, value: r })));
 function pickRoot(p: string) {

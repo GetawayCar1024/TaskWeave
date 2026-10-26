@@ -35,6 +35,9 @@ const tick = ref(0);
 const samples = ref<StatementSample[]>([]);
 
 const pathOf = (s: StatementSection) => `statement/${props.lang}/${s}.tex`;
+const wholePath = computed(() => `statement/${props.lang}/statement.tex`);
+const whole = computed(() => props.ws.files.value.some(f => f.path === wholePath.value));
+const wholeDisk = ref('');
 /** OI-only files (constraints.tex, samples/*.tex), by path. */
 const oiDisk = ref<Record<string, string>>({});
 const isOiFile = (p: string) => p === `statement/${props.lang}/constraints.tex` || (p.startsWith(`statement/${props.lang}/samples/`) && p.endsWith('.tex'));
@@ -48,7 +51,9 @@ async function loadDisk() {
     Promise.all(STATEMENT_SECTIONS.filter((s) => present.has(pathOf(s))).map(async (s) => [s, await read(pathOf(s))] as const)),
     Promise.all([...present].filter(isOiFile).map(async (p) => [p, await read(p)] as const)),
   ]);
+  const body = whole.value ? await read(wholePath.value) : '';
   if (request !== diskRequest) return;
+  wholeDisk.value = body ?? '';
   disk.value = Object.fromEntries(entries.filter(([, v]) => v !== undefined));
   oiDisk.value = Object.fromEntries(oiEntries.filter((e): e is readonly [string, string] => e[1] !== undefined));
 }
@@ -92,8 +97,10 @@ const rendered = computed(() => {
   const out: Partial<Record<StatementSection, string>> = {};
   const unknown = new Set<string>();
   for (const s of STATEMENT_SECTIONS) {
-    const tab = props.ws.state.tabs.find((x) => x.path === pathOf(s));
-    const src = tab ? tab.model.getValue() : disk.value[s];
+    if (whole.value && s !== 'legend' && s !== 'tutorial') continue;
+    const path = whole.value && s === 'legend' ? wholePath.value : pathOf(s);
+    const tab = props.ws.state.tabs.find((x) => x.path === path);
+    const src = tab ? tab.model.getValue() : whole.value && s === 'legend' ? wholeDisk.value : disk.value[s];
     if (!src?.trim()) continue;
     const r = renderLatex(src, opts);
     out[s] = r.html;

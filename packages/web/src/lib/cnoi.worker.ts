@@ -23,6 +23,14 @@ async function fetchBytes(url: string) {
   if (!response.ok) throw new Error(`无法加载 OI 排版资源：${url} (${response.status})`);
   return new Uint8Array(await response.arrayBuffer());
 }
+async function fetchPackage(url: string) {
+  const bytes = await fetchBytes(url);
+  if (bytes[0] === 0x1f && bytes[1] === 0x8b) return bytes;
+  // Some static servers (including Vite) mark .tar.gz as Content-Encoding: gzip,
+  // so fetch has already decompressed it. The Typst package registry expects gzip.
+  const compressed = new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'));
+  return new Uint8Array(await new Response(compressed).arrayBuffer());
+}
 async function systemFonts(token: string) {
   const loaded: Uint8Array[] = [];
   missingFonts = [];
@@ -37,7 +45,7 @@ async function systemFonts(token: string) {
 async function init(token: string) {
   const access = new MemoryAccessModel();
   const registry = new FetchPackageRegistry(access);
-  const packages = new Map(await Promise.all(['mitex-0.2.5', 'oxifmt-1.0.0'].map(async name => [name, await fetchBytes(`/cnoi/packages/${name}.tar.gz`)] as const)));
+  const packages = new Map(await Promise.all(['mitex-0.2.5', 'oxifmt-1.0.0'].map(async name => [name, await fetchPackage(`/cnoi/packages/${name}.tar.gz`)] as const)));
   // Resolve exclusively from bundled packages, even on the first offline run.
   registry.pullPackageData = spec => packages.get(`${spec.name}-${spec.version}`);
   const fonts = [...await Promise.all(fontNames.map(n => fetchBytes(`/cnoi/fonts/${n}`))), ...await systemFonts(token)];

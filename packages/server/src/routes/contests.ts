@@ -5,7 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { commonContestLanguages, CONTEST_ACTIONS, type ContestBatchRequest, type ContestImportRequest, type ContestPullRequest, type ContestRepullRequest, type CreateContestRequest, type UpdateContestRequest } from '@polyforge/shared';
 import { contestPull, contestPullPreview, contestRepull, contestSyncStatus } from '../polygon/contestSync.js';
 import type { JobManager } from '../jobs.js';
-import { contestExportDir, contestStatements, importContest, runContestBatch, type ContestDeps } from '../judge/contest.js';
+import { contestExportDir, contestStatements, importContest, runContestBatch, singleProblemDocument, type ContestDeps } from '../judge/contest.js';
 import { contestTex } from '../judge/statementTex.js';
 import { contestDown } from '../judge/down.js';
 import { atomicWrite, exists, HttpError, validateFileName } from '../util/fs.js';
@@ -20,6 +20,24 @@ export const contestJobOwner = (id: string) => `contest:${id}`;
 export function contestRoutes(app: FastifyInstance, deps: ContestDeps & { aiRunning?: (owner: string) => boolean }, jobs: JobManager, hub: WsHub) {
   const { contests, judge } = deps;
   type P = { Params: { id: string } };
+
+  app.get<P>('/api/problems/:id/document', async req => (await singleProblemDocument(judge, req.params.id)).detail);
+  app.get<P & { Querystring: { lang?: string } }>('/api/problems/:id/statements', async req => {
+    const lang = req.query.lang ?? 'en';
+    if (!/^[a-z]{2,8}$/.test(lang)) throw new HttpError(400, 'bad_lang', 'Invalid language');
+    return contestStatements(judge, contests, req.params.id, lang, true);
+  });
+  app.get<P & { Querystring: { lang?: string; doc?: string } }>('/api/problems/:id/tex', async (req, reply) => {
+    const lang = req.query.lang ?? 'en';
+    if (!/^[a-z]{2,8}$/.test(lang)) throw new HttpError(400, 'bad_lang', 'Invalid language');
+    const doc = req.query.doc === 'tutorials' ? 'tutorials' : 'statements';
+    const r = await contestTex(judge, contests, req.params.id, lang, doc, false, false, true);
+    return reply.type(r.ext === 'zip' ? 'application/zip' : 'application/x-tex; charset=utf-8').header('content-disposition', `attachment; filename="${req.params.id}-${doc}-${lang}.${r.ext}"`).send(r.data);
+  });
+  app.post<P & { Body: Parameters<typeof contestDown>[3] }>('/api/problems/:id/down', async (req, reply) => {
+    const data = await contestDown(judge, contests, req.params.id, req.body, true);
+    return reply.type('application/zip').header('content-disposition', 'attachment; filename="down.zip"').send(data);
+  });
 
   app.get('/api/contests', async () => contests.list());
 
@@ -70,11 +88,11 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps & { aiRunn
   app.delete<FP>('/api/contests/:id/file', async req => {
     const ref = await contests.get(req.params.id);
     const abs = await contestFile(ref.dir, req.query.path);
-    if (req.query.path === 'notes.tex') await atomicWrite(abs, '');
+    if (/^notes(?:\.[a-z]{2,8})?\.tex$/.test(req.query.path)) await atomicWrite(abs, '');
     else await fsp.unlink(abs);
     return { ok: true };
   });
-  app.get<P>('/api/contests/:id/notes', async req => ({ content: await contestNotes((await contests.get(req.params.id)).dir) }));
+  app.get<P & { Querystring: { lang?: string } }>('/api/contests/:id/notes', async req => ({ content: await contestNotes((await contests.get(req.params.id)).dir, req.query.lang) }));
   // Editable snapshot: each source section is included, with local copies of images.
   app.post<P & { Body: { lang: string; doc: 'statements' | 'tutorials' } }>('/api/contests/:id/generate-document', async req => {
     const { lang, doc } = req.body ?? {};
@@ -106,7 +124,7 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps & { aiRunn
       }
       return text;
     };
-    const notes = await contestNotes(ref.dir);
+    const notes = await contestNotes(ref.dir, lang);
     if (notes.trim()) out.push(`\\subsection*{${lang === 'zh' ? '注意事项' : 'Instructions'}}`, await copyImages(notes, '', 'contest'));
     const labels: Record<string, string> = lang === 'zh' ? { legend: '题目描述', input: '输入格式', output: '输出格式', interaction: '交互', scoring: '评分', notes: '说明', tutorial: '题解' } : { legend: 'Description', input: 'Input', output: 'Output', interaction: 'Interaction', scoring: 'Scoring', notes: 'Notes', tutorial: 'Tutorial' };
     for (const s of statements) {
@@ -124,7 +142,8 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps & { aiRunn
         if (!source.trim()) continue;
         const problem = await judge.registry.get(s.problem);
         const text = await copyImages(source, path.join(problem.dir, 'statement', 'images'), s.problem);
-        out.push(`\\subsubsection*{${labels[key] ?? key}}`, text);
+        if (s.statementMode !== 'whole' || key !== 'legend') out.push(`\\subsubsection*{${labels[key] ?? key}}`);
+        out.push(text);
       }
     }
     const rel = `${folder}/${doc}.tex`;
@@ -248,6 +267,8 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps & { aiRunn
   app.post<{ Body: ContestImportRequest }>('/api/contests/import/polygon', async (req) => {
     const body = req.body;
     if (!body || !Number.isInteger(body.contestId) || !body.name) throw new HttpError(400, 'bad_request', 'contestId and name required');
+    judge.registry.requireRoot();
+    await deps.sync.client();
     return jobs.start('contest-import', '', async (job) => {
       try { return await importContest(deps, body, job); }
       finally {

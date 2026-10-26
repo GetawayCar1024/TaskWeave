@@ -52,11 +52,67 @@ export function requireTestset(ctx: ProblemCtx, name = DEFAULT_TESTSET): Testset
 }
 
 export async function readManifest(ctx: ProblemCtx, ts?: string): Promise<Manifest | null> {
+  if (providedAnswers(ctx, requireTestset(ctx, ts))) return prepareProvidedTests(ctx, ts);
+  return readStoredManifest(ctx, ts);
+}
+
+async function readStoredManifest(ctx: ProblemCtx, ts?: string): Promise<Manifest | null> {
   try {
     return JSON.parse(await fsp.readFile(manifestPath(ctx, ts), 'utf8')) as Manifest;
   } catch {
     return null;
   }
+}
+
+const providedAnswers = (ctx: ProblemCtx, ts: TestsetConfig) => ctx.config.problem.data_only || ts.answers === 'provided';
+
+/** Rebuild disposable caches from durable input/answer pairs, without a compiler or main solution. */
+export async function prepareProvidedTests(ctx: ProblemCtx, testset = DEFAULT_TESTSET): Promise<Manifest> {
+  const ts = requireTestset(ctx, testset);
+  const errors: string[] = [];
+  const planned = await plan(ctx, errors, ts);
+  const layout = groupLayout(ts, !!ctx.config.tests.points);
+  const samples = new Set(parseIndexList(ts.samples ?? ''));
+  const large = new Set(parseIndexList(ts.largeSamples ?? ''));
+  const tests: Entry[] = [];
+  await fsp.mkdir(testsDir(ctx, testset), { recursive: true });
+  for (const p of planned) {
+    const entry: Entry = { index: p.index, origin: p.origin, source: p.source, valid: null,
+      timeLimit: ts.cases?.[p.index]?.time_limit, memoryLimit: ts.cases?.[p.index]?.memory_limit,
+      group: layout.mapping[p.index], points: layout.points[p.index], sample: samples.has(p.index) || undefined,
+      largeSample: (samples.has(p.index) && large.has(p.index)) || undefined };
+    tests.push(entry);
+    if (!p.manualPath) { entry.error = 'Provided answers require manual .in/.out or .in/.ans pairs; generators are unavailable.'; continue; }
+    const stem = p.manualPath.replace(/\.in$/i, '');
+    const ans = await exists(stem + '.ans') ? stem + '.ans' : stem + '.out';
+    try {
+      const input = await fsp.readFile(p.manualPath), answer = await fsp.readFile(ans);
+      entry.inputSize = input.length; entry.answerSize = answer.length;
+      entry.inputHash = sha1(input); entry.answerKey = sha1(answer);
+      const copy = async (file: string, bytes: Buffer) => {
+        const old = await fsp.readFile(file).catch(() => null);
+        if (!old?.equals(bytes)) await atomicWrite(file, bytes);
+      };
+      await copy(inputPath(ctx, p.index, testset), input);
+      await copy(answerPath(ctx, p.index, testset), answer);
+      if (entry.sample) {
+        const sp = sampleStatementPaths(p, testset);
+        if (await exists(safeJoin(ctx.ref.dir, sp.input))) entry.statementInput = sp.input;
+        if (await exists(safeJoin(ctx.ref.dir, sp.output))) entry.statementOutput = sp.output;
+      }
+    } catch (e) {
+      entry.error = `Missing or unreadable input/answer pair: ${p.source} (${(e as Error).message})`;
+      await fsp.rm(inputPath(ctx, p.index, testset), { force: true });
+      await fsp.rm(answerPath(ctx, p.index, testset), { force: true });
+    }
+  }
+  for (const t of tests) if (t.error) errors.push(`Test ${t.index}: ${t.error}`);
+  for (const i of samples) if (!tests.some(t => t.index === i)) errors.push(`Sample test ${i} does not exist (${testset}).`);
+  const previous = await readStoredManifest(ctx, testset);
+  const manifest: Manifest = { testset, generatedAt: new Date().toISOString(), ok: !errors.length, tests, errors, hasOverview: false };
+  if (previous && JSON.stringify({ ...previous, generatedAt: '' }) === JSON.stringify({ ...manifest, generatedAt: '' })) return previous;
+  await atomicWrite(manifestPath(ctx, testset), JSON.stringify(manifest, null, 1));
+  return manifest;
 }
 
 /** Strip cache keys before sending to the client. */
@@ -90,6 +146,7 @@ async function plan(ctx: ProblemCtx, errors: string[], ts: TestsetConfig): Promi
   const manualDir = safeJoin(ctx.ref.dir, manualRel);
   const manual = (await fsp.readdir(manualDir, { withFileTypes: true }).catch(() => []))
     .filter((e) => e.isFile() && !e.name.startsWith('.') && !/\.(ans|out)$/i.test(e.name) && !/\.statement\.in$/i.test(e.name))
+    .filter((e) => !providedAnswers(ctx, ts) || /\.in$/i.test(e.name))
     .map((e) => e.name)
     .sort(natural);
   for (const name of manual) {
@@ -136,6 +193,12 @@ async function plan(ctx: ProblemCtx, errors: string[], ts: TestsetConfig): Promi
  * after a small change only redoes what changed.
  */
 export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, testset = DEFAULT_TESTSET): Promise<TestsManifest> {
+  if (providedAnswers(ctx, requireTestset(ctx, testset))) {
+    job.signal.throwIfAborted();
+    const manifest = await prepareProvidedTests(ctx, testset);
+    job.progress(manifest.tests.length, manifest.tests.length, 'loaded provided answers');
+    return publicManifest(manifest);
+  }
   const errors: string[] = [];
   const ts = requireTestset(ctx, testset);
   const dir = testsDir(ctx, ts.name);
@@ -194,6 +257,8 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
       statementInput: await has(sp?.input),
       statementOutput: await has(sp?.output),
       index: p.index,
+      timeLimit: ts.cases?.[p.index]?.time_limit,
+      memoryLimit: ts.cases?.[p.index]?.memory_limit,
       origin: p.origin,
       source: p.source,
       line: p.line,
@@ -349,7 +414,7 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
     tick(`validate ${p.index}`);
 
     if (main && e.valid !== false && !(ctx.config.problem.interactive && !interactor)) {
-      const lim = ctx.limits;
+      const lim = { ...ctx.limits, timeLimitMs: e.timeLimit ?? ctx.limits.timeLimitMs, memoryLimitMb: e.memoryLimit ?? ctx.limits.memoryLimitMb };
       const key = sha1(JSON.stringify([e.inputHash, main.hash, interactor?.hash ?? '', lim]));
       if (old?.answerKey === key && (await exists(ans))) {
         e.answerKey = key;
@@ -457,9 +522,10 @@ function remapSamples(ts: TestsetConfig, before: Planned[], after: Planned[]): {
 export async function addManualTest(
   ctx: ProblemCtx,
   input: string,
-  opts: { sample?: boolean; testset?: string; statementInput?: string; statementOutput?: string },
+  opts: { sample?: boolean; testset?: string; answer?: string; statementInput?: string; statementOutput?: string },
 ): Promise<{ index: number; path: string; testset: string; samples?: string; largeSamples?: string }> {
   const ts = requireTestset(ctx, opts.testset);
+  if (providedAnswers(ctx, ts) && typeof opts.answer !== 'string') throw new HttpError(400, 'missing_answer', 'An answer is required when using provided test data.');
   const planned = await plan(ctx, [], ts);
   const explicit = new Set<number>();
   for (const p of planned) {
@@ -478,6 +544,7 @@ export async function addManualTest(
   const text = input.replace(/\r\n/g, '\n');
   await fsp.mkdir(path.dirname(safeJoin(ctx.ref.dir, rel)), { recursive: true });
   await atomicWrite(safeJoin(ctx.ref.dir, rel), text.endsWith('\n') || !text ? text : `${text}\n`);
+  if (opts.answer !== undefined) await atomicWrite(safeJoin(ctx.ref.dir, rel.replace(/\.in$/, '.ans')), opts.answer);
   if (opts.sample) {
     const sp = statementPaths(rel);
     for (const [text, file] of [
@@ -558,7 +625,8 @@ export async function removeTest(
   let result: { kind: 'manual' | 'script'; removed: number[] };
   if (p.origin === 'manual' && p.manualPath) {
     const sp = statementPaths(p.source);
-    for (const rel of [p.source, sp.input, sp.output]) await fsp.rm(safeJoin(ctx.ref.dir, rel), { force: true });
+    const answers = providedAnswers(ctx, ts) ? [p.source.replace(/\.in$/i, '.ans'), p.source.replace(/\.in$/i, '.out')] : [];
+    for (const rel of [p.source, sp.input, sp.output, ...answers]) await fsp.rm(safeJoin(ctx.ref.dir, rel), { force: true });
     result = { kind: 'manual', removed: [index] };
   } else {
     if (!ts.script || !p.cmd) throw new HttpError(400, 'not_removable', `Test ${index} has no source to remove`);

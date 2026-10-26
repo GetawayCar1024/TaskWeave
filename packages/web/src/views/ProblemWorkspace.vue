@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { serverText } from '../lib/serverText';
 import { registerExitGuard, exitApproved } from '../lib/exitGuards';
 import { unsavedChoice } from '../lib/confirmUnsaved';
 import { useI18n } from 'vue-i18n';
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
-import { NButton, NDropdown, NInput, NResult, NSelect, NScrollbar, NSpin, NSplit, NTabPane, NTabs, NTooltip, useDialog, useMessage } from 'naive-ui';
+import { NAlert, NButton, NDropdown, NInput, NResult, NSelect, NScrollbar, NSpin, NSplit, NTabPane, NTabs, NTooltip, useDialog, useMessage } from 'naive-ui';
 import { isSourceFile, statementLanguages } from '@polyforge/shared';
 import DirPicker from '../components/DirPicker.vue';
 import { loadSettings } from '../lib/settings';
@@ -23,17 +22,17 @@ import LintDialog from '../components/LintDialog.vue';
 import ShortcutsDialog from '../components/ShortcutsDialog.vue';
 import StatusBar from '../components/StatusBar.vue';
 import StressDialog from '../components/StressDialog.vue';
-import { waitJob } from '../lib/jobs';
 import { confirmDeleteProblem } from '../lib/deleteProblem';
 import { ArrowLeft, ChevronDown, Command as CommandIcon, Trash2 } from 'lucide-vue-next';
 import { patchSettings } from '../lib/settings';
-import type { PackageResult } from '../lib/types';
 import { useAi } from '../lib/ai';
 import QuickOpen from '../components/QuickOpen.vue';
 import RunPanel from '../components/RunPanel.vue';
 import SelfTestPanel from '../components/SelfTestPanel.vue';
 import TestsPanel from '../components/TestsPanel.vue';
 import ToolWindow from '../components/ToolWindow.vue';
+import PackageImportDialog from '../components/PackageImportDialog.vue';
+import ProblemExportDialog from '../components/ProblemExportDialog.vue';
 import { api, errorMessage } from '../lib/api';
 import { problemTitle } from '../lib/format';
 import { useJudge } from '../lib/judge';
@@ -76,11 +75,37 @@ const judge = useJudge(props.id, ws);
 const ai = useAi(props.id);
 const showAi = computed({ get: () => rightTab.value === 'ai', set: (v: boolean) => { if (v) rightTab.value = 'ai'; else if (rightTab.value === 'ai') rightTab.value = 'info'; } });
 const summary = computed(() => ws.state.detail?.summary);
+const dataOnly = computed(() => !!summary.value?.dataOnly);
+const showDataImport = ref(false), showExport = ref(false);
+const restrictedCommands = new Set(['invocation', 'stress', 'run', 'selftest', 'sync', 'ai', 'ai-review']);
+function openExport() {
+  if (ws.hasDirty.value) return message.warning(t('tree.saveFirst'));
+  showExport.value = true;
+}
+function openDataImport() {
+  if (ws.hasDirty.value) return message.warning(t('tree.saveFirst'));
+  showDataImport.value = true;
+}
+async function importedData() { await ws.loadDetail(); await judge.loadManifest(); }
+
+async function convertStatement(lang: string, mode: 'whole' | 'sections') {
+  if (ws.hasDirty.value) return message.warning(t('tree.saveFirst'));
+  const run = async () => {
+    try {
+      const detail = await api.statementMode(props.id, lang, mode);
+      for (const tab of [...ws.state.tabs]) if (tab.path.startsWith(`statement/${lang}/`) && /\/(statement|legend|input|output|interaction|scoring|notes)\.tex$/.test(tab.path)) ws.closeTab(tab.path);
+      ws.state.detail = detail;
+      await ws.openFile(`statement/${lang}/${mode === 'whole' ? 'statement' : 'legend'}.tex`);
+    } catch (e) { message.error(errorMessage(e)); }
+  };
+  dialog.warning({ title: t(mode === 'whole' ? 'statementMode.toWhole' : 'statementMode.toSections'), content: t(mode === 'whole' ? 'statementMode.lossWarning' : 'statementMode.splitHint'), positiveText: t('common.ok'), negativeText: t('common.cancel'), onPositiveClick: run });
+}
 
 // ---- right panel / judge actions ----
 const rightTab = ref<'info' | 'tests' | 'run' | 'selftest' | 'ai'>('info');
 const rightSplitSize = ref(0.76);
 function showTools(tab: typeof rightTab.value) {
+  if (dataOnly.value && ['run', 'selftest', 'ai'].includes(tab)) return;
   rightTab.value = tab;
 }
 const runPanel = ref<InstanceType<typeof RunPanel>>();
@@ -92,23 +117,6 @@ const showLint = ref(false);
 const showStress = ref(false);
 const showPalette = ref(false);
 const showShortcuts = ref(false);
-const exporting = ref(false);
-
-async function exportPackage() {
-  exporting.value = true;
-  try {
-    const done = await waitJob(await api.exportPackage(props.id));
-    if (done.status !== 'done') throw new Error(done.error ?? done.status);
-    const r = done.result as PackageResult;
-    await api.downloadExport(props.id, r.file);
-    message.success(t('export.done', { file: r.file, n: r.tests }));
-    if (r.warnings.length) message.warning(r.warnings.slice(0, 5).map(serverText).join('\n'), { duration: 8000 });
-  } catch (e) {
-    message.error(errorMessage(e));
-  } finally {
-    exporting.value = false;
-  }
-}
 
 const aiDrawer = ref<InstanceType<typeof AiDrawer>>();
 function openAiReview() {
@@ -120,8 +128,9 @@ const moreOptions = computed(() => [
   { key: 'move', label: t('improve.move') },
   { key: 'clear-cache', label: t('fix.clearCache') },
   { key: 'lint', label: `${t('toolbar.lint')}  (Ctrl+Shift+L)` },
-  { key: 'export', label: t('toolbar.export'), disabled: exporting.value },
-  { key: 'selftest', label: t('panel.selftest') },
+  { key: 'export', label: t('packages.exportProblem') },
+  { key: 'import-data', label: t('packages.importData') },
+  { key: 'selftest', label: t('panel.selftest'), disabled: dataOnly.value },
   { type: 'divider', key: 'd1' },
   { key: 'palette', label: `${t('palette.title')}  (Ctrl+K)` },
   { key: 'shortcuts', label: `${t('shortcuts.title')}  (Ctrl+/)` },
@@ -143,7 +152,8 @@ function onMore(key: string) {
     } });
   }
   if (key === 'lint') showLint.value = true;
-  else if (key === 'export') exportPackage();
+  else if (key === 'export') openExport();
+  else if (key === 'import-data') openDataImport();
   else if (key === 'selftest') showTools('selftest');
   else if (key === 'palette') showPalette.value = true;
   else if (key === 'shortcuts') showShortcuts.value = true;
@@ -158,7 +168,7 @@ function deleteProblem() {
 const commands = computed<Command[]>(() => {
   const g = { judge: t('palette.gJudge'), sync: 'Polygon', ai: 'AI', file: t('palette.gFile'), view: t('palette.gView') };
   const missingTutorials = ws.state.detail ? statementLanguages(ws.files.value).missingTutorial : [];
-  return [
+  const items: Command[] = [
     { id: 'generate', label: t('toolbar.generate'), shortcut: 'Ctrl+Shift+G', group: g.judge, run: generate },
     { id: 'invocation', label: t('toolbar.invocation'), group: g.judge, run: () => void (showInvocation.value = true) },
     { id: 'stress', label: t('toolbar.stress'), group: g.judge, run: () => void (showStress.value = true) },
@@ -166,7 +176,8 @@ const commands = computed<Command[]>(() => {
     { id: 'selftest', label: t('panel.selftest'), group: g.judge, run: () => void (showTools('selftest')) },
     { id: 'tests', label: t('panel.tests'), group: g.view, run: () => void (showTools('tests')) },
     { id: 'sync', label: t('sync.title'), shortcut: 'Ctrl+Shift+U', group: g.sync, run: () => void (showSync.value = true) },
-    { id: 'export', label: t('toolbar.export'), group: g.sync, run: exportPackage },
+    { id: 'export', label: t('packages.exportProblem'), group: g.file, run: openExport },
+    { id: 'import-data', label: t('packages.importData'), group: g.file, run: openDataImport },
     { id: 'ai', label: t('palette.aiChat'), group: g.ai, run: () => void (showAi.value = true) },
     { id: 'ai-review', label: t('palette.aiReview'), group: g.ai, run: openAiReview },
     { id: 'lint', label: t('toolbar.lint'), shortcut: 'Ctrl+Shift+L', group: g.file, run: () => void (showLint.value = true) },
@@ -196,6 +207,7 @@ const commands = computed<Command[]>(() => {
     { id: 'problems', label: t('nav.problems'), group: g.view, run: () => void router.push({ name: 'problems' }) },
     { id: 'settings', label: t('nav.settings'), group: g.view, run: () => void router.push({ name: 'settings' }) },
   ];
+  return items.map(c => ({ ...c, disabled: c.disabled || dataOnly.value && restrictedCommands.has(c.id) }));
 });
 
 async function generate() {
@@ -208,12 +220,14 @@ async function generate() {
 }
 
 function runCurrent() {
+  if (dataOnly.value) return;
   showTools('run');
   // The panel may mount on this tick; wait for it.
   setTimeout(() => runPanel.value?.run(), 0);
 }
 
 function runOnTest(n: number) {
+  if (dataOnly.value) return;
   showTools('run');
   setTimeout(() => runPanel.value?.runOnTest(n), 0);
 }
@@ -229,7 +243,7 @@ async function save(path: string) {
     if (r === 'conflict') await showDiff(path);
     else if (r === 'readonly') message.warning(t('editor.readOnly'));
     // Ctrl+S also compiles in the background; errors show as squiggles (DESIGN §6.1).
-    else if (isSourceFile(path) && ws.languageFor(path)) judge.build(path).catch(() => {});
+    else if (!dataOnly.value && isSourceFile(path) && ws.languageFor(path)) judge.build(path).catch(() => {});
   } catch (e) {
     message.error(errorMessage(e));
   }
@@ -438,7 +452,7 @@ function onKeydown(e: KeyboardEvent) {
     showLint.value = true;
   } else if (k === 'u' && e.shiftKey) {
     e.preventDefault();
-    showSync.value = true;
+    if (!dataOnly.value) showSync.value = true;
   } else if (k === 'g' && e.shiftKey) {
     e.preventDefault();
     generate();
@@ -478,10 +492,10 @@ onMounted(async () => {
   // Open the most useful file first.
   const cfg = ws.state.detail?.config;
   const asked = typeof route.query.file === 'string' ? route.query.file : undefined;
-  const first = [asked, 'statement/zh/legend.tex', 'statement/en/legend.tex', cfg?.validator?.source, 'problem.toml'].find(
+  const first = [asked, 'statement/zh/statement.tex', 'statement/en/statement.tex', 'statement/zh/legend.tex', 'statement/en/legend.tex', cfg?.validator?.source, 'problem.toml'].find(
     (p) => p && ws.files.value.some((f) => f.path === p),
   );
-  if (route.query.sync === 'pull' || route.query.sync === 'push') {
+  if (!dataOnly.value && (route.query.sync === 'pull' || route.query.sync === 'push')) {
     syncTab.value = route.query.sync;
     showSync.value = true;
   }
@@ -518,21 +532,21 @@ onBeforeUnmount(() => {
       <template #right>
         <n-tooltip>
           <template #trigger>
-            <n-button size="small" @click="generate"><span v-if="judge.running('generate')" class="pf-run-dot" />{{ t('toolbar.generate') }}</n-button>
+            <n-button size="small" @click="generate"><span v-if="judge.running('generate')" class="pf-run-dot" />{{ t(dataOnly ? 'dataOnly.refresh' : 'toolbar.generate') }}</n-button>
           </template>
           Ctrl+Shift+G
         </n-tooltip>
         <!-- No :loading here: a loading button ignores clicks, and the window must stay reachable while its job runs. -->
-        <n-button size="small" :type="judge.running('invocation') ? 'primary' : 'default'" :secondary="judge.running('invocation')" @click="showInvocation = true"><span v-if="judge.running('invocation')" class="pf-run-dot" />{{ t('toolbar.invocation') }}</n-button>
-        <n-button size="small" :type="judge.running('stress') ? 'primary' : 'default'" :secondary="judge.running('stress')" @click="showStress = true"><span v-if="judge.running('stress')" class="pf-run-dot" />{{ t('toolbar.stress') }}</n-button>
+        <n-button size="small" :disabled="dataOnly" :type="judge.running('invocation') ? 'primary' : 'default'" :secondary="judge.running('invocation')" @click="showInvocation = true"><span v-if="judge.running('invocation')" class="pf-run-dot" />{{ t('toolbar.invocation') }}</n-button>
+        <n-button size="small" :disabled="dataOnly" :type="judge.running('stress') ? 'primary' : 'default'" :secondary="judge.running('stress')" @click="showStress = true"><span v-if="judge.running('stress')" class="pf-run-dot" />{{ t('toolbar.stress') }}</n-button>
         <n-tooltip>
           <template #trigger>
-            <n-button size="small" @click="showSync = true">{{ t('toolbar.sync') }}</n-button>
+            <n-button size="small" :disabled="dataOnly" @click="showSync = true">{{ t('toolbar.sync') }}</n-button>
           </template>
           Ctrl+Shift+U
         </n-tooltip>
         <n-dropdown trigger="click" :options="moreOptions" @select="onMore">
-          <n-button size="small" icon-placement="right"><template #icon><chevron-down /></template><span v-if="exporting" class="pf-run-dot" />{{ t('toolbar.more') }}</n-button>
+          <n-button size="small" icon-placement="right"><template #icon><chevron-down /></template>{{ t('toolbar.more') }}</n-button>
         </n-dropdown>
         <n-tooltip>
           <template #trigger>
@@ -543,6 +557,8 @@ onBeforeUnmount(() => {
         <n-button size="small" quaternary :title="t('problem.delete')" @click="deleteProblem"><trash2 :size="15" /></n-button>
       </template>
     </app-header>
+
+    <n-alert v-if="dataOnly" type="warning" :show-icon="false" class="mode-banner">{{ t('dataOnly.warning') }}</n-alert>
 
     <div v-if="ws.state.loadError && !ws.state.detail" class="center">
       <n-result status="404" :title="t('workspace.notFound')" :description="ws.state.loadError">
@@ -571,7 +587,8 @@ onBeforeUnmount(() => {
               @generate="generate"
               @action="onAction"
               @lint="showLint = true"
-              @palette="showPalette = true"
+               @palette="showPalette = true"
+               @convert-statement="convertStatement"
             />
           </template>
           <template #2>
@@ -582,13 +599,13 @@ onBeforeUnmount(() => {
               <n-tab-pane key="tests" name="tests" :tab="t('panel.tests')">
                 <n-scrollbar v-keep-scroll="`tests:${id}`" style="height: 100%"><tests-panel :ws="ws" :judge="judge" :problem-id="id" @run-on-test="runOnTest" /></n-scrollbar>
               </n-tab-pane>
-              <n-tab-pane key="run" name="run" :tab="t('panel.run')" display-directive="show">
+              <n-tab-pane key="run" name="run" :disabled="dataOnly" :tab="t('panel.run')" display-directive="show">
                 <n-scrollbar v-keep-scroll="`run:${id}`" style="height: 100%"><run-panel ref="runPanel" :ws="ws" :judge="judge" :problem-id="id" /></n-scrollbar>
               </n-tab-pane>
-              <n-tab-pane key="selftest" name="selftest" :tab="t('panel.selftest')">
+              <n-tab-pane key="selftest" name="selftest" :disabled="dataOnly" :tab="t('panel.selftest')">
                 <n-scrollbar v-keep-scroll="`selftest:${id}`" style="height: 100%"><self-test-panel :ws="ws" :judge="judge" /></n-scrollbar>
               </n-tab-pane>
-              <n-tab-pane key="ai" name="ai" tab="AI" display-directive="show">
+              <n-tab-pane key="ai" name="ai" :disabled="dataOnly" tab="AI" display-directive="show">
                 <aside class="ai-sidebar" :aria-label="t('palette.aiChat')">
                   <ai-drawer ref="aiDrawer" embedded :show="showAi" :ai="ai" :problem-id="id" :ws="ws" />
                 </aside>
@@ -604,7 +621,7 @@ onBeforeUnmount(() => {
       :ws="ws"
       :judge="judge"
       :ai="ai"
-      @open="(w) => (w === 'sync' ? (showSync = true) : w === 'ai' ? (showAi = true) : showTools('tests'))"
+      @open="(w) => (w === 'sync' ? (!dataOnly && (showSync = true)) : w === 'ai' ? (!dataOnly && (showAi = true)) : showTools('tests'))"
     />
     <quick-open v-model:show="quickOpen" :files="allFiles" @open="(p: string) => ws.openFile(p)" />
     <command-palette v-model:show="showPalette" :commands="commands" />
@@ -613,6 +630,8 @@ onBeforeUnmount(() => {
     <stress-dialog v-model:show="showStress" :ws="ws" :judge="judge" :problem-id="id" />
     <invocation-window v-model:show="showInvocation" :ws="ws" :judge="judge" :problem-id="id" />
     <sync-dialog v-model:show="showSync" :ws="ws" :problem-id="id" :initial-tab="syncTab" />
+    <package-import-dialog v-model:show="showDataImport" :problem-id="id" @imported="importedData" />
+    <problem-export-dialog v-model:show="showExport" :detail="ws.state.detail" />
     <diff-dialog v-model:show="diff.show" :path="diff.path" :disk="diff.disk" :mine="diff.mine" @keep-mine="keepMine" @use-disk="useDisk" />
 
     <dir-picker v-model:show="movePicker" :initial="summary?.root" @pick="moveTo" />
@@ -634,6 +653,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.mode-banner { border-radius: 0; flex-shrink: 0; font-size: 12px; }
 .page {
   height: 100%;
   display: flex;

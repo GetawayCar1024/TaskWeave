@@ -1,4 +1,54 @@
 {
+  "dataOnly": {
+    "title": "Data-only mode",
+    "authoringMode": "Authoring mode",
+    "full": "Full authoring (recommended)",
+    "warning": "Data-only authoring is not recommended. Manage inputs, answers, scores and samples, and export data or sample bundles. Complete the statement, validator, checker and main solution to enable judging, stress testing and Polygon sync.",
+    "refresh": "Refresh data",
+    "completeHint": "Create statement files, validator.cpp and solutions/std.cpp in the sidebar, register their roles and choose a checker in Information. Save them before enabling full authoring.",
+    "missing": "Still missing:",
+    "enable": "Enable full authoring",
+    "enabled": "Full authoring enabled",
+    "downSamples": "For data-only problems, down.zip contains the selected sample files without a statement PDF.",
+    "lemonHint": "Data-only problems default to LemonLime's built-in line comparison (ignore extra spaces and tabs), requiring no checker source. It also ignores extra intra-line whitespace. Completing the authoring files is recommended."
+  },
+  "statementMode": {
+    "title": "Statement layout",
+    "sections": "Separate sections",
+    "whole": "Single file (statement.tex)",
+    "toWhole": "Combine into one statement",
+    "toSections": "Convert to sections",
+    "lossWarning": "All body text and readable headings are kept, but the original section boundaries will be lost. Converting back places everything in legend. Tutorials and OI-only files stay separate. Continue?",
+    "splitHint": "All statement text will be placed in legend.tex; other body sections start empty. You can split them manually afterward. Polygon sync also performs this conversion automatically."
+  },
+  "packages": {
+    "importLocal": "Import local package",
+    "importData": "Import test data",
+    "exportProblem": "Export problem",
+    "format": "Format",
+    "luogu-data": "Luogu data package (data only)",
+    "hydro-data": "Hydro data package (data only)",
+    "hydro-problem": "Hydro package (whole problem)",
+    "wholeHint": "Import statements, languages, samples, data, scores and program configuration. Extra files appear under Other files. Incomplete authoring files open in data-only mode.",
+    "dataHint": "Import only .in/.out or .in/.ans pairs and scoring configuration. Original configuration and extra files appear under Other files.",
+    "file": "ZIP file",
+    "choose": "Choose ZIP…",
+    "tooLarge": "ZIP files must not exceed 256 MiB.",
+    "noHydroProblem": "No problem.yaml found. Choose a Hydro whole-problem package.",
+    "problem": "Problem in archive",
+    "testset": "Target testset",
+    "replaceData": "Replaces the target testset's data and scoring configuration, keeping statements and programs. Original data files are retained; the previous problem.toml is backed up under .polyforge/import-backups.",
+    "imported": "Imported {n} tests and retained {extras} extra files",
+    "luoguExport": "Luogu data.zip",
+    "luoguHint": "Each problem exports data.zip with all selected data, config.yml and score.txt at its root. After uploading to Luogu, paste score.txt into the whole-problem scoring script; it is not installed automatically.",
+    "documents": "Statements / tutorials (PDF, HTML, Markdown, TeX)",
+    "backToProblem": "Back to problem",
+    "answers": "Answer source",
+    "providedAnswers": "Use existing .out / .ans",
+    "generatedAnswers": "Generate with main solution",
+    "answer": "Reference answer (may be empty)",
+    "unresolvedScoring": "The original package has scoring rules that the subtask model cannot represent. Source files are preserved. Edit and save the subtask scoring configuration before judging or exporting."
+  },
   "oiFeatures": {
     "convertChecker": "Convert ordinary checker",
     "saveCheckerFirst": "Save the checker source and problem settings first.",
@@ -427,6 +477,7 @@
     "noTutorial": "No {lang} tutorial yet, click to create"
   },
   "import": {
+    "credentialsRequired": "Configure the Polygon API key and secret in Settings first.",
     "title": "Import from Polygon",
     "search": "Search name, id or owner…",
     "none": "No matching problems",
@@ -664,6 +715,9 @@
     }
   },
   "contest": {
+    "notesDefault": "Default (legacy)",
+    "notesLanguage": "Instructions language",
+    "notesLanguageHelp": "Each language uses notes.<language>.tex. Exports select that language, falling back to notes.tex when absent. Select a new language to create its file.",
     "filesPreviewLangHelp": "Used for macros and the notes template, independent of the document language.",
     "filesSnapshotLangHelp": "The preview uses the generated file's language; macros expand for it.",
     "filesPreviewLang": "Preview language",

@@ -29,6 +29,7 @@ import { planTests, scriptStatementPaths, statementPaths } from '../judge/tests.
 import { defsForProblem, readSharedDefs } from '../defs.js';
 import { exists, HttpError, isDir, looksBinary, safeJoin, sha1, validateFileName } from '../util/fs.js';
 import { HIDDEN_DIRS } from '../workspace/files.js';
+import { readStatementSections, wholeStatementLanguages, wholeStatementWarning } from '../workspace/statements.js';
 import { PolygonError, type PolygonClient } from './client.js';
 
 export const TESTSET = 'tests';
@@ -368,20 +369,22 @@ export async function localItems(judge: Judge, ctx: ProblemCtx): Promise<LocalIt
 
   // ---- statements ----
   const stmtDir = path.join(dir, 'statement');
+  const wholeLangs = await wholeStatementLanguages(dir);
+  warnings.push(...wholeStatementWarning(wholeLangs));
   // Statement folders, plus titles set in problem.toml for a language without one yet
   // (Polygon keeps the title with the statement of that language).
   const folders: string[] = [];
   for (const lang of await fsp.readdir(stmtDir).catch(() => [] as string[])) if (lang !== 'images' && (await isDir(path.join(stmtDir, lang)))) folders.push(lang);
   const titled = Object.entries(config.problem.title).filter(([, v]) => typeof v === 'string' && v.trim()).map(([l]) => l);
   for (const lang of [...new Set([...folders, ...titled])].sort()) {
+    const sections = await readStatementSections(dir, lang);
     const plang = LANG_TO_POLYGON[lang] ?? lang;
     const title = config.problem.title[lang];
     if (title) items.push({ key: `statement:${plang}:name`, kind: 'statement', label: `statement (${plang}): name`, path: 'problem.toml', text: title, extra: { lang: plang, section: 'name' } });
     for (const sec of STATEMENT_SECTIONS) {
-      const rel = `statement/${lang}/${sec}.tex`;
-      if (!(await exists(path.join(dir, rel)))) continue;
-      const text = await readText(rel);
-      if (!text.trim()) continue;
+      const rel = `statement/${lang}/${sec === 'legend' && wholeLangs.includes(lang) ? 'statement' : sec}.tex`;
+      const text = sections[sec];
+      if (!text?.trim()) continue;
       const label = sec === 'tutorial' ? `tutorial (${plang})` : `statement (${plang}): ${sec}`;
       const converted = convertStatement(text, 'polygon');
       warnings.push(...statementSyntaxWarnings(rel, converted.warnings));

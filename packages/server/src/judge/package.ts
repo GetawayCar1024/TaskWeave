@@ -13,6 +13,7 @@ import { answerPath, generateTests, inputPath } from './tests.js';
 import { flattenFiles } from '@polyforge/shared';
 import { buildTree } from '../workspace/files.js';
 import { addAttachments } from '../workspace/attachments.js';
+import { readStatementSections, wholeStatementLanguages, wholeStatementWarning } from '../workspace/statements.js';
 
 /** problem.xml solution tags. RE has no dedicated tag in the package format; "rejected" covers it. */
 const XML_TAG: Record<SolutionTag, string> = {
@@ -50,6 +51,7 @@ export const exportDir = (ctx: ProblemCtx) => path.join(ctx.work, 'export');
 export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, into?: { zip: ZipWriter; prefix: string }): Promise<PackageResult> {
   const warnings: string[] = [];
   const { config, ref } = ctx;
+  warnings.push(...wholeStatementWarning(await wholeStatementLanguages(ref.dir)));
   const unsupported = polygonFeatureWarnings(config);
   if (config.problem.type !== 'oi' && unsupported.length) throw new HttpError(400, 'polygon_features', unsupported.join('\n'));
   if (judgeMode(config.problem) === 'grader' && config.problem.type !== 'oi') throw new HttpError(400, 'grader_polygon', 'Grader problems cannot use Polygon packages. Export the contest to LemonLime instead.');
@@ -212,17 +214,13 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
   const statements: string[] = [];
   const tutorials: string[] = [];
   const names: string[] = [];
-  const secRead = (lang: string, sec: string) =>
-    fsp
-      .readFile(path.join(ref.dir, 'statement', lang, `${sec}.tex`), 'utf8')
-      .then((s) => s.replace(/\r\n/g, '\n').trim())
-      .catch(() => '');
   const sampleTests = manifest.tests.filter((t) => samples.has(t.index));
   for (const lang of (await fsp.readdir(path.join(ref.dir, 'statement')).catch(() => [] as string[])).sort()) {
     if (lang === 'images') continue;
+    const source = await readStatementSections(ref.dir, lang);
     const sec: Record<string, string> = {};
     for (const s of STATEMENT_SECTIONS) {
-      const converted = convertStatement(await secRead(lang, s), 'polygon');
+      const converted = convertStatement(source[s] ?? '', 'polygon');
       sec[s] = converted.tex;
       warnings.push(...statementSyntaxWarnings(`statement/${lang}/${s}.tex`, converted.warnings));
     }

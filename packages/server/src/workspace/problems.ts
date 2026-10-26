@@ -29,6 +29,7 @@ import { samePath } from '../global.js';
 import { atomicWrite, exists, HttpError, isDir, safeJoin, toPosix } from '../util/fs.js';
 import { buildTree } from './files.js';
 import { cfToOi, oiTemplate } from './oiStatement.js';
+import { convertStatementMode } from './statements.js';
 
 export interface ProblemRef {
   id: string;
@@ -45,6 +46,12 @@ export class ProblemRegistry {
 
   get roots(): string[] {
     return this.global.config.problems.roots;
+  }
+
+  requireRoot(root = this.roots[0]): string {
+    if (!this.roots.length || !root) throw new HttpError(400, 'no_root', 'No problem root directory configured');
+    if (!this.roots.some(r => samePath(r, root))) throw new HttpError(400, 'invalid_root', 'Unknown problem root');
+    return root;
   }
 
   /** Rescan all roots. Each direct subfolder containing problem.toml is a problem. */
@@ -198,6 +205,7 @@ export class ProblemRegistry {
     return {
       id: ref.id,
       type: config?.problem.type ?? 'cf',
+      dataOnly: config?.problem.data_only ?? false,
       name: config?.problem.name ?? path.basename(ref.dir),
       title: config?.problem.title ?? {},
       dir: ref.dir,
@@ -263,9 +271,7 @@ export class ProblemRegistry {
     if (!PROBLEM_NAME_RE.test(name)) {
       throw new HttpError(400, 'invalid_name', 'Name must be lowercase letters, digits and dashes');
     }
-    const root = req.root ?? this.roots[0];
-    if (!root) throw new HttpError(400, 'no_root', 'No problem root directory configured');
-    if (!this.roots.some((r) => samePath(r, root))) throw new HttpError(400, 'invalid_root', 'Unknown problem root');
+    const root = this.requireRoot(req.root);
     await fsp.mkdir(root, { recursive: true });
     const dir = path.join(root, name);
     if (await exists(dir)) throw new HttpError(409, 'exists', `Folder already exists: ${dir}`);
@@ -273,6 +279,7 @@ export class ProblemRegistry {
     const tl = req.timeLimit ?? 1000;
     const ml = req.memoryLimit ?? 256;
     const mode = judgeModeSchema.parse(req.judgeMode ?? (req.interactive ? 'io' : 'batch'));
+    if (req.dataOnly && mode !== 'batch') throw new HttpError(400, 'data_only', 'Data-only problems support batch input/answer pairs only.');
     const interactive = mode === 'io';
     const vars: Record<string, string> = {
       '"{{name}}"': JSON.stringify(name),
@@ -286,37 +293,48 @@ export class ProblemRegistry {
     const tpl = path.join(this.global.templatesDir, 'problem');
     const stmtTpl = path.join(this.global.templatesDir, 'statement');
     try {
-      await copyTemplate(tpl, dir, vars);
-      if (type === 'cf' && await isDir(stmtTpl)) {
-        for (const lang of await fsp.readdir(stmtTpl)) {
-          if (await isDir(path.join(stmtTpl, lang))) {
-            await copyTemplate(path.join(stmtTpl, lang), path.join(dir, 'statement', lang), vars);
+      if (req.dataOnly) {
+        await fsp.mkdir(path.join(dir, 'tests/manual'), { recursive: true });
+        await atomicWrite(path.join(dir, PROBLEM_FILE), stringify({
+          problem: { name, type, data_only: true, title: req.title ?? {}, time_limit: tl, memory_limit: ml, input: 'stdin', output: 'stdout', judge_mode: 'batch' },
+          tests: { answers: 'provided', points: true, groups: true, group: [{ name: 'all', points: 100, policy: 'EACH_TEST' }] },
+        }));
+      } else {
+        await copyTemplate(tpl, dir, vars);
+        if (type === 'cf' && await isDir(stmtTpl)) {
+          for (const lang of await fsp.readdir(stmtTpl)) {
+            if (await isDir(path.join(stmtTpl, lang))) {
+              await copyTemplate(path.join(stmtTpl, lang), path.join(dir, 'statement', lang), vars);
+            }
           }
         }
-      }
-      if (!interactive) {
-        for (const lang of await fsp.readdir(path.join(dir, 'statement')).catch(() => [])) {
-          await fsp.rm(path.join(dir, 'statement', lang, 'interaction.tex'), { force: true });
+        if (!interactive) {
+          for (const lang of await fsp.readdir(path.join(dir, 'statement')).catch(() => [])) {
+            await fsp.rm(path.join(dir, 'statement', lang, 'interaction.tex'), { force: true });
+          }
         }
-      }
-      if (!(await exists(path.join(dir, PROBLEM_FILE)))) {
-        await atomicWrite(path.join(dir, PROBLEM_FILE), stringify({ problem: { name, time_limit: tl, memory_limit: ml, input: 'stdin', output: 'stdout', interactive } }));
-      }
-      const doc = parse(await fsp.readFile(path.join(dir, PROBLEM_FILE), 'utf8')) as Record<string, any>;
-      doc.problem.type = type;
-      doc.problem.judge_mode = mode;
-      doc.problem.interactive = interactive;
-      if (mode === 'grader') {
-        doc.grader = { sources: ['grader/grader.cpp'], headers: ['grader/grader.h'] };
-        doc.solutions = [{ source: 'solutions/std.cpp', tag: 'MA' }];
-        await atomicWrite(path.join(dir, 'grader/grader.h'), '#pragma once\nlong long solve(long long a, long long b);\n');
-        await atomicWrite(path.join(dir, 'grader/grader.cpp'), '#include "grader.h"\n#include <iostream>\nint main() { long long a, b; if (!(std::cin >> a >> b)) return 1; std::cout << solve(a, b) << "\\n"; }\n');
-        await atomicWrite(path.join(dir, 'solutions/std.cpp'), '#include "grader.h"\nlong long solve(long long a, long long b) { return a + b; }\n');
-      }
-      await atomicWrite(path.join(dir, PROBLEM_FILE), stringify(doc));
-      if (type === 'oi') {
-        for (const lang of ['zh', 'en']) await atomicWrite(path.join(dir, 'statement', lang, 'statement.tex'), oiTemplate(lang));
-        await fsp.mkdir(path.join(dir, 'attachments'), { recursive: true });
+        if (!(await exists(path.join(dir, PROBLEM_FILE)))) {
+          await atomicWrite(path.join(dir, PROBLEM_FILE), stringify({ problem: { name, time_limit: tl, memory_limit: ml, input: 'stdin', output: 'stdout', interactive } }));
+        }
+        const doc = parse(await fsp.readFile(path.join(dir, PROBLEM_FILE), 'utf8')) as Record<string, any>;
+        doc.problem.type = type;
+        doc.problem.judge_mode = mode;
+        doc.problem.interactive = interactive;
+        if (mode === 'grader') {
+          doc.grader = { sources: ['grader/grader.cpp'], headers: ['grader/grader.h'] };
+          doc.solutions = [{ source: 'solutions/std.cpp', tag: 'MA' }];
+          await atomicWrite(path.join(dir, 'grader/grader.h'), '#pragma once\nlong long solve(long long a, long long b);\n');
+          await atomicWrite(path.join(dir, 'grader/grader.cpp'), '#include "grader.h"\n#include <iostream>\nint main() { long long a, b; if (!(std::cin >> a >> b)) return 1; std::cout << solve(a, b) << "\\n"; }\n');
+          await atomicWrite(path.join(dir, 'solutions/std.cpp'), '#include "grader.h"\nlong long solve(long long a, long long b) { return a + b; }\n');
+        }
+        await atomicWrite(path.join(dir, PROBLEM_FILE), stringify(doc));
+        if (type === 'oi') {
+          for (const lang of ['zh', 'en']) await atomicWrite(path.join(dir, 'statement', lang, 'statement.tex'), oiTemplate(lang));
+          await fsp.mkdir(path.join(dir, 'attachments'), { recursive: true });
+        }
+        if (type === 'cf' && req.statementMode === 'whole') for (const lang of await fsp.readdir(path.join(dir, 'statement')).catch(() => [])) {
+          if (/^[a-z]{2,8}$/.test(lang) && lang !== 'images') await convertStatementMode(dir, lang, 'whole');
+        }
       }
     } catch (e) {
       await fsp.rm(dir, { recursive: true, force: true });
@@ -445,6 +463,7 @@ export class ProblemRegistry {
         continue;
       }
       const target: Record<string, any> = isDefault ? (doc.tests ??= {}) : ((doc.testsets ??= {})[name] ??= {});
+      if (p.answers !== undefined) target.answers = p.answers;
       if (p.script !== undefined) {
         if (p.script === null || !p.script.trim()) delete target.script;
         else target.script = p.script.trim();
@@ -455,6 +474,13 @@ export class ProblemRegistry {
       }
       if (p.group !== undefined) {
         const groups = checkGroups(name, p.group);
+        // An explicit edit of scoring replaces unsupported imported script semantics.
+        delete target.unresolved_scoring;
+        for (const group of groups) {
+          const old = (target.group ?? []).find((g: TestGroup) => g.name === group.name);
+          if (old?.points === group.points && old?.tests === group.tests && (old?.policy ?? 'COMPLETE_GROUP') === (group.policy ?? 'COMPLETE_GROUP')) continue;
+          for (const i of parseIndexList(group.tests ?? '')) if (target.cases?.[i]) delete target.cases[i].points;
+        }
         if (groups.length) target.group = groups;
         else delete target.group;
       }
@@ -474,8 +500,22 @@ export class ProblemRegistry {
       }
     }
     if (doc.testsets && !Object.keys(doc.testsets).length) delete doc.testsets;
+    if (req.dataOnly !== undefined) p.data_only = req.dataOnly;
     const check = problemTomlSchema.safeParse(doc);
     if (!check.success) throw new HttpError(400, 'invalid_patch', check.error.message);
+    if (req.dataOnly === false && raw.problem && (raw.problem as Record<string, unknown>).data_only) {
+      const c = check.data;
+      const requirements: [string, boolean][] = [
+        ['statement', (await this.statementLangs(ref)).statement.length > 0],
+        ['validator', !!c.validator && await this.sourceExists(ref, c.validator.source)],
+        ['checker', !!c.checker && await this.sourceExists(ref, c.checker.source)],
+        ['main solution (MA)', !!c.solutions.find(s => s.tag === 'MA') && await this.sourceExists(ref, c.solutions.find(s => s.tag === 'MA')!.source)],
+      ];
+      if (judgeMode(c.problem) === 'io') requirements.push(['interactor', !!c.interactor && await this.sourceExists(ref, c.interactor.source)]);
+      if (judgeMode(c.problem) === 'grader') requirements.push(['grader', !!c.grader?.sources.length && (await Promise.all(c.grader.sources.map(s => this.sourceExists(ref, s)))).every(Boolean)]);
+      const missing = requirements.filter(([, ok]) => !ok).map(([name]) => name);
+      if (missing.length) throw new HttpError(400, 'incomplete_problem', `Complete these files before enabling full authoring: ${missing.join(', ')}`);
+    }
     await atomicWrite(path.join(ref.dir, PROBLEM_FILE), stringify(doc) + '\n');
     return this.detail(id);
   }
@@ -535,6 +575,7 @@ export class ProblemRegistry {
       if (!(await exists(dest))) await atomicWrite(dest, oiTemplate(match[1]));
       return;
     }
+    if (await exists(safeJoin(ref.dir, `${rel}/statement.tex`))) return;
     for (const section of STATEMENT_SECTIONS) {
       if (section === 'interaction' && !config?.problem.interactive) continue;
       const dest = safeJoin(ref.dir, `${rel}/${section}.tex`);
@@ -611,7 +652,7 @@ function safeJoinUnlessStd(dir: string, source: string) {
 
 async function countFiles(dir: string): Promise<number> {
   try {
-    return (await fsp.readdir(dir, { withFileTypes: true })).filter((e) => e.isFile()).length;
+    return (await fsp.readdir(dir, { withFileTypes: true })).filter((e) => e.isFile() && !e.name.startsWith('.') && !/\.(ans|out)$/i.test(e.name) && !/\.statement\.in$/i.test(e.name)).length;
   } catch {
     return 0;
   }

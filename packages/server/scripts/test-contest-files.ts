@@ -65,6 +65,13 @@ test('contest file API, snapshots, notes exports, authenticated images and save 
     const tex = await call('GET', base + '/tex?lang=zh&doc=tutorials&toc=1');
     assert.ok(tex.body.indexOf('请仔细阅读') < tex.body.indexOf('只有题解内容'));
     assert.ok(tex.body.includes('\\pfsection{注意事项}'));
+    await call('PUT', base + '/file?path=notes.en.tex', { content: 'English instructions only.' });
+    const translated = await call('GET', base + '/tex?lang=en&doc=statements&toc=1');
+    assert.ok(translated.body.includes('English instructions only.'));
+    assert.ok(!translated.body.includes('请仔细阅读'));
+    assert.equal((await call('GET', base + '/notes?lang=zh')).json().content, '请仔细阅读 $n$。');
+    await call('PUT', base + '/file?path=notes.en.tex', { content: '' });
+    assert.equal((await call('GET', base + '/notes?lang=en')).json().content, '');
     const noToc = await call('GET', base + '/tex?lang=zh&doc=tutorials&toc=0');
     assert.ok(!noToc.body.includes('请仔细阅读'));
     const paths: string[] = [];

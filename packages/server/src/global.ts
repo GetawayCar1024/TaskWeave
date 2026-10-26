@@ -139,7 +139,7 @@ export class GlobalStore {
 
   async polygonCredentials(): Promise<{ key: string; secret: string; apiUrl: string }> {
     const p = (await this.readSecrets()).polygon ?? {};
-    return { key: String(p.key ?? ''), secret: String(p.secret ?? ''), apiUrl: String(p.api_url || DEFAULT_POLYGON_API) };
+    return { key: String(p.key ?? '').trim(), secret: String(p.secret ?? '').trim(), apiUrl: String(p.api_url || DEFAULT_POLYGON_API) };
   }
 
   async maskedSecrets(): Promise<SecretsResponse> {
