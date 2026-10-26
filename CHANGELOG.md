@@ -2,11 +2,11 @@
 
 每个版本的使用说明位于 [docs/releases/](docs/releases/)，详细改动位于 [docs/changes/](docs/changes/)。下载见 [GitHub Releases](https://github.com/GetawayCar1024/polyforge/releases)。
 
-## 0.4.0 — 2026-10-26
+## 0.3.2 — 2026-10-26
 
 修复 Polygon 导入按钮的目录与凭据校验、比赛文件预览主题；比赛 notes 支持多语言。新增整体／分段题面转换、纯数据模式、洛谷 data.zip 导入导出、Hydro 整题与数据导入，以及单题文档、数据和下发包导出。外部包的额外文件与原始配置保留在“其他文件”中。
 
-[发布说明](docs/releases/0.4.0.md) · [改动明细](docs/changes/0.4.0.md)
+[发布说明](docs/releases/0.3.2.md) · [改动明细](docs/changes/0.3.2.md)
 
 ## 0.3.1 — 2026-10-25
 
