@@ -15,6 +15,7 @@ type Kind = 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir';
 export class ProblemWatcher {
   private watcher: FSWatcher | null = null;
   private rescanTimer: NodeJS.Timeout | null = null;
+  get running() { return this.watcher !== null; }
 
   constructor(
     private registry: ProblemRegistry,

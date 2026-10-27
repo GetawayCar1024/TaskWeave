@@ -1,4 +1,11 @@
 {
+  "trash": {
+    "title": "Recycle bin", "kind": "Type", "problem": "Problem", "contest": "Contest", "name": "Name", "location": "Original location", "deletedAt": "Deleted", "size": "Size",
+    "search": "Search recycle bin…", "restore": "Restore", "deleteForever": "Delete permanently", "empty": "Empty recycle bin", "none": "The recycle bin is empty",
+    "hint": "Restore or permanently delete removed problems and contests. Restoring a problem reconnects contests that reference its original identity.",
+    "restoreHint": "Restores the original identity, files and history. Resolve destination or identity conflicts first; existing content is never overwritten.",
+    "legacyLocation": "Legacy entry; choose a restore root", "confirmDelete": "Permanently delete these {n} entries? This cannot be undone.", "restored": "Restored", "deleted": "Permanently deleted from the recycle bin"
+  },
   "dataOnly": {
     "title": "Data-only mode",
     "authoringMode": "Authoring mode",
@@ -22,6 +29,11 @@
     "splitHint": "All statement text will be placed in legend.tex; other body sections start empty. You can split them manually afterward. Polygon sync also performs this conversion automatically."
   },
   "packages": {
+    "invalidZip": "Choose a valid ZIP package. The file header or size is invalid.",
+    "validated": "Validated: {files} files, {tests} tests, {size} unpacked",
+    "hydroExport": "Hydro problem package",
+    "hydroHint": "Export a standalone Hydro ZIP with problem.yaml, multilingual statements, samples, test data and configuration, programs and attachments.",
+    "hydroContestHint": "Build a standalone Hydro problem ZIP for each problem, then combine them in a contest ZIP. Import each inner ZIP separately in Hydro.",
     "importLocal": "Import local package",
     "importData": "Import test data",
     "exportProblem": "Export problem",
@@ -102,6 +114,7 @@
     "backToContest": "Back to contest"
   },
   "common": {
+    "refresh": "Refresh",
     "noMatch": "No matches",
     "cancel": "Cancel",
     "create": "Create",
@@ -120,13 +133,14 @@
     "root": "Location"
   },
   "problem": {
+    "renameHint": "The short name is used in problem lists, contests and exports; all update automatically after a rename.",
     "timeLimit": "Time limit",
     "memoryLimit": "Memory limit",
     "interactive": "Interactive",
     "io": "Input / Output",
     "delete": "Delete problem",
     "deleteTitle": "Delete problem {id}?",
-    "deleteBody": "The folder moves to the trash in the global directory (without generated caches); move it back to restore.",
+    "deleteBody": "The problem folder and history move to the recycle bin. Restore them from the home page's Recycle bin.",
     "deleteInContests": "In contests: {list}",
     "deleted": "Deleted; the folder was moved to {path}",
     "stdin": "standard input",
@@ -715,6 +729,7 @@
     }
   },
   "contest": {
+    "luoguPerProblem": "Time and memory aggregation per problem (saved to each problem)",
     "notesDefault": "Default (legacy)",
     "notesLanguage": "Instructions language",
     "notesLanguageHelp": "Each language uses notes.<language>.tex. Exports select that language, falling back to notes.tex when absent. Select a new language to create its file.",
@@ -787,7 +802,7 @@
     "statements": "Statements & tutorials",
     "edit": "Contest settings",
     "delete": "Delete contest",
-    "deleteConfirm": "The contest folder is permanently deleted: contest.toml, the contest files (files/) and its batch results, exports and AI sessions (.polyforge/). The problems it references are not affected.",
+    "deleteConfirm": "The contest configuration, files and history move to the recycle bin. Its referenced problems remain in the problem list.",
     "pushConfirm": "Push and commit the changes of {n} problem(s) to Polygon?",
     "batchBad": "{n} problem(s) did not pass",
     "action": {

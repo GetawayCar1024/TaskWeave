@@ -153,6 +153,7 @@ function openContest(c: ContestSummary) {
           <n-button size="small" :disabled="importDisabled" :title="importHint" @click="contestDialog = 'import'">{{ t('list.import') }}</n-button>
         </template>
         <n-button size="small" @click="router.push({ name: 'settings' })">{{ t('nav.settings') }}</n-button>
+        <n-button size="small" @click="router.push({ name: 'trash' })"><template #icon><trash2 :size="14" /></template>{{ t('trash.title') }}</n-button>
       </template>
     </app-header>
 
@@ -257,8 +258,8 @@ function openContest(c: ContestSummary) {
     </main>
 
     <create-problem-dialog v-model:show="showCreate" :roots="roots" @created="open" />
-    <import-dialog v-model:show="showImport" :roots="roots" :polygon-ready="polygonReady" @imported="open" />
-    <package-import-dialog v-model:show="showPackageImport" :roots="roots" @imported="result => open(result.problem)" />
+    <import-dialog v-model:show="showImport" :roots="roots" :polygon-ready="polygonReady" @imported="load" />
+    <package-import-dialog v-model:show="showPackageImport" :roots="roots" @imported="load" />
     <contest-dialog
       :show="contestDialog !== null"
       :mode="contestDialog ?? 'create'"

@@ -116,6 +116,7 @@ export const problemTomlSchema = z.object({
     'Solutions must have exactly one MA',
   ).default([]),
   generators: z.array(sourceEntry).default([]),
+  exports: z.object({ luogu: z.object({ time: z.enum(['sum', 'min', 'max']), memory: z.enum(['sum', 'min', 'max']) }).optional() }).optional(),
   source_languages: z.record(z.string(), z.string()).default({}),
   polygon_source_types: z.record(z.string(), z.string()).default({}),
   /** The Polygon testset "tests" (also used for statements and answers). */
@@ -252,6 +253,9 @@ export interface CreateProblemRequest {
 
 /** Partial update of problem.toml. `null` removes the section. */
 export interface PatchProblemRequest {
+  /** Display/export short name; the stable id and directory stay the same. */
+  name?: string;
+  luogu?: { time: 'sum' | 'min' | 'max'; memory: 'sum' | 'min' | 'max' };
   /** Leaving data-only mode requires the full authoring files to exist. */
   dataOnly?: boolean;
   judgeMode?: JudgeMode;

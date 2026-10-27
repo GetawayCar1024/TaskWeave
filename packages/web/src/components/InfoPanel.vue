@@ -18,7 +18,7 @@ import {
   useMessage,
   type SelectOption,
 } from 'naive-ui';
-import { SOLUTION_TAGS, isSourceFile, judgeMode, type JudgeMode, type PatchProblemRequest, type SolutionTag } from '@polyforge/shared';
+import { PROBLEM_NAME_RE, SOLUTION_TAGS, isSourceFile, judgeMode, type JudgeMode, type PatchProblemRequest, type SolutionTag } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 import { formatSize } from '../lib/format';
 import type { Judge } from '../lib/judge';
@@ -46,6 +46,7 @@ async function completeProblem() {
 }
 
 const form = reactive({
+  name: '',
   titleZh: '',
   titleEn: '',
   timeLimit: 1000,
@@ -65,6 +66,7 @@ function reset() {
   const c = cfg.value;
   if (!c) return;
   Object.assign(form, {
+    name: c.problem.name,
     titleZh: c.problem.title.zh ?? '',
     titleEn: c.problem.title.en ?? '',
     timeLimit: c.problem.time_limit,
@@ -86,6 +88,7 @@ const dirty = computed(() => {
   const c = cfg.value;
   if (!c) return false;
   return (
+    form.name !== c.problem.name ||
     form.titleZh !== (c.problem.title.zh ?? '') ||
     form.titleEn !== (c.problem.title.en ?? '') ||
     form.timeLimit !== c.problem.time_limit ||
@@ -134,6 +137,7 @@ async function save() {
   const c = cfg.value;
   if (!c) return;
   const req: PatchProblemRequest = {
+    ...(form.name !== c.problem.name ? { name: form.name.trim() } : {}),
     title: { ...c.problem.title, zh: form.titleZh, en: form.titleEn },
     timeLimit: form.timeLimit,
     memoryLimit: form.memoryLimit,
@@ -204,9 +208,11 @@ const activeInfo = computed(() => {
 
       <n-card v-if="cfg" size="small" :title="t('info.problem')">
         <template #header-extra>
-          <n-button size="tiny" type="primary" :disabled="!dirty" @click="save">{{ t('common.save') }}</n-button>
+          <n-button size="tiny" type="primary" :disabled="!dirty || !PROBLEM_NAME_RE.test(form.name.trim())" @click="save">{{ t('common.save') }}</n-button>
         </template>
         <n-form size="small" label-placement="left" label-width="100" :show-feedback="false" class="form">
+          <n-form-item :label="t('create.name')"><n-input v-model:value="form.name" :aria-label="t('create.name')" :status="PROBLEM_NAME_RE.test(form.name.trim()) ? undefined : 'error'" /></n-form-item>
+          <p class="small dim">{{ t('problem.renameHint') }}</p>
           <n-form-item :label="t('create.titleZh')"><n-input v-model:value="form.titleZh" /></n-form-item>
           <n-form-item :label="t('create.titleEn')"><n-input v-model:value="form.titleEn" /></n-form-item>
           <n-form-item :label="t('problem.timeLimit')">

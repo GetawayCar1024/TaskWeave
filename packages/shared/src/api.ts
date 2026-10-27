@@ -153,6 +153,7 @@ export type WsEvent =
     }
   | { type: 'problems:changed' }
   | { type: 'contests:changed' }
+  | { type: 'trash:changed' }
   | { type: 'problem:changed'; problemId: string }
   | { type: 'settings:changed' }
   | { type: 'job:progress'; job: JobInfo }

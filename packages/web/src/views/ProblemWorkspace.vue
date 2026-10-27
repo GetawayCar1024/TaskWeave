@@ -76,9 +76,11 @@ const ai = useAi(props.id);
 const showAi = computed({ get: () => rightTab.value === 'ai', set: (v: boolean) => { if (v) rightTab.value = 'ai'; else if (rightTab.value === 'ai') rightTab.value = 'info'; } });
 const summary = computed(() => ws.state.detail?.summary);
 const dataOnly = computed(() => !!summary.value?.dataOnly);
+const showDataOnlyWarning = ref(true);
 const showDataImport = ref(false), showExport = ref(false);
 const restrictedCommands = new Set(['invocation', 'stress', 'run', 'selftest', 'sync', 'ai', 'ai-review']);
 function openExport() {
+  if (!ws.state.detail) return;
   if (ws.hasDirty.value) return message.warning(t('tree.saveFirst'));
   showExport.value = true;
 }
@@ -128,7 +130,7 @@ const moreOptions = computed(() => [
   { key: 'move', label: t('improve.move') },
   { key: 'clear-cache', label: t('fix.clearCache') },
   { key: 'lint', label: `${t('toolbar.lint')}  (Ctrl+Shift+L)` },
-  { key: 'export', label: t('packages.exportProblem') },
+  { key: 'export', label: t('packages.exportProblem'), disabled: !ws.state.detail },
   { key: 'import-data', label: t('packages.importData') },
   { key: 'selftest', label: t('panel.selftest'), disabled: dataOnly.value },
   { type: 'divider', key: 'd1' },
@@ -558,7 +560,7 @@ onBeforeUnmount(() => {
       </template>
     </app-header>
 
-    <n-alert v-if="dataOnly" type="warning" :show-icon="false" class="mode-banner">{{ t('dataOnly.warning') }}</n-alert>
+    <n-alert v-if="dataOnly && showDataOnlyWarning" closable type="warning" :show-icon="false" class="mode-banner" @close="showDataOnlyWarning = false">{{ t('dataOnly.warning') }}</n-alert>
 
     <div v-if="ws.state.loadError && !ws.state.detail" class="center">
       <n-result status="404" :title="t('workspace.notFound')" :description="ws.state.loadError">

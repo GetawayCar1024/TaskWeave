@@ -17,7 +17,7 @@ import type { WsHub } from '../ws.js';
 /** Contest jobs use `contest:<id>` as their owner so the contest page can find them. */
 export const contestJobOwner = (id: string) => `contest:${id}`;
 
-export function contestRoutes(app: FastifyInstance, deps: ContestDeps & { aiRunning?: (owner: string) => boolean }, jobs: JobManager, hub: WsHub) {
+export function contestRoutes(app: FastifyInstance, deps: ContestDeps & { aiRunning?: (owner: string) => boolean; recycleContest?: (id: string) => Promise<unknown> }, jobs: JobManager, hub: WsHub) {
   const { contests, judge } = deps;
   type P = { Params: { id: string } };
 
@@ -183,7 +183,8 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps & { aiRunn
     if (jobs.list(contestJobOwner(ref.id)).some(j => j.status === 'running') || deps.aiRunning?.(contestJobOwner(ref.id))) {
       throw new HttpError(409, 'busy', 'Wait for running tasks of this contest before deleting it');
     }
-    await contests.remove(ref.id);
+    if (deps.recycleContest) await deps.recycleContest(ref.id);
+    else await contests.remove(ref.id);
     hub.broadcast({ type: 'contests:changed' });
     return { ok: true };
   });

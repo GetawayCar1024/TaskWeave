@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { LocalCheck } from './ai.js';
 import type { ProblemSummary } from './problem.js';
 import type { StatementSample } from './judge.js';
+import type { LuoguExportOptions } from './packages.js';
 import { problemTypeSchema, type ProblemType } from './problem.js';
 
 /**
@@ -93,11 +94,13 @@ export type ContestAction = (typeof CONTEST_ACTIONS)[number];
 export type LuoguAggregate = 'sum' | 'min' | 'max';
 
 export interface ContestBatchRequest {
-  exportFormat?: 'polygon' | 'lemonlime' | 'luogu';
+  exportFormat?: 'polygon' | 'lemonlime' | 'luogu' | 'hydro';
   /** lemonlime / luogu: testsets to export per problem id (default: ["tests"]). */
   testsets?: Record<string, string[]>;
   /** luogu: how the scoring script combines the time / memory of the subtasks. */
   luogu?: { time: LuoguAggregate; memory: LuoguAggregate };
+  /** Per-problem Luogu settings, keyed by stable problem id. */
+  luoguByProblem?: Record<string, LuoguExportOptions>;
   commit?: boolean;
   buildPackage?: boolean;
   packageType?: 'standard' | 'full';

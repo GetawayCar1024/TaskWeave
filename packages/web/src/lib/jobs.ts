@@ -3,15 +3,17 @@ import { api } from './api';
 import { onWs } from './ws';
 
 /** Wait for a job to finish, reporting progress. Resolves with the final JobInfo. */
-export function waitJob(job: JobInfo, onProgress?: (j: JobInfo) => void): Promise<JobInfo> {
+export function waitJob(job: JobInfo, onProgress?: (j: JobInfo) => void, signal?: AbortSignal): Promise<JobInfo> {
+  if (signal?.aborted) return Promise.reject(signal.reason);
   if (job.status !== 'running') return Promise.resolve(job);
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let settled = false;
+    const cleanup = () => { off(); clearInterval(poll); signal?.removeEventListener('abort', abort); };
+    const abort = () => { if (settled) return; settled = true; cleanup(); reject(signal?.reason); };
     const finish = (j: JobInfo) => {
       if (settled) return;
       settled = true;
-      off();
-      clearInterval(poll);
+      cleanup();
       resolve(j);
     };
     const off = onWs((e) => {
@@ -25,5 +27,6 @@ export function waitJob(job: JobInfo, onProgress?: (j: JobInfo) => void): Promis
       const j = await api.job(job.id).catch(() => null);
       if (j && j.status !== 'running') finish(j);
     }, 1500);
+    signal?.addEventListener('abort', abort, { once: true });
   });
 }

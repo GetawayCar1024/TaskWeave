@@ -13,10 +13,9 @@ import { runCheckerTests, runValidatorTests } from '../judge/selftest.js';
 import { addManualTest, removeTest, answerPath, generateTests, inputPath, overviewPath, publicManifest, readManifest, requireTestset, sampleStatementPaths } from '../judge/tests.js';
 import { HttpError, safeJoin, exists, atomicWrite } from '../util/fs.js';
 import { readSamples } from '../judge/samples.js';
-import { luoguData } from '../judge/luogu.js';
-import { exportTestsets } from '../judge/lemonlime.js';
+import { buildProblemDataPackage, requireLuoguOptions } from '../judge/problemExport.js';
 import { requireFullProblem } from '../judge/index.js';
-import type { LuoguAggregate } from '@polyforge/shared';
+import type { ProblemExportRequest } from '@polyforge/shared';
 
 const PREVIEW = 64 * 1024;
 
@@ -198,15 +197,15 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
   app.get<P>('/api/problems/:id/checks', async (req) => localChecks(judge, await judge.ctx(req.params.id)));
 
   /** Polygon-style package (zip) with tests, statements and all programs. */
-  app.post<P & { Body: { format?: 'polygon' | 'luogu'; testsets?: string[]; luogu?: { time?: LuoguAggregate; memory?: LuoguAggregate } } }>('/api/problems/:id/export', async (req) => {
+  app.post<P & { Body: ProblemExportRequest }>('/api/problems/:id/export', async (req) => {
     const ctx = await judge.ctx(req.params.id);
-    if (req.body?.format === 'luogu') {
-      const time = req.body.luogu?.time ?? 'sum', memory = req.body.luogu?.memory ?? 'max';
-      if (![time, memory].every(v => ['sum', 'min', 'max'].includes(v))) throw new HttpError(400, 'bad_request', 'Unknown time / memory aggregation');
-      const sets = exportTestsets(ctx, ctx.config.problem.name, req.body.testsets);
+    const format = req.body?.format;
+    if (format === 'luogu' || format === 'hydro') {
+      if (format === 'luogu' && req.body.luogu) requireLuoguOptions(req.body.luogu);
+      if (jobs.running(ctx.ref.id, 'export')) throw new HttpError(409, 'busy', 'Another export is running for this problem');
       return jobs.start('export', ctx.ref.id, async job => {
-        const result = await luoguData(judge, ctx, ctx.config.problem.name, job, sets, { time, memory });
-        const file = `data-${Date.now()}.zip`;
+        const result = await buildProblemDataPackage(judge, ctx, format, job, req.body);
+        const file = format === 'luogu' ? `data-${Date.now()}.zip` : `${ctx.config.problem.name}-hydro-${Date.now()}.zip`;
         await atomicWrite(path.join(exportDir(ctx), file), result.data);
         return { file, size: result.data.length, tests: result.tests, warnings: result.warnings };
       });

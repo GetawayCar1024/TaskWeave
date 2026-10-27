@@ -20,7 +20,8 @@
 - **比赛**：一场比赛引用已有题目，整场生成测试、批量评测、检查、同步和导出；比赛文件工作区管理公告与注意事项。
 - **文档与导出**：CF 风格的 PDF / HTML / Markdown / TeX；内置 [CNOI](https://github.com/Mr-Python-in-China/cnoi-statement-generator) 排版引擎生成 tuack 风格的 OI PDF，离线可用，无需安装 TeX；选手下发包 `down.zip`。
 - **题面模式**：按语言选择整体 `statement.tex` 或 Polygon 分段文件，支持双向转换；整体题面同步 Polygon 时自动放入 `legend.tex` 并警告。
-- **数据包交换**：洛谷 `data.zip`（数据、`config.yml`、`score.txt`）导入导出，Hydro 整题包与仅数据包导入；额外文件保留在“其他文件”。单题可导出文档、Polygon 包、洛谷包及 `down.zip`。
+- **数据包交换**：洛谷 `data.zip`（数据、`config.yml`、`score.txt`）导入导出，Hydro 整题包导入导出及仅数据导入；导入前校验 ZIP，额外文件保留在“其他文件”。单题可导出文档、Polygon 包、洛谷／Hydro 包及 `down.zip`；比赛可组合各题独立包，洛谷汇总方式逐题设置。
+- **文件管理**：题目短名称可在信息面板修改，比赛与导出同步更新；首页回收站可恢复或永久删除题目、比赛及其历史记录。
 - **纯数据模式**：只有 `.in/.out` 或 `.in/.ans` 与分数配置也能管理样例、导出比赛 LemonLime 和下发样例包；不推荐作为正式造题流程，补全题面、validator、checker 与标程后再启用完整功能。
 - **评测包**：Polygon package、LemonLime（`.cdf` + 数据 + checker）、洛谷（数据、`config.yml`、处理捆绑与依赖的计分脚本）。
 - **AI 辅助（可选）**：支持 Anthropic、OpenAI Chat Completions、OpenAI Responses 协议及兼容的中转服务；AI 可读写文件、编译、生成测试和评测，所有改动都要经过审阅；记录 token 用量与费用。
@@ -86,7 +87,7 @@ pnpm desktop        # 构建安装版和免安装版，输出到 packages/deskto
 回归测试（使用临时数据目录，部分用例需要 g++）：
 
 ```bash
-pnpm --filter @polyforge/server exec tsx --test scripts/test-regressions.ts scripts/test-october-fixes.ts scripts/test-problem-types.ts scripts/test-responses.ts scripts/test-statement-markup.ts scripts/test-polygon-sync.ts scripts/test-subtasks-export.ts scripts/test-invocation-testsets.ts scripts/test-workspace-fixes.ts scripts/test-oi-judging.ts scripts/test-cnoi-template.ts scripts/test-contest-files.ts scripts/test-authoring-modes.ts scripts/test-data-packages.ts
+pnpm --filter @polyforge/server exec tsx --test scripts/test-regressions.ts scripts/test-october-fixes.ts scripts/test-problem-types.ts scripts/test-responses.ts scripts/test-statement-markup.ts scripts/test-polygon-sync.ts scripts/test-subtasks-export.ts scripts/test-invocation-testsets.ts scripts/test-workspace-fixes.ts scripts/test-oi-judging.ts scripts/test-cnoi-template.ts scripts/test-contest-files.ts scripts/test-authoring-modes.ts scripts/test-data-packages.ts scripts/test-release-management.ts
 ```
 
 Polygon 与 AI 的模拟服务和集成脚本位于 `packages/server/scripts/`。更多构建细节见 [docs/building.md](docs/building.md)。

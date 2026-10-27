@@ -13,6 +13,7 @@ const router = createRouter({
     { path: '/c/:id', name: 'contest', component: () => import('./views/ContestView.vue'), props: true },
     { path: '/c/:id/print', name: 'contest-print', component: () => import('./views/ContestPrint.vue'), props: true },
     { path: '/settings', name: 'settings', component: () => import('./views/SettingsView.vue') },
+    { path: '/trash', name: 'trash', component: () => import('./views/TrashView.vue') },
   ],
 });
 

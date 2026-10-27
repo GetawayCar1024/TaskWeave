@@ -23,7 +23,7 @@ export function packageCandidates(files: Map<string, Buffer>, options: PackageIm
     const meta = yamlObject(files.get(file), file);
     const entry = file.slice(0, file.lastIndexOf('/') + 1);
     const title = String(meta.title ?? meta.name ?? meta.pid ?? path.posix.basename(entry.slice(0, -1)) ?? 'Imported problem');
-    return { entry, title, name: slug(String(meta.pid ?? (entry ? path.posix.basename(entry.slice(0, -1)) : title))) };
+    return { entry, title, name: typeof meta.polyforge?.name === 'string' && PROBLEM_NAME_RE.test(meta.polyforge.name) ? meta.polyforge.name : slug(String(meta.pid ?? (entry ? path.posix.basename(entry.slice(0, -1)) : title))) };
   });
 }
 
@@ -116,17 +116,14 @@ function addData(local: Map<string, Buffer>, plan: DataPlan, manual: string) {
     ...(plan.unresolvedScoring ? { unresolved_scoring: true } : {}) };
 }
 
-export async function importPackage(judge: Judge, bytes: Buffer, options: PackageImportOptions, problemId?: string): Promise<PackageImportResult> {
+function readPackageInput(archive: Map<string, Buffer>, options: PackageImportOptions) {
   if (!formats.includes(options.format)) return badPackage('Unknown import format.');
-  if (problemId && options.format === 'hydro-problem') return badPackage('Whole Hydro problem import creates a new problem. Use Hydro data import for an existing problem.');
-  const archive = readZip(bytes);
+  if (!archive.size) return badPackage('The ZIP archive contains no files.');
   const full = options.format === 'hydro-problem', format = options.format === 'luogu-data' ? 'luogu' : 'hydro';
-  const fallbackLang = language(options.lang ?? 'zh');
-  let files = archive, plan: DataPlan, metadata: Record<string, any> = {}, dataPrefix = '';
   const candidates = packageCandidates(archive, options);
-  let chosen: PackageCandidate | undefined;
+  let files = archive, plan: DataPlan, metadata: Record<string, any> = {}, dataPrefix = '', chosen: PackageCandidate | undefined;
   if (full) {
-    chosen = candidates.find(c => c.entry === options.entry) ?? (candidates.length === 1 ? candidates[0] : undefined);
+    chosen = candidates.find(c => c.entry === options.entry) ?? (candidates.length === 1 && options.entry === undefined ? candidates[0] : undefined);
     if (!chosen) return badPackage(candidates.length ? 'Select a problem directory from the Hydro archive.' : 'No problem.yaml in this Hydro package.');
     files = subtree(archive, chosen.entry);
     const metadataFile = [...files.keys()].find(p => /^problem\.ya?ml$/i.test(p))!;
@@ -135,11 +132,52 @@ export async function importPackage(judge: Judge, bytes: Buffer, options: Packag
     const data = subtree(files, dataPrefix);
     if (!data.size) return badPackage('Hydro problem has no testdata/ directory.');
     plan = parseData(data, 'hydro');
+    hydroStatements(files, metadata, language(options.lang ?? 'zh'), []);
+    const cfg = plan.sourceConfig;
+    for (const role of ['checker', 'validator', 'interactor', 'manager']) {
+      if (cfg[role] === undefined) continue;
+      const file = typeof cfg[role] === 'string' ? cfg[role] : cfg[role]?.file;
+      if (typeof file !== 'string' || !file) return badPackage(`Invalid Hydro ${role} reference.`);
+      if (role === 'checker' && !file.includes('.')) continue;
+      validateFileName(file);
+      if (!data.has(file)) return badPackage(`Missing Hydro program: ${file}`);
+    }
+    for (const key of ['user_extra_files', 'judge_extra_files']) {
+      if (cfg[key] === undefined) continue;
+      if (!Array.isArray(cfg[key])) return badPackage(`Hydro ${key} must be a list.`);
+      for (const file of cfg[key]) {
+        validateFileName(file);
+        if (!data.has(file)) return badPackage(`Missing file referenced by configuration: ${file}`);
+      }
+    }
   } else {
-    const data = dataFiles(files);
-    dataPrefix = data.prefix;
+    const data = dataFiles(files); dataPrefix = data.prefix;
     plan = parseData(data.files, format);
   }
+  return { full, format, candidates, files, plan, metadata, dataPrefix, chosen };
+}
+
+/** Validate archive integrity and each candidate's configuration before enabling Import. */
+export function inspectPackage(bytes: Buffer, options: PackageImportOptions): PackageCandidate[] {
+  const archive = readZip(bytes);
+  if (!archive.size) return badPackage('The ZIP archive contains no files.');
+  const candidates = packageCandidates(archive, options);
+  if (!candidates.length) return badPackage('No problem.yaml in this Hydro package.');
+  const size = [...archive.values()].reduce((sum, bytes) => sum + bytes.length, 0);
+  return candidates.map(candidate => {
+    try {
+      const input = readPackageInput(archive, { ...options, entry: candidate.entry });
+      return { ...candidate, files: archive.size, size, tests: input.plan.pairs.length, warnings: input.plan.warnings };
+    } catch (e) { return { ...candidate, files: archive.size, size, error: (e as Error).message }; }
+  });
+}
+
+export async function importPackage(judge: Judge, bytes: Buffer, options: PackageImportOptions, problemId?: string): Promise<PackageImportResult> {
+  if (!formats.includes(options.format)) return badPackage('Unknown import format.');
+  if (problemId && options.format === 'hydro-problem') return badPackage('Whole Hydro problem import creates a new problem. Use Hydro data import for an existing problem.');
+  const archive = readZip(bytes);
+  const fallbackLang = language(options.lang ?? 'zh');
+  const { full, format, candidates, chosen, files, plan, metadata, dataPrefix } = readPackageInput(archive, options);
   const local = new Map<string, Buffer>(), warnings = [...plan.warnings];
   const id = `${Date.now()}-${randomBytes(3).toString('hex')}`;
   const other = `other/${format}${problemId ? '-' + id : ''}`;
@@ -193,7 +231,7 @@ export async function importPackage(judge: Judge, bytes: Buffer, options: Packag
       // their file:// form, which the preview resolves through the same authenticated API.
       const text = parsed.text.replace(/(!\[[^\]]*\]\()file:\/\/([^\s)]+)(\))/g, '$1$2$3');
       local.set(`statement/${lang}/statement.tex`, Buffer.from(text));
-      doc.problem.title[lang] = chosen!.title;
+      doc.problem.title[lang] = typeof metadata.polyforge?.titles?.[lang] === 'string' ? metadata.polyforge.titles[lang] : chosen!.title;
       if (!canonicalSamples && parsed.samples.length) canonicalSamples = parsed.samples;
       if (parsed.samples.length && canonicalSamples && parsed.samples.length !== canonicalSamples.length) {
         // Keep a language with different sample numbering exactly as authored.

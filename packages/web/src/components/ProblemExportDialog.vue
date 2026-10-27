@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NForm, NFormItem, NSelect, useMessage } from 'naive-ui';
-import { testsetsOf, type LuoguAggregate, type ProblemDetail, type JobInfo } from '@polyforge/shared';
+import { luoguExportOptions, testsetsOf, type LuoguAggregate, type ProblemDetail, type JobInfo } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 import { waitJob } from '../lib/jobs';
 import { serverText } from '../lib/serverText';
@@ -19,11 +19,16 @@ const sets = computed(() => props.detail?.config ? testsetsOf(props.detail.confi
 const formats = computed(() => [
   { value: 'polygon', label: t('oiFeatures.polygon'), disabled: !!props.detail?.summary.dataOnly },
   { value: 'luogu', label: t('packages.luoguExport') },
+  { value: 'hydro', label: t('packages.hydroExport') },
   { value: 'documents', label: t('packages.documents'), disabled: !props.detail?.summary.status.statementLangs.length && !props.detail?.summary.status.tutorialLangs.length },
   { value: 'down', label: 'down.zip' },
 ]);
 const aggregations = computed(() => (['sum', 'min', 'max'] as const).map(value => ({ value, label: t(`contest.agg.${value}`) })));
-watch(() => props.show, value => { if (value) { format.value = props.detail?.summary.dataOnly ? 'luogu' : 'polygon'; testsets.value = ['tests']; error.value = ''; job.value = null; } });
+watch([() => props.show, () => props.detail?.summary.id], ([value]) => { if (value && props.detail) {
+  format.value = props.detail?.summary.dataOnly ? 'luogu' : 'polygon'; testsets.value = ['tests']; error.value = ''; job.value = null;
+  const options = props.detail?.config ? luoguExportOptions(props.detail.config) : { time: 'sum' as const, memory: 'max' as const };
+  time.value = options.time; memory.value = options.memory;
+} });
 async function submit() {
   if (!props.detail || busy.value) return;
   const id = props.detail.summary.id;
@@ -38,7 +43,7 @@ async function submit() {
       await api.downSamples(id, locale.value === 'zh-CN' ? 'zh' : 'en', true);
       message.info(t('dataOnly.downSamples'));
     } else {
-      const result = await waitJob(await api.exportPackage(id, { format: format.value as 'polygon' | 'luogu', testsets: testsets.value, luogu: { time: time.value, memory: memory.value } }), value => job.value = value);
+      const result = await waitJob(await api.exportPackage(id, { format: format.value as 'polygon' | 'luogu' | 'hydro', testsets: testsets.value, ...(format.value === 'luogu' ? { luogu: { time: time.value, memory: memory.value } } : {}) }), value => job.value = value);
       if (result.status !== 'done') throw new Error(result.error ?? result.status);
       const data = result.result as { file: string; tests: number; warnings: string[] };
       await api.downloadExport(id, data.file);
@@ -60,8 +65,12 @@ async function submit() {
         <n-form-item :label="t('contest.luoguTime')"><n-select v-model:value="time" :options="aggregations" :disabled="busy" /></n-form-item>
         <n-form-item :label="t('contest.luoguMemory')"><n-select v-model:value="memory" :options="aggregations" :disabled="busy" /></n-form-item>
       </template>
+      <template v-if="format === 'hydro'">
+        <n-alert type="info" :show-icon="false" class="pf-dialog-note">{{ t('packages.hydroHint') }}</n-alert>
+        <n-form-item :label="t('testsets.title')"><n-select v-model:value="testsets" multiple :disabled="busy" :options="sets" /></n-form-item>
+      </template>
       <n-alert v-if="detail?.summary.dataOnly && format === 'down'" type="info" :show-icon="false">{{ t('dataOnly.downSamples') }}</n-alert>
     </n-form>
-    <template #footer><n-button :disabled="busy" @click="emit('update:show', false)">{{ t('common.cancel') }}</n-button><n-button type="primary" :disabled="!detail || format === 'luogu' && !testsets.length" :loading="busy" @click="submit">{{ t('contest.export') }}</n-button></template>
+    <template #footer><n-button :disabled="busy" @click="emit('update:show', false)">{{ t('common.cancel') }}</n-button><n-button type="primary" :disabled="!detail || ['luogu', 'hydro'].includes(format) && !testsets.length" :loading="busy" @click="submit">{{ t('contest.export') }}</n-button></template>
   </tool-window>
 </template>

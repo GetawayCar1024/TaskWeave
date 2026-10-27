@@ -1,4 +1,5 @@
 import { promises as fsp } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import {
   LANG_TO_POLYGON,
@@ -30,7 +31,8 @@ import { readInvocation, runInvocation } from './invocation.js';
 import { exportPackage } from './package.js';
 import { readSamples } from './samples.js';
 import { addLemonProblem, exportTestsets, lemonReadme, preflightLemonChecker } from './lemonlime.js';
-import { addLuoguProblem, luoguContestReadme } from './luogu.js';
+import { luoguContestReadme } from './luogu.js';
+import { buildProblemDataPackage, requireLuoguOptions } from './problemExport.js';
 import { generateTests, readManifest } from './tests.js';
 import { readStatementSections } from '../workspace/statements.js';
 
@@ -50,12 +52,15 @@ export interface ContestDeps {
 export async function runContestBatch(deps: ContestDeps, contestId: string, req: ContestBatchRequest, job: JobCtx): Promise<ContestBatchResult> {
   const { judge, contests, sync } = deps;
   const { ref, config } = await contests.config(contestId);
-  if (req.exportFormat && !['polygon', 'lemonlime', 'luogu'].includes(req.exportFormat)) throw new HttpError(400, 'bad_request', 'Unknown export format');
+  if (req.exportFormat && !['polygon', 'lemonlime', 'luogu', 'hydro'].includes(req.exportFormat)) throw new HttpError(400, 'bad_request', 'Unknown export format');
   const lemon = req.action === 'export' && req.exportFormat === 'lemonlime';
   const luogu = req.action === 'export' && req.exportFormat === 'luogu';
-  const aggs = ['sum', 'min', 'max'];
-  const agg = { time: req.luogu?.time ?? 'sum', memory: req.luogu?.memory ?? 'max' } as const;
-  if (luogu && (!aggs.includes(agg.time) || !aggs.includes(agg.memory))) throw new HttpError(400, 'bad_request', 'Unknown time / memory aggregation');
+  const hydro = req.action === 'export' && req.exportFormat === 'hydro';
+  if (luogu) {
+    if (req.luogu) requireLuoguOptions(req.luogu);
+    if (req.luoguByProblem !== undefined && (!req.luoguByProblem || typeof req.luoguByProblem !== 'object' || Array.isArray(req.luoguByProblem))) throw new HttpError(400, 'bad_request', 'Invalid per-problem Luogu options');
+    for (const value of Object.values(req.luoguByProblem ?? {})) requireLuoguOptions(value);
+  }
   if (req.testsets !== undefined && (typeof req.testsets !== 'object' || Object.values(req.testsets).some(v => !Array.isArray(v) || v.some(s => typeof s !== 'string')))) throw new HttpError(400, 'bad_request', 'testsets must map problem ids to testset names');
   if (luogu && !PROBLEM_NAME_RE.test(config.contest.name)) throw new HttpError(400, 'invalid_name', 'Invalid contest name.');
   if (lemon && !PROBLEM_NAME_RE.test(config.contest.name)) throw new HttpError(400, 'invalid_name', 'Invalid contest name.');
@@ -66,8 +71,8 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
   const zip = req.action === 'export' ? new ZipWriter() : null;
   const exported: { index: string; name: string }[] = [];
   const lemonTasks: Awaited<ReturnType<typeof addLemonProblem>>['task'][] = [];
-  if ((lemon || luogu) && !list.length) throw new HttpError(400, 'empty_contest', 'No problems to export.');
-  if (luogu) {
+  if ((lemon || luogu || hydro) && !list.length) throw new HttpError(400, 'empty_contest', 'No problems to export.');
+  if (luogu || hydro) {
     const names = new Set<string>();
     for (const p of list) {
       const ctx = await judge.ctx(p.problem);
@@ -168,8 +173,10 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
             item.message = plural(r.tests, 'test');
             break;
           }
-          if (luogu) {
-            const r = await addLuoguProblem(judge, ctx, p.index, zip!, sub, exportTestsets(ctx, p.index, req.testsets?.[p.problem]), agg);
+          if (luogu || hydro) {
+            const r = await buildProblemDataPackage(judge, ctx, luogu ? 'luogu' : 'hydro', sub, { testsets: req.testsets?.[p.problem], luogu: req.luoguByProblem?.[p.problem] ?? req.luogu });
+            zip!.add(`${ctx.config.problem.name}/${r.filename}`, r.data);
+            if (r.readme) zip!.add(`${ctx.config.problem.name}/README.txt`, r.readme);
             item.ok = true;
             item.message = plural(r.tests, 'test');
             item.details = r.warnings;
@@ -216,8 +223,10 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
     const failed = () => items.filter(item => !item.ok).map(item => `${item.index}: ${item.message}\n${(item.details ?? []).join('\n')}`).join('\n');
     if (lemon && items.some(item => !item.ok)) throw new HttpError(400, 'lemonlime_export', `LemonLime export failed; no incomplete archive was produced.\n${failed()}`);
     if (luogu && items.some(item => !item.ok)) throw new HttpError(400, 'luogu_export', `Luogu export failed; no incomplete archive was produced.\n${failed()}`);
+    if (hydro && items.some(item => !item.ok)) throw new HttpError(400, 'hydro_export', `Hydro export failed; no incomplete archive was produced.\n${failed()}`);
     job.progress(list.length, list.length, 'writing');
     if (luogu) zip.add('README.txt', luoguContestReadme(config.contest.title.zh || config.contest.title.en || config.contest.name, list.map(p => p.index)));
+    else if (hydro) zip.add('README.txt', 'Each problem folder contains one standalone Hydro problem ZIP. Import those ZIPs individually in Hydro.\n每个题目目录内有一个独立 Hydro 整题 ZIP，请逐题导入 Hydro。\n');
     else if (lemon) {
       zip.add(`${config.contest.name}.cdf`, JSON.stringify({ version: '1.0', contestTitle: config.contest.title.zh || config.contest.title.en || config.contest.name, tasks: lemonTasks, contestants: [] }, null, 2));
       zip.add('source/', '');
@@ -226,7 +235,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
     else if (config.contest.type === 'cf') zip.add('contest.xml', contestXml(config.contest.title, config.contest.name, exported));
     else zip.add('contest.toml', await fsp.readFile(path.join(ref.dir, 'contest.toml')));
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
-    const file = `${config.contest.name}${lemon ? '-lemonlime' : luogu ? '-luogu' : ''}-${stamp}.zip`;
+    const file = `${config.contest.name}${lemon ? '-lemonlime' : luogu ? '-luogu' : hydro ? '-hydro' : ''}-${stamp}-${randomBytes(4).toString('hex')}.zip`;
     const data = zip.finish();
     await atomicWrite(path.join(contestExportDir(ref), file), data);
     result.file = file;

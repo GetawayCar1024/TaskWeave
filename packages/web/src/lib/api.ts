@@ -1,5 +1,6 @@
 import type { DefsToml } from './latex';
 import type { PackageCandidate, PackageImportOptions, PackageImportResult } from '@polyforge/shared';
+import type { ProblemExportRequest, TrashEntry } from '@polyforge/shared';
 import { serverText } from './serverText';
 import {
   TOKEN_HEADER,
@@ -116,6 +117,10 @@ async function uploadPackage<T>(url: string, file: File, options: PackageImportO
 }
 
 export const api = {
+  trash: () => request<{ entries: TrashEntry[]; roots: string[] }>('GET', '/trash'),
+  restoreTrash: (key: string, root?: string) => request<{ kind: 'problem' | 'contest'; id: string }>('POST', `/trash/${encodeURIComponent(key)}/restore`, { root }),
+  deleteTrash: (key: string) => request('DELETE', `/trash/${encodeURIComponent(key)}`),
+  emptyTrash: (entries: string[]) => request('DELETE', '/trash', { entries }),
   packageCandidates: (file: File, options: PackageImportOptions) => uploadPackage<PackageCandidate[]>('/problems/import/package', file, options, true),
   importPackage: (file: File, options: PackageImportOptions, id?: string) => uploadPackage<PackageImportResult>(id ? `/problems/${pid(id)}/import/data` : '/problems/import/package', file, options),
   statementSamples: (id: string, lang?: string) => request<import('@polyforge/shared').StatementSample[]>('GET', `/problems/${pid(id)}/statement-samples${lang ? `?lang=${encodeURIComponent(lang)}` : ''}`),
@@ -225,7 +230,7 @@ export const api = {
 
   // ---- M5 ----
   stress: (id: string, req: StressRequest) => request<JobInfo>('POST', `/problems/${pid(id)}/stress`, req),
-  exportPackage: (id: string, options?: { format?: 'polygon' | 'luogu'; testsets?: string[]; luogu?: { time: import('@polyforge/shared').LuoguAggregate; memory: import('@polyforge/shared').LuoguAggregate } }) => request<JobInfo>('POST', `/problems/${pid(id)}/export`, options),
+  exportPackage: (id: string, options?: ProblemExportRequest) => request<JobInfo>('POST', `/problems/${pid(id)}/export`, options),
   checks: (id: string) => request<LocalCheck[]>('GET', `/problems/${pid(id)}/checks`),
   startReview: (id: string, req: CreateAiSessionRequest) => request<AiSessionDetail>('POST', `${aiBase(id)}/ai/review`, req),
   /** Download an exported package through fetch (the token travels in a header). */

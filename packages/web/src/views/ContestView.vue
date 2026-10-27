@@ -47,7 +47,7 @@ import {
   MemoryStick,
   ListOrdered,
 } from 'lucide-vue-next';
-import { CONTEST_INDEX_RE, PROBLEM_NAME_RE, testsetsOf, type LuoguAggregate, type ContestAction, type ContestBatchItem, type ContestBatchResult, type ContestDetail, type JobInfo, type ProblemSummary } from '@polyforge/shared';
+import { CONTEST_INDEX_RE, PROBLEM_NAME_RE, luoguExportOptions, testsetsOf, type LuoguExportOptions, type ContestAction, type ContestBatchItem, type ContestBatchResult, type ContestDetail, type JobInfo, type ProblemSummary } from '@polyforge/shared';
 import AppHeader from '../components/AppHeader.vue';
 import AiDrawer from '../components/AiDrawer.vue';
 import ContestSyncDialog from '../components/ContestSyncDialog.vue';
@@ -57,6 +57,7 @@ import { useAi } from '../lib/ai';
 import { api, errorMessage } from '../lib/api';
 import { problemTitle } from '../lib/format';
 import { waitJob } from '../lib/jobs';
+import { createJobFollower } from '../lib/jobFollower';
 import { confirmDeleteContest } from '../lib/deleteProblem';
 import { checklist, progress } from '../lib/progress';
 import { onWs } from '../lib/ws';
@@ -74,6 +75,7 @@ const message = useMessage();
 const detail = ref<ContestDetail | null>(null);
 const allProblems = ref<ProblemSummary[]>([]);
 const loadError = ref('');
+let alive = true;
 
 async function load() {
   try {
@@ -112,12 +114,15 @@ const off = onWs((e) => {
 });
 onMounted(async () => {
   await load();
-  result.value = await api.contestLastResult(props.id).catch(() => null);
+  const previous = await api.contestLastResult(props.id).catch(() => null);
+  if (alive && !job.value && !submitting.value) result.value = previous;
   // Re-attach to a batch that is still running (e.g. after a reload).
   const running = (await api.jobs(`contest:${props.id}`).catch(() => [])).find((j) => j.status === 'running');
-  if (running) follow(running);
+  if (alive && running) follow(running);
 });
 onUnmounted(() => {
+  alive = false;
+  follower.dispose();
   off();
   clearTimeout(timer);
 });
@@ -232,23 +237,27 @@ const ACTIONS: { action: ContestAction; icon: typeof Play }[] = [
   { action: 'export', icon: Package },
 ];
 const job = ref<JobInfo | null>(null);
+const submitting = ref(false);
 const running = computed(() => job.value?.status === 'running');
+const busy = computed(() => submitting.value || running.value);
 const result = ref<ContestBatchResult | null>(null);
 const showExport = ref(false);
-const exportFormat = ref<'polygon' | 'lemonlime' | 'luogu'>('lemonlime');
+const exportFormat = ref<'polygon' | 'lemonlime' | 'luogu' | 'hydro'>('lemonlime');
 // LemonLime / Luogu: testsets per problem (default "tests"), and Luogu's time / memory aggregation.
-const exportTestsets = ref<Record<string, { all: string[]; chosen: string[] }>>({});
-const luoguTime = ref<LuoguAggregate>('sum');
-const luoguMemory = ref<LuoguAggregate>('max');
+const exportTestsets = ref<Record<string, { all: string[]; chosen: string[]; luogu: LuoguExportOptions }>>({});
+const loadingExportOptions = ref(false);
 const aggOptions = computed(() => (['sum', 'min', 'max'] as const).map((value) => ({ value, label: t(`contest.agg.${value}`) })));
 async function loadExportTestsets() {
+  loadingExportOptions.value = true;
   const out: typeof exportTestsets.value = {};
+  try {
   await Promise.all(rows.value.map(async (r) => {
     const config = await api.problem(r.problem).then((d) => d.config).catch(() => null);
     const all = config ? testsetsOf(config).map((x) => x.name) : ['tests'];
-    out[r.problem] = { all, chosen: exportTestsets.value[r.problem]?.chosen.filter((x) => all.includes(x)) ?? ['tests'] };
+    out[r.problem] = { all, chosen: exportTestsets.value[r.problem]?.chosen.filter((x) => all.includes(x)) ?? ['tests'], luogu: config ? luoguExportOptions(config) : { time: 'sum', memory: 'max' } };
   }));
   exportTestsets.value = out;
+  } finally { loadingExportOptions.value = false; }
 }
 const multiTestsets = computed(() => rows.value.filter((r) => (exportTestsets.value[r.problem]?.all.length ?? 0) > 1));
 const resultByProblem = computed(() => new Map((result.value?.items ?? []).map((x) => [x.problem, x])));
@@ -264,33 +273,37 @@ async function run(action: ContestAction) {
     loadExportTestsets();
     return;
   }
+  if (busy.value) return;
+  submitting.value = true;
   try {
     // Pushing to Polygon lives in the sync dialog (with its commit message).
     const started = await api.contestBatch(props.id, { action });
-    follow(started);
+    if (alive) void follow(started);
   } catch (e) {
     message.error(errorMessage(e));
-  }
+  } finally { submitting.value = false; }
 }
 async function exportContest() {
+  if (busy.value || loadingExportOptions.value) return;
+  submitting.value = true;
   const testsets = exportFormat.value === 'polygon' ? undefined : Object.fromEntries(Object.entries(exportTestsets.value).map(([k, v]) => [k, v.chosen.length ? v.chosen : ['tests']]));
-  const luogu = exportFormat.value === 'luogu' ? { time: luoguTime.value, memory: luoguMemory.value } : undefined;
+  const luoguByProblem = exportFormat.value === 'luogu' ? Object.fromEntries(Object.entries(exportTestsets.value).map(([id, value]) => [id, { ...value.luogu }])) : undefined;
   exportError.value = '';
   try {
-    const started = await api.contestBatch(props.id, { action: 'export', exportFormat: exportFormat.value, testsets, luogu });
+    const started = await api.contestBatch(props.id, { action: 'export', exportFormat: exportFormat.value, testsets, luoguByProblem });
+    if (!alive) return;
     exportJobId.value = started.id;
     await follow(started);
     if (exportJob.value?.status === 'done') showExport.value = false;
   } catch (e) {
     exportError.value = errorMessage(e);
-  }
+  } finally { submitting.value = false; }
 }
-async function follow(started: JobInfo) {
-  job.value = started;
-  result.value = null;
-  const done = await waitJob(started, (j) => (job.value = j));
-  job.value = done;
-  if (done.status === 'failed') return message.error(done.error ? serverText(done.error) : t('tool.status.failed'));
+const follower = createJobFollower(waitJob, current => {
+  if (job.value?.id !== current.id) result.value = null;
+  job.value = current;
+}, async done => {
+  if (done.status === 'failed') { message.error(done.error ? serverText(done.error) : t('tool.status.failed')); return; }
   if (done.status !== 'done') return;
   const r = done.result as ContestBatchResult;
   result.value = r;
@@ -298,8 +311,9 @@ async function follow(started: JobInfo) {
   if (bad) message.warning(t('contest.batchBad', { n: bad }));
   else message.success(t(`contest.done.${r.action}`));
   if (r.file) api.downloadContestExport(props.id, r.file).catch((e) => message.error(errorMessage(e)));
-  load();
-}
+  await load();
+});
+const follow = (started: JobInfo) => follower.follow(started);
 const cancel = () => job.value && api.cancelJob(job.value.id).catch(() => {});
 
 // ---- table ----
@@ -442,7 +456,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
             <section class="problem-list">
             <div class="toolbar">
               <n-space size="small">
-                <n-button v-for="a in ACTIONS" :key="a.action" size="small" :disabled="running || !rows.length || hasDataOnly && a.action === 'invocation'" @click="run(a.action)">
+                <n-button v-for="a in ACTIONS" :key="a.action" size="small" :disabled="busy || !rows.length || hasDataOnly && a.action === 'invocation'" @click="run(a.action)">
                   <template #icon><component :is="a.icon" /></template>{{ t(`contest.action.${a.action}`) }}
                 </n-button>
                 <n-button size="small" :disabled="running || !rows.length || hasDataOnly" @click="showSync = true">
@@ -498,23 +512,28 @@ const columns = computed<DataTableColumns<Row>>(() => [
     <tool-window
       v-model:show="showExport"
       :title="t('oiFeatures.exportTitle')"
-      size="md"
+      size="lg"
       :status="exportJob?.status ?? null"
       :progress="exportJob?.progress ?? null"
       :error="exportError"
     >
-      <n-form label-placement="left" label-width="auto" size="small" :show-feedback="false" :disabled="running" class="export-form">
+      <n-form label-placement="left" label-width="auto" size="small" :show-feedback="false" :disabled="busy" class="export-form">
         <n-form-item :label="t('contest.exportFormat')">
-          <n-select v-model:value="exportFormat" :options="[{ value: 'lemonlime', label: 'LemonLime (.cdf + data + source)' }, { value: 'luogu', label: t('contest.luoguFormat') }, { value: 'polygon', label: t('oiFeatures.polygon'), disabled: hasDataOnly }]" />
+          <n-select v-model:value="exportFormat" :options="[{ value: 'lemonlime', label: 'LemonLime (.cdf + data + source)' }, { value: 'luogu', label: t('contest.luoguFormat') }, { value: 'hydro', label: t('packages.hydroExport') }, { value: 'polygon', label: t('oiFeatures.polygon'), disabled: hasDataOnly }]" />
         </n-form-item>
         <n-alert v-if="exportFormat === 'lemonlime'" type="info" :show-icon="false" class="pf-dialog-note">{{ t('oiFeatures.exportHint') }}</n-alert>
         <n-alert v-if="exportFormat === 'lemonlime' && hasDataOnly" type="warning" :show-icon="false" class="pf-dialog-note">{{ t('dataOnly.lemonHint') }}</n-alert>
         <n-alert v-if="exportFormat === 'luogu'" type="info" :show-icon="false" class="pf-dialog-note">{{ t('packages.luoguHint') }}</n-alert>
-        <template v-if="exportFormat === 'luogu'">
-          <n-form-item :label="t('contest.luoguTime')"><n-select v-model:value="luoguTime" :options="aggOptions" /></n-form-item>
-          <n-form-item :label="t('contest.luoguMemory')"><n-select v-model:value="luoguMemory" :options="aggOptions" /></n-form-item>
-        </template>
+        <n-alert v-if="exportFormat === 'hydro'" type="info" :show-icon="false" class="pf-dialog-note">{{ t('packages.hydroContestHint') }}</n-alert>
       </n-form>
+      <div v-if="exportFormat === 'luogu'" class="per-problem-options">
+        <div class="pf-label">{{ t('contest.luoguPerProblem') }}</div>
+        <div v-for="r in rows.filter(r => exportTestsets[r.problem])" :key="r.problem" class="problem-export-options">
+          <strong>{{ r.index }} · {{ r.summary?.name }}</strong>
+          <label>{{ t('contest.luoguTime') }}<n-select v-model:value="exportTestsets[r.problem].luogu.time" size="small" :options="aggOptions" :disabled="busy" :aria-label="`${r.index} ${t('contest.luoguTime')}`" /></label>
+          <label>{{ t('contest.luoguMemory') }}<n-select v-model:value="exportTestsets[r.problem].luogu.memory" size="small" :options="aggOptions" :disabled="busy" :aria-label="`${r.index} ${t('contest.luoguMemory')}`" /></label>
+        </div>
+      </div>
       <div v-if="exportFormat !== 'polygon' && multiTestsets.length" class="export-testsets">
         <div class="pf-label">{{ t('contest.exportTestsets') }}</div>
         <div v-for="r in multiTestsets" :key="r.problem" class="export-testset">
@@ -526,7 +545,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
       </div>
       <template #footer>
         <n-button @click="showExport = false">{{ exportJob?.status === 'running' ? t('common.close') : t('common.cancel') }}</n-button>
-        <n-button type="primary" :disabled="running" :loading="exportJob?.status === 'running'" @click="exportContest">{{ t('contest.export') }}</n-button>
+        <n-button type="primary" :disabled="busy || loadingExportOptions" :loading="submitting || loadingExportOptions || exportJob?.status === 'running'" @click="exportContest">{{ t('contest.export') }}</n-button>
       </template>
     </tool-window>
     <tool-window v-model:show="showNumbering" :title="t('improve.numbering')" size="md">
@@ -562,6 +581,9 @@ const columns = computed<DataTableColumns<Row>>(() => [
 </template>
 
 <style scoped>
+.per-problem-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.problem-export-options { display: grid; grid-template-columns: minmax(120px, 1fr) 160px 160px; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--pf-border); border-radius: 6px; }
+.problem-export-options label { font-size: 12px; color: var(--pf-text-secondary); display: flex; flex-direction: column; gap: 4px; }
 :deep(.clickable-row) {
   cursor: pointer;
 }

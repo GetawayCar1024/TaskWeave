@@ -1,4 +1,11 @@
 {
+  "trash": {
+    "title": "回收站", "kind": "类型", "problem": "题目", "contest": "比赛", "name": "名称", "location": "原位置", "deletedAt": "删除时间", "size": "大小",
+    "search": "搜索回收站…", "restore": "恢复", "deleteForever": "永久删除", "empty": "清空回收站", "none": "回收站为空",
+    "hint": "已删除的题目和比赛可在此恢复或永久删除。恢复题目后，使用其原有身份的比赛引用会自动恢复。",
+    "restoreHint": "恢复会保留题目或比赛的原有身份、文件与记录。如果目标目录或身份已被占用，请先处理冲突；恢复不会覆盖现有内容。",
+    "legacyLocation": "旧版条目，请选择恢复目录", "confirmDelete": "永久删除这 {n} 个条目？此操作无法撤销。", "restored": "已恢复", "deleted": "已从回收站永久删除"
+  },
   "dataOnly": {
     "title": "纯数据模式",
     "authoringMode": "造题模式",
@@ -22,6 +29,11 @@
     "splitHint": "整体内容将全部放入 legend.tex，其他正文段落为空。你可以随后手动拆分。同步到 Polygon 时也会自动执行此转换。"
   },
   "packages": {
+    "invalidZip": "请选择有效的 ZIP 题目包，文件头或文件大小不正确。",
+    "validated": "校验通过：{files} 个文件，{tests} 个测试点，解压后 {size}",
+    "hydroExport": "Hydro 整题包",
+    "hydroHint": "导出一个独立 Hydro 题目 ZIP，包含 problem.yaml、多语言题面、样例、测试数据与配置、程序及附件。",
+    "hydroContestHint": "逐题生成独立 Hydro 整题 ZIP，再合并成比赛 ZIP；每个题目目录中的 ZIP 可以单独导入 Hydro。",
     "importLocal": "导入本地包",
     "importData": "导入数据",
     "exportProblem": "导出单题",
@@ -102,6 +114,7 @@
     "backToContest": "返回比赛"
   },
   "common": {
+    "refresh": "刷新",
     "noMatch": "没有匹配项",
     "cancel": "取消",
     "create": "创建",
@@ -120,13 +133,14 @@
     "root": "所在目录"
   },
   "problem": {
+    "renameHint": "短名称用于题目列表、比赛和导出；修改后这些位置会自动同步。",
     "timeLimit": "时间限制",
     "memoryLimit": "内存限制",
     "interactive": "交互题",
     "io": "输入 / 输出",
     "delete": "删除题目",
     "deleteTitle": "删除题目 {id}？",
-    "deleteBody": "文件夹将移到全局目录的 trash（不含生成的缓存），可移回恢复。",
+    "deleteBody": "题目文件夹及记录将移入回收站，可在首页的“回收站”中恢复。",
     "deleteInContests": "所在比赛：{list}",
     "deleted": "已删除，文件夹移到了 {path}",
     "stdin": "标准输入",
@@ -715,6 +729,7 @@
     }
   },
   "contest": {
+    "luoguPerProblem": "逐题设置用时与内存汇总方式（保存到各题目）",
     "notesDefault": "通用（旧版兼容）",
     "notesLanguage": "注意事项语言",
     "notesLanguageHelp": "每种语言保存在 notes.<语言>.tex。导出时使用对应语言；不存在时回退到通用 notes.tex。选择新语言可创建独立文件。",
@@ -787,7 +802,7 @@
     "statements": "题面与题解",
     "edit": "比赛设置",
     "delete": "删除比赛",
-    "deleteConfirm": "将永久删除比赛文件夹：contest.toml、比赛文件（files/）以及批量结果、导出和 AI 会话（.polyforge/）。比赛引用的题目不受影响。",
+    "deleteConfirm": "比赛配置、比赛文件和记录将移入回收站。比赛引用的题目仍保留在题目列表中。",
     "pushConfirm": "推送 {n} 道题的改动并提交到 Polygon？",
     "batchBad": "{n} 道题未通过",
     "action": {

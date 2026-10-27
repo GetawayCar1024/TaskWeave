@@ -38,8 +38,8 @@ import { moveProblem } from './workspace/move.js';
 import type { ProblemWatcher } from './workspace/watcher.js';
 import type { WsHub } from './ws.js';
 import { convertStatementMode } from './workspace/statements.js';
-import { importPackage, packageCandidates } from './imports/packages.js';
-import { readZip } from './util/zip.js';
+import { importPackage, inspectPackage } from './imports/packages.js';
+import { TrashStore } from './workspace/trash.js';
 import type { PackageImportOptions } from '@polyforge/shared';
 
 export interface AppDeps {
@@ -62,6 +62,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const { global, registry, files, watcher, hub, token } = deps;
   const app = Fastify({ logger: false, bodyLimit: 64 * 1024 * 1024 });
   const agent = new AgentService(deps.judge, hub, deps.contests);
+  const trash = new TrashStore(global, registry, deps.contests);
   let requests = 0;
   let clearingCache = false;
   let relocating = false;
@@ -73,6 +74,20 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
   app.addHook('onResponse', async req => { if (!req.url.startsWith('/ws')) requests--; });
   const idle = () => !agent.running && !deps.jobs.list().some(j => j.status === 'running');
+  const workspaceChange = async <T>(run: () => Promise<T>): Promise<T> => {
+    if (relocating || clearingCache || importing) throw new HttpError(409, 'busy', 'Another maintenance operation is running');
+    relocating = true;
+    const watching = watcher.running;
+    try {
+      await watcher.stop();
+      const result = await run();
+      agent.forgetIdle();
+      hub.broadcast({ type: 'problems:changed' });
+      hub.broadcast({ type: 'contests:changed' });
+      hub.broadcast({ type: 'trash:changed' });
+      return result;
+    } finally { relocating = false; if (watching) await watcher.start(); }
+  };
   deps.judge.compiler.canPrune = () => requests === 0 && idle();
 
   await app.register(fastifyWebsocket);
@@ -247,6 +262,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return { ok: true };
   });
   app.get('/api/problems', async () => ({ roots: registry.roots, problems: await registry.list() }));
+  app.get('/api/trash', async () => ({ entries: await trash.list(), roots: registry.roots }));
+  app.post<{ Params: { key: string }; Body: { root?: string } }>('/api/trash/:key/restore', async req => workspaceChange(() => trash.restore(req.params.key, req.body ?? {})));
+  app.delete<{ Params: { key: string } }>('/api/trash/:key', async req => workspaceChange(async () => { await trash.remove(req.params.key); return { ok: true }; }));
+  app.delete<{ Body: { entries: string[] } }>('/api/trash', async req => {
+    const keys = req.body?.entries;
+    if (!Array.isArray(keys) || keys.some(key => typeof key !== 'string')) throw new HttpError(400, 'bad_request', 'Trash entries required');
+    return workspaceChange(async () => { await trash.removeMany(keys); return { ok: true }; });
+  });
 
   const loadPackage = async (bytes: Buffer, options: PackageImportOptions, id?: string) => {
     if (!Buffer.isBuffer(bytes)) throw new HttpError(400, 'bad_request', 'Upload a ZIP file.');
@@ -260,7 +283,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     } finally { importing = false; }
   };
   app.post<{ Body: Buffer; Querystring: PackageImportOptions & { preview?: string } }>('/api/problems/import/package', { bodyLimit: 256 * 1024 * 1024 }, async req => {
-    if (req.query.preview === '1') return packageCandidates(readZip(req.body), req.query);
+    if (req.query.preview === '1') return inspectPackage(req.body, req.query);
     registry.requireRoot(req.query.root);
     return loadPackage(req.body, req.query);
   });
@@ -287,15 +310,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   app.patch<{ Params: { id: string }; Body: PatchProblemRequest }>('/api/problems/:id', async (req) => {
+    if (req.body?.name !== undefined && (!idle() || importing)) throw new HttpError(409, 'busy', 'Wait for running tasks before renaming a problem');
     const detail = await registry.patch(req.params.id, req.body ?? {});
     hub.broadcast({ type: 'problem:changed', problemId: req.params.id });
+    if (req.body?.name !== undefined) {
+      hub.broadcast({ type: 'problems:changed' });
+      hub.broadcast({ type: 'contests:changed' });
+    }
     return detail;
   });
 
-  /**
-   * Delete a problem: its folder is moved to <global>/trash/<name>-<time> (restore by
-   * moving it back). Contests keep their reference, shown as a missing problem.
-   */
+  /** Recycle the complete workspace. Restoring its stable identity reconnects contests. */
   app.delete<{ Params: { id: string } }>('/api/problems/:id', async (req) => {
     const ref = await registry.get(req.params.id);
     const busy = deps.jobs.list(ref.id).find((j) => j.status === 'running');
@@ -306,35 +331,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       throw new HttpError(409, 'busy', 'A contest task using this problem is running');
     }
     if (agent.runningFor(owners)) throw new HttpError(409, 'busy', 'An AI session is working on this problem');
-    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
-    const dest = path.join(global.dir, 'trash', `${path.basename(ref.dir)}-${stamp}`);
-    await fsp.mkdir(path.dirname(dest), { recursive: true });
-    // Drop what can be regenerated (generated tests, builds, invocation outputs,
-    // exports, AI sandboxes) so the trash stays small. Polygon sync state and AI
-    // conversations are kept, so a restored problem still knows what was pushed.
-    const cache = path.join(ref.dir, '.polyforge');
-    for (const d of ['tests', 'testsets', 'build', 'runs', 'export', 'tmp']) await fsp.rm(path.join(cache, d), { recursive: true, force: true });
-    for (const s of await fsp.readdir(path.join(cache, 'ai')).catch(() => [] as string[])) {
-      await fsp.rm(path.join(cache, 'ai', s, 'work'), { recursive: true, force: true });
-    }
-    // The watcher holds directory handles on Windows; stop it while moving.
-    await watcher.stop();
-    try {
-      await fsp.rename(ref.dir, dest).catch(async (e: NodeJS.ErrnoException) => {
-        if (e.code !== 'EXDEV') throw e;
-        // Different drive: copy, then remove.
-        await fsp.cp(ref.dir, dest, { recursive: true });
-        await fsp.rm(ref.dir, { recursive: true, force: true });
-      });
-    } catch (e) {
-      throw new HttpError(500, 'delete_failed', `Could not move the problem folder: ${(e as Error).message}`);
-    } finally {
-      await watcher.start();
-    }
-    await registry.scan();
-    hub.broadcast({ type: 'problems:changed' });
-    hub.broadcast({ type: 'contests:changed' });
-    return { ok: true, trash: dest };
+    return workspaceChange(async () => ({ ok: true, ...await trash.recycleProblem(ref.id) }));
   });
 
   type FileParams = { Params: { id: string; '*': string } };
@@ -383,7 +380,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   judgeRoutes(app, deps.judge, deps.jobs);
   const sync = new PolygonSync(deps.judge);
   polygonRoutes(app, deps.judge, sync, deps.jobs, hub);
-  contestRoutes(app, { judge: deps.judge, contests: deps.contests, sync, afterImport: () => watcher.start(), aiRunning: owner => agent.runningFor(new Set([owner])) }, deps.jobs, hub);
+  contestRoutes(app, { judge: deps.judge, contests: deps.contests, sync, afterImport: () => watcher.start(), aiRunning: owner => agent.runningFor(new Set([owner])), recycleContest: id => workspaceChange(() => trash.recycleContest(id)) }, deps.jobs, hub);
   aiRoutes(app, global, agent);
 
   app.delete<{ Params: { id: string } }>('/api/problems/:id/cache', async req => {

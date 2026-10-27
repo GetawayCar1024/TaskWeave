@@ -90,6 +90,7 @@ export class ZipWriter {
 /** Read the central directory (including ZIPs with data descriptors). No extraction side effects. */
 export function readZip(data: Buffer, maxBytes = 512 * 1024 * 1024): Map<string, Buffer> {
   const fail = (message: string): never => { throw new HttpError(400, 'invalid_zip', message); };
+  if (!Buffer.isBuffer(data) || data.length < 22) fail('Not a ZIP archive.');
   const check = (offset: number, length: number) => {
     if (offset < 0 || length < 0 || offset + length > data.length) fail('Truncated ZIP archive.');
   };
@@ -104,6 +105,7 @@ export function readZip(data: Buffer, maxBytes = 512 * 1024 * 1024): Map<string,
   check(start, size);
   if (start + size > end) fail('Invalid ZIP central directory.');
   const out = new Map<string, Buffer>(), names = new Set<string>();
+  const ranges: [number, number][] = [];
   let at = start, total = 0;
   for (let n = 0; n < count; n++) {
     check(at, 46);
@@ -113,6 +115,7 @@ export function readZip(data: Buffer, maxBytes = 512 * 1024 * 1024): Map<string,
     const nameLength = data.readUInt16LE(at + 28), extraLength = data.readUInt16LE(at + 30), commentLength = data.readUInt16LE(at + 32);
     const attributes = data.readUInt32LE(at + 38), local = data.readUInt32LE(at + 42);
     check(at + 46, nameLength + extraLength + commentLength);
+    if (at + 46 + nameLength + extraLength + commentLength > start + size || data.readUInt16LE(at + 34)) fail('Invalid ZIP central directory.');
     const rawName = data.subarray(at + 46, at + 46 + nameLength);
     let name = rawName.toString('utf8');
     // Info-ZIP Unicode Path extra field takes precedence for legacy-name ZIPs.
@@ -132,14 +135,27 @@ export function readZip(data: Buffer, maxBytes = 512 * 1024 * 1024): Map<string,
     if (identity && names.has(identity)) fail(`Duplicate ZIP path: ${clean}`);
     names.add(identity);
     if (((attributes >>> 16) & 0xf000) === 0xa000) fail(`Symbolic links are not supported: ${clean}`);
-    if (flags & 1 || ![0, 8].includes(method)) fail(`Unsupported ZIP compression or encryption: ${clean}`);
+    if (flags & 0x41 || ![0, 8].includes(method)) fail(`Unsupported ZIP compression or encryption: ${clean}`);
     total += length;
     if (total > maxBytes) fail(`ZIP expands beyond ${maxBytes / 1024 / 1024} MiB.`);
     check(local, 30);
     if (data.readUInt32LE(local) !== 0x04034b50) fail('Missing ZIP local header.');
-    const offset = local + 30 + data.readUInt16LE(local + 26) + data.readUInt16LE(local + 28);
+    const localNameLength = data.readUInt16LE(local + 26), localExtraLength = data.readUInt16LE(local + 28);
+    check(local + 30, localNameLength + localExtraLength);
+    if (data.readUInt16LE(local + 6) !== flags || data.readUInt16LE(local + 8) !== method || !data.subarray(local + 30, local + 30 + localNameLength).equals(rawName)) fail(`ZIP local header does not match the directory: ${name}`);
+    const offset = local + 30 + localNameLength + localExtraLength;
     check(offset, compressed);
     if (offset + compressed > start) fail('ZIP data overlaps the central directory.');
+    let dataEnd = offset + compressed;
+    if (flags & 8) {
+      check(dataEnd, 4);
+      const descriptor = dataEnd + (data.readUInt32LE(dataEnd) === 0x08074b50 ? 4 : 0);
+      check(descriptor, 12);
+      if (data.readUInt32LE(descriptor) !== crc || data.readUInt32LE(descriptor + 4) !== compressed || data.readUInt32LE(descriptor + 8) !== length) fail(`Invalid ZIP data descriptor: ${name}`);
+      dataEnd = descriptor + 12;
+    } else if (data.readUInt32LE(local + 14) !== crc || data.readUInt32LE(local + 18) !== compressed || data.readUInt32LE(local + 22) !== length) fail(`ZIP local header does not match the directory: ${name}`);
+    if (dataEnd > start) fail('ZIP data overlaps the central directory.');
+    ranges.push([local, dataEnd]);
     if (!directory) {
       const packed = data.subarray(offset, offset + compressed);
       let bytes: Buffer;
@@ -151,6 +167,8 @@ export function readZip(data: Buffer, maxBytes = 512 * 1024 * 1024): Map<string,
     at += 46 + nameLength + extraLength + commentLength;
   }
   if (at !== start + size) fail('Invalid ZIP directory size.');
+  ranges.sort(([a], [b]) => a - b);
+  for (let i = 1; i < ranges.length; i++) if (ranges[i][0] < ranges[i - 1][1]) fail('Overlapping ZIP file entries.');
   const fileNames = new Set([...out.keys()].map(n => n.toLowerCase()));
   for (const name of out.keys()) {
     const parts = name.toLowerCase().split('/');

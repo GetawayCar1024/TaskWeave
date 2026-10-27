@@ -73,6 +73,16 @@ export class ProblemRegistry {
     }
     const next = new Map<string, ProblemRef>();
     const reserved = new Set(found.map(p => p.identity).filter(Boolean));
+    // A new problem must not steal the identity of a recoverable problem and silently
+    // replace it in contests. Explicit identities of restored folders still win below.
+    const trash = path.join(this.global.dir, 'trash');
+    for (const entry of await fsp.readdir(trash, { withFileTypes: true }).catch(() => [])) {
+      if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
+      const dir = path.join(trash, entry.name);
+      const meta = await fsp.readFile(path.join(dir, '.polyforge-trash.json'), 'utf8').then(JSON.parse).catch(() => null);
+      const identity = meta?.kind === 'problem' ? meta.originalId : (await fsp.readFile(path.join(dir, '.polyforge/identity'), 'utf8').catch(() => '')).trim();
+      if (typeof identity === 'string' && /^[a-zA-Z0-9_-]+(?:~[0-9]+)?$/.test(identity)) reserved.add(identity);
+    }
     for (const p of found) {
       let id = p.identity;
       if (!id || next.has(id)) {
@@ -357,6 +367,13 @@ export class ProblemRegistry {
     const doc = structuredClone(raw) as Record<string, any>;
     doc.problem ??= {};
     const p = doc.problem;
+    if (req.name !== undefined) {
+      const name = typeof req.name === 'string' ? req.name.trim() : '';
+      if (!PROBLEM_NAME_RE.test(name)) throw new HttpError(400, 'invalid_name', 'Name must be lowercase letters, digits and dashes');
+      if (name !== p.name && (await this.list()).some(problem => problem.id !== id && problem.name === name)) throw new HttpError(409, 'exists', `Problem name already exists: ${name}`);
+      p.name = name;
+    }
+    if (req.luogu !== undefined) { doc.exports ??= {}; doc.exports.luogu = req.luogu; }
     if (req.language) {
       const { source, lang } = req.language;
       const languages = (await this.global.readLanguages()).languages;
