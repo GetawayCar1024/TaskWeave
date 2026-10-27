@@ -5,12 +5,12 @@
 **本地优先的出题、数据编排与评测桌面工具。原名 PolyForge。**
 
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/GetawayCar1024/polyforge)](https://github.com/GetawayCar1024/polyforge/releases/latest)
+[![Release](https://img.shields.io/github/v/release/GetawayCar1024/taskweave)](https://github.com/GetawayCar1024/taskweave/releases/latest)
 ![Platform](https://img.shields.io/badge/platform-Windows%20x64-lightgrey)
 
 题面、程序和测试数据都保存在本地文件夹里。Taskweave 在一个窗口中完成编写、生成数据、评测、对拍、比赛管理与 Polygon 双向同步，并能导出 Polygon package、LemonLime、Hydro、洛谷与 JOI / AtCoder 数据包及 OI 风格的 PDF；也可以让 AI 在独立副本中协助修改，再逐个文件审阅后接受。
 
-[下载](https://github.com/GetawayCar1024/polyforge/releases/latest) · [使用指南](docs/guide.md) · [更新日志](CHANGELOG.md) · [问题反馈](https://github.com/GetawayCar1024/polyforge/issues)
+[下载](https://github.com/GetawayCar1024/taskweave/releases/latest) · [使用指南](docs/guide.md) · [更新日志](CHANGELOG.md) · [问题反馈](https://github.com/GetawayCar1024/taskweave/issues)
 
 ## 功能一览
 
@@ -33,7 +33,7 @@
 
 目前提供 **Windows x64** 桌面版。
 
-1. 从 [Releases](https://github.com/GetawayCar1024/polyforge/releases/latest) 下载 `Taskweave-<版本>-setup.exe`（安装版）或 `Taskweave-<版本>-portable.exe`（免安装版）。
+1. 从 [Releases](https://github.com/GetawayCar1024/taskweave/releases/latest) 下载 `Taskweave-<版本>-setup.exe`（安装版）或 `Taskweave-<版本>-portable.exe`（免安装版）。
 2. 安装 [MinGW-w64](https://www.mingw-w64.org/)（例如 [WinLibs](https://winlibs.com/) 或 MSYS2），把 `g++` 所在目录加入 `PATH`，在终端运行 `g++ --version` 确认。首次评测时会自动编译自带的 runner。
 3. 可选：Python、Java、Kotlin、Rust、Go 等其他语言的编译器或解释器。
 
@@ -73,8 +73,8 @@
 需要 Node.js 20+ 与 [pnpm](https://pnpm.io/)；本地评测与 Windows 打包需要 Windows 和 g++。
 
 ```bash
-git clone https://github.com/GetawayCar1024/polyforge.git
-cd polyforge
+git clone https://github.com/GetawayCar1024/taskweave.git
+cd taskweave
 pnpm install --frozen-lockfile
 pnpm dev            # 开发模式：API 在 127.0.0.1:4523，Vite 在 127.0.0.1:5173，打开终端打印的链接
 ```
@@ -111,7 +111,7 @@ docs/              使用指南、设计文档、各版本说明与改动明细
 
 ## 参与贡献
 
-欢迎通过 [Issues](https://github.com/GetawayCar1024/polyforge/issues) 反馈问题或提出建议，反馈时请附上版本号、复现步骤，以及相关的题目配置或报错信息（注意去掉密钥）。提交 Pull Request 前请确保 `pnpm typecheck` 与相关回归测试通过，并保持与周围代码一致的风格；界面文字需要同时提供中文与英文。提交的代码将以与本项目相同的许可证发布。
+欢迎通过 [Issues](https://github.com/GetawayCar1024/taskweave/issues) 反馈问题或提出建议，反馈时请附上版本号、复现步骤，以及相关的题目配置或报错信息（注意去掉密钥）。提交 Pull Request 前请确保 `pnpm typecheck` 与相关回归测试通过，并保持与周围代码一致的风格；界面文字需要同时提供中文与英文。提交的代码将以与本项目相同的许可证发布。
 
 ## 许可证
 

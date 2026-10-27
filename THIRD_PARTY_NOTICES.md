@@ -18,7 +18,7 @@ attribution are included under `third-party/cnoi/` in the desktop app.
 Taskweave's integration and English adaptation are included under
 `third-party/cnoi-integration/`. The full corresponding application source and
 build scripts are supplied as `Taskweave-<version>-source.zip` alongside the binaries
-of every release (https://github.com/GetawayCar1024/polyforge/releases) and in the
+of every release (https://github.com/GetawayCar1024/taskweave/releases) and in the
 public repository at the release tag.
 
 The source archive contains all workspace packages, the dependency lockfile,
