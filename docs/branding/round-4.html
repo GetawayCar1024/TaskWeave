@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>Taskweave / D 边角精修</title>
+  <style>
+    :root { color-scheme:light; --ink:#273451; --muted:#65708b; --blue:#3f54c3; --line:#dce3f0; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#f7f9fd; color:var(--ink); font:14px/1.65 "Segoe UI","Microsoft YaHei",sans-serif; }
+    button,a { -webkit-tap-highlight-color:transparent; }
+    button { font:inherit; color:inherit; cursor:pointer; }
+    button:focus-visible,a:focus-visible { outline:3px solid #8396df; outline-offset:5px; }
+    a { color:var(--muted); text-underline-offset:4px; }
+    .page { max-width:1240px; margin:auto; padding:28px 40px; }
+    header { display:flex; justify-content:space-between; align-items:center; gap:20px; padding-bottom:20px; border-bottom:1px solid var(--line); }
+    header strong { font:600 22px/1.2 "Segoe UI Variable Display","Segoe UI",sans-serif; letter-spacing:-.03em; }
+    nav { display:flex; align-items:center; gap:23px; color:var(--muted); font-size:12px; }
+    .palette { display:flex; align-items:center; gap:8px; }
+    .palette i { width:14px; height:14px; background:#e6ebf8; border:1px solid #d0d8eb; border-radius:50%; box-shadow:inset 0 2px 3px white; }
+    .stage { display:grid; grid-template-columns:1fr 1fr 1.12fr; gap:25px; align-items:center; padding:38px 0 32px; }
+    figure { margin:0; }
+    .study { text-align:center; min-width:0; }
+    .art { display:flex; justify-content:center; width:100%; background:none; border:0; padding:0; }
+    .art svg { max-width:100%; height:auto; }
+    .study figcaption { font-size:13px; margin-top:14px; }
+    .study figcaption small { display:block; color:var(--muted); font-size:11px; margin-top:3px; }
+    .notes { padding-left:16px; }
+    h1 { font:600 30px/1.3 "Segoe UI Variable Display","Segoe UI","Microsoft YaHei",sans-serif; letter-spacing:-.035em; margin:0 0 14px; }
+    .notes p { color:var(--muted); font-size:13px; line-height:1.9; margin:0 0 19px; max-width:30em; }
+    .actions { display:flex; flex-wrap:wrap; gap:8px; }
+    .actions button { background:transparent; border:1px solid #cbd4e8; border-radius:5px; font-size:12px; padding:7px 12px; }
+    .actions .primary { color:white; background:var(--blue); border-color:var(--blue); }
+    .actions button[aria-pressed=true] { background:#e6ebf8; border-color:#8396df; color:var(--blue); }
+    .original-download { margin:12px 0 0; border:0; background:none; color:var(--muted); font-size:11px; padding:0; text-decoration:underline; text-underline-offset:4px; }
+    #download-status { margin:8px 0 0; color:var(--blue); font-size:10px; min-height:18px; overflow-wrap:anywhere; }
+    .detail-section { border-top:1px solid var(--line); padding-top:19px; }
+    .section-heading { display:flex; align-items:baseline; justify-content:space-between; gap:20px; }
+    h2 { font-size:14px; font-weight:600; margin:0; }
+    .section-heading p { font-size:11px; color:var(--muted); margin:0; }
+    #details { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:38px; margin-top:20px; }
+    .detail { min-width:0; }
+    .detail h3 { font-size:13px; font-weight:500; margin:0 0 12px; }
+    .detail-pair { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .detail-pair figure { background:white; padding:13px 5px 8px; text-align:center; }
+    .detail-pair svg { max-width:100%; height:126px; display:block; margin:auto; }
+    .detail-pair figcaption { font-size:10px; color:var(--muted); margin-top:7px; }
+    .detail p { font-size:11px; color:var(--muted); margin:10px 0 0; }
+    .scale-section { display:grid; grid-template-columns:1fr 1fr; gap:50px; border-top:1px solid var(--line); margin-top:26px; padding-top:20px; }
+    .size-row { display:grid; grid-template-columns:40px repeat(4,1fr); align-items:center; gap:14px; margin-top:11px; }
+    .size-row > span { font-size:11px; color:var(--muted); }
+    .size-row figure { display:flex; align-items:center; gap:10px; min-height:50px; }
+    .size-row figcaption { color:var(--muted); font-size:10px; white-space:nowrap; }
+    .size-row svg { flex-shrink:0; }
+    .context { display:flex; align-items:center; gap:24px; margin-top:21px; }
+    #dark-art { display:flex; flex:1; align-items:center; gap:12px; background:#273451; color:white; border-radius:8px; min-height:83px; padding:13px 19px; font-size:14px; }
+    #bare-art { display:flex; align-items:center; }
+    .context-note { font-size:11px; color:var(--muted); margin:13px 0 0; }
+    footer { display:flex; justify-content:space-between; align-items:baseline; gap:15px; margin-top:24px; padding-top:17px; border-top:1px solid var(--line); color:var(--muted); font-size:11px; }
+    footer strong { color:var(--ink); font-weight:600; }
+    dialog { width:min(535px,calc(100vw - 28px)); border:1px solid var(--line); border-radius:12px; padding:30px; color:var(--ink); }
+    dialog::backdrop { background:#27345180; }
+    #zoom-art { display:flex; justify-content:center; }
+    #zoom-art svg { max-width:100%; height:auto; }
+    #zoom-title { margin-top:17px; font-size:19px; }
+    #close-zoom { position:absolute; right:11px; top:7px; border:0; background:none; font-size:24px; color:var(--muted); }
+    @media(max-width:1050px) { .page { padding:24px; } .stage { gap:14px; } .notes { padding-left:9px; } h1 { font-size:25px; } #details { gap:20px; } .scale-section { grid-template-columns:1fr; gap:22px; } #sizes { max-width:620px; } .context { max-width:480px; margin-top:13px; } }
+    @media(max-width:690px) { .page { padding:18px; } nav { gap:15px; } header strong { font-size:20px; } .revision { display:none; } .stage { grid-template-columns:1fr 1fr; gap:24px 10px; padding-top:27px; } .notes { grid-column:1/-1; padding:0; } .notes p { max-width:none; margin-bottom:15px; } h1 { font-size:27px; margin-bottom:8px; } .study figcaption small { font-size:10px; } .section-heading { align-items:start; flex-direction:column; gap:4px; } #details { grid-template-columns:1fr; gap:23px; margin-top:20px; } .detail-pair { max-width:400px; } .detail-pair svg { height:140px; width:140px; } .detail p { font-size:12px; } .size-row { grid-template-columns:30px repeat(4,1fr); gap:11px; } .size-row figure { flex-direction:column; gap:5px; min-height:71px; justify-content:end; } .size-row > span { padding-top:13px; } .context { gap:12px; } footer { flex-direction:column; gap:4px; } }
+    @media(prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header><strong>Taskweave</strong><nav aria-label="草案信息"><span class="palette"><i aria-hidden="true"></i>Porcelain</span><span class="revision">原 D 边角精修</span><a href="round-3.html">草案归档</a></nav></header>
+    <section class="stage" aria-label="原 D 与边角精修对照">
+      <figure class="study"><button class="art" id="original-art" data-zoom="original" aria-label="放大原版 D"></button><figcaption>原版 D<small>第二轮的原始路径</small></figcaption></figure>
+      <figure class="study"><button class="art" id="refined-art" data-zoom="refined" aria-label="放大边角精修 D"></button><figcaption>边角精修<small>点击图标可放大查看</small></figcaption></figure>
+      <div class="notes"><h1>D / Fold</h1><p>从原稿处理顶部切口、右侧斜边与底部折角。把几处细小的错位收齐，让折带的收尾更干净。</p><div class="actions"><button class="primary" data-download="refined">下载精修 SVG</button><button id="mono" aria-pressed="false">单色检查</button></div><button class="original-download" data-download="original">下载原稿 SVG</button><p id="download-status" role="status" aria-live="polite"></p></div>
+    </section>
+    <section class="detail-section" aria-label="边角局部放大"><div class="section-heading"><h2>修改落在这些边角</h2><p>局部直接放大原始矢量路径，两侧比例相同。</p></div><div id="details"></div></section>
+    <section class="scale-section" aria-label="小尺寸检查"><div><h2>实际尺寸对照</h2><div id="sizes"></div></div><div><h2>桌面与去底色标识</h2><div class="context"><div id="dark-art"></div><div id="bare-art"></div></div><p class="context-note">用实际应用尺寸判断整体，再放大检查边角。</p></div></section>
+    <footer><div><strong>Taskweave / 原 D 精修 / Porcelain</strong></div><div><a href="round-2.html">第二轮原稿</a> · <a href="round-3.html">第三轮归档</a></div></footer>
+  </main>
+  <dialog id="zoom" aria-labelledby="zoom-title"><button id="close-zoom" aria-label="关闭放大预览">×</button><div id="zoom-art"></div><h2 id="zoom-title"></h2></dialog>
+  <script src="round-4/marks.js?v=4"></script>
+  <script src="round-4/preview.js?v=4"></script>
+</body>
+</html>

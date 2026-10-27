@@ -8,6 +8,7 @@ import { readZip } from '../util/zip.js';
 import type { Judge } from '../judge/index.js';
 import { badPackage, hydroLimit, parseData, yamlObject, type DataPlan } from './data.js';
 import { publishProblem } from './publish.js';
+import { snapshotImportedAnswers } from '../workspace/answerBackups.js';
 import { polygonCandidates, readPolygonPackage, importPolygonPackage } from './polygon.js';
 
 const formats = ['polygon-package', 'hydro-problem', 'data', 'joi', 'luogu-data', 'hydro-data'];
@@ -330,6 +331,7 @@ export async function importPackage(judge: Judge, bytes: Buffer | Map<string, Bu
   const parsed = problemTomlSchema.safeParse(doc);
   if (!parsed.success) return badPackage(`Imported configuration is invalid: ${parsed.error.message}`);
   if (!problemId) return { problem: await publishProblem(judge, local, doc, options.root), tests: plan.pairs.length, extras, warnings };
+  snapshotImportedAnswers(local, doc);
   const written: string[] = [];
   try {
     for (const [rel, data] of local) {

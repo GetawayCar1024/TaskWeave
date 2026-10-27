@@ -219,6 +219,6 @@ export function serializeMarkdown(element: HTMLElement, options: MarkdownExportO
 
 export async function exportMarkdown(element: HTMLElement, name: string, options: MarkdownExportOptions = {}) {
   const result = serializeMarkdown(element, options);
-  await api.exportMarkdown(name, result.markdown, result.images);
-  return result.warnings;
+  const file = await api.exportMarkdown(name, result.markdown, result.images);
+  return { file, warnings: result.warnings };
 }

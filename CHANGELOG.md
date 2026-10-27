@@ -2,6 +2,18 @@
 
 每个版本的使用说明位于 [docs/releases/](docs/releases/)，详细改动位于 [docs/changes/](docs/changes/)。下载见 [GitHub Releases](https://github.com/GetawayCar1024/polyforge/releases)。
 
+## 0.4.0 — 2026-10-27
+
+正式更名为 **Taskweave**，采用 D 折带精修与 Porcelain 图标。兼容模式支持解法重造输出、唯一初始备份与恢复；子任务按拖动顺序保存，仅保留对前置任务的依赖。新增六种 Lemon checker 模板、Windows／Linux 导出目标与 g++ 编译脚本。删除题目采用原盘移动；短名称同步重命名文件夹，题面、题解及其他导出补齐成功提示。升级自动接续旧版配置。
+
+[发布说明](docs/releases/0.4.0.md) · [改动明细](docs/changes/0.4.0.md)
+
+## 0.3.4 — 2026-10-27
+
+新增 Polygon ZIP 与 JOI / AtCoder 导入导出、多 ZIP 逐题设置、灵活识别数据配置、原始文件名与共享测试点保留；改进快速测试选择、子任务独立预算、草稿保护与导出性能。
+
+[发布说明](docs/releases/0.3.4.md) · [改动明细](docs/changes/0.3.4.md)
+
 ## 0.3.3 — 2026-10-27
 
 修复比赛导出重复提示和下载；纯数据提示可关闭并在重新进入时显示。新增题目短名称编辑、题目／比赛回收站管理、导入前 ZIP 完整性与内容校验。导入题目后保留在首页；新增单题 Hydro 整题包导出，比赛 Hydro／洛谷导出统一组合独立题包，洛谷计时与内存汇总方式逐题配置并保存。同步更正了 0.3.2 发行附件的内置版本号。

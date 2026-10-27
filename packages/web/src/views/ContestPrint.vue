@@ -44,7 +44,7 @@ async function prepareDown() {
   try {
     if (detail.value?.problems.some(p => p.summary?.dataOnly)) {
       await api.downSamples(props.id, lang.value, props.single);
-      message.info(t('dataOnly.downSamples'));
+      message.success(t('export.saved', { file: 'down.zip' }));
       return;
     }
     const job = props.single ? await api.generateTests(props.id) : await api.contestBatch(props.id, { action: 'generate' });
@@ -141,7 +141,7 @@ watch([rendered, doc], fitMath, { flush: 'post' });
 const print = async () => { await fitMath(); window.print(); };
 /** The desktop app saves through Chromium's PDF output (selectable text, clickable links). */
 async function savePdf() {
-  if (!desktop?.printToPdf) return print();
+  if (!desktop?.printToPdf) { await print(); message.info(t('export.printDialog')); return; }
   await fitMath();
   const saved = await desktop.printToPdf(baseName());
   if (saved) message.success(t('contest.pdfSaved', { path: saved }));
@@ -157,7 +157,9 @@ async function markdown() {
     fragment.append(doc);
   });
   const contentsTable = withToc.value ? document.querySelector<HTMLElement>('.sheet .toc table') ?? undefined : undefined;
-  if (await exportMarkdown(fragment, baseName(), { contestTitle: docTitle.value, contentsTable })) message.warning(t('improve.markdownWarnings'));
+  const result = await exportMarkdown(fragment, baseName(), { contestTitle: docTitle.value, contentsTable });
+  message.success(t('export.saved', { file: result.file }));
+  if (result.warnings) message.warning(t('improve.markdownWarnings'));
 }
 /**
  * Contents link: scroll the preview (.print-page) so the problem's title shows just
@@ -183,15 +185,19 @@ const exportOptions = computed(() => [
 ]);
 const baseName = () => `${detail.value?.summary.name ?? props.id}-${doc.value}-${lang.value}`;
 async function onExport(key: string) {
+  if (exporting.value) return;
   exporting.value = true;
   try {
     if (key === 'tex') {
-      if (props.single) await api.problemTex(props.id, lang.value, doc.value);
-      else await api.contestTex(props.id, lang.value, doc.value, pageBreaks.value, withToc.value);
+      const file = props.single ? await api.problemTex(props.id, lang.value, doc.value) : await api.contestTex(props.id, lang.value, doc.value, pageBreaks.value, withToc.value);
+      message.success(t('export.saved', { file }));
     }
     else if (key === 'pdf') await savePdf();
     else if (key === 'markdown') await markdown();
-    else await exportHtml();
+    else {
+      const file = await exportHtml();
+      if (file) message.success(t('export.saved', { file }));
+    }
   } catch (e) {
     message.error(errorMessage(e));
   } finally {
@@ -268,6 +274,7 @@ function toggle(e, on) {
   a.download = `${baseName()}.html`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(href), 10_000);
+  return a.download;
 }
 
 const contestTitle = computed(() => detail.value?.summary.title[lang.value] || detail.value?.summary.title.en || detail.value?.summary.name || '');
@@ -298,7 +305,7 @@ watch(
   { immediate: true },
 );
 onBeforeUnmount(() => {
-  document.title = 'PolyForge';
+  document.title = 'Taskweave';
   pageStyle.remove();
 });
 </script>

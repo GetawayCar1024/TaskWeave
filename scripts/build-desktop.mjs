@@ -4,7 +4,7 @@
  *     main.cjs                   Electron main + the whole server, bundled with esbuild
  *     preload.cjs                window.polyforgeDesktop
  *     web/ assets/ runner/       the same layout as the npm package
- *   packages/desktop/dist/       PolyForge Setup <version>.exe (installer) and PolyForge <version>.exe (portable)
+ *   packages/desktop/dist/       Taskweave-<version>-setup.exe and Taskweave-<version>-portable.exe
  *
  * Usage: pnpm desktop            (pnpm desktop -- --dir: unpacked app only, for a quick try)
  */
@@ -91,7 +91,7 @@ for (const entry of readdirSync(packageStore, { withFileTypes: true })) {
 }
 writeFileSync(
   path.join(out, 'package.json'),
-  JSON.stringify({ name: 'polyforge', productName: 'PolyForge', version, description: 'Local-first problem preparation for Codeforces Polygon', main: 'main.cjs', author: 'PolyForge', license: 'AGPL-3.0-or-later' }, null, 2),
+  JSON.stringify({ name: 'taskweave', productName: 'Taskweave', version, description: 'Local-first problem preparation, judging and platform packages', main: 'main.cjs', author: 'Taskweave', license: 'AGPL-3.0-or-later' }, null, 2),
 );
 
 if (appOnly) {
@@ -109,8 +109,8 @@ const files = await build({
   publish: 'never',
   projectDir: desk,
   config: {
-    appId: 'dev.polyforge.desktop',
-    productName: 'PolyForge',
+    appId: 'dev.polyforge.desktop', // Stable installer identity lets existing installations upgrade.
+    productName: 'Taskweave',
     directories: { app: out, output: path.join(desk, 'dist') },
     asar: true,
     asarUnpack: ['runner/**'],
@@ -121,10 +121,10 @@ const files = await build({
     electronDist: path.join(path.dirname(require.resolve('electron/package.json')), 'dist'),
     // Icon and version info go into the exe (rcedit); there is no code signing certificate.
     win: { target: dirOnly ? ['dir'] : ['nsis', 'portable'], icon: path.join(desk, 'build/icon.ico'), signExecutable: false },
-    // Desktop and Start-menu shortcuts: PolyForge starts with a double click.
-    nsis: { oneClick: false, allowToChangeInstallationDirectory: true, perMachine: false, shortcutName: 'PolyForge', createDesktopShortcut: true, createStartMenuShortcut: true, runAfterFinish: true },
-    portable: { artifactName: 'PolyForge-${version}-portable.exe' },
-    artifactName: 'PolyForge-${version}-setup.${ext}',
+    // Desktop and Start-menu shortcuts: Taskweave starts with a double click.
+    nsis: { oneClick: false, allowToChangeInstallationDirectory: true, perMachine: false, shortcutName: 'Taskweave', createDesktopShortcut: true, createStartMenuShortcut: true, runAfterFinish: true },
+    portable: { artifactName: 'Taskweave-${version}-portable.exe' },
+    artifactName: 'Taskweave-${version}-setup.${ext}',
   },
 });
-console.log(`desktop app built (PolyForge ${version}):\n${files.map((f) => `  ${path.relative(root, f)}`).join('\n')}`);
+console.log(`desktop app built (Taskweave ${version}):\n${files.map((f) => `  ${path.relative(root, f)}`).join('\n')}`);

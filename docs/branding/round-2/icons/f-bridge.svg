@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">CaseWeave / F — Bridge</title>
+  <defs><linearGradient id="tile" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="#536DE6"/><stop offset="1" stop-color="#3545BB"/></linearGradient></defs>
+  <rect x="8" y="8" width="240" height="240" rx="55" fill="url(#tile)"/>
+  <rect x="8.5" y="8.5" width="239" height="239" rx="54.5" fill="none" stroke="#7286EC" stroke-opacity=".55"/>
+  <path d="M101 62H60V194H101V166H88V90H101Z" fill="#F5F7FF"/><path d="M155 62H196V194H155V166H168V90H155Z" fill="#F5F7FF"/><path d="M90 114H166V142H90Z" fill="#B5C4FF"/><path d="M113 103H143V153H113Z" fill="#F5F7FF"/>
+</svg>

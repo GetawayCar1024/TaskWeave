@@ -31,7 +31,7 @@ import { requireFullProblem, type Judge, type ProblemCtx } from './index.js';
 import { readInvocation, runInvocation } from './invocation.js';
 import { exportPackage } from './package.js';
 import { readSamples } from './samples.js';
-import { addLemonProblem, exportTestsets, lemonReadme, preflightLemonChecker } from './lemonlime.js';
+import { addLemonBuildScripts, addLemonProblem, exportTestsets, lemonHost, lemonReadme, preflightLemonChecker, type LemonCheckerBuild } from './lemonlime.js';
 import { luoguContestReadme } from './luogu.js';
 import { buildProblemDataPackage, requireLuoguOptions } from './problemExport.js';
 import { generateTests, readManifest } from './tests.js';
@@ -55,6 +55,8 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
   const { ref, config } = await contests.config(contestId);
   if (req.exportFormat && !['polygon', 'hydro', 'luogu', 'joi', 'lemonlime'].includes(req.exportFormat)) throw new HttpError(400, 'bad_request', 'Unknown export format');
   const lemon = req.action === 'export' && req.exportFormat === 'lemonlime';
+  const lemonTarget = req.lemon?.target ?? lemonHost();
+  if (!['windows', 'linux'].includes(lemonTarget)) throw new HttpError(400, 'bad_request', 'Lemon target must be windows or linux.');
   const luogu = req.action === 'export' && req.exportFormat === 'luogu';
   const hydro = req.action === 'export' && req.exportFormat === 'hydro';
   const joi = req.action === 'export' && req.exportFormat === 'joi';
@@ -73,6 +75,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
   const zip = req.action === 'export' ? new ZipWriter({ async: true }) : null;
   const exported: { index: string; name: string }[] = [];
   const lemonTasks: Awaited<ReturnType<typeof addLemonProblem>>['task'][] = [];
+  const lemonBuilds: LemonCheckerBuild[] = [];
   if ((lemon || luogu || hydro || joi) && !list.length) throw new HttpError(400, 'empty_contest', 'No problems to export.');
   if (luogu || hydro || joi) {
     const names = new Set<string>();
@@ -95,7 +98,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
         if (names.has(name)) throw new Error(`${p.index}: duplicate problem English name: ${name}`);
         names.add(name);
         exportTestsets(ctx, p.index, req.testsets?.[p.problem]);
-        await preflightLemonChecker(judge, ctx, p.index);
+        await preflightLemonChecker(judge, ctx, p.index, lemonTarget);
       } catch (e) { errors.push((e as Error).message); }
     }
     if (errors.length) throw new HttpError(400, 'lemonlime_export', `LemonLime preflight failed; no tests were generated.\n${errors.join('\n')}`);
@@ -169,8 +172,9 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
         }
         case 'export': {
           if (lemon) {
-            const r = await addLemonProblem(judge, ctx, p.index, zip!, sub, exportTestsets(ctx, p.index, req.testsets?.[p.problem]), req.lemon?.subfolders === true);
+            const r = await addLemonProblem(judge, ctx, p.index, zip!, sub, exportTestsets(ctx, p.index, req.testsets?.[p.problem]), req.lemon?.subfolders === true, lemonTarget);
             lemonTasks.push(r.task);
+            if (r.checkerBuild) lemonBuilds.push(r.checkerBuild);
             item.ok = true;
             item.message = plural(r.tests, 'test');
             break;
@@ -233,9 +237,10 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
     else if (lemon) {
       zip.add(`${config.contest.name}.cdf`, JSON.stringify({ version: '1.0', contestTitle: config.contest.title.zh || config.contest.title.en || config.contest.name, tasks: lemonTasks, contestants: [] }, null, 2));
       zip.add('source/', '');
-      zip.add('README.txt', lemonReadme(`${process.platform}/${process.arch}`, req.lemon?.subfolders === true));
+      addLemonBuildScripts(zip, lemonBuilds);
+      zip.add('README.txt', lemonReadme(lemonTarget, req.lemon?.subfolders === true));
     }
-    else if (joi) zip.add('README.txt', 'Each problem folder contains an in/out ZIP. polyforge.yaml is an optional PolyForge companion for scoring and limits.\n');
+    else if (joi) zip.add('README.txt', 'Each problem folder contains an in/out ZIP. polyforge.yaml is an optional Taskweave companion for scoring and limits.\n');
     else if (config.contest.type === 'cf') zip.add('contest.xml', contestXml(config.contest.title, config.contest.name, exported));
     else zip.add('contest.toml', await fsp.readFile(path.join(ref.dir, 'contest.toml')));
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');

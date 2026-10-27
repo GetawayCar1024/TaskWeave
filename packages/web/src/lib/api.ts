@@ -1,6 +1,6 @@
 import type { DefsToml } from './latex';
 import type { PackageCandidate, PackageImportOptions, PackageImportResult, PackageUpload, PackageSelection, PackageBatchResult } from '@polyforge/shared';
-import type { ProblemExportRequest, TrashEntry } from '@polyforge/shared';
+import type { AnswerBackupInfo, RegenerateAnswersRequest, ProblemExportRequest, TrashEntry } from '@polyforge/shared';
 import { serverText } from './serverText';
 import {
   TOKEN_HEADER,
@@ -126,6 +126,9 @@ export const api = {
   stagePackage: (file: File, format: PackageImportOptions['format']) => uploadPackage<PackageUpload>('/packages/uploads', file, { format }),
   discardPackage: (id: string) => request('DELETE', `/packages/uploads/${encodeURIComponent(id)}`),
   importPackages: (items: PackageSelection[], problemId?: string) => request<PackageBatchResult>('POST', '/packages/import', { items, problemId }),
+  originalAnswers: (id: string, testset?: string) => request<AnswerBackupInfo>('GET', `/problems/${pid(id)}/answers/original${tsq(testset)}`),
+  regenerateAnswers: (id: string, options: RegenerateAnswersRequest) => request<JobInfo>('POST', `/problems/${pid(id)}/answers/regenerate`, options),
+  restoreAnswers: (id: string, testset?: string) => request<JobInfo>('POST', `/problems/${pid(id)}/answers/restore`, { testset }),
   statementSamples: (id: string, lang?: string) => request<import('@polyforge/shared').StatementSample[]>('GET', `/problems/${pid(id)}/statement-samples${lang ? `?lang=${encodeURIComponent(lang)}` : ''}`),
   contestDown: async (id: string, lang: string, pdf: Blob, statements: ContestStatement[], notes: string, single = false) => {
     const base64 = await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1]); r.onerror = reject; r.readAsDataURL(pdf); });
@@ -146,6 +149,7 @@ export const api = {
     if (!res.ok) throw new Error((await res.json()).message ?? res.statusText);
     const url = URL.createObjectURL(await res.blob());
     const a = document.createElement('a'); a.href = url; a.download = `${name}.${images.length ? 'zip' : 'md'}`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
+    return a.download;
   },
   shutdownStatus: () => request<{ runningAi: boolean }>('GET', '/shutdown/status'),
   moveProblem: (id: string, root: string) => request<ProblemSummary>('POST', `/problems/${pid(id)}/relocate`, { root }),
@@ -305,6 +309,7 @@ async function download(url: string, file: string) {
   a.download = file;
   a.click();
   setTimeout(() => URL.revokeObjectURL(href), 10_000);
+  return file;
 }
 
 /** URL for raw problem files in <img> tags (which cannot send the token header). */

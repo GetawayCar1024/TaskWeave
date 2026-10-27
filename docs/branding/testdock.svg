@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">TestDock · 测港</title>
+  <rect x="8" y="8" width="240" height="240" rx="57" fill="#21415f"/>
+  <path d="M53 112V178Q53 199 74 199H182Q203 199 203 178V112H174V164H82V112Z" fill="#f2f6f8"/>
+  <path d="M87 86L128 63L169 86V131L128 154L87 131Z" fill="#46ccdf"/>
+  <path d="M128 64V106L168 85" fill="none" stroke="#21415f" stroke-width="10" stroke-linejoin="round"/>
+  <path d="M128 106L88 85" stroke="#21415f" stroke-width="10"/>
+  <rect x="176" y="48" width="30" height="30" rx="8" fill="#f48061"/>
+</svg>

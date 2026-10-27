@@ -1,9 +1,9 @@
 {
   "name": "@polyforge/desktop",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "license": "AGPL-3.0-or-later",
   "private": true,
-  "description": "PolyForge as a desktop app (Electron): the server and the UI in one window",
+  "description": "Taskweave desktop: local problem preparation, judging and platform packages",
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p ."

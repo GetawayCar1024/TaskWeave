@@ -131,9 +131,10 @@ const summary = computed(() => detail.value?.summary);
 const hasDataOnly = computed(() => !!detail.value?.problems.some(p => p.summary?.dataOnly));
 const downloadingDown = ref(false);
 async function exportDown() {
+  if (downloadingDown.value) return;
   if (!hasDataOnly.value) return router.push({ name: 'contest-print', params: { id: props.id }, query: { style: 'oi', down: '1', doc: 'statements' } });
   downloadingDown.value = true;
-  try { await api.downSamples(props.id, locale.value === 'zh-CN' ? 'zh' : 'en'); message.info(t('dataOnly.downSamples')); }
+  try { await api.downSamples(props.id, locale.value === 'zh-CN' ? 'zh' : 'en'); message.success(t('export.saved', { file: 'down.zip' })); }
   catch (e) { message.error(errorMessage(e)); }
   finally { downloadingDown.value = false; }
 }
@@ -254,6 +255,7 @@ const exportFormat = ref<'polygon' | 'hydro' | 'luogu' | 'joi' | 'lemonlime'>('p
 const exportTestsets = ref<Record<string, { all: string[]; chosen: string[]; luogu: LuoguExportOptions }>>({});
 const loadingExportOptions = ref(false);
 const lemonSubfolders = ref(false);
+const lemonTarget = ref<'windows' | 'linux'>(navigator.platform.toLowerCase().includes('win') ? 'windows' : 'linux');
 const aggOptions = computed(() => (['sum', 'min', 'max'] as const).map((value) => ({ value, label: t(`contest.agg.${value}`) })));
 async function loadExportTestsets() {
   loadingExportOptions.value = true;
@@ -299,7 +301,7 @@ async function exportContest() {
   const luoguByProblem = exportFormat.value === 'luogu' ? Object.fromEntries(Object.entries(exportTestsets.value).map(([id, value]) => [id, { ...value.luogu }])) : undefined;
   exportError.value = '';
   try {
-    const started = await api.contestBatch(props.id, { action: 'export', exportFormat: exportFormat.value, testsets, luoguByProblem, lemon: { subfolders: lemonSubfolders.value } });
+    const started = await api.contestBatch(props.id, { action: 'export', exportFormat: exportFormat.value, testsets, luoguByProblem, lemon: { subfolders: lemonSubfolders.value, target: lemonTarget.value } });
     if (!alive) return;
     exportJobId.value = started.id;
     await follow(started);
@@ -534,6 +536,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
           <n-select v-model:value="exportFormat" :disabled="busy" :options="[{ value: 'polygon', label: t('oiFeatures.polygon') }, { value: 'hydro', label: t('packages.hydroExport') }, { value: 'luogu', label: t('contest.luoguFormat') }, { value: 'joi', label: t('packages.joiExport') }, { value: 'lemonlime', label: 'LemonLime' }]" />
         </n-form-item>
         <n-checkbox v-if="exportFormat === 'lemonlime'" v-model:checked="lemonSubfolders" :disabled="busy" class="pf-dialog-note">{{ t('contest.lemonSubfolders') }}</n-checkbox>
+        <n-form-item v-if="exportFormat === 'lemonlime'" :label="t('contest.lemonTarget')"><n-select v-model:value="lemonTarget" :disabled="busy" :options="[{ value: 'windows', label: 'Windows' }, { value: 'linux', label: 'Linux' }]" /></n-form-item>
         <n-alert v-if="exportFormat === 'lemonlime' && hasDataOnly" type="warning" :show-icon="false" class="pf-dialog-note">{{ t('dataOnly.lemonHint') }}</n-alert>
       </n-form>
       <div v-if="exportFormat === 'luogu'" class="per-problem-options">

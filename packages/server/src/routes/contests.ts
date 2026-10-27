@@ -32,7 +32,7 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps & { aiRunn
     if (!/^[a-z]{2,8}$/.test(lang)) throw new HttpError(400, 'bad_lang', 'Invalid language');
     const doc = req.query.doc === 'tutorials' ? 'tutorials' : 'statements';
     const r = await contestTex(judge, contests, req.params.id, lang, doc, false, false, true);
-    return reply.type(r.ext === 'zip' ? 'application/zip' : 'application/x-tex; charset=utf-8').header('content-disposition', `attachment; filename="${req.params.id}-${doc}-${lang}.${r.ext}"`).send(r.data);
+    return reply.type(r.ext === 'zip' ? 'application/zip' : 'application/x-tex; charset=utf-8').header('content-disposition', `attachment; filename="${r.file}"`).send(r.data);
   });
   app.post<P & { Body: Parameters<typeof contestDown>[3] }>('/api/problems/:id/down', async (req, reply) => {
     const data = await contestDown(judge, contests, req.params.id, req.body, true);
@@ -195,10 +195,9 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps & { aiRunn
     const lang = /^[a-z]{2,8}$/.test(req.query.lang ?? '') ? req.query.lang! : 'zh';
     const doc = req.query.doc === 'tutorials' ? 'tutorials' : 'statements';
     const r = await contestTex(judge, contests, ref.id, lang, doc, req.query.breaks !== '0', req.query.toc !== '0');
-    const file = `${ref.id}-${doc}-${lang}.${r.ext}`;
     return reply
       .type(r.ext === 'zip' ? 'application/zip' : 'application/x-tex; charset=utf-8')
-      .header('content-disposition', `attachment; filename="${file}"`)
+      .header('content-disposition', `attachment; filename="${r.file}"`)
       .send(r.data);
   });
 

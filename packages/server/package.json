@@ -1,6 +1,6 @@
 {
   "name": "@polyforge/server",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "license": "AGPL-3.0-or-later",
   "private": true,
   "type": "module",
@@ -8,6 +8,7 @@
     "dev": "node --watch --import tsx src/index.ts --dev",
     "start": "tsx src/index.ts",
     "typecheck": "tsc -p .",
+    "test": "tsx --test --test-concurrency=1 scripts/test-regressions.ts scripts/test-october-fixes.ts scripts/test-problem-types.ts scripts/test-responses.ts scripts/test-statement-markup.ts scripts/test-polygon-sync.ts scripts/test-subtasks.ts scripts/test-subtasks-export.ts scripts/test-invocation-testsets.ts scripts/test-workspace-fixes.ts scripts/test-oi-judging.ts scripts/test-oi-defs.ts scripts/test-cnoi-template.ts scripts/test-contest-files.ts scripts/test-authoring-modes.ts scripts/test-data-packages.ts scripts/test-package-formats.ts scripts/test-release-management.ts scripts/test-lemon-conversion.ts scripts/test-compatibility-completion.ts scripts/test-problem-rename.ts scripts/test-rebrand.ts",
     "mock-polygon": "tsx scripts/mock-polygon.ts"
   },
   "dependencies": {

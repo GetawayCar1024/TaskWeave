@@ -41,5 +41,5 @@ export async function joiPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, tes
   zip.add('polyforge.yaml', yaml({ format: 'polyforge-inout', version: 1, problem: { name: ctx.config.problem.name, title: ctx.config.problem.title,
     time_ms: ctx.config.problem.time_limit, memory_mib: ctx.config.problem.memory_limit, input: ctx.config.problem.input, output: ctx.config.problem.output },
     points_enabled: !!ctx.config.tests.points, cases, subtasks }));
-  return { data: await zip.finishAsync(), tests: cases.length, warnings: ['JOI / AtCoder in/out ZIPs have no universal scoring configuration. polyforge.yaml preserves PolyForge settings for re-import.'] };
+  return { data: await zip.finishAsync(), tests: cases.length, warnings: ['JOI / AtCoder in/out ZIPs have no universal scoring configuration. polyforge.yaml preserves Taskweave settings for re-import.'] };
 }

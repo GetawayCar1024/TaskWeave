@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">CaseWeave · 测织</title>
+  <rect x="8" y="8" width="240" height="240" rx="57" fill="#19304b"/>
+  <path d="M58 78H108L151 178H198" fill="none" stroke="#ebf3f8" stroke-width="27" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M58 178H104L151 78H198" fill="none" stroke="#f7b548" stroke-width="27" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M113 110L130 149" fill="none" stroke="#19304b" stroke-width="41"/>
+  <path d="M113 110L130 149" fill="none" stroke="#ebf3f8" stroke-width="27"/>
+  <rect x="47" y="65" width="25" height="26" rx="6" fill="#46ccdf"/>
+  <rect x="184" y="165" width="25" height="26" rx="6" fill="#46ccdf"/>
+</svg>

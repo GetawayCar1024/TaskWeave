@@ -55,7 +55,7 @@ async function submit() {
       await api.downSamples(id, locale.value === 'zh-CN' ? 'zh' : 'en', true);
       await closeBeforeNotice();
       if (!alive) return;
-      message.success(t('export.done', { file: 'down.zip', n: 0 }));
+      message.success(t('export.saved', { file: 'down.zip' }));
     } else {
       await follower.follow(await api.exportPackage(id, { format: format.value as ProblemExportRequest['format'], testsets: testsets.value, ...(format.value === 'luogu' ? { luogu: { time: time.value, memory: memory.value } } : {}) }));
       if (!alive) return;

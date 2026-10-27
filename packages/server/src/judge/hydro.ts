@@ -152,7 +152,7 @@ export async function hydroPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, t
   const dataConfig: Record<string, unknown> = { type: mode === 'io' ? 'interactive' : 'default', time: `${p.time_limit}ms`, memory: `${p.memory_limit}m`, checker_type: 'default', subtasks };
   if (config.checker?.source.startsWith('std:')) { dataConfig.checker_type = 'testlib'; dataConfig.checker = config.checker.source.slice(4); }
   else if (config.checker) { dataConfig.checker_type = 'testlib'; dataConfig.checker = await addSource(safeJoin(ctx.ref.dir, config.checker.source)); }
-  else if (config.lemon_checker) { dataConfig.checker_type = 'lemon'; dataConfig.checker = await addSource(safeJoin(ctx.ref.dir, config.lemon_checker.source)); }
+  else if (config.lemon_checker) { dataConfig.checker_type = 'lemon'; dataConfig.checker = await addSource(judge.compiler.resolveSource(ctx.ref.dir, config.lemon_checker.source).srcPath); }
   if (config.validator) dataConfig.validator = await addSource(judge.compiler.resolveSource(ctx.ref.dir, config.validator.source).srcPath);
   if (mode === 'io') {
     if (!config.interactor) fail('Interactive problem without an interactor.');

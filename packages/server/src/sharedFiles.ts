@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { STD_PREFIX, type SharedFileEntry, type SharedListResponse } from '@polyforge/shared';
+import { LEMON_PREFIX, STD_PREFIX, type SharedFileEntry, type SharedListResponse } from '@polyforge/shared';
 
 /** Descriptions of the testlib standard checkers as shown by Polygon. */
 const CHECKER_DESCRIPTIONS: Record<string, string> = {
@@ -57,16 +57,22 @@ async function listDir(sharedDir: string, sub: string, isChecker: boolean): Prom
 }
 
 export async function listShared(sharedDir: string): Promise<SharedListResponse> {
-  const [checkers, validators, generators] = await Promise.all([
+  const [checkers, validators, generators, lemon] = await Promise.all([
     listDir(sharedDir, 'checkers', true),
     listDir(sharedDir, 'validators', false),
     listDir(sharedDir, 'generators', false),
+    listDir(sharedDir, 'lemon/checkers', false),
   ]);
-  return { checkers, validators, generators };
+  const lemonCheckers = lemon.map(entry => ({ ...entry, ref: `${LEMON_PREFIX}${entry.name.replace(/\.[^.]+$/, '')}` }));
+  return { checkers, validators, generators, lemonCheckers };
 }
 
 /** Map `std:ncmp` to `checkers/ncmp.cpp` inside the shared directory. */
 export function stdRefToPath(ref: string): string | null {
+  if (ref.startsWith(LEMON_PREFIX)) {
+    const name = ref.slice(LEMON_PREFIX.length);
+    return /^[\w-]+$/.test(name) ? `lemon/checkers/${name}.cpp` : null;
+  }
   if (!ref.startsWith(STD_PREFIX)) return null;
   const name = ref.slice(STD_PREFIX.length);
   if (!/^[\w-]+$/.test(name)) return null;

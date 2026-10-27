@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>Taskweave / Fold in Porcelain</title>
+  <style>
+    :root { color-scheme:light; --ink:#273451; --muted:#63708c; --blue:#3f54c3; --line:#dce3f0; --paper:#f7f9fd; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:var(--paper); font:14px/1.65 "Segoe UI","Microsoft YaHei",sans-serif; }
+    button,a { -webkit-tap-highlight-color:transparent; }
+    button { color:inherit; cursor:pointer; font:inherit; }
+    button:focus-visible,a:focus-visible { outline:3px solid #8396df; outline-offset:5px; }
+    button:disabled { cursor:default; opacity:.4; }
+    a { color:var(--muted); text-underline-offset:4px; }
+    .page { max-width:1236px; padding:28px 44px 25px; margin:auto; }
+    .masthead { display:flex; align-items:center; justify-content:space-between; gap:20px; padding-bottom:20px; border-bottom:1px solid var(--line); }
+    .masthead strong { font:600 19px/1.2 "Segoe UI Variable Display","Segoe UI",sans-serif; letter-spacing:-.025em; }
+    .masthead nav { display:flex; align-items:center; gap:22px; color:var(--muted); font-size:12px; }
+    .palette { display:inline-flex; align-items:center; gap:8px; }
+    .palette i { width:14px; height:14px; background:#e6ebf8; border:1px solid #cbd4e9; border-radius:50%; box-shadow:inset 0 2px 3px white; }
+    .inspection { display:grid; grid-template-columns:.92fr 1.08fr; gap:55px; padding:32px 12px 26px; align-items:center; }
+    .specimen { text-align:center; }
+    #hero-art { display:inline-flex; justify-content:center; align-items:center; width:100%; border:0; padding:2px 0; background:transparent; }
+    #hero-art svg { max-width:100%; height:auto; }
+    #guide-note { color:var(--muted); font-size:12px; min-height:20px; margin:10px 0 0; }
+    h1 { margin:0 0 12px; font:600 48px/1.12 "Segoe UI Variable Display","Segoe UI",sans-serif; letter-spacing:-.045em; }
+    h2 { margin:0; font-size:20px; font-weight:600; letter-spacing:-.015em; }
+    #study-description { color:var(--muted); max-width:34em; margin:10px 0 24px; line-height:1.9; }
+    .controls { display:flex; gap:8px; flex-wrap:wrap; }
+    .controls button { background:transparent; border:1px solid #c9d2e7; border-radius:5px; padding:7px 12px; font-size:12px; }
+    .controls button[aria-pressed=true] { background:#e6ebf8; border-color:#8396df; color:var(--blue); }
+    .controls #download { color:white; background:var(--blue); border-color:var(--blue); }
+    #download-status { min-height:19px; color:var(--blue); font-size:11px; margin:9px 0 0; overflow-wrap:anywhere; }
+    .comparison { border-top:1px solid var(--line); padding-top:17px; }
+    .section-head { display:flex; align-items:baseline; gap:20px; justify-content:space-between; }
+    .section-head h2 { font-size:14px; font-weight:600; letter-spacing:0; }
+    .section-head p { color:var(--muted); font-size:12px; margin:0; }
+    #options { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin-top:10px; }
+    .option { position:relative; min-width:0; display:flex; flex-direction:column; text-align:left; border:0; border-bottom:3px solid transparent; padding:8px 16px 18px; background:transparent; }
+    .option:not(:first-child)::before { content:""; position:absolute; left:0; top:28px; bottom:32px; width:1px; background:var(--line); }
+    .option[aria-pressed=true] { border-bottom-color:var(--blue); background:#edf1fb; }
+    .option:hover { background:#edf1fb; }
+    .option-art { display:flex; justify-content:center; padding:6px 0 12px; }
+    .option-art svg { max-width:100%; height:auto; }
+    .option-title { display:flex; align-items:baseline; gap:7px; font-weight:600; font-size:16px; }
+    .option-title > span { font-size:12px; color:var(--muted); font-weight:400; }
+    .option-title small { margin-left:auto; font-weight:400; color:var(--blue); font-size:10px; white-space:nowrap; }
+    .option-caption { color:var(--muted); font-size:11px; margin-top:5px; }
+    .in-use { display:grid; grid-template-columns:1fr .8fr 1.2fr; gap:28px; margin-top:23px; padding-top:20px; border-top:1px solid var(--line); }
+    .in-use h2 { font-size:12px; color:var(--muted); font-weight:400; letter-spacing:0; margin:0 0 10px; }
+    #sizes { display:flex; gap:27px; min-height:92px; align-items:flex-end; }
+    figure { margin:0; }
+    #sizes figure > div { height:56px; display:flex; align-items:center; justify-content:center; }
+    figcaption { font-size:10px; text-align:center; color:var(--muted); margin-top:8px; }
+    #dark-art { display:flex; min-height:94px; align-items:center; justify-content:center; gap:22px; padding:10px; background:#273451; border-radius:8px; }
+    .app-window { background:white; border:1px solid var(--line); border-radius:7px; overflow:hidden; }
+    .app-titlebar { display:flex; height:37px; align-items:center; padding:0 10px; gap:8px; font-size:11px; border-bottom:1px solid var(--line); }
+    #window-icon { display:flex; }
+    .window-controls { margin-left:auto; color:var(--muted); font-size:10px; letter-spacing:8px; }
+    .app-content { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:9px 12px; color:var(--muted); font-size:11px; }
+    .bare-marks { display:flex; gap:8px; }
+    .bare-marks svg { width:35px; height:35px; display:block; }
+    footer { display:flex; align-items:baseline; justify-content:space-between; gap:16px; margin-top:22px; padding-top:17px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); }
+    footer strong { color:var(--ink); font-weight:600; }
+    dialog { color:var(--ink); width:min(560px,calc(100vw - 28px)); border:1px solid var(--line); border-radius:12px; padding:28px; }
+    dialog::backdrop { background:#27345180; }
+    #zoom-art { display:flex; justify-content:center; padding:5px 0 17px; }
+    #zoom-art svg { max-width:100%; height:auto; }
+    #zoom-title { font-size:18px; }
+    #zoom-description { margin-bottom:0; color:var(--muted); }
+    #close-zoom { position:absolute; right:10px; top:6px; background:none; border:0; font-size:24px; padding:3px 9px; color:var(--muted); }
+    @media(max-width:1050px) { .page { padding:22px 26px; } .inspection { gap:25px; padding-inline:0; } h1 { font-size:42px; } .option { padding-inline:12px; } .option-title { font-size:14px; } .option-title small { display:none; } .in-use { gap:18px; grid-template-columns:1fr 1fr; } .app-context { grid-column:1/-1; } .app-window { max-width:400px; } }
+    @media(max-width:650px) { .page { padding:18px; } .masthead nav { gap:12px; } .round-label { display:none; } .inspection { grid-template-columns:1fr; gap:20px; padding-top:23px; } #hero-art svg { width:230px; } .wordmark { text-align:center; } #study-description { margin:10px auto 17px; max-width:28em; font-size:13px; } h1 { font-size:39px; margin-bottom:8px; } #study-title { font-size:18px; } .controls { justify-content:center; } .section-head { align-items:start; gap:12px; } .section-head p { max-width:19em; font-size:11px; } #options { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 0; } .option:nth-child(3)::before { display:none; } .option-title { font-size:13px; } .option-caption { font-size:10px; min-height:32px; } .in-use { grid-template-columns:1fr; gap:18px; } .app-context { grid-column:auto; } #sizes { min-height:80px; gap:37px; justify-content:center; } #dark-art { justify-content:center; } footer { flex-direction:column; gap:4px; } }
+    @media(max-width:650px) { .section-head { flex-direction:column; gap:3px; } .section-head p { max-width:none; } }
+    @media(prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; } }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="masthead"><strong>Taskweave</strong><nav aria-label="草案信息"><span class="palette"><i aria-hidden="true"></i>Porcelain</span><span class="round-label">第三轮精修</span><a href="round-2.html">上一轮</a></nav></header>
+    <section class="inspection" aria-label="当前方案大图">
+      <div class="specimen"><button id="hero-art" type="button" aria-label="放大当前图标"></button><p id="guide-note"></p></div>
+      <div class="wordmark"><h1>Taskweave</h1><h2 id="study-title"></h2><p id="study-description"></p><div class="controls"><button type="button" id="reveal" aria-pressed="false">显示隐藏 T</button><button type="button" id="mono" aria-pressed="false">单色检查</button><button type="button" id="download">下载 SVG</button></div><p id="download-status" role="status" aria-live="polite"></p></div>
+    </section>
+    <section class="comparison" aria-label="D 图标精修对比"><div class="section-head"><h2>同一条折带，三种精修</h2><p>点击切换；观察 T 的含蓄程度与折叠层次。</p></div><div id="options"></div></section>
+    <section class="in-use" aria-label="实际尺寸与背景检查">
+      <div><h2>原尺寸显示</h2><div id="sizes"></div></div>
+      <div><h2>深色桌面</h2><div id="dark-art"></div></div>
+      <div class="app-context"><h2>应用标题栏与去底色标识</h2><div class="app-window"><div class="app-titlebar"><span id="window-icon"></span><span>Taskweave</span><span class="window-controls" aria-hidden="true">− □ ×</span></div><div class="app-content"><span>题目工作区</span><div class="bare-marks"><span id="plain-mark" title="去底色"></span><span id="mono-mark" title="单色"></span></div></div></div></div>
+    </section>
+    <footer><div>当前搭配：<strong id="selection-text"></strong></div><div>可直接反馈 D1、D2 或 D3，以及 T 需要更明显还是更含蓄。</div></footer>
+  </main>
+  <dialog id="zoom" aria-labelledby="zoom-title"><button type="button" id="close-zoom" aria-label="关闭放大预览">×</button><div id="zoom-art"></div><h2 id="zoom-title"></h2><p id="zoom-description"></p></dialog>
+  <script src="round-3/marks.js?v=3"></script>
+  <script src="round-3/preview.js?v=3"></script>
+</body>
+</html>

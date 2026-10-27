@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">CaseWeave / E — Interlock</title>
+  <defs><linearGradient id="tile" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="#536DE6"/><stop offset="1" stop-color="#3545BB"/></linearGradient></defs>
+  <rect x="8" y="8" width="240" height="240" rx="55" fill="url(#tile)"/>
+  <rect x="8.5" y="8.5" width="239" height="239" rx="54.5" fill="none" stroke="#7286EC" stroke-opacity=".55"/>
+  <path d="M66 66H159V97H97V159H66Z" fill="#F5F7FF"/><path d="M190 190H97V159H159V97H190Z" fill="#F5F7FF"/><path d="M159 66H190V97H159Z" fill="#B5C4FF"/><path d="M66 159H97V190H66Z" fill="#B5C4FF"/><path d="M113 113H143V143H113Z" fill="#F5F7FF"/>
+</svg>

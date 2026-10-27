@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">CaseWeave / B — CW monogram</title>
+  <defs><linearGradient id="tile" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="#536DE6"/><stop offset="1" stop-color="#3545BB"/></linearGradient></defs>
+  <rect x="8" y="8" width="240" height="240" rx="55" fill="url(#tile)"/>
+  <rect x="8.5" y="8.5" width="239" height="239" rx="54.5" fill="none" stroke="#7286EC" stroke-opacity=".55"/>
+  <path d="M120 65H61V191H120" fill="none" stroke="#F5F7FF" stroke-width="26" stroke-linejoin="round"/><path d="M107 88L128 171L154 126L178 171L201 88" fill="none" stroke="#F5F7FF" stroke-width="23" stroke-linejoin="round"/><path d="M187 139L201 88" stroke="#B5C4FF" stroke-width="23"/>
+</svg>

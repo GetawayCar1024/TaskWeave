@@ -88,7 +88,7 @@ const TOOLS = [
       // Statements: spell out the defs.toml macros used, with their arguments.
       const st = i.path.match(/^statement\/([a-z]+)\/[^/]+\.tex$/);
       const expanded = st ? await macroExpansions(env.judge.global.sharedDir, text, st[1]) : [];
-      const note = expanded.length ? `\n\n[PolyForge] Macros in this file and what they expand to (this text is part of the statement):\n${expanded.join('\n')}` : '';
+      const note = expanded.length ? `\n\n[Taskweave] Macros in this file and what they expand to (this text is part of the statement):\n${expanded.join('\n')}` : '';
       if (!i.start_line && !i.end_line) return (clip(text, 100_000) || '(empty file)') + note;
       const a = (i.start_line ?? 1) - 1;
       const b = Math.min(i.end_line ?? lines.length, lines.length);

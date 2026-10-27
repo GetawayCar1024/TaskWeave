@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>第一轮名称与图标草案</title>
+<style>
+  :root { color-scheme:light; --ink:#243447; --quiet:#5b6d7d; --line:#d6e0e8; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#edf2f7; color:var(--ink); font:15px/1.65 "Segoe UI","Microsoft YaHei",sans-serif; }
+  main { max-width:1240px; margin:42px auto; background:white; padding:42px 48px 36px; }
+  header { display:flex; align-items:end; justify-content:space-between; gap:24px; padding-bottom:30px; }
+  h1 { margin:0 0 6px; font-size:29px; letter-spacing:-.035em; font-weight:650; }
+  header p { margin:0; color:var(--quiet); max-width:54ch; }
+  .stage { color:var(--quiet); font-size:13px; white-space:nowrap; }
+  .proposals { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+  article { padding:35px 28px 30px; }
+  article:first-child { padding-left:0; }
+  article:last-child { padding-right:0; }
+  article + article { border-left:1px solid var(--line); }
+  .hero { width:138px; height:138px; display:block; margin:0 0 26px; }
+  h2 { margin:0; font:600 31px/1.15 Bahnschrift,"Segoe UI",sans-serif; letter-spacing:-.025em; }
+  .chinese { font-size:21px; margin:7px 0 14px; letter-spacing:.04em; }
+  .description { min-height:76px; margin:0; max-width:22em; color:var(--quiet); }
+  .symbol { font-size:13px; margin:18px 0 23px; min-height:44px; }
+  .sizes { display:flex; align-items:center; gap:14px; min-height:76px; padding:13px; background:#edf2f7; }
+  .sizes img { display:block; }
+  .sizes .dark { background:#253443; width:58px; height:58px; display:grid; place-items:center; margin-left:auto; border-radius:10px; }
+  .sizes-label { margin:7px 0 0; color:var(--quiet); font-size:11px; }
+  footer { padding-top:24px; display:flex; gap:40px; justify-content:space-between; font-size:13px; color:var(--quiet); }
+  footer strong { color:var(--ink); font-weight:600; }
+  a { color:#335cf5; text-decoration-thickness:1px; text-underline-offset:3px; }
+  @media(max-width:760px) { main { margin:12px; padding:24px; } header { display:block; } .stage { margin-top:10px; } .proposals { grid-template-columns:1fr; } article,article:first-child,article:last-child { padding:30px 0; } article + article { border-left:0; border-top:1px solid var(--line); } .description,.symbol { min-height:0; } footer { display:block; } }
+</style>
+<main>
+  <header><div><h1>下一阶段，叫什么名字？</h1><p>面向 OI 出题、测试数据管理与跨平台题包的桌面工具。三组名称与图标方向，均可继续调整。</p></div><div class="stage">品牌草案 · 尚未应用到程序</div></header>
+  <section class="proposals">
+    <article>
+      <img class="hero" src="caseweave.svg" alt="两条交织的输入输出路径">
+      <h2>CaseWeave</h2><div class="chinese">测织</div>
+      <p class="description">把测试点、子任务与不同平台连接起来。“织”也对应同一测试点的多重归属。</p>
+      <p class="symbol">交织的两条路径，起点与终点各是一块测试数据。偏向完整出题工作流。</p>
+      <div class="sizes"><img src="caseweave.svg" width="16" height="16" alt="16像素"><img src="caseweave.svg" width="32" height="32" alt="32像素"><img src="caseweave.svg" width="48" height="48" alt="48像素"><span class="dark"><img src="caseweave.svg" width="40" height="40" alt="深色背景"></span></div>
+      <p class="sizes-label">16 / 32 / 48 px 与深色背景预览</p>
+    </article>
+    <article>
+      <img class="hero" src="taskmint.svg" alt="带字母T的铸造题页">
+      <h2>TaskMint</h2><div class="chinese">题铸</div>
+      <p class="description">从题目想法到可交付的成品题包。“Mint”强调制作、校验和生成。</p>
+      <p class="symbol">一页折角题目、一枚压印，以及清晰的 T。偏向出题与内容生产。</p>
+      <div class="sizes"><img src="taskmint.svg" width="16" height="16" alt="16像素"><img src="taskmint.svg" width="32" height="32" alt="32像素"><img src="taskmint.svg" width="48" height="48" alt="48像素"><span class="dark"><img src="taskmint.svg" width="40" height="40" alt="深色背景"></span></div>
+      <p class="sizes-label">16 / 32 / 48 px 与深色背景预览</p>
+    </article>
+    <article>
+      <img class="hero" src="testdock.svg" alt="题包进入数据停靠站">
+      <h2>TestDock</h2><div class="chinese">测港</div>
+      <p class="description">不同来源的题包在这里整理、重造、恢复，再发送到目标评测平台。</p>
+      <p class="symbol">一枚数据方块进入开放的停靠口。偏向兼容模式与平台互通。</p>
+      <div class="sizes"><img src="testdock.svg" width="16" height="16" alt="16像素"><img src="testdock.svg" width="32" height="32" alt="32像素"><img src="testdock.svg" width="48" height="48" alt="48像素"><span class="dark"><img src="testdock.svg" width="40" height="40" alt="深色背景"></span></div>
+      <p class="sizes-label">16 / 32 / 48 px 与深色背景预览</p>
+    </article>
+  </section>
+  <footer><div><strong>推荐 CaseWeave / 测织</strong><br>覆盖造题、子任务关系与平台交换，后续拓展也自然。</div><div>名称与图标可以交叉搭配。<br>确定方向后再生成正式 SVG、PNG、ICO 与应用资源。</div></footer>
+</main>
+</html>

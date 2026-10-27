@@ -155,7 +155,7 @@ export function useJudge(problemId: string, ws: Workspace) {
     if (disposed) return;
     clearTimeout(regenTimer);
     regenTimer = setTimeout(async () => {
-      if (running('generate')) return scheduleRegenerate();
+      if (running('generate') || running('answers')) return scheduleRegenerate();
       for (const ts of Object.keys(state.manifests)) {
         if (!state.manifests[ts]) continue;
         await generate(ts).catch(() => {});
@@ -179,7 +179,7 @@ export function useJudge(problemId: string, ws: Workspace) {
       if (e.job.kind === 'invocation') state.invocationVersion++;
       if (e.type === 'job:done') {
         if (e.job.kind === 'generate' && (e.job.result as TestsManifest | undefined)?.testset) loadManifest((e.job.result as TestsManifest).testset);
-        else if (e.job.kind === 'generate' || e.job.kind === 'invocation') reloadManifests();
+        else if (e.job.kind === 'generate' || e.job.kind === 'invocation' || e.job.kind === 'answers') reloadManifests();
         if (e.job.kind === 'validator-tests' && e.job.result) state.validatorReport = e.job.result as SelfTestReport<ValidatorTestResult>;
         if (e.job.kind === 'checker-tests' && e.job.result) state.checkerReport = e.job.result as SelfTestReport<CheckerTestResult>;
       }

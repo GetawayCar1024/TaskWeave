@@ -249,6 +249,7 @@ export class ProblemRegistry {
 
   /** `std:xxx` resolves to the global shared checkers, anything else to a file in the problem. */
   private async sourceExists(ref: ProblemRef, source: string): Promise<boolean> {
+    if (/^lemon:[\w-]+$/.test(source)) return exists(path.join(this.global.sharedDir, 'lemon/checkers', source.slice(6) + '.cpp'));
     if (source.startsWith(STD_PREFIX)) {
       return exists(path.join(this.global.sharedDir, 'checkers', `${source.slice(STD_PREFIX.length)}.cpp`));
     }
@@ -407,7 +408,7 @@ export class ProblemRegistry {
     if (req.lemonChecker !== undefined) {
       if (req.lemonChecker === null) delete doc.lemon_checker;
       else {
-        safeJoin(ref.dir, req.lemonChecker);
+        if (!/^lemon:[\w-]+$/.test(req.lemonChecker)) safeJoin(ref.dir, req.lemonChecker);
         doc.lemon_checker = { ...(doc.lemon_checker?.source === req.lemonChecker ? doc.lemon_checker : {}), source: req.lemonChecker,
           ...(doc.source_languages?.[req.lemonChecker] ? { lang: doc.source_languages[req.lemonChecker] } : {}) };
       }
@@ -536,7 +537,23 @@ export class ProblemRegistry {
       const missing = requirements.filter(([, ok]) => !ok).map(([name]) => name);
       if (missing.length) throw new HttpError(400, 'incomplete_problem', `Complete these files before enabling full authoring: ${missing.join(', ')}`);
     }
-    await atomicWrite(path.join(ref.dir, PROBLEM_FILE), stringify(doc) + '\n');
+    const configFile = path.join(ref.dir, PROBLEM_FILE);
+    const destination = req.name !== undefined ? path.join(ref.root, p.name) : ref.dir;
+    if (destination !== ref.dir) {
+      if ((await fsp.lstat(ref.dir)).isSymbolicLink()) throw new HttpError(400, 'linked_problem', 'Cannot rename a linked problem folder.');
+      if (!samePath(destination, ref.dir) && await fsp.lstat(destination).catch(error => { if (error.code === 'ENOENT') return null; throw error; })) throw new HttpError(409, 'exists', `Destination folder already exists: ${destination}`);
+      const previous = await fsp.readFile(configFile, 'utf8');
+      await atomicWrite(configFile, stringify(doc) + '\n');
+      try { await fsp.rename(ref.dir, destination); }
+      catch (error) {
+        // A locked/occupied destination must not leave a new short name on the old folder.
+        await atomicWrite(configFile, previous);
+        throw error;
+      }
+      // Finish any scan that began before the move, then publish the new location by identity.
+      await this.scanning;
+      this.byId.set(id, { ...ref, dir: destination });
+    } else await atomicWrite(configFile, stringify(doc) + '\n');
     return this.detail(id);
   }
 
@@ -715,11 +732,12 @@ export function checkGroups(testset: string, list: TestGroup[], orderedDependenc
     if (g.cases) r.cases = structuredClone(g.cases);
     return r;
   });
+  const positions = new Map(out.map((group, index) => [group.name, index]));
   for (const g of out) {
     for (const d of g.dependencies ?? []) {
       if (d === g.name) throw new HttpError(400, 'invalid_group', `${testset}: group ${g.name} depends on itself`);
       if (!names.has(d)) throw new HttpError(400, 'invalid_group', `${testset}: group ${g.name} depends on unknown group ${d}`);
-      if (orderedDependencies && d >= g.name) throw new HttpError(400, 'invalid_group', `${testset}: subtask ${g.name} can only depend on a lexicographically smaller name (${d}).`);
+      if (orderedDependencies && positions.get(d)! >= positions.get(g.name)!) throw new HttpError(400, 'invalid_group', `${testset}: subtask ${g.name} can only depend on earlier subtasks (${d}).`);
     }
   }
   // Dependencies must not form a cycle.
@@ -733,5 +751,5 @@ export function checkGroups(testset: string, list: TestGroup[], orderedDependenc
     state.set(n, 2);
   };
   for (const g of out) visit(g.name, []);
-  return out.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  return out;
 }

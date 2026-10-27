@@ -78,7 +78,7 @@ export type LanguagesConfig = Record<string, Language>;
 
 export interface SettingsResponse {
   config: GlobalConfig;
-  /** Absolute path of the global directory (~/.polyforge). */
+  /** Absolute path of the global directory (~/.taskweave or an existing legacy directory). */
   globalDir: string;
   /** Logical CPUs and the default number of parallel runs (judge.parallel = 0). */
   cpus?: number;
@@ -112,6 +112,7 @@ export interface SharedFileEntry {
 
 export interface SharedListResponse {
   checkers: SharedFileEntry[];
+  lemonCheckers: SharedFileEntry[];
   validators: SharedFileEntry[];
   generators: SharedFileEntry[];
 }

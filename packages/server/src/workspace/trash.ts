@@ -9,7 +9,8 @@ import type { ProblemRef, ProblemRegistry } from './problems.js';
 import type { ContestRegistry } from './contests.js';
 
 const META = '.polyforge-trash.json';
-type Metadata = Omit<TrashEntry, 'key' | 'size' | 'legacy' | 'error'> & { version: 1; folder: string };
+type Metadata = Omit<TrashEntry, 'key' | 'size' | 'legacy' | 'error'> & { version: 1 | 2; folder: string; size?: number };
+const LOCAL_TRASH = '.polyforge-trash';
 const within = (parent: string, child: string) => { const rel = path.relative(parent, child); return rel === '' || rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel); };
 
 async function directorySize(dir: string): Promise<number> {
@@ -50,7 +51,7 @@ export class TrashStore {
     return dir;
   }
 
-  private async inspect(key: string): Promise<{ entry: TrashEntry; payload: string; folder: string }> {
+  private async inspect(key: string, includeSize = false): Promise<{ entry: TrashEntry; payload: string; folder: string }> {
     const dir = await this.entryDir(key);
     const legacy = await exists(path.join(dir, 'problem.toml'));
     if (legacy) {
@@ -58,16 +59,21 @@ export class TrashStore {
       const folder = key.replace(/-\d{8}-\d{6}$/, '');
       const identity = (await fs.readFile(path.join(dir, '.polyforge/identity'), 'utf8').catch(() => '')).trim();
       return { payload: dir, folder, entry: { key, kind: 'problem', name: raw.problem?.name ?? folder, title: raw.problem?.title ?? {},
-        originalId: identity || folder, deletedAt: (await fs.stat(dir)).mtime.toISOString(), size: await directorySize(dir), legacy: true } };
+        originalId: identity || folder, deletedAt: (await fs.stat(dir)).mtime.toISOString(), size: includeSize ? await directorySize(dir) : 0, legacy: true } };
     }
     if (!await exists(path.join(dir, META))) throw new HttpError(404, 'trash_not_found', 'Trash entry not found');
     const meta: Metadata = JSON.parse(await fs.readFile(path.join(dir, META), 'utf8'));
-    if (meta.version !== 1 || !['problem', 'contest'].includes(meta.kind) || typeof meta.folder !== 'string' || /[\\/]/.test(meta.folder)) throw new HttpError(400, 'bad_trash_entry', 'Invalid trash metadata');
+    if (![1, 2].includes(meta.version) || !['problem', 'contest'].includes(meta.kind) || typeof meta.folder !== 'string' || /[\\/]/.test(meta.folder)) throw new HttpError(400, 'bad_trash_entry', 'Invalid trash metadata');
     validateFileName(meta.folder);
-    const payload = path.join(dir, 'content'), stat = await fs.lstat(payload).catch(() => null);
+    if (meta.version === 2 && (!meta.originalRoot || !path.isAbsolute(meta.originalRoot))) throw new HttpError(400, 'bad_trash_entry', 'Invalid trash metadata');
+    if (meta.version === 2 && (await fs.lstat(path.join(meta.originalRoot!, LOCAL_TRASH)).catch(() => null))?.isSymbolicLink()) throw new HttpError(400, 'bad_trash_entry', 'Cannot read a linked trash folder');
+    const envelope = meta.version === 2 ? path.join(meta.originalRoot!, LOCAL_TRASH, key) : dir;
+    if ((await fs.lstat(envelope).catch(() => null))?.isSymbolicLink()) throw new HttpError(400, 'bad_trash_entry', 'Cannot read a linked trash entry');
+    const payload = path.join(envelope, 'content'), stat = await fs.lstat(payload).catch(() => null);
     if (!stat?.isDirectory() || stat.isSymbolicLink()) throw new HttpError(400, 'bad_trash_entry', 'Trash content is missing');
+    if (includeSize && meta.size === undefined) { meta.size = await directorySize(payload); await atomicWrite(path.join(dir, META), JSON.stringify(meta)); }
     return { payload, folder: meta.folder, entry: { key, kind: meta.kind, name: meta.name, title: meta.title, deletedAt: meta.deletedAt,
-      originalDir: meta.originalDir, originalRoot: meta.originalRoot, originalId: meta.originalId, size: await directorySize(payload) } };
+      originalDir: meta.originalDir, originalRoot: meta.originalRoot, originalId: meta.originalId, size: meta.size ?? 0 } };
   }
 
   async list(): Promise<TrashEntry[]> {
@@ -77,7 +83,7 @@ export class TrashStore {
       if (!ent.isDirectory() || ent.isSymbolicLink() || ent.name.startsWith('.')) continue;
       const dir = path.join(this.dir, ent.name);
       if (!await exists(path.join(dir, META)) && !await exists(path.join(dir, 'problem.toml'))) continue;
-      try { entries.push((await this.inspect(ent.name)).entry); }
+      try { entries.push((await this.inspect(ent.name, true)).entry); }
       catch (e) { entries.push({ key: ent.name, kind: 'problem', name: ent.name, title: {}, size: 0, deletedAt: '', error: (e as Error).message }); }
     }
     return entries.sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
@@ -87,13 +93,16 @@ export class TrashStore {
     if ((await fs.lstat(ref.dir)).isSymbolicLink()) throw new HttpError(400, 'bad_trash_entry', 'Cannot recycle a linked workspace');
     const deletedAt = new Date().toISOString();
     const key = `${kind}-${deletedAt.replace(/[:.]/g, '-')}-${randomBytes(4).toString('hex')}`;
-    const dir = path.join(this.dir, key), payload = path.join(dir, 'content');
-    const meta: Metadata = { version: 1, kind, name, title, deletedAt, originalDir: ref.dir, originalRoot: ref.root, originalId: ref.id, folder: path.basename(ref.dir) };
-    await atomicWrite(path.join(dir, META), JSON.stringify(meta, null, 2));
-    try { await moveDirectory(ref.dir, payload); }
+    const dir = path.join(this.dir, key), local = path.join(ref.root, LOCAL_TRASH), envelope = path.join(local, key), payload = path.join(envelope, 'content');
+    await fs.mkdir(local, { recursive: true });
+    if ((await fs.lstat(local)).isSymbolicLink()) throw new HttpError(400, 'bad_trash_entry', 'Cannot recycle into a linked trash folder');
+    await fs.mkdir(envelope);
+    // The index is global; the complete payload stays on its original filesystem.
+    const meta: Metadata = { version: 2, kind, name, title, deletedAt, originalDir: ref.dir, originalRoot: ref.root, originalId: ref.id, folder: path.basename(ref.dir) };
+    try { await atomicWrite(path.join(dir, META), JSON.stringify(meta, null, 2)); await moveDirectory(ref.dir, payload); }
     catch (e) {
       // A cross-drive cleanup error must not discard the only complete remaining copy.
-      if (!await exists(payload)) await fs.rm(dir, { recursive: true, force: true });
+      if (!await exists(payload)) { await fs.rm(dir, { recursive: true, force: true }); await fs.rm(envelope, { recursive: true, force: true }); }
       throw e;
     }
     await this.problems.scan(); await this.contests.scan();
@@ -123,7 +132,11 @@ export class TrashStore {
     if (entry.kind === 'contest' && (await this.contests.list()).some(c => c.id === entry.originalId || c.name === entry.name)) throw new HttpError(409, 'exists', 'A contest with this identity or name already exists.');
     await fs.mkdir(root, { recursive: true });
     await moveDirectory(payload, target);
-    if (!entry.legacy) await fs.rm(await this.entryDir(key), { recursive: true, force: true });
+    if (!entry.legacy) {
+      const dir = await this.entryDir(key);
+      if (!samePath(path.dirname(payload), dir)) await fs.rm(path.dirname(payload), { recursive: true, force: true });
+      await fs.rm(dir, { recursive: true, force: true });
+    }
     const refs = entry.kind === 'problem' ? await this.problems.scan() : await this.contests.scan();
     const restored = refs.find(ref => samePath(ref.dir, target));
     if (!restored) throw new HttpError(500, 'restore_failed', 'Restored workspace could not be loaded');
@@ -138,8 +151,12 @@ export class TrashStore {
     const dirs = await Promise.all([...new Set(keys)].map(async key => {
       const dir = await this.entryDir(key);
       if (!await exists(path.join(dir, META)) && !await exists(path.join(dir, 'problem.toml'))) throw new HttpError(404, 'trash_not_found', 'Trash entry not found');
-      return dir;
+      const { payload } = await this.inspect(key);
+      return { dir, payload };
     }));
-    for (const dir of dirs) await fs.rm(dir, { recursive: true, force: true, maxRetries: 3 });
+    for (const { dir, payload } of dirs) {
+      if (!within(dir, payload)) await fs.rm(path.dirname(payload), { recursive: true, force: true, maxRetries: 3 });
+      await fs.rm(dir, { recursive: true, force: true, maxRetries: 3 });
+    }
   }
 }

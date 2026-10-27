@@ -157,7 +157,7 @@ export function parseLuoguData(files: Map<string, Buffer>): DataPlan {
         }
         if (Array.isArray(m.samples)) samples = m.samples.filter((i: unknown) => Number.isInteger(i) && Number(i) > 0 && Number(i) <= pairs.length);
       }
-    } catch { warnings.push('Invalid PolyForge metadata comment; imported the official config.yml fields instead.'); }
+    } catch { warnings.push('Invalid Taskweave metadata comment; imported the official config.yml fields instead.'); }
   }
   const names = new Map(subtasks.map(s => [s.id, s.label]));
   const localGroups = subtasks.map(s => ({ name: s.label, points: s.points, policy: s.policy, tests: compressRanges(groups.get(s.id)!), dependencies: s.dependencies.map(d => names.get(d) ?? badPackage(`Unknown subtask dependency: ${d}`)) }));

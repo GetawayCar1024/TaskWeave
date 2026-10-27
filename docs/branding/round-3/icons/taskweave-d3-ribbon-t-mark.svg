@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Taskweave D3 Ribbon T" data-variant="D3">
+      <defs><linearGradient id="taskweave-tile" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#E6EBF8"/></linearGradient></defs>
+
+      <g><path d="M56 64H97L146 196H105Z" fill="#8396DF"/><path d="M76 64H201L187 100H157L125 196H94L126 100H90Z" fill="#3F54C3"/><path d="M126 100H157L150 121H119Z" fill="#273451" opacity="0.16"/><path d="M105 196H146L128 148Z" fill="#8396DF"/></g>
+
+    </svg>

@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NInput, NInputNumber, NSelect, NSwitch, NTag, useDialog, useMessage } from 'naive-ui';
 import { GripVertical, ListChecks, Plus, Trash2, WandSparkles, X } from 'lucide-vue-next';
-import { compareGroupNames, compressRanges, DEFAULT_TESTSET, GROUP_POLICIES, TESTSET_NAME_RE, groupLayout, inferFilenameGroups, parseIndexList, testsetsOf, type TestGroup, type TestsetPatch } from '@polyforge/shared';
+import { compressRanges, DEFAULT_TESTSET, GROUP_POLICIES, TESTSET_NAME_RE, groupLayout, inferFilenameGroups, parseIndexList, pruneForwardDependencies, testsetsOf, type TestGroup, type TestsetPatch } from '@polyforge/shared';
 import { errorMessage } from '../lib/api';
 import type { Judge } from '../lib/judge';
 import type { Workspace } from '../lib/workspace';
@@ -134,6 +134,8 @@ function dropGroup(target: EditGroup) {
   if (!source || source === target) return;
   const from = groups.indexOf(source), to = groups.indexOf(target);
   groups.splice(from, 1); groups.splice(to, 0, source); dragging.value = null;
+  const removed = pruneForwardDependencies(groups);
+  if (removed.length) message.info(t('testsets.dependenciesRemoved', { n: removed.length }));
 }
 function inferGroups() {
   const result = inferFilenameGroups(manifest.value?.tests ?? []);
@@ -185,7 +187,7 @@ async function save() {
         // A cleared select sets null.
         script: s.answers === 'provided' ? null : (s.script ?? '').trim() || null,
         groups: s.groups,
-        group: [...s.group].sort((a, b) => compareGroupNames(a.name.trim(), b.name.trim())).map(
+        group: s.group.map(
           (g): TestGroup => ({
             name: g.name.trim(),
             tests: g.tests.trim() || undefined,
@@ -300,7 +302,7 @@ const policyOptions = computed(() => GROUP_POLICIES.map((p) => ({ label: t(`test
                     v-model:value="g.dependencies"
                     size="small"
                     multiple
-                    :options="set.group.filter(x => x.name.trim() && compareGroupNames(x.name.trim(), g.name.trim()) < 0).map(x => ({ label: x.name, value: x.name }))"
+                    :options="set.group.slice(0, i).filter(x => x.name.trim()).map(x => ({ label: x.name, value: x.name }))"
                     style="min-width: 120px"
                   />
                 </td>

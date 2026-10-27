@@ -5,9 +5,11 @@ import { problemTomlSchema, PROBLEM_NAME_RE } from '@polyforge/shared';
 import type { Judge } from '../judge/index.js';
 import { samePath } from '../global.js';
 import { atomicWrite, HttpError, safeJoin } from '../util/fs.js';
+import { snapshotImportedAnswers } from '../workspace/answerBackups.js';
 
 /** Publish problem.toml last, so scans never register an incomplete archive import. */
 export async function publishProblem(judge: Judge, files: Map<string, Buffer>, doc: Record<string, any>, root?: string) {
+  snapshotImportedAnswers(files, doc);
   const parsed = problemTomlSchema.safeParse(doc);
   if (!parsed.success) throw new HttpError(400, 'invalid_package', `Imported configuration is invalid: ${parsed.error.message}`);
   const name = parsed.data.problem.name;

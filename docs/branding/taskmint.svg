@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">TaskMint · 题铸</title>
+  <rect x="8" y="8" width="240" height="240" rx="57" fill="#126d54"/>
+  <path d="M67 50H164L194 80V196H67Z" fill="#e5f3ec"/>
+  <path d="M164 50V80H194Z" fill="#91c9b1"/>
+  <path d="M92 99H169V121H142V170H119V121H92Z" fill="#126d54"/>
+  <rect x="46" y="177" width="49" height="29" rx="7" fill="#e9cb78"/>
+  <path d="M62 192H79" stroke="#153b33" stroke-width="7" stroke-linecap="round"/>
+</svg>

@@ -8,5 +8,5 @@
 
 The template also uses SimSun, SimHei and KaiTi (© Beijing ZhongYi Electronics,
 Microsoft-supplied fonts). Their license does not permit redistribution, so they are
-not included: PolyForge reads them from the user's own system fonts, or from the
-`fonts` folder of the PolyForge global directory (`packages/server/src/systemFonts.ts`).
+not included: Taskweave reads them from the user's own system fonts, or from the
+`fonts` folder of the Taskweave global directory (`packages/server/src/systemFonts.ts`).

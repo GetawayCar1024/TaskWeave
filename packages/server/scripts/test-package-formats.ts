@@ -58,8 +58,8 @@ test('JOI directory packages discover multiple problems, preserve names/bytes, a
   assert.equal((await readManifest(ctx))!.tests[0].originalInput, 'in/01-02.txt');
   assert.equal(await fs.readFile(inputPath(ctx, 1), 'utf8'), '1 2\r\n');
   await judge.registry.patch(imported.problem.id, { points: true, testsets: { tests: { groups: true, group: [
-    { name: '1', tests: '1-2', policy: 'EACH_TEST', test_points: 7, time_limit: 2500, memory_limit: 2048, dependencies: ['0'] },
     { name: '0', tests: '1', points: 23, time_limit: 700, memory_limit: 64 },
+    { name: '1', tests: '1-2', policy: 'EACH_TEST', test_points: 7, time_limit: 2500, memory_limit: 2048, dependencies: ['0'] },
   ] } } });
   ctx = await judge.ctx(imported.problem.id);
   const exported = await buildProblemDataPackage(judge, ctx, 'joi', job());

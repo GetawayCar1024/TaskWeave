@@ -16,6 +16,9 @@ export interface LemonTestCase {
   fullScore: number; timeLimit: number; memoryLimit: number; inputFiles: string[]; outputFiles: string[];
 }
 const fail = (message: string): never => { throw new HttpError(400, 'lemonlime_export', message); };
+export type LemonTarget = 'windows' | 'linux';
+export const lemonHost = (): LemonTarget => process.platform === 'win32' ? 'windows' : 'linux';
+export interface LemonCheckerBuild { source: string; include: string; output: string; standard: string }
 
 /** `total` split into `n` integers adding up exactly (the last ones get one more). */
 export function splitScore(total: number, n: number): number[] {
@@ -84,7 +87,7 @@ export function lemonTestCases(config: ProblemToml, indices: number[], folder: s
 }
 
 /** Called for every problem before starting any data generation. No fallback to the Polygon checker. */
-export async function preflightLemonChecker(judge: Judge, ctx: ProblemCtx, index: string) {
+export async function preflightLemonChecker(judge: Judge, ctx: ProblemCtx, index: string, target = lemonHost()) {
   const { config } = ctx;
   const p = config.problem;
   if (!PROBLEM_NAME_RE.test(p.name) || !/^[A-Z][A-Z0-9]{0,3}$/.test(index)) fail('Invalid problem name or contest index.');
@@ -96,7 +99,9 @@ export async function preflightLemonChecker(judge: Judge, ctx: ProblemCtx, index
   const source = config.lemon_checker?.source;
   if (p.data_only && !source) return null;
   if (!source) fail(`${index}: no Lemon checker configured. Select a Testlib for Lemons source in Information > Lemon checker.`);
-  safeJoin(ctx.ref.dir, source!);
+  const resolved = judge.compiler.resolveSource(ctx.ref.dir, source!).srcPath;
+  if (!/\.(cpp|cc|cxx)$/i.test(resolved) || !await exists(resolved)) fail(`${index}: Lemon checker must be an existing C++ source for g++.`);
+  if (target === 'windows' ? process.platform !== 'win32' : process.platform !== 'linux') return null;
   const compiled = p.data_only
     ? await judge.compiler.compile(ctx.ref.dir, source!, judge.langOf(config, source!), ctx.buildRoot)
     : await judge.compile(ctx, source!, false);
@@ -128,7 +133,7 @@ async function checkLemonProtocol(judge: Judge, ctx: ProblemCtx, checker: Progra
 }
 
 /** Preserve source-relative includes and put global headers under shared/ for rebuilding. */
-async function addCheckerSources(judge: Judge, ctx: ProblemCtx, checker: Program, folder: string, zip: ZipWriter) {
+async function addCheckerSources(judge: Judge, ctx: ProblemCtx, checker: Pick<Program, 'srcPath'>, folder: string, zip: ZipWriter) {
   const seen = new Set<string>();
   const problemDir = await fs.realpath(ctx.ref.dir), sharedDir = await fs.realpath(judge.global.sharedDir);
   const add = async (file: string): Promise<void> => {
@@ -149,9 +154,14 @@ async function addCheckerSources(judge: Judge, ctx: ProblemCtx, checker: Program
       if (!found && m[1] === '"') fail(`Cannot package Lemon checker dependency: ${m[2]}`);
     }
   };
-  await add(checker.srcPath);
+  const sourcePath = await fs.realpath(checker.srcPath);
+  const source = withinSource(problemDir, sourcePath) ? `problem/${toPosix(path.relative(problemDir, sourcePath))}` : `shared/${toPosix(path.relative(sharedDir, sourcePath))}`;
+  await add(sourcePath);
+  await add(path.join(sharedDir, 'lemon/testlib.h'));
   for (const file of ['LICENSE', 'README.md']) zip.add(`data/${folder}/checker-sources/shared/lemon/${file}`, await fs.readFile(path.join(judge.global.sharedDir, 'lemon', file)));
+  return `data/${folder}/checker-sources/${source}`;
 }
+const withinSource = (root: string, file: string) => { const rel = path.relative(root, file); return !path.isAbsolute(rel) && rel !== '..' && !rel.startsWith('..' + path.sep); };
 
 /** Selected testsets of a problem ("tests" by default), generated and in problem.toml order. */
 export function exportTestsets(ctx: ProblemCtx, index: string, wanted?: string[]): string[] {
@@ -173,9 +183,11 @@ export async function exportedTests(judge: Judge, ctx: ProblemCtx, testsets: str
   return out;
 }
 
-export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: string, zip: ZipWriter, job: JobCtx, testsets = [DEFAULT_TESTSET], subfolders = false) {
+export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: string, zip: ZipWriter, job: JobCtx, testsets = [DEFAULT_TESTSET], subfolders = false, target = lemonHost()) {
   const { config } = ctx, p = config.problem, mode = judgeMode(p);
-  const checker = await preflightLemonChecker(judge, ctx, index);
+  const checker = await preflightLemonChecker(judge, ctx, index, target);
+  const checkerSource = config.lemon_checker?.source;
+  const hasChecker = !!checkerSource;
   const folder = p.name;
   const testCases: LemonTestCase[] = [];
   let count = 0;
@@ -191,14 +203,20 @@ export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: stri
       }
     }
   }
-  const checkerName = `${folder}/checker${process.platform === 'win32' ? '.exe' : ''}`;
+  const checkerName = `${folder}/checker${target === 'windows' ? '.exe' : ''}`;
+  let checkerBuild: LemonCheckerBuild | undefined;
   if (checker) {
     await withBuildLocks([checker.build!.dir], async () => {
       await verifyBuild(checker.build);
       zip.add(`data/${checkerName}`, await fs.readFile(checker.argv[0]), true);
     }, 'read');
-    // Keep sources to allow rebuilding checkers when moving to another platform.
-    await addCheckerSources(judge, ctx, checker, folder, zip);
+  }
+  if (checkerSource) {
+    const srcPath = judge.compiler.resolveSource(ctx.ref.dir, checkerSource).srcPath;
+    const source = await addCheckerSources(judge, ctx, { srcPath }, folder, zip);
+    const command = pickLanguage((await judge.global.readLanguages()).languages, srcPath, judge.langOf(config, checkerSource))?.lang.compile ?? '';
+    const standard = command.match(/-std=((?:gnu|c)\+\+(?:98|03|11|14|17|20|23|26|2a|2b|2c))\b/)?.[1] ?? 'c++17';
+    checkerBuild = { source, include: `data/${folder}/checker-sources`, output: `data/${folder}/checker`, standard };
   }
   const main = judge.mainSolution(config) ?? `${p.name}.cpp`;
   const compile = pickLanguage((await judge.global.readLanguages()).languages, main, judge.langOf(config, main))?.lang.compile ?? '';
@@ -211,8 +229,8 @@ export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: stri
     outputFileName: p.output === 'stdout' ? `${p.name}.out` : p.output,
     standardInputCheck: !p.input || p.input === 'stdin', standardOutputCheck: !p.output || p.output === 'stdout',
     taskType: mode === 'grader' ? 3 : 0, subFolderCheck: subfolders,
-    comparisonMode: checker ? 4 : 1, diffArguments: '--ignore-space-change --text --brief', realPrecision: 6,
-    specialJudge: checker ? checkerName : '', compilerConfiguration: { 'g++': cppConfiguration }, answerFileExtension: 'ans', testCases,
+    comparisonMode: hasChecker ? 4 : 1, diffArguments: '--ignore-space-change --text --brief', realPrecision: 6,
+    specialJudge: hasChecker ? checkerName : '', compilerConfiguration: { 'g++': cppConfiguration }, answerFileExtension: 'ans', testCases,
     ...(mode === 'grader' ? { sourceFilesPath: [`${p.name}.cpp`], sourceFilesName: [`${p.name}.cpp`], graderFilesPath: [] as string[], graderFilesName: [] as string[] } : {}),
   };
   if (mode === 'grader') {
@@ -235,7 +253,28 @@ export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: stri
       }
     }
   }
-  return { task, tests: count };
+  return { task, tests: count, checkerBuild };
+}
+
+/** Both scripts work from any current directory, quote paths and preserve a previous build on errors. */
+export function addLemonBuildScripts(zip: ZipWriter, builds: LemonCheckerBuild[]) {
+  const sh = (value: string) => "'" + value.replace(/'/g, "'\"'\"'") + "'";
+  const cmd = (value: string) => '"' + value.replace(/\//g, '\\').replace(/%/g, '%%') + '"';
+  const windows = ['@echo off', 'setlocal DisableDelayedExpansion', 'chcp 65001 >nul', 'cd /d "%~dp0"'];
+  const linux = ['#!/usr/bin/env bash', 'set -euo pipefail', 'cd -- "$(dirname -- "${BASH_SOURCE[0]}")"'];
+  if (builds.length) {
+    windows.push('where g++ >nul 2>nul', 'if errorlevel 1 (echo g++ was not found on PATH. & exit /b 1)');
+    linux.push('command -v g++ >/dev/null || { echo "g++ was not found on PATH." >&2; exit 1; }');
+  }
+  for (const build of builds) {
+    windows.push(`g++ -std=${build.standard} -O2 -DONLINE_JUDGE -static -s -I${cmd(build.include + '/shared')} -I${cmd(build.include + '/problem')} ${cmd(build.source)} -o ${cmd(build.output + '.pf-build.exe')}`,
+      'if errorlevel 1 exit /b 1', `move /y ${cmd(build.output + '.pf-build.exe')} ${cmd(build.output + '.exe')} >nul`, 'if errorlevel 1 exit /b 1');
+    linux.push(`g++ -std=${build.standard} -O2 -DONLINE_JUDGE -I${sh(build.include + '/shared')} -I${sh(build.include + '/problem')} ${sh(build.source)} -o ${sh(build.output + '.pf-build')}`,
+      `mv -f -- ${sh(build.output + '.pf-build')} ${sh(build.output)}`);
+  }
+  windows.push(`echo Built ${builds.length} checker(s).`, 'exit /b 0'); linux.push(`echo 'Built ${builds.length} checker(s).'`);
+  zip.add('compile-checkers.cmd', windows.join('\r\n') + '\r\n');
+  zip.add('compile-checkers.sh', linux.join('\n') + '\n', true);
 }
 
 export const lemonReadme = (platform: string, subfolders = false) => `LemonLime contest package
@@ -246,6 +285,13 @@ Search subfolders for contestant code: ${subfolders ? 'enabled' : 'disabled'}.
 Inputs, answers, checkers and supplied grader files are in data/.
 Each selected testset keeps its own subtasks. Bundled entries take the minimum; sum entries carry per-test points.
 CDF limits are milliseconds and MiB. Shared inputs can be used by several entries with independent limits.
-Checker executables target ${platform}; rebuild from checker-sources/problem/ with -I checker-sources/shared/ on other platforms. Preserve the included header license.
+Target system: ${platform}. CDF specialJudge uses the actual relative executable path: checker.exe on Windows, checker on Linux.
+On the judging computer, install g++ and add it to PATH, then compile every checker from the archive root:
+  Windows (PowerShell or cmd): .\\compile-checkers.cmd
+  Linux: bash ./compile-checkers.sh
+Both scripts include the supplied Testlib for Lemons and local headers. No download is needed.
+Run the script matching the selected target before judging; cross-system exports contain sources rather than a wrongly labelled host executable.
+To change the target system, export again with the other target so the CDF paths also match.
+Preserve the included source/header licenses. The executable uses the selected target's native g++ environment.
 Grader problems use LemonLime Communication mode. Configure the C++ compiler in LemonLime.
 `;

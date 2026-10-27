@@ -71,7 +71,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.addHook('onRequest', async req => {
     if (!req.url.startsWith('/ws')) requests++;
     if (clearingCache && req.url.startsWith('/api/')) throw new HttpError(409, 'busy', 'Cache maintenance in progress');
-    if (relocating && req.url.startsWith('/api/')) throw new HttpError(409, 'busy', 'A problem is being moved to another root; try again shortly');
+    if (relocating && req.url.startsWith('/api/')) throw new HttpError(409, 'busy', 'A problem folder is being moved; try again shortly');
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      const active = deps.jobs.list().filter(job => job.kind === 'answers' && job.status === 'running');
+      const problem = /^\/api\/problems\/([^/?]+)/.exec(req.url)?.[1];
+      if (active.some(job => problem && job.problemId === decodeURIComponent(problem)) || active.length && /^\/api\/contests\/[^/]+\/batch/.test(req.url)) throw new HttpError(409, 'busy', 'Outputs are being updated. Wait for the operation to finish.');
+    }
   });
   app.addHook('onResponse', async req => { if (!req.url.startsWith('/ws')) requests--; });
   const idle = () => !agent.running && !deps.jobs.list().some(j => j.status === 'running');
@@ -125,7 +130,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (err instanceof PolygonError) return reply.code(502).send({ error: 'polygon_error', message: err.message });
     const e = err as Error & { statusCode?: number; code?: string };
     if (e.statusCode && e.statusCode < 500) return reply.code(e.statusCode).send({ error: e.code ?? 'bad_request', message: e.message });
-    console.error('[polyforge]', err);
+    console.error('[taskweave]', err);
     return reply.code(500).send({ error: 'internal', message: e.message });
   });
 
@@ -342,13 +347,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.patch<{ Params: { id: string }; Body: PatchProblemRequest }>('/api/problems/:id', async (req) => {
     if (req.body?.name !== undefined && (!idle() || importing)) throw new HttpError(409, 'busy', 'Wait for running tasks before renaming a problem');
-    const detail = await registry.patch(req.params.id, req.body ?? {});
-    hub.broadcast({ type: 'problem:changed', problemId: req.params.id });
-    if (req.body?.name !== undefined) {
-      hub.broadcast({ type: 'problems:changed' });
-      hub.broadcast({ type: 'contests:changed' });
-    }
-    return detail;
+    const update = async () => {
+      const detail = await registry.patch(req.params.id, req.body ?? {});
+      hub.broadcast({ type: 'problem:changed', problemId: req.params.id });
+      if (req.body?.name !== undefined) {
+        hub.broadcast({ type: 'problems:changed' });
+        hub.broadcast({ type: 'contests:changed' });
+      }
+      return detail;
+    };
+    const ref = await registry.get(req.params.id);
+    const movesFolder = typeof req.body?.name === 'string' && path.basename(ref.dir) !== req.body.name.trim();
+    return movesFolder ? workspaceChange(update) : update();
   });
 
   /** Recycle the complete workspace. Restoring its stable identity reconnects contests. */

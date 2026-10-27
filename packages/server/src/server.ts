@@ -17,7 +17,7 @@ const DEFAULT_PORT = 4523;
 const DEV_WEB_PORT = 5173;
 
 export interface ServerOptions {
-  /** Global directory (default ~/.polyforge). */
+  /** Global directory (new installs: ~/.taskweave; existing ~/.polyforge is reused). */
   home?: string;
   /** Fixed port; otherwise the first free one from 4523. */
   port?: number;
@@ -33,7 +33,7 @@ export interface RunningServer {
   close: () => Promise<void>;
 }
 
-/** Start PolyForge (API + web UI) on 127.0.0.1; used by the CLI and the desktop app. */
+/** Start Taskweave (API + web UI) on 127.0.0.1; used by the CLI and the desktop app. */
 export async function startServer(opts: ServerOptions = {}): Promise<RunningServer> {
   const dev = !!opts.dev;
   const global = new GlobalStore(opts.home ? path.resolve(opts.home) : defaultGlobalDir());
@@ -48,23 +48,23 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
 
   const webDist = WEB_DIST;
   const hasDist = !dev && (await exists(path.join(webDist, 'index.html')));
-  if (!dev && !hasDist) console.warn('[polyforge] web build not found; run `pnpm build` first.');
+  if (!dev && !hasDist) console.warn('[taskweave] web build not found; run `pnpm build` first.');
 
   const judge = new Judge(global, registry, hub);
   const jobs = new JobManager(hub);
   // Build the runner in the background so the first run does not wait for g++.
-  judge.runner.ensure().catch((e) => console.warn(`[polyforge] runner unavailable: ${e.message}`));
+  judge.runner.ensure().catch((e) => console.warn(`[taskweave] runner unavailable: ${e.message}`));
 
   const contests = new ContestRegistry(registry, global);
-  for (const m of await contests.migrateFromProblemRoots()) console.log(`[polyforge] moved contest ${m.from} -> ${m.to}`);
+  for (const m of await contests.migrateFromProblemRoots()) console.log(`[taskweave] moved contest ${m.from} -> ${m.to}`);
   const app = await buildApp({ global, registry, contests, files, watcher, hub, judge, jobs, token, webDist: hasDist ? webDist : undefined });
 
   // Dev uses a fixed port so the Vite proxy can find it.
   const port = await listenOnFreePort(app, opts.port ?? DEFAULT_PORT, opts.port === undefined && !dev);
   const webPort = dev ? DEV_WEB_PORT : port;
   const url = `http://127.0.0.1:${webPort}/?token=${token}`;
-  console.log(`[polyforge] global dir: ${global.dir}`);
-  console.log(`[polyforge] API listening on http://127.0.0.1:${port}`);
+  console.log(`[taskweave] global dir: ${global.dir}`);
+  console.log(`[taskweave] API listening on http://127.0.0.1:${port}`);
 
   return {
     url,
@@ -82,7 +82,8 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
  * (tsx watch) do not invalidate the already-open browser tab.
  */
 async function loadToken(global: GlobalStore, dev: boolean): Promise<string> {
-  if (process.env.POLYFORGE_TOKEN) return process.env.POLYFORGE_TOKEN;
+  const override = process.env.TASKWEAVE_TOKEN || process.env.POLYFORGE_TOKEN;
+  if (override) return override;
   if (!dev) return randomBytes(24).toString('hex');
   const file = path.join(global.cacheDir, 'dev-token');
   try {

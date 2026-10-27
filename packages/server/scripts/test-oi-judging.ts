@@ -99,7 +99,7 @@ test('grader builds, cache invalidation, real judging, Polygon rejection and com
     await registry.patch(p.id,{validator:null, testsets:{ tests:{script:null} }});
     await fs.writeFile(path.join(p.dir,'tests/manual/01.in'),'2 3\n');
     await fs.writeFile(path.join(p.dir,'tests/manual/02.in'),'8 9\n');
-    await registry.patch(p.id,{points:true,testsets:{tests:{groups:true,group:[{name:'1-advanced',tests:'2',points:70,dependencies:['0-basic']},{name:'0-basic',tests:'1',points:30}]}}});
+    await registry.patch(p.id,{points:true,testsets:{tests:{groups:true,group:[{name:'0-basic',tests:'1',points:30},{name:'1-advanced',tests:'2',points:70,dependencies:['0-basic']}]}}});
     let ctx=await judge.ctx(p.id);
     assert.equal(judgeMode(ctx.config.problem),'grader'); assert.equal(ctx.config.problem.interactive,false);
     const first=await judge.compile(ctx,'solutions/std.cpp'); assert.ok(first.result.ok,first.result.log);

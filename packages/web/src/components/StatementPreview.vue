@@ -18,14 +18,20 @@ const emit = defineEmits<{ createTutorial: [lang: string] }>();
 const { t } = useI18n();
 const host = ref<HTMLElement>();
 const message = useMessage();
+const exportingMarkdown = ref(false);
 async function markdown() {
+  if (exportingMarkdown.value) return;
+  exportingMarkdown.value = true;
   try {
     const doc = host.value?.querySelector<HTMLElement>('.statement-doc')?.cloneNode(true) as HTMLElement | undefined;
     if (!doc) return;
     // OI-only parts are shown in the preview only; the Markdown export is the CF statement.
     doc.querySelectorAll('.oi-only').forEach((el) => el.remove());
-    if (await exportMarkdown(doc, `${props.ws.state.detail?.summary.name ?? props.problemId}-${props.lang}`)) message.warning(t('improve.markdownWarnings'));
+    const result = await exportMarkdown(doc, `${props.ws.state.detail?.summary.name ?? props.problemId}-${props.lang}`);
+    message.success(t('export.saved', { file: result.file }));
+    if (result.warnings) message.warning(t('improve.markdownWarnings'));
   } catch (e) { message.error(String(e)); }
+  finally { exportingMarkdown.value = false; }
 }
 
 
@@ -150,7 +156,7 @@ async function createOi(path: string) {
 <template>
   <div ref="host" class="statement">
     <div class="export-tools">
-      <n-button size="tiny" @click="markdown">{{ t('improve.markdown') }}</n-button>
+      <n-button size="tiny" :loading="exportingMarkdown" @click="markdown">{{ t('improve.markdown') }}</n-button>
       <n-dropdown v-if="oiCreate.length" trigger="click" :options="oiCreate" @select="createOi">
         <n-button size="tiny" quaternary>+ {{ t('preview.addOi') }}</n-button>
       </n-dropdown>

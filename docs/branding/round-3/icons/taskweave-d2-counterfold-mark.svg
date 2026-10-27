@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Taskweave D2 Counterfold" data-variant="D2">
+      <defs><linearGradient id="taskweave-tile" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#E6EBF8"/></linearGradient><clipPath id="taskweave-cut"><path d="M58 62H198L150 194H108Z M96 94H173L168 108H148L130 159H115L133 108H101Z" clip-rule="evenodd"/></clipPath></defs>
+
+      <g clip-path="url(#taskweave-cut)"><path d="M58 62H198L150 194H108Z" fill="#3F54C3"/><path d="M58 62H105L154 194H108Z" fill="#8396DF"/><path d="M108 194H150L135 153Z" fill="#3F54C3" opacity="0.55"/></g>
+
+    </svg>

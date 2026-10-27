@@ -51,7 +51,7 @@ test('Luogu data.zip round-trips unequal case points, subtask dependencies, limi
   assert.ok(archive.has('config.yml') && archive.has('score.txt') && archive.has('1.in'));
   assert.ok([...archive.keys()].every(name => !name.includes('/')));
   const imported = parseLuoguData(archive);
-  assert.deepEqual(imported.groups.map(g => [g.name, g.points, g.policy, g.dependencies ?? []]), [['full', 70, 'COMPLETE_GROUP', ['partial']], ['partial', 30, 'EACH_TEST', []]]);
+  assert.deepEqual(imported.groups.map(g => [g.name, g.points, g.policy, g.dependencies ?? []]), [['partial', 30, 'EACH_TEST', []], ['full', 70, 'COMPLETE_GROUP', ['partial']]]);
   assert.deepEqual(imported.samples, [2]);
   assert.equal(imported.cases[1].time_limit, 500); assert.equal(imported.cases[1].memory_limit, 64);
   assert.equal(imported.cases[2].points, 20); assert.equal(imported.cases[3].pretest, true);

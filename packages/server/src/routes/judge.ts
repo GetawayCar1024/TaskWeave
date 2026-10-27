@@ -16,6 +16,9 @@ import { readSamples } from '../judge/samples.js';
 import { buildProblemDataPackage, requireLuoguOptions } from '../judge/problemExport.js';
 import { requireFullProblem } from '../judge/index.js';
 import type { ProblemExportRequest } from '@polyforge/shared';
+import type { RegenerateAnswersRequest } from '@polyforge/shared';
+import { answerBackupInfo, recoverAnswerTransaction } from '../workspace/answerBackups.js';
+import { regenerateAnswers, restoreOriginalAnswers } from '../judge/answers.js';
 
 const PREVIEW = 64 * 1024;
 
@@ -43,6 +46,20 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     return (await readSamples(await judge.ctx(req.params.id), false, lang)).map(row => row.sample);
   });
   type P = { Params: { id: string } };
+  app.get<P & { Querystring: { testset?: string } }>('/api/problems/:id/answers/original', async req => {
+    const ctx = await judge.ctx(req.params.id); await recoverAnswerTransaction(ctx.ref.dir);
+    return answerBackupInfo(ctx.ref.dir, requireTestset(ctx, req.query.testset));
+  });
+  const answerJob = async (id: string, run: (ctx: Awaited<ReturnType<Judge['ctx']>>, job: import('../jobs.js').JobCtx) => Promise<unknown>) => {
+    const ctx = await judge.ctx(id);
+    if (jobs.list().some(job => job.status === 'running' && (job.problemId === id || job.kind === 'contest'))) throw new HttpError(409, 'busy', 'Wait for problem and contest jobs before changing outputs.');
+    return jobs.start('answers', id, async job => {
+      try { return await run(ctx, job); }
+      finally { judge.hub.broadcast({ type: 'problem:changed', problemId: id }); }
+    });
+  };
+  app.post<P & { Body: RegenerateAnswersRequest }>('/api/problems/:id/answers/regenerate', async req => answerJob(req.params.id, (ctx, job) => regenerateAnswers(judge, ctx, req.body ?? {} as RegenerateAnswersRequest, job)));
+  app.post<P & { Body: { testset?: string } }>('/api/problems/:id/answers/restore', async req => answerJob(req.params.id, (ctx, job) => restoreOriginalAnswers(ctx, req.body?.testset ?? 'tests', job)));
 
   /** Compile the given sources, or every program referenced by problem.toml. */
   app.post<P & { Body: { sources?: string[] } }>('/api/problems/:id/build', async (req) => {

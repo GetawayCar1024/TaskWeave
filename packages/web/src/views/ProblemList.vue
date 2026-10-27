@@ -13,7 +13,7 @@ import { api, errorMessage } from '../lib/api';
 import { onWs } from '../lib/ws';
 import { problemTitle } from '../lib/format';
 import { checklist, progress } from '../lib/progress';
-import { Anvil, Check, Circle as CircleIcon, LayoutGrid, List, Trash2 } from 'lucide-vue-next';
+import { Check, Circle as CircleIcon, LayoutGrid, List, Trash2 } from 'lucide-vue-next';
 import { useDialog } from 'naive-ui';
 import { confirmDeleteContest, confirmDeleteProblem } from '../lib/deleteProblem';
 
@@ -122,7 +122,7 @@ function openContest(c: ContestSummary) {
 <template>
   <div class="page">
     <app-header>
-      <template #left><strong class="brand"><anvil :size="18" /> PolyForge</strong></template>
+      <template #left><strong class="brand"><img src="/taskweave.svg" alt="" width="26" height="26" /> Taskweave</strong></template>
       <n-radio-group v-model:value="tab" size="small">
         <n-radio-button value="problems">{{ t('list.problems') }} {{ problems.length || '' }}</n-radio-button>
         <n-radio-button value="contests">{{ t('list.contests') }} {{ contests.length || '' }}</n-radio-button>
@@ -212,7 +212,7 @@ function openContest(c: ContestSummary) {
       <div v-else-if="view === 'list'" class="rows">
         <div v-for="p in shown" :key="p.id" class="row" @click="open(p)">
           <span class="row-title">{{ problemTitle(p.title, locale) || p.name }}</span>
-          <span class="mono sub">{{ p.id }}</span>
+          <span class="mono sub">{{ p.name }}</span>
           <n-progress type="line" :percentage="progress(p)" :height="6" :show-indicator="false" style="width: 120px" :status="progress(p) === 100 ? 'success' : 'default'" />
           <span class="checks">
             <n-tag v-for="c in checklist(p)" :key="c.key" size="tiny" :type="c.ok ? 'success' : 'default'" :bordered="false">{{ t(`check.${c.label ?? c.key}`) }}</n-tag>
@@ -224,7 +224,7 @@ function openContest(c: ContestSummary) {
         <n-card v-for="p in shown" :key="p.id" size="small" hoverable class="card" @click="open(p)">
           <template #header>
             <div class="title">{{ problemTitle(p.title, locale) || p.name }}</div>
-            <div class="sub mono">{{ p.id }}</div>
+            <div class="sub mono">{{ p.name }}</div>
           </template>
           <template #header-extra>
             <span class="limits">{{ p.timeLimit / 1000 }}s / {{ p.memoryLimit }}MB</span>

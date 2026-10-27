@@ -6,17 +6,18 @@ import { fileURLToPath } from 'node:url';
  * Locations of bundled files. Two layouts are supported:
  *  - the monorepo (sources run with tsx): <root>/assets, <root>/packages/server/runner,
  *    <root>/packages/web/dist
- *  - the release package (bundled, `npx polyforge`): <root>/assets, <root>/runner,
+ *  - the desktop package (bundled): <root>/assets, <root>/runner,
  *    <root>/web
  * The root is the nearest ancestor of this module that contains assets/templates.
  */
 function findRoot(): string {
-  if (process.env.POLYFORGE_ROOT) return path.resolve(process.env.POLYFORGE_ROOT);
+  const override = process.env.TASKWEAVE_ROOT || process.env.POLYFORGE_ROOT;
+  if (override) return path.resolve(override);
   let dir = path.dirname(fileURLToPath(import.meta.url));
   for (;;) {
     if (existsSync(path.join(dir, 'assets', 'templates'))) return dir;
     const parent = path.dirname(dir);
-    if (parent === dir) throw new Error('PolyForge: cannot find the assets directory');
+    if (parent === dir) throw new Error('Taskweave: cannot find the assets directory');
     dir = parent;
   }
 }

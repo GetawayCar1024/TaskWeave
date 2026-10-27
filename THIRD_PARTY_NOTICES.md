@@ -1,6 +1,6 @@
-# Third-party components in PolyForge
+# Third-party components in Taskweave
 
-PolyForge itself is licensed under the GNU Affero General Public License,
+Taskweave (formerly PolyForge) itself is licensed under the GNU Affero General Public License,
 version 3 or (at your option) any later version; see `LICENSE`. The components
 below remain under their own licenses.
 
@@ -15,9 +15,9 @@ License: GNU Affero General Public License, version 3; see
 
 The original compiler and Typst template sources, upstream notes template and
 attribution are included under `third-party/cnoi/` in the desktop app.
-PolyForge's integration and English adaptation are included under
+Taskweave's integration and English adaptation are included under
 `third-party/cnoi-integration/`. The full corresponding application source and
-build scripts are supplied as `PolyForge-<version>-source.zip` alongside the binaries
+build scripts are supplied as `Taskweave-<version>-source.zip` alongside the binaries
 of every release (https://github.com/GetawayCar1024/polyforge/releases) and in the
 public repository at the release tag.
 
@@ -41,8 +41,8 @@ README in the same folder:
 
 The CNOI template also uses SimSun, SimHei and KaiTi (© Beijing ZhongYi
 Electronics, supplied with Microsoft Windows). Their license does not permit
-redistribution, so PolyForge does not include them: it reads them from the
-user's installed system fonts, or from the `fonts` folder of the PolyForge
+redistribution, so Taskweave does not include them: it reads them from the
+user's installed system fonts, or from the `fonts` folder of the Taskweave
 global directory, and warns when they are missing.
 
 The bundled Typst package archives (`mitex` and `oxifmt`) contain their upstream
@@ -55,6 +55,10 @@ Source: https://github.com/GitPinkRabbit/Testlib-for-Lemons
 Pinned commit: ce95947b3894572e6664c8906bf8768d26c7a77e.
 MIT license and original notices: `assets/shared/lemon/LICENSE` and `testlib.h`.
 Ordinary testlib is retained separately with its notices in `assets/shared/testlib.h`.
+The six templates in `assets/shared/lemon/checkers/` are adaptations of that
+commit's MIT-licensed checkers (ncmp, wcmp, lcmp, fcmp, rcmp6, yesno), with the
+Lemon six-argument initializer and Taskweave shared-header path. Their origin is
+noted in each source file; the original license is kept beside them.
 
 ## JavaScript dependencies
 

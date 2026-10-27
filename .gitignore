@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .polyforge/
+.taskweave/
 *.log
 # 本地参考资料（Polygon 网页存档）
 *.mhtml

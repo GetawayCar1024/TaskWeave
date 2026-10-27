@@ -361,10 +361,12 @@ async function onAction(a: SidebarAction) {
         break;
       case 'copyStd': {
         const checker = a.ref.startsWith('checkers/');
-        const to = await ask(t('tree.copyStd'), checker ? 'checker.cpp' : `files/${a.ref}`);
+        const lemon = a.ref.startsWith('lemon/checkers/');
+        const to = await ask(t('tree.copyStd'), lemon ? 'lemon-checker.cpp' : checker ? 'checker.cpp' : `files/${a.ref}`);
         if (!to) break;
         await ws.copyShared(a.ref, to);
         if (checker) await ws.patch({ checker: to });
+        if (lemon) await ws.patch({ lemonChecker: to });
         const shared = ws.state.tabs.find((x) => x.path.startsWith(SHARED_TAB));
         if (shared) ws.closeTab(shared.path);
         await ws.openFile(to);
@@ -532,7 +534,7 @@ onBeforeUnmount(() => {
       </template>
       <template v-if="summary">
         <strong class="title">{{ problemTitle(summary.title, locale) || summary.name }}</strong>
-        <span class="mono dim">{{ summary.id }}</span>
+        <span class="mono dim">{{ summary.name }}</span>
         <span class="dim">{{ summary.timeLimit / 1000 }}s / {{ summary.memoryLimit }}MB</span>
       </template>
       <template #right>

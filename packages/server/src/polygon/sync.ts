@@ -366,7 +366,7 @@ export class PolygonSync {
     let conflict = false;
     if (req.commit) {
       job.progress(done++, total, 'problem.commitChanges');
-      const r = await client.call<{ committed?: boolean; conflictOccurred?: boolean; message?: string } | null>('problem.commitChanges', { problemId: polygonId, minorChanges: false, message: req.message?.trim() || 'PolyForge sync' });
+      const r = await client.call<{ committed?: boolean; conflictOccurred?: boolean; message?: string } | null>('problem.commitChanges', { problemId: polygonId, minorChanges: false, message: req.message?.trim() || 'Taskweave sync' });
       if (r && r.committed === false) {
         conflict = !!r.conflictOccurred;
         warnings.push(conflict ? `Polygon did not commit: a conflict occurred while updating the working copy (${r.message || 'conflict'}). Resolve it on Polygon.` : `Polygon did not commit: ${r.message || 'No changes'}`);
@@ -599,7 +599,7 @@ export class PolygonSync {
       const preview = await this.pullPreview(ctx, {}, job.signal);
       job.progress(2, 3, 'writing files');
       const res = await this.pull(ctx, { take: preview.items.filter((i) => i.status !== 'local-only').map((i) => i.key) });
-      if (res.warnings.length) console.warn('[polyforge] import:', res.warnings.join('; '));
+    if (res.warnings.length) console.warn('[taskweave] import:', res.warnings.join('; '));
       job.progress(3, 3, 'done');
       return (await this.judge.registry.list()).find((p) => p.id === ref.id)!;
     } catch (e) {

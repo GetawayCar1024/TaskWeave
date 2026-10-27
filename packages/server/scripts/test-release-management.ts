@@ -65,10 +65,10 @@ test('renaming a problem updates contest summaries and export names while retain
   const c = await contests.create({ name: 'round', problems: [{ index: 'A', problem: p.id }] });
   const response = await call('PATCH', `/api/problems/${p.id}`, { name: 'new-name' });
   assert.equal(response.statusCode, 200, response.body);
-  assert.equal(response.json().summary.id, p.id); assert.equal(response.json().summary.dir, p.dir);
+  assert.equal(response.json().summary.id, p.id); assert.equal(path.basename(response.json().summary.dir), 'new-name');
   assert.equal((await contests.detail(c.id)).problems[0].summary?.name, 'new-name');
   assert.equal((await contestStatements(judge, contests, c.id, 'en'))[0].samples[0].inputFile, 'new-name/new-name1.in');
-  assert.equal(await fs.readFile(path.join(p.dir, '.polyforge/sync.json'), 'utf8'), 'history');
+  assert.equal(await fs.readFile(path.join(response.json().summary.dir, '.polyforge/sync.json'), 'utf8'), 'history');
   const other = await registry.create({ name: 'taken', dataOnly: true });
   assert.equal((await call('PATCH', `/api/problems/${p.id}`, { name: other.name })).statusCode, 409);
   assert.equal((await call('PATCH', `/api/problems/${p.id}`, { name: '../escape' })).statusCode, 400);
@@ -163,8 +163,8 @@ async function dataProblem(registry: ProblemRegistry, name: string) {
   const p = await registry.create({ name, dataOnly: true, title: { zh: '求和', en: 'Sum' } });
   for (let i = 1; i <= 2; i++) { await atomicWrite(path.join(p.dir, `tests/manual/${i}.in`), `${i} 1\n`); await atomicWrite(path.join(p.dir, `tests/manual/${i}.ans`), `${i + 1}\n`); }
   await registry.patch(p.id, { samples: '1', points: true, testsets: { tests: { groups: true, group: [
-    { name: '1-advanced', points: 70, tests: '2', policy: 'EACH_TEST', dependencies: ['0-basic'] },
     { name: '0-basic', points: 30, tests: '1', policy: 'COMPLETE_GROUP' },
+    { name: '1-advanced', points: 70, tests: '2', policy: 'EACH_TEST', dependencies: ['0-basic'] },
   ] } } });
   return p;
 }

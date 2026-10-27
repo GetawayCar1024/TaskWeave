@@ -94,18 +94,18 @@ async function generate() {
 }
 const baseName = () => `${props.detail.summary.name}-${props.doc}-${props.lang}-oi`;
 async function exportDown() {
-  if (busy.value || stale.value || !pdf.value || props.doc !== 'statements') return;
+  if (busy.value || exporting.value || stale.value || !pdf.value || props.doc !== 'statements') return;
   const snapshot = { id: props.detail.summary.id, lang: props.lang, url: pdf.value, statements: JSON.parse(JSON.stringify(props.statements)) as ContestStatement[], notes: props.notes };
   exporting.value = true;
-  try { await api.contestDown(snapshot.id, snapshot.lang, await (await fetch(snapshot.url)).blob(), snapshot.statements, snapshot.notes, props.single); }
+  try { await api.contestDown(snapshot.id, snapshot.lang, await (await fetch(snapshot.url)).blob(), snapshot.statements, snapshot.notes, props.single); message.success(t('export.saved', { file: 'down.zip' })); }
   catch (e) { message.error(serverText(e instanceof Error ? e.message : String(e))); }
   finally { exporting.value = false; }
 }
 async function onExport(format: string) {
-  if (busy.value || stale.value || !pdf.value) return;
+  if (busy.value || exporting.value || stale.value || !pdf.value) return;
   exporting.value = true;
   try {
-    if (format === 'pdf') { const a = document.createElement('a'); a.href = pdf.value; a.download = `${baseName()}.pdf`; a.click(); return; }
+    if (format === 'pdf') { const a = document.createElement('a'); a.href = pdf.value; a.download = `${baseName()}.pdf`; a.click(); message.success(t('export.saved', { file: a.download })); return; }
     const root = document.createElement('article');
     const appendText = (tag: string, text: string, parent: HTMLElement = root) => { const node = document.createElement(tag); node.textContent = text; parent.append(node); return node; };
     if (withToc.value) {
@@ -140,7 +140,9 @@ async function onExport(format: string) {
       heading.className = 'title'; heading.id = `problem-${p.index}`;
       root.append(cnoiProblemElement(p, props.doc, props.lang, props.macros));
     });
-    if (await exportMarkdown(root, baseName(), { contestTitle: title.value })) message.warning(t('improve.markdownWarnings'));
+    const result = await exportMarkdown(root, baseName(), { contestTitle: title.value });
+    message.success(t('export.saved', { file: result.file }));
+    if (result.warnings) message.warning(t('improve.markdownWarnings'));
   } catch (e) { message.error(e instanceof Error ? e.message : String(e)); }
   finally { exporting.value = false; }
 }
@@ -174,8 +176,8 @@ async function onExport(format: string) {
     <n-alert v-if="error" type="error">{{ error }}</n-alert>
     <n-alert v-if="missingFonts.length && !error" type="warning" :title="ui(`本机缺少 OI 排版字体：${missingFontText}`, `Missing OI fonts on this computer: ${missingFontText}`)">
       {{ ui(
-        `这些字体的版权不允许随 PolyForge 分发，排版时从本机读取。缺少时，对应文字会改用其他已加载的中文字体；若中文字体全部缺少，中文将显示为方框。Windows 通常自带这些字体；也可以把字体文件（${missingFontFiles}）放到 ${fontDir || '全局目录的 fonts 文件夹'}，再重新检测。`,
-        `These fonts may not be redistributed with PolyForge, so they are read from this computer. Missing ones are replaced by other loaded Chinese fonts; without any, Chinese text shows as boxes. Windows usually includes them; you can also put the font files (${missingFontFiles}) into ${fontDir || 'the fonts folder of the global directory'} and check again.`,
+        `这些字体的版权不允许随 Taskweave 分发，排版时从本机读取。缺少时，对应文字会改用其他已加载的中文字体；若中文字体全部缺少，中文将显示为方框。Windows 通常自带这些字体；也可以把字体文件（${missingFontFiles}）放到 ${fontDir || '全局目录的 fonts 文件夹'}，再重新检测。`,
+        `These fonts may not be redistributed with Taskweave, so they are read from this computer. Missing ones are replaced by other loaded Chinese fonts; without any, Chinese text shows as boxes. Windows usually includes them; you can also put the font files (${missingFontFiles}) into ${fontDir || 'the fonts folder of the global directory'} and check again.`,
       ) }}
       <div class="font-actions"><n-button size="small" @click="generate">{{ ui('重新检测', 'Check again') }}</n-button></div>
     </n-alert>

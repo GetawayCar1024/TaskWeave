@@ -1,4 +1,11 @@
 {
+  "answers": {
+    "title": "Manage outputs", "generate": "Regenerate outputs", "restore": "Restore initial outputs", "generated": "Regenerated {n} outputs", "restored": "Restored {n} initial outputs",
+    "noSolution": "Add and register a solution to regenerate outputs.",
+    "hint": "Run the selected solution on all inputs. Replace outputs after every run succeeds. Keep one initial backup.",
+    "firstBackup": "The first regeneration backs up existing outputs; later runs never replace that backup.",
+    "importBackup": "Backup: import-time outputs", "existingBackup": "Backup: existing outputs before the first regeneration after upgrading"
+  },
   "trash": {
     "title": "Recycle bin", "kind": "Type", "problem": "Problem", "contest": "Contest", "name": "Name", "location": "Original location", "deletedAt": "Deleted", "size": "Size",
     "search": "Search recycle bin…", "restore": "Restore", "deleteForever": "Delete permanently", "empty": "Empty recycle bin", "none": "The recycle bin is empty",
@@ -11,7 +18,7 @@
     "authoringMode": "Authoring mode",
     "full": "Full authoring (recommended)",
     "warning": "Compatibility mode manages existing data, subtasks and exports. Complete the statement, validator, checker and main solution to enable full authoring.",
-    "refresh": "Refresh data",
+    "refresh": "Rescan data",
     "completeHint": "Complete these files to enable judging, stress testing and sync.",
     "missing": "Still missing:",
     "enable": "Enable full authoring",
@@ -113,7 +120,7 @@
   },
   "app": {
     "unauthorized": "Unauthorized",
-    "unauthorizedHint": "Open this page with the link (including the token) printed in the terminal when PolyForge started.",
+    "unauthorizedHint": "Open this page with the link (including the token) printed in the terminal when Taskweave started.",
     "loadFailed": "Failed to load",
     "connected": "Connected to local server",
     "disconnected": "Disconnected from local server, reconnecting…"
@@ -148,7 +155,7 @@
   "problem": {
     "sameIo": "Input and output filenames must be different.",
     "invalidInfo": "Check the short name, limits and input/output filenames.",
-    "renameHint": "The short name is used in problem lists, contests and exports; all update automatically after a rename.",
+    "renameHint": "Changing the short name also renames the folder and updates problem lists, contests and exports.",
     "timeLimit": "Time limit",
     "memoryLimit": "Memory limit",
     "interactive": "Interactive",
@@ -335,6 +342,7 @@
     "images": "Images"
   },
   "info": {
+    "lemonTemplates": "LemonLime checker templates",
     "unsaved": "Problem information has unsaved changes. Save them?",
     "file": "Current file",
     "path": "Path",
@@ -701,6 +709,8 @@
     }
   },
   "export": {
+    "saved": "Exported {file}",
+    "printDialog": "Save the PDF in the print window.",
     "done": "Exported {file} ({n} tests)"
   },
   "palette": {
@@ -734,6 +744,7 @@
     "aiChanges": "{n} change(s) to review",
     "cursor": "Ln {line}, Col {col}",
     "job": {
+      "answers": "Updating outputs",
       "generate": "Generating tests",
       "invocation": "Invocation",
       "validator-tests": "Validator tests",
@@ -745,6 +756,7 @@
     }
   },
   "contest": {
+    "lemonTarget": "Judging system",
     "lemonSubfolders": "Search subfolders for contestant code",
     "luoguPerProblem": "Time and memory aggregation per problem (saved to each problem)",
     "notesDefault": "Default (legacy)",
@@ -880,7 +892,8 @@
     "mixedScores": "Imported scores",
     "perTestScore": "Score of each test, summed within the subtask",
     "bundleScore": "Each test has this score; the subtask takes the minimum",
-    "sortRule": "Saving sorts names lexicographically; dependencies must have smaller names.",
+    "sortRule": "Save the current order. Dependencies must precede their users; dragging removes invalid edges.",
+    "dependenciesRemoved": "Removed {n} dependencies invalidated by the new order",
     "unsaved": "Subtasks have unsaved changes. Save them?",
     "title": "Testsets and groups",
     "delete": "Delete testset",

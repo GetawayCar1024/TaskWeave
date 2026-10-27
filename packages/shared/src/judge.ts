@@ -264,7 +264,10 @@ export interface QuickRunResponse {
   stdoutTruncated?: boolean;
 }
 
-export type JobKind = 'generate' | 'invocation' | 'validator-tests' | 'checker-tests' | 'polygon-push' | 'polygon-import' | 'stress' | 'export' | 'contest' | 'contest-import';
+export interface AnswerBackupInfo { available: boolean; tests: number; origin?: 'import' | 'existing'; createdAt?: string }
+export interface RegenerateAnswersRequest { source: string; testset?: string }
+export interface AnswerOperationResult { testset: string; tests: number; action: 'regenerate' | 'restore' }
+export type JobKind = 'generate' | 'answers' | 'invocation' | 'validator-tests' | 'checker-tests' | 'polygon-push' | 'polygon-import' | 'stress' | 'export' | 'contest' | 'contest-import';
 
 export interface JobInfo {
   id: string;

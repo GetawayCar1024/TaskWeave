@@ -101,7 +101,7 @@ export interface ContestBatchRequest {
   luogu?: { time: LuoguAggregate; memory: LuoguAggregate };
   /** Per-problem Luogu settings, keyed by stable problem id. */
   luoguByProblem?: Record<string, LuoguExportOptions>;
-  lemon?: { subfolders?: boolean };
+  lemon?: { subfolders?: boolean; target?: 'windows' | 'linux' };
   commit?: boolean;
   buildPackage?: boolean;
   packageType?: 'standard' | 'full';

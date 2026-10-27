@@ -147,6 +147,14 @@ async function closeTab(path: string) {
   if (selected.value === path) selected.value = openFiles.value[Math.min(i, openFiles.value.length - 1)]?.path ?? '';
 }
 async function close() { if (!busy.value && await canLeave()) emit('update:show', false); }
+const downloading = ref(false);
+async function downloadCurrent() {
+  if (downloading.value || !selected.value) return;
+  downloading.value = true;
+  try { const file = await api.downloadContestFile(props.id, selected.value); message.success(t('export.saved', { file })); }
+  catch (e) { message.error(errorMessage(e)); }
+  finally { downloading.value = false; }
+}
 async function create() {
   if (!newName.value.trim()) return;
   try { const name = newName.value.trim(); await api.uploadContestFile(props.id, name, ''); newName.value = ''; await refresh(); await open(name); }
@@ -251,7 +259,7 @@ watch(previewLang, async (value, _old, onCleanup) => {
       <section class="editor">
         <editor-tab-bar v-if="openFiles.length" :tabs="tabItems" :active="selected || null" @select="p => (selected = p)" @close="closeTab">
           <template v-if="current" #actions>
-            <n-button size="tiny" quaternary @click="api.downloadContestFile(id, selected).catch(e => message.error(errorMessage(e)))">{{ t('contest.filesDownload') }}</n-button>
+            <n-button size="tiny" quaternary :loading="downloading" @click="downloadCurrent">{{ t('contest.filesDownload') }}</n-button>
              <n-button size="tiny" quaternary type="error" :disabled="busy" @click="remove">{{ isNotes ? t('contest.filesClear') : t('contest.filesDelete') }}</n-button>
             <n-button size="tiny" type="primary" :disabled="readonly || !dirty || busy" :title="'Ctrl+S'" @click="save()">{{ t('common.save') }}</n-button>
           </template>

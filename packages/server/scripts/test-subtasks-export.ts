@@ -51,17 +51,17 @@ test('Luogu layout and scoring script: bundles, transitive dependencies, loose t
   ] });
   const warnings: string[] = [];
   const { cases, subtasks } = luoguLayout(c, [{ name: 'tests', tests: [1, 2, 3, 4, 5, 6] }], warnings);
-  assert.deepEqual(subtasks.map(s => [s.id, s.points, s.policy, s.dependencies]), [[0, 0, 'EACH_TEST', []], [1, 15, 'COMPLETE_GROUP', []], [2, 60, 'COMPLETE_GROUP', [1, 3]], [3, 25, 'EACH_TEST', [1]]]);
-  assert.deepEqual(cases.map(x => [x.k, x.score, x.subtask]), [[1, 15, 1], [2, 12, 3], [3, 13, 3], [4, 30, 2], [5, 30, 2], [6, 0, 0]]);
+  assert.deepEqual(subtasks.map(s => [s.id, s.points, s.policy, s.dependencies]), [[0, 0, 'EACH_TEST', []], [1, 60, 'COMPLETE_GROUP', [2, 3]], [2, 25, 'EACH_TEST', [3]], [3, 15, 'COMPLETE_GROUP', []]]);
+  assert.deepEqual(cases.map(x => [x.k, x.score, x.subtask]), [[1, 15, 3], [2, 12, 2], [3, 13, 2], [4, 30, 1], [5, 30, 1], [6, 0, 0]]);
   const script = luoguScript(subtasks, { time: 'sum', memory: 'max' });
   assert.match(script, /^@total_score = 0;\n@total_score = @total_score \+ @score0;\n/);
-  assert.match(script, /if \(@status2 == AC\) and \(@status1 == AC\) and \(@status3 == AC\); then\n {4}@total_score = @total_score \+ 60;\nfi/);
-  assert.match(script, /if \(@status1 == AC\); then\n {4}@total_score = @total_score \+ @score3;\nfi/);
+  assert.match(script, /if \(@status1 == AC\) and \(@status2 == AC\) and \(@status3 == AC\); then\n {4}@total_score = @total_score \+ 60;\nfi/);
+  assert.match(script, /if \(@status3 == AC\); then\n {4}@total_score = @total_score \+ @score2;\nfi/);
   assert.match(script, /if @total_score == 100; then\n {4}@final_status = AC;\nelse\n {4}@final_status = UNAC;\nfi/);
   assert.match(script, /@final_time = @time0 \+ @time1 \+ @time2 \+ @time3;/);
   assert.match(script, /@final_memory = @memory0;\nif @memory1 > @final_memory; then\n {4}@final_memory = @memory1;\nfi/);
   assert.ok(!/;\s*fi;/.test(script), 'fi takes no semicolon');
-  assert.match(luoguConfig(c, cases), /^1\.in:\n {2}timeLimit: 1000\n {2}memoryLimit: 262144\n {2}score: 15\n {2}subtaskId: 1\n/);
+  assert.match(luoguConfig(c, cases), /^1\.in:\n {2}timeLimit: 1000\n {2}memoryLimit: 262144\n {2}score: 15\n {2}subtaskId: 3\n/);
   // Incompatible fractional points are reported rather than silently rounded.
   c.tests.group![2].points = 15.5;
   assert.throws(() => luoguLayout(c, [{ name: 'tests', tests: [1, 2, 3, 4, 5] }], warnings), /integer scores/);

@@ -214,7 +214,18 @@ export function useWorkspace(problemId: string) {
   }
 
   async function patch(req: PatchProblemRequest) {
+    const previousDir = state.detail?.summary.dir;
     state.detail = await api.patchProblem(problemId, req);
+    // Folder moves pause the watcher, so refresh an open config tab explicitly.
+    if (state.detail.summary.dir !== previousDir) {
+      const tab = findTab('problem.toml');
+      if (tab) {
+        const file = await api.readFile(problemId, tab.path);
+        if (findTab(tab.path) !== tab) return;
+        if (tab.dirty) tab.disk = file.hash === tab.savedHash ? 'ok' : 'changed';
+        else applyDisk(tab, file.content, file.hash);
+      }
+    }
   }
 
   async function copyShared(source: string, to: string) {

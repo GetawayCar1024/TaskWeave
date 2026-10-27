@@ -1,4 +1,11 @@
 {
+  "answers": {
+    "title": "输出管理", "generate": "重造输出", "restore": "恢复初始输出", "generated": "已重造 {n} 个输出", "restored": "已恢复 {n} 个初始输出",
+    "noSolution": "添加 solution 并登记为解法后，可重造输出。",
+    "hint": "使用选定解法运行全部输入，全部成功后替换输出。初始备份只保留一版。",
+    "firstBackup": "首次重造前备份现有输出，后续重造不会覆盖该备份。",
+    "importBackup": "备份来源：导入时的输出", "existingBackup": "备份来源：升级后首次重造前的现有输出"
+  },
   "trash": {
     "title": "回收站", "kind": "类型", "problem": "题目", "contest": "比赛", "name": "名称", "location": "原位置", "deletedAt": "删除时间", "size": "大小",
     "search": "搜索回收站…", "restore": "恢复", "deleteForever": "永久删除", "empty": "清空回收站", "none": "回收站为空",
@@ -11,7 +18,7 @@
     "authoringMode": "造题模式",
     "full": "完整造题（推荐）",
     "warning": "兼容模式：管理已有数据、子任务与导出。补全题面、校验器、检查器和标程后可启用完整造题。",
-    "refresh": "刷新数据",
+    "refresh": "重新扫描数据",
     "completeHint": "补全以下内容后可启用评测、对拍和同步。",
     "missing": "尚未补全：",
     "enable": "启用完整造题",
@@ -113,7 +120,7 @@
   },
   "app": {
     "unauthorized": "未授权",
-    "unauthorizedHint": "请使用启动 PolyForge 时终端里打印的链接（带 token）打开本页面。",
+    "unauthorizedHint": "请使用启动 Taskweave 时终端里打印的链接（带 token）打开本页面。",
     "loadFailed": "加载失败",
     "connected": "已连接到本地服务",
     "disconnected": "与本地服务断开，正在重连…"
@@ -148,7 +155,7 @@
   "problem": {
     "sameIo": "输入文件与输出文件必须不同。",
     "invalidInfo": "请检查短名称、时空限制和输入输出文件名。",
-    "renameHint": "短名称用于题目列表、比赛和导出；修改后这些位置会自动同步。",
+    "renameHint": "修改短名称会同步重命名文件夹，并更新题目列表、比赛与导出。",
     "timeLimit": "时间限制",
     "memoryLimit": "内存限制",
     "interactive": "交互题",
@@ -335,6 +342,7 @@
     "images": "图片"
   },
   "info": {
+    "lemonTemplates": "LemonLime 检查器模板",
     "unsaved": "题目信息有未保存的更改，是否保存？",
     "file": "当前文件",
     "path": "路径",
@@ -701,6 +709,8 @@
     }
   },
   "export": {
+    "saved": "已导出 {file}",
+    "printDialog": "请在打印窗口中保存 PDF。",
     "done": "已导出 {file}（{n} 个测试）"
   },
   "palette": {
@@ -734,6 +744,7 @@
     "aiChanges": "{n} 个改动待确认",
     "cursor": "行 {line}，列 {col}",
     "job": {
+      "answers": "更新输出",
       "generate": "生成测试",
       "invocation": "批量评测",
       "validator-tests": "校验器自测",
@@ -745,6 +756,7 @@
     }
   },
   "contest": {
+    "lemonTarget": "评测系统",
     "lemonSubfolders": "从子文件夹寻找选手代码",
     "luoguPerProblem": "逐题设置用时与内存汇总方式（保存到各题目）",
     "notesDefault": "通用（旧版兼容）",
@@ -880,7 +892,8 @@
     "mixedScores": "原包分值",
     "perTestScore": "每个测试点的分数，子任务内求和",
     "bundleScore": "每个测试点均使用此分数，子任务内取最小值",
-    "sortRule": "保存后按名称字典序排序；仅可依赖名称更小的子任务。",
+    "sortRule": "保存当前顺序；只能依赖前面的子任务。拖动后自动移除失效依赖边。",
+    "dependenciesRemoved": "已移除 {n} 条因顺序变化而失效的依赖",
     "unsaved": "子任务有未保存的更改，是否保存？",
     "title": "测试集与子任务",
     "delete": "删除测试集",

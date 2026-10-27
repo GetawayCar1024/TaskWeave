@@ -124,6 +124,12 @@ const checkerOptions = computed<SelectOption[]>(() => [
   { type: 'group', label: t('info.localFiles'), key: 'local', children: localSources.value.map((p) => ({ label: p, value: p })) },
 ]);
 const sourceOptions = computed<SelectOption[]>(() => localSources.value.map((p) => ({ label: p, value: p })));
+const lemonOptions = computed<SelectOption[]>(() => [
+  { type: 'group', key: 'lemon-templates', label: t('info.lemonTemplates'), children: (props.ws.state.shared?.lemonCheckers ?? []).map(checker => ({
+    value: checker.ref!, label: `${checker.ref} — ${stdCheckerDescription('std:' + checker.name.replace(/\.cpp$/, ''), checker.description, locale.value)}`,
+  })) },
+  { type: 'group', key: 'local', label: t('info.localFiles'), children: sourceOptions.value },
+]);
 const converting = ref(false);
 async function convertChecker() {
   const detail = props.ws.state.detail;
@@ -147,7 +153,7 @@ async function save(): Promise<boolean> {
   if (!c || !valid.value) { message.error(t('problem.invalidInfo')); return false; }
   const saved = JSON.stringify(form);
   const req: PatchProblemRequest = {
-    ...(form.name !== c.problem.name ? { name: form.name.trim() } : {}),
+    ...(form.name.trim() !== c.problem.name || props.ws.state.detail?.summary.dir.split(/[\\/]/).pop() !== form.name.trim() ? { name: form.name.trim() } : {}),
     title: { ...c.problem.title, zh: form.titleZh, en: form.titleEn },
     timeLimit: form.timeLimit,
     memoryLimit: form.memoryLimit,
@@ -226,6 +232,7 @@ const activeInfo = computed(() => {
         </template>
         <n-form size="small" label-placement="left" label-width="100" :show-feedback="false" class="form">
           <n-form-item :label="t('create.name')"><n-input v-model:value="form.name" :aria-label="t('create.name')" :status="PROBLEM_NAME_RE.test(form.name.trim()) ? undefined : 'error'" /></n-form-item>
+          <p class="small dim">{{ t('problem.renameHint') }}</p>
           <n-form-item :label="t('create.titleZh')"><n-input v-model:value="form.titleZh" /></n-form-item>
           <n-form-item :label="t('create.titleEn')"><n-input v-model:value="form.titleEn" /></n-form-item>
           <n-form-item :label="t('problem.timeLimit')">
@@ -260,7 +267,7 @@ const activeInfo = computed(() => {
             <n-select v-model:value="form.validator" :options="sourceOptions" filterable clearable />
           </n-form-item>
           <n-form-item :label="t('oiFeatures.lemonChecker')">
-            <n-select v-model:value="form.lemonChecker" :options="sourceOptions" filterable clearable />
+            <n-select v-model:value="form.lemonChecker" :options="lemonOptions" filterable clearable />
           </n-form-item>
           <p class="small dim">{{ t('oiFeatures.lemonCheckerHint') }}</p>
           <n-button size="small" :loading="converting" :disabled="dirty || converting || !cfg.checker" :title="dirty ? t('oiFeatures.saveCheckerFirst') : undefined" @click="convertChecker">{{ t('oiFeatures.convertChecker') }}</n-button>

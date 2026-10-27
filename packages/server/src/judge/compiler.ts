@@ -173,7 +173,7 @@ export class Compiler {
 
   /** Resolve a problem.toml source reference to an absolute path. */
   resolveSource(problemDir: string, source: string): { srcPath: string; buildRoot: string } {
-    if (source.startsWith(STD_PREFIX)) {
+    if (source.startsWith(STD_PREFIX) || source.startsWith('lemon:')) {
       const rel = stdRefToPath(source);
       if (!rel) throw new HttpError(400, 'bad_source', `Invalid std reference: ${source}`);
       return { srcPath: path.join(this.global.sharedDir, rel), buildRoot: path.join(this.global.cacheDir, 'bin') };
@@ -187,7 +187,7 @@ export class Compiler {
     const resolved = this.resolveSource(problemDir, source);
     const srcPath = await fsp.realpath(resolved.srcPath).catch(() => resolved.srcPath);
     // Shared std checkers keep their global cache; problem sources may use an override.
-    const buildRoot = source.startsWith(STD_PREFIX) || !buildRootOverride ? resolved.buildRoot : buildRootOverride;
+    const buildRoot = source.startsWith(STD_PREFIX) || source.startsWith('lemon:') || !buildRootOverride ? resolved.buildRoot : buildRootOverride;
     const fail = (log: string, lang?: string): CompileOutcome => ({
       result: { source, ok: false, cached: false, lang, log, diagnostics: [], durationMs: Date.now() - started },
     });

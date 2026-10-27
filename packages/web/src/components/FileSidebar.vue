@@ -107,6 +107,12 @@ const roleTree = computed<Node[]>(() => {
     if (!groups.has('checker')) groups.set('checker', []);
     groups.get('checker')!.unshift({ key: path, label: chk, path, role: 'checker', isLeaf: true });
   }
+  const lemon = config.value?.lemon_checker?.source;
+  if (lemon?.startsWith('lemon:')) {
+    const path = `${SHARED_TAB}lemon/checkers/${lemon.slice(6)}.cpp`;
+    if (!groups.has('checker')) groups.set('checker', []);
+    groups.get('checker')!.unshift({ key: path, label: lemon, path, role: 'checker', isLeaf: true });
+  }
   // Tutorials follow the statement languages: one per language, created on demand.
   const langs = statementLanguages(props.ws.files.value);
   const tut = groups.get('tutorial') ?? [];

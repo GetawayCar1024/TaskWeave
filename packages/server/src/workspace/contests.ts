@@ -82,7 +82,7 @@ export class ContestRegistry {
           });
           moved.push({ from, to });
         } catch (e) {
-          console.warn(`[polyforge] could not move contest ${from}: ${(e as Error).message}`);
+          console.warn(`[taskweave] could not move contest ${from}: ${(e as Error).message}`);
         }
       }
     }

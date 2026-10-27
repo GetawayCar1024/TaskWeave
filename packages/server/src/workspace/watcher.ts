@@ -45,7 +45,7 @@ export class ProblemWatcher {
     this.watcher.on('error', (e) => {
       const code = (e as NodeJS.ErrnoException).code;
       if (code === 'EPERM' || code === 'EACCES') return;
-      console.warn('[polyforge] watcher error:', e);
+      console.warn('[taskweave] watcher error:', e);
     });
   }
 

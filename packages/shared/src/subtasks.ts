@@ -1,8 +1,19 @@
 import type { ProblemToml, TestGroup, TestsetConfig } from './problem.js';
 import { parseIndexList, compressRanges, groupLayout, type TestInfo } from './judge.js';
 
-/** Locale-independent dictionary order, also used by the dependency editor. */
-export const compareGroupNames = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
+/** Dragging changes prerequisites by position; prune individual invalid edges only. */
+export function pruneForwardDependencies<T extends { name: string; dependencies?: string[] }>(groups: T[]): { group: string; dependency: string }[] {
+  const positions = new Map(groups.map((group, index) => [group.name, index]));
+  const removed: { group: string; dependency: string }[] = [];
+  groups.forEach((group, index) => {
+    group.dependencies = (group.dependencies ?? []).filter(dependency => {
+      const valid = positions.has(dependency) && positions.get(dependency)! < index;
+      if (!valid) removed.push({ group: group.name, dependency });
+      return valid;
+    });
+  });
+  return removed;
+}
 
 /** A bundle has one maximum; a uniform sum group has one maximum per member. */
 export function groupTotal(group: TestGroup): number | undefined {

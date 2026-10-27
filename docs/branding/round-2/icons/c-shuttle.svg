@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">CaseWeave / C — Shuttle</title>
+  <defs><linearGradient id="tile" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="#536DE6"/><stop offset="1" stop-color="#3545BB"/></linearGradient></defs>
+  <rect x="8" y="8" width="240" height="240" rx="55" fill="url(#tile)"/>
+  <rect x="8.5" y="8.5" width="239" height="239" rx="54.5" fill="none" stroke="#7286EC" stroke-opacity=".55"/>
+  <path fill="#F5F7FF" fill-rule="evenodd" d="M39 128Q128 15 217 128Q128 241 39 128ZM91 128Q128 85 165 128Q128 171 91 128Z"/><path d="M43 128Q91 189 128 195Q165 189 213 128" fill="none" stroke="#B5C4FF" stroke-width="9" stroke-linejoin="round"/>
+</svg>

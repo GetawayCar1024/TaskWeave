@@ -55,6 +55,7 @@ export function classifyFile(path: string, config: ProblemToml | null): FileRole
   if (config) {
     if (sameFile(config.validator?.source, path)) return 'validator';
     if (sameFile(config.checker?.source, path)) return 'checker';
+    if (sameFile(config.lemon_checker?.source, path)) return 'checker';
     if (sameFile(config.interactor?.source, path)) return 'interactor';
     if (config.solutions.some((s) => sameFile(s.source, path))) return 'solution';
     if (config.generators.some((g) => sameFile(g.source, path))) return 'generator';

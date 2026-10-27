@@ -3,7 +3,7 @@ import { startServer } from './server.js';
 
 /**
  * Command line, for development and the test scripts: start the server and print the
- * address. PolyForge itself is the desktop app (packages/desktop).
+ * address. Taskweave itself is the desktop app (packages/desktop).
  */
 const { values: args } = parseArgs({
   options: {
@@ -16,7 +16,7 @@ const { values: args } = parseArgs({
 
 async function main() {
   const server = await startServer({ home: args.home, port: args.port ? Number(args.port) : undefined, dev: args.dev });
-  console.log(`[polyforge] open ${server.url}`);
+  console.log(`[taskweave] open ${server.url}`);
   const shutdown = async () => {
     await server.close();
     process.exit(0);

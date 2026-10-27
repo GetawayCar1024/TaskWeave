@@ -1,12 +1,14 @@
-# PolyForge
+# Taskweave
 
-**面向 Codeforces Polygon 的本地造题桌面工具。**
+<img src="assets/branding/taskweave.svg" width="80" height="80" align="right" alt="Taskweave 图标" />
+
+**本地优先的出题、数据编排与评测桌面工具。原名 PolyForge。**
 
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/GetawayCar1024/polyforge)](https://github.com/GetawayCar1024/polyforge/releases/latest)
 ![Platform](https://img.shields.io/badge/platform-Windows%20x64-lightgrey)
 
-题面、程序和测试数据都保存在本地文件夹里。PolyForge 在一个窗口中完成编写、生成数据、评测、对拍、比赛管理与 Polygon 双向同步，并能导出 Polygon package、LemonLime、洛谷数据包和 OI 风格的 PDF；也可以让 AI 在独立副本中协助修改，再逐个文件审阅后接受。
+题面、程序和测试数据都保存在本地文件夹里。Taskweave 在一个窗口中完成编写、生成数据、评测、对拍、比赛管理与 Polygon 双向同步，并能导出 Polygon package、LemonLime、Hydro、洛谷与 JOI / AtCoder 数据包及 OI 风格的 PDF；也可以让 AI 在独立副本中协助修改，再逐个文件审阅后接受。
 
 [下载](https://github.com/GetawayCar1024/polyforge/releases/latest) · [使用指南](docs/guide.md) · [更新日志](CHANGELOG.md) · [问题反馈](https://github.com/GetawayCar1024/polyforge/issues)
 
@@ -21,9 +23,9 @@
 - **文档与导出**：CF 风格的 PDF / HTML / Markdown / TeX；内置 [CNOI](https://github.com/Mr-Python-in-China/cnoi-statement-generator) 排版引擎生成 tuack 风格的 OI PDF，离线可用，无需安装 TeX；选手下发包 `down.zip`。
 - **题面模式**：按语言选择整体 `statement.tex` 或 Polygon 分段文件，支持双向转换；整体题面同步 Polygon 时自动放入 `legend.tex` 并警告。
 - **数据包交换**：洛谷 `data.zip`（数据、`config.yml`、`score.txt`）导入导出，Hydro 整题包导入导出及仅数据导入；导入前校验 ZIP，额外文件保留在“其他文件”。单题可导出文档、Polygon 包、洛谷／Hydro 包及 `down.zip`；比赛可组合各题独立包，洛谷汇总方式逐题设置。
-- **文件管理**：题目短名称可在信息面板修改，比赛与导出同步更新；首页回收站可恢复或永久删除题目、比赛及其历史记录。
-- **纯数据模式**：只有 `.in/.out` 或 `.in/.ans` 与分数配置也能管理样例、导出比赛 LemonLime 和下发样例包；不推荐作为正式造题流程，补全题面、validator、checker 与标程后再启用完整功能。
-- **评测包**：Polygon package、LemonLime（`.cdf` + 数据 + checker）、洛谷（数据、`config.yml`、处理捆绑与依赖的计分脚本）。
+- **文件管理**：题目短名称与文件夹同步重命名，比赛与导出自动更新；回收站采用原盘移动，可恢复或永久删除题目、比赛及其历史记录。
+- **兼容模式**：只有 `.in/.out` 或 `.in/.ans` 与分数配置也能管理样例、编排子任务和导出；可选择解法重造输出，保留唯一的初始备份并一键恢复。
+- **评测包**：Polygon package、LemonLime（Windows / Linux 目标、六种 Lemon checker 模板、附 g++ 编译脚本与 Testlib for Lemons）、洛谷（数据、`config.yml`、处理捆绑与依赖的计分脚本）。
 - **AI 辅助（可选）**：支持 Anthropic、OpenAI Chat Completions、OpenAI Responses 协议及兼容的中转服务；AI 可读写文件、编译、生成测试和评测，所有改动都要经过审阅；记录 token 用量与费用。
 - **中英文界面**，深色 / 浅色主题。
 
@@ -31,11 +33,11 @@
 
 目前提供 **Windows x64** 桌面版。
 
-1. 从 [Releases](https://github.com/GetawayCar1024/polyforge/releases/latest) 下载 `PolyForge-<版本>-setup.exe`（安装版）或 `PolyForge-<版本>-portable.exe`（免安装版）。
+1. 从 [Releases](https://github.com/GetawayCar1024/polyforge/releases/latest) 下载 `Taskweave-<版本>-setup.exe`（安装版）或 `Taskweave-<版本>-portable.exe`（免安装版）。
 2. 安装 [MinGW-w64](https://www.mingw-w64.org/)（例如 [WinLibs](https://winlibs.com/) 或 MSYS2），把 `g++` 所在目录加入 `PATH`，在终端运行 `g++ --version` 确认。首次评测时会自动编译自带的 runner。
 3. 可选：Python、Java、Kotlin、Rust、Go 等其他语言的编译器或解释器。
 
-使用发行版不需要 Node.js。安装版会创建桌面和开始菜单快捷方式；两种版本都把配置保存在 `%USERPROFILE%\.polyforge`。
+使用发行版不需要 Node.js。安装版会创建桌面和开始菜单快捷方式。新安装的全局目录为 `%USERPROFILE%\.taskweave`；升级时自动接续已有的 `%USERPROFILE%\.polyforge` 配置、题库设置与密钥。
 
 ## 快速上手
 
@@ -53,7 +55,7 @@
 | 位置 | 内容 |
 | --- | --- |
 | 题目根目录 | 每道题一个文件夹，`problem.toml` 记录题目信息，其余是题面、程序和测试（结构见[使用指南](docs/guide.md#题目文件夹)）。 |
-| `%USERPROFILE%\.polyforge\` | 全局目录（可用环境变量 `POLYFORGE_HOME` 修改）：`config.toml`、`languages.toml`、`secrets.toml`（Polygon 与 AI 密钥）、共享的 testlib / checker / 宏、题目模板、默认比赛目录 `contests/`、回收站 `trash/`、可选的字体目录 `fonts/`。 |
+| `%USERPROFILE%\.taskweave\`，或已有的 `.polyforge\` | 全局目录（用环境变量 `TASKWEAVE_HOME` 指定，兼容 `POLYFORGE_HOME`）：`config.toml`、`languages.toml`、`secrets.toml`（Polygon 与 AI 密钥）、共享的 testlib / checker / 宏、题目模板、默认比赛目录 `contests/`、回收站索引 `trash/`、可选的字体目录 `fonts/`。 |
 | 题目中的 `.polyforge/` | 编译与测试缓存、评测记录、同步基线和 AI 会话；请用应用中的“清除缓存”清理。 |
 
 密钥只保存在全局目录的 `secrets.toml` 中，不会写入题目文件夹，题目可以放心提交到 Git。
@@ -73,12 +75,13 @@
 ```bash
 git clone https://github.com/GetawayCar1024/polyforge.git
 cd polyforge
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev            # 开发模式：API 在 127.0.0.1:4523，Vite 在 127.0.0.1:5173，打开终端打印的链接
 ```
 
 ```bash
 pnpm typecheck      # 全部工作区的类型检查
+pnpm test           # 自动回归测试（部分用例需要 g++）
 pnpm build          # 构建前端
 pnpm desktop:run    # 构建并运行 Electron 桌面版
 pnpm desktop        # 构建安装版和免安装版，输出到 packages/desktop/dist/
@@ -87,7 +90,7 @@ pnpm desktop        # 构建安装版和免安装版，输出到 packages/deskto
 回归测试（使用临时数据目录，部分用例需要 g++）：
 
 ```bash
-pnpm --filter @polyforge/server exec tsx --test scripts/test-regressions.ts scripts/test-october-fixes.ts scripts/test-problem-types.ts scripts/test-responses.ts scripts/test-statement-markup.ts scripts/test-polygon-sync.ts scripts/test-subtasks-export.ts scripts/test-invocation-testsets.ts scripts/test-workspace-fixes.ts scripts/test-oi-judging.ts scripts/test-cnoi-template.ts scripts/test-contest-files.ts scripts/test-authoring-modes.ts scripts/test-data-packages.ts scripts/test-release-management.ts
+pnpm test
 ```
 
 Polygon 与 AI 的模拟服务和集成脚本位于 `packages/server/scripts/`。更多构建细节见 [docs/building.md](docs/building.md)。
@@ -112,7 +115,7 @@ docs/              使用指南、设计文档、各版本说明与改动明细
 
 ## 许可证
 
-PolyForge 以 [GNU Affero General Public License v3.0 或更高版本](LICENSE)（AGPL-3.0-or-later）发布。
+Taskweave 以 [GNU Affero General Public License v3.0 或更高版本](LICENSE)（AGPL-3.0-or-later）发布。
 
 内置的第三方组件保留各自的许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)：
 
@@ -121,4 +124,4 @@ PolyForge 以 [GNU Affero General Public License v3.0 或更高版本](LICENSE)�
 - Fira Mono（SIL OFL 1.1）、Latin Modern 与 New Computer Modern（GUST Font License）字体；
 - [typst.ts](https://github.com/Myriad-Dreamin/typst.ts)、Monaco Editor、KaTeX、Vue、Naive UI、Fastify 等开源依赖。
 
-PolyForge 与 Codeforces、Polygon、洛谷、LemonLime 均无关联，相关名称归各自所有者。
+Taskweave 与 Codeforces、Polygon、洛谷、LemonLime 均无关联，相关名称归各自所有者。

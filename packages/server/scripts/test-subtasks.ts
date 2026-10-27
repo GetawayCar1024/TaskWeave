@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { groupLayout, inferFilenameGroups, problemTomlSchema, testsetOf } from '@polyforge/shared';
+import { groupLayout, inferFilenameGroups, problemTomlSchema, pruneForwardDependencies, testsetOf } from '@polyforge/shared';
 import { lemonTestCases } from '../src/judge/lemonlime.js';
 import { groupScore, scoringInput } from '../src/judge/scoring.js';
 import { checkGroups, ProblemRegistry } from '../src/workspace/problems.js';
@@ -57,13 +57,18 @@ test('all native OI exporters retain independent limits and scores for overlappi
   assert.throws(() => hydroSubtasks(config, [{ name: 'tests', tests: [1, 2] }]), /whole MiB/);
 });
 
-test('saving uses dictionary order, accepts overlapping ranges and rejects forward dependencies', () => {
+test('saving preserves manual order and dragging removes only invalid dependency edges', () => {
   const groups = checkGroups('tests', [
-    { name: '2', tests: '1-2', dependencies: ['10'] }, { name: '10', tests: '1', dependencies: ['1'] },
-    { name: '1', tests: '1' }, { name: '0', tests: '2' },
+    { name: '2', tests: '1-2' }, { name: '10', tests: '1', dependencies: ['2'] },
+    { name: '1', tests: '1', dependencies: ['2', '10'] }, { name: '0', tests: '2' },
   ], true);
-  assert.deepEqual(groups.map(group => group.name), ['0', '1', '10', '2']);
-  assert.throws(() => checkGroups('tests', [{ name: '1', dependencies: ['2'] }, { name: '2' }], true), /lexicographically smaller/);
+  assert.deepEqual(groups.map(group => group.name), ['2', '10', '1', '0']);
+  [groups[1], groups[2]] = [groups[2], groups[1]];
+  assert.deepEqual(pruneForwardDependencies(groups), [{ group: '1', dependency: '10' }]);
+  assert.deepEqual(groups[1].dependencies, ['2']); assert.deepEqual(groups[2].dependencies, ['2']);
+  assert.deepEqual(checkGroups('tests', groups, true).map(group => group.name), ['2', '1', '10', '0']);
+  assert.throws(() => checkGroups('tests', [{ name: '1', dependencies: ['2'] }, { name: '2' }], true), /earlier subtasks/);
+  assert.throws(() => checkGroups('tests', [{ name: '1', dependencies: ['1'] }], true), /itself/);
 });
 
 test('filename suggestions use provenance, preserve leading zeroes and do not invent scores', () => {

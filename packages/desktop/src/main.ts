@@ -1,9 +1,9 @@
 /**
- * PolyForge desktop: the server runs in this (Electron main) process and the UI in one
+ * Taskweave desktop: the server runs in this (Electron main) process and the UI in one
  * window. There is no browser around it, so Ctrl+W / Ctrl+Shift+T and the other
- * shortcuts belong to PolyForge. The window opens maximized; F11 toggles fullscreen.
+ * shortcuts belong to Taskweave. The window opens maximized; F11 toggles fullscreen.
  */
-import { promises as fsp } from 'node:fs';
+import { promises as fsp, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import electron from 'electron';
@@ -14,6 +14,16 @@ const { app, BrowserWindow, dialog, Menu, shell, nativeTheme, ipcMain } = electr
 type BrowserWindow = InstanceType<typeof electron.BrowserWindow>;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+app.setName('Taskweave');
+// Keep the installed-app identity and existing browser preferences across the rebrand.
+if (process.platform === 'win32') app.setAppUserModelId('dev.polyforge.desktop');
+const customHome = process.env.TASKWEAVE_HOME || process.env.POLYFORGE_HOME;
+const legacyProfile = path.join(app.getPath('appData'), 'PolyForge');
+if (customHome) {
+  const profile = path.resolve(customHome, 'desktop');
+  mkdirSync(profile, { recursive: true });
+  app.setPath('userData', profile);
+} else if (existsSync(legacyProfile)) app.setPath('userData', legacyProfile);
 let win: BrowserWindow | null = null;
 let server: RunningServer | null = null;
 let closeApproved = false;
@@ -47,7 +57,7 @@ ipcMain.on('polyforge:theme', (event, theme: unknown) => {
   win.setBackgroundColor(theme === 'light' ? '#f2f2f7' : '#1c1c1e');
 });
 
-// One PolyForge at a time: a second start focuses the running window.
+// One instance per profile: a second start focuses the running window.
 // app.quit() is asynchronous: the second instance must never reach startServer().
 const primary = app.requestSingleInstanceLock();
 if (!primary) app.quit();
@@ -62,10 +72,10 @@ async function createWindow() {
   // No menu: its accelerators (Ctrl+W closes the window, Ctrl+R reloads, …) would take the keys.
   Menu.setApplicationMenu(null);
   try {
-    // POLYFORGE_HOME: another global directory (tests, a second setup).
-    server = await startServer({ home: process.env.POLYFORGE_HOME });
+    // TASKWEAVE_HOME and the legacy POLYFORGE_HOME alias are resolved by the server.
+    server = await startServer();
   } catch (e) {
-    dialog.showErrorBox('PolyForge', `The server could not start:\n${(e as Error).message}`);
+    dialog.showErrorBox('Taskweave', `The server could not start:\n${(e as Error).message}`);
     app.quit();
     return;
   }
@@ -74,7 +84,7 @@ async function createWindow() {
     width: 1440,
     height: 900,
     show: false,
-    title: 'PolyForge',
+    title: 'Taskweave',
     icon: path.join(here, 'icon.png'),
     backgroundColor: nativeTheme.themeSource === 'light' ? '#f2f2f7' : '#1c1c1e',
     webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, devTools: !app.isPackaged },
@@ -83,7 +93,7 @@ async function createWindow() {
   w.maximize();
   w.once('ready-to-show', () => w.show());
 
-  // Pages of PolyForge stay in the app; everything else opens in the system browser.
+  // Pages of Taskweave stay in the app; everything else opens in the system browser.
   const origin = new URL(server.url).origin;
   w.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith(origin)) return { action: 'allow' };

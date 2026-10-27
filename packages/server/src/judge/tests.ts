@@ -2,6 +2,7 @@ import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { DEFAULT_TESTSET, TESTSET_NAME_RE, compressRanges, parseIndexList, testsetOf, testMetadata, type TestInfo, type TestsManifest, type TestsetConfig } from '@polyforge/shared';
 import { randomBytes } from 'node:crypto';
+import { recoverAnswerTransaction } from '../workspace/answerBackups.js';
 import { HttpError } from '../util/fs.js';
 import type { JobCtx } from '../jobs.js';
 import { atomicWrite, exists, safeJoin, sha1 } from '../util/fs.js';
@@ -57,6 +58,7 @@ export function requireTestset(ctx: ProblemCtx, name = DEFAULT_TESTSET): Testset
 }
 
 export async function readManifest(ctx: ProblemCtx, ts?: string): Promise<Manifest | null> {
+  await recoverAnswerTransaction(ctx.ref.dir);
   const configuration = requireTestset(ctx, ts);
   if (providedAnswers(ctx, configuration)) return prepareProvidedTests(ctx, ts);
   const manifest = await readStoredManifest(ctx, ts);
@@ -78,6 +80,7 @@ const providedFlights = new Map<string, { fingerprint: string; promise: Promise<
 
 /** Concurrent preview/export requests share a refresh; metadata changes queue a fresh one. */
 export async function prepareProvidedTests(ctx: ProblemCtx, testset = DEFAULT_TESTSET): Promise<Manifest> {
+  await recoverAnswerTransaction(ctx.ref.dir);
   const key = manifestPath(ctx, testset);
   const fingerprint = JSON.stringify([requireTestset(ctx, testset), ctx.config.tests.points, ctx.config.problem.time_limit, ctx.config.problem.memory_limit]);
   const running = providedFlights.get(key);

@@ -1,4 +1,4 @@
-import { promises as fsp, realpathSync } from 'node:fs';
+import { promises as fsp, realpathSync, existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parse, stringify } from 'smol-toml';
@@ -34,7 +34,11 @@ import { atomicWrite, copyMissing, exists, HttpError } from './util/fs.js';
 
 
 export function defaultGlobalDir(): string {
-  return process.env.POLYFORGE_HOME || path.join(os.homedir(), '.polyforge');
+  const override = process.env.TASKWEAVE_HOME || process.env.POLYFORGE_HOME;
+  if (override) return path.resolve(override);
+  const current = path.join(os.homedir(), '.taskweave'), legacy = path.join(os.homedir(), '.polyforge');
+  // Reuse an existing installation in place, including secrets, templates and trash indexes.
+  return !existsSync(path.join(current, 'config.toml')) && existsSync(path.join(legacy, 'config.toml')) ? legacy : current;
 }
 
 /**
@@ -89,7 +93,7 @@ export class GlobalStore {
       fsp.readFile(file, 'utf8').then((t) => t.match(/#define VERSION "([^"]+)"/)?.[1], () => undefined);
     const [mine, bundled] = await Promise.all([version(path.join(this.sharedDir, 'testlib.h')), version(path.join(ASSETS_DIR, 'shared', 'testlib.h'))]);
     if (mine && bundled && mine !== bundled) {
-      console.log(`[polyforge] shared/testlib.h is ${mine}; PolyForge ships ${bundled}. To update: copy ${path.join(ASSETS_DIR, 'shared', 'testlib.h')} to ${path.join(this.sharedDir, 'testlib.h')}`);
+      console.log(`[taskweave] shared/testlib.h is ${mine}; Taskweave ships ${bundled}. To update: copy ${path.join(ASSETS_DIR, 'shared', 'testlib.h')} to ${path.join(this.sharedDir, 'testlib.h')}`);
     }
   }
 
@@ -99,7 +103,7 @@ export class GlobalStore {
     try {
       raw = parse(text);
     } catch (e) {
-      console.warn(`[polyforge] config.toml is invalid, using defaults: ${(e as Error).message}`);
+      console.warn(`[taskweave] config.toml is invalid, using defaults: ${(e as Error).message}`);
       raw = {};
     }
     const parsed = globalConfigSchema.safeParse(raw);
@@ -118,7 +122,7 @@ export class GlobalStore {
       if (!roots.some((x) => samePath(x, norm))) roots.push(norm);
     }
     parsed.data.problems.roots = roots;
-    await atomicWrite(this.configPath, '# PolyForge 全局配置\n\n' + stringify(parsed.data) + '\n');
+    await atomicWrite(this.configPath, '# Taskweave 全局配置\n\n' + stringify(parsed.data) + '\n');
     this.config = parsed.data;
     return this.config;
   }

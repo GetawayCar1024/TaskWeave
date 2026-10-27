@@ -105,7 +105,7 @@ export function readPolygonPackage(archive: Map<string, Buffer>, options: Packag
   const provenanceBytes = files.get('polyforge-tests.json');
   if (provenanceBytes && provenanceBytes.length < 4 * 1024 * 1024) {
     try { const value = JSON.parse(provenanceBytes.toString('utf8')); if (value.format === 'polyforge-polygon' && value.version === 1 && value.tests && typeof value.tests === 'object') provenance = value.tests; }
-    catch { warnings.push('Invalid PolyForge filename metadata; used the native Polygon paths.'); }
+    catch { warnings.push('Invalid Taskweave filename metadata; used the native Polygon paths.'); }
   }
   for (const [name, bytes] of files) { local.set(`other/polygon/${name}`, bytes); extras.push(`other/polygon/${name}`); }
   if (candidate.entry) for (const [name, bytes] of archive) if (!candidates.some(c => name.startsWith(c.entry))) local.set(`other/polygon/archive/${name}`, bytes);
