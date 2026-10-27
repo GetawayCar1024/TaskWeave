@@ -45,6 +45,7 @@ const sameFile = (a: string | undefined, b: string) =>
 export function classifyFile(path: string, config: ProblemToml | null): FileRole {
   if (path === 'problem.toml') return 'config';
   if (/^statement\/[^/]+\/tutorial\.tex$/.test(path)) return 'tutorial';
+  if (path.startsWith('statement/images/') && !/\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(path)) return 'other';
   if (path.startsWith('statement/')) return 'statement';
   if (path.startsWith('tests/')) return 'test';
   if (path.startsWith('validator-tests/')) return 'validator-test';

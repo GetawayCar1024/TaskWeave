@@ -8,6 +8,7 @@ import { api, errorMessage } from '../lib/api';
 import { problemTitle } from '../lib/format';
 import DirPicker from './DirPicker.vue';
 import ToolWindow from './ToolWindow.vue';
+import FreeSelect from './FreeSelect.vue';
 import { Plus } from 'lucide-vue-next';
 import { loadSettings } from '../lib/settings';
 import { waitJob } from '../lib/jobs';
@@ -118,7 +119,7 @@ async function submit() {
       </template>
       <n-form-item v-if="mode === 'import'" :label="t('contest.problemsRoot')">
         <div class="root-field">
-          <n-select v-model:value="form.root" filterable tag :options="rootOptions" :disabled="busy" />
+          <free-select v-model:value="form.root" :options="rootOptions" :disabled="busy" />
           <n-button dashed block :disabled="busy" @click="showRootPicker = true"><template #icon><plus /></template>{{ t('contest.addFolder') }}</n-button>
         </div>
       </n-form-item>

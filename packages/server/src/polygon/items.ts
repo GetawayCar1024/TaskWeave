@@ -11,7 +11,8 @@ import {
   compressRanges,
   convertStatement,
   statementSyntaxWarnings,
-  groupLayout as sharedGroupLayout,
+  polygonGroupLayout as sharedGroupLayout,
+  groupTotal,
   parseIndexList,
   testsetOf,
   testsetsOf,
@@ -175,7 +176,7 @@ function testsetGroups(ts: TestsetConfig, pointsEnabled: boolean): Pick<TestsetC
           name: g.name,
           pointsPolicy: g.policy ?? 'COMPLETE_GROUP',
           dependencies: [...(g.dependencies ?? [])].sort(),
-          ...(pointsEnabled ? { points: roundPoints(g.points ?? 0) } : {}),
+          ...(pointsEnabled ? { points: roundPoints(groupTotal(g) ?? 0) } : {}),
           tests: compressRanges(parseIndexList(g.tests ?? '')),
         }))
       : [],
@@ -309,7 +310,7 @@ export async function localItems(judge: Judge, ctx: ProblemCtx): Promise<LocalIt
             name: g.name,
             pointsPolicy: g.policy ?? 'COMPLETE_GROUP',
             dependencies: [...(g.dependencies ?? [])].sort(),
-            ...(config.tests.points ? { points: roundPoints(g.points ?? 0) } : {}),
+            ...(config.tests.points ? { points: roundPoints(groupTotal(g) ?? 0) } : {}),
           }))
         : [],
     },

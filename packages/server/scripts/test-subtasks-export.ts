@@ -51,21 +51,20 @@ test('Luogu layout and scoring script: bundles, transitive dependencies, loose t
   ] });
   const warnings: string[] = [];
   const { cases, subtasks } = luoguLayout(c, [{ name: 'tests', tests: [1, 2, 3, 4, 5, 6] }], warnings);
-  assert.deepEqual(subtasks.map(s => [s.id, s.points, s.policy, s.dependencies]), [[0, 0, 'EACH_TEST', []], [1, 60, 'COMPLETE_GROUP', [2, 3]], [2, 25, 'EACH_TEST', [3]], [3, 15, 'COMPLETE_GROUP', []]]);
-  assert.deepEqual(cases.map(x => [x.k, x.score, x.subtask]), [[1, 15, 3], [2, 12, 2], [3, 13, 2], [4, 30, 1], [5, 30, 1], [6, 0, 0]]);
+  assert.deepEqual(subtasks.map(s => [s.id, s.points, s.policy, s.dependencies]), [[0, 0, 'EACH_TEST', []], [1, 15, 'COMPLETE_GROUP', []], [2, 60, 'COMPLETE_GROUP', [1, 3]], [3, 25, 'EACH_TEST', [1]]]);
+  assert.deepEqual(cases.map(x => [x.k, x.score, x.subtask]), [[1, 15, 1], [2, 12, 3], [3, 13, 3], [4, 30, 2], [5, 30, 2], [6, 0, 0]]);
   const script = luoguScript(subtasks, { time: 'sum', memory: 'max' });
   assert.match(script, /^@total_score = 0;\n@total_score = @total_score \+ @score0;\n/);
-  assert.match(script, /if \(@status1 == AC\) and \(@status2 == AC\) and \(@status3 == AC\); then\n {4}@total_score = @total_score \+ 60;\nfi/);
-  assert.match(script, /if \(@status3 == AC\); then\n {4}@total_score = @total_score \+ @score2;\nfi/);
+  assert.match(script, /if \(@status2 == AC\) and \(@status1 == AC\) and \(@status3 == AC\); then\n {4}@total_score = @total_score \+ 60;\nfi/);
+  assert.match(script, /if \(@status1 == AC\); then\n {4}@total_score = @total_score \+ @score3;\nfi/);
   assert.match(script, /if @total_score == 100; then\n {4}@final_status = AC;\nelse\n {4}@final_status = UNAC;\nfi/);
   assert.match(script, /@final_time = @time0 \+ @time1 \+ @time2 \+ @time3;/);
   assert.match(script, /@final_memory = @memory0;\nif @memory1 > @final_memory; then\n {4}@final_memory = @memory1;\nfi/);
   assert.ok(!/;\s*fi;/.test(script), 'fi takes no semicolon');
-  assert.match(luoguConfig(c, cases), /^1\.in:\n {2}timeLimit: 1000\n {2}memoryLimit: 262144\n {2}score: 15\n {2}subtaskId: 3\n/);
-  // Fractional points are rounded with a warning; without points 100 is split over the tests.
+  assert.match(luoguConfig(c, cases), /^1\.in:\n {2}timeLimit: 1000\n {2}memoryLimit: 262144\n {2}score: 15\n {2}subtaskId: 1\n/);
+  // Incompatible fractional points are reported rather than silently rounded.
   c.tests.group![2].points = 15.5;
-  luoguLayout(c, [{ name: 'tests', tests: [1, 2, 3, 4, 5] }], warnings);
-  assert.ok(warnings.some(w => /rounded to 16/.test(w)));
+  assert.throws(() => luoguLayout(c, [{ name: 'tests', tests: [1, 2, 3, 4, 5] }], warnings), /integer scores/);
   const plain = luoguLayout(parse({}), [{ name: 'tests', tests: [1, 2, 3] }, { name: 'tests', tests: [1, 2] }], []);
   assert.deepEqual(plain.cases.map(x => x.score), [33, 33, 34, 50, 50]);
   assert.deepEqual(plain.subtasks.map(s => s.id), [0, 1]);
@@ -74,8 +73,8 @@ test('Luogu layout and scoring script: bundles, transitive dependencies, loose t
 
 test('"Equal points" is No for uneven subtask points', () => {
   const groups = (group: object[]) => parse({ points: true, groups: true, group });
-  assert.equal(equalTestPoints(groups([{ name: 'a', tests: '1-2', points: 20 }, { name: 'b', tests: '3-5', points: 30 }]), [1, 2, 3, 4, 5]), true);
-  assert.equal(equalTestPoints(groups([{ name: 'a', tests: '1-3', points: 10 }]), [1, 2, 3]), false);
+  assert.equal(equalTestPoints(groups([{ name: 'a', tests: '1-2', points: 20 }, { name: 'b', tests: '3-5', points: 30 }]), [1, 2, 3, 4, 5]), false);
+  assert.equal(equalTestPoints(groups([{ name: 'a', tests: '1-3', points: 10 }]), [1, 2, 3]), true);
   assert.equal(equalTestPoints(groups([{ name: 'a', tests: '1-2', points: 20 }, { name: 'b', tests: '3-4', points: 30 }]), [1, 2, 3, 4]), false);
   assert.equal(equalTestPoints(groups([{ name: 'a', tests: '1-2', points: 20 }]), [1, 2, 3]), false);
   assert.equal(equalTestPoints(parse({}), [1, 2, 3, 4]), true);
@@ -110,7 +109,7 @@ test('groups validate with their own validator; checks report a missing one', { 
     const p = await f.registry.create({ name: 'groupval' });
     await fs.writeFile(path.join(p.dir, 'small.cpp'), '#include "testlib.h"\nint main(int argc,char**argv){registerValidation(argc,argv);int n=inf.readInt(1,5,"n");inf.readEoln();for(int i=0;i<n;i++){inf.readInt(1,1000000000,"a");if(i+1<n)inf.readSpace();}inf.readEoln();inf.readEof();}\n');
     await f.registry.patch(p.id, { testsets: { tests: { groups: true, group: [{ name: 'small', tests: '1-2', validator: 'small.cpp' }, { name: 'big', tests: '3-4' }] } } });
-    assert.equal((await f.registry.detail(p.id)).config?.tests.group?.[0].validator, 'small.cpp');
+    assert.equal((await f.registry.detail(p.id)).config?.tests.group?.find(g => g.name === 'small')?.validator, 'small.cpp');
     const m = await generateTests(f.judge, await f.judge.ctx(p.id), job());
     // Test 2 (n = 10) breaks the group validator; test 3 (n = 1000) passes the problem validator.
     assert.equal(m.tests.find(t => t.index === 2)?.valid, false);

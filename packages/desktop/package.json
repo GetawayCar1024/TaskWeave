@@ -1,6 +1,6 @@
 {
   "name": "@polyforge/desktop",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "license": "AGPL-3.0-or-later",
   "private": true,
   "description": "PolyForge as a desktop app (Electron): the server and the UI in one window",

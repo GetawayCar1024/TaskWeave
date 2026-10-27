@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs';
-import { DEFAULT_TESTSET, judgeMode, parseIndexList, PROBLEM_NAME_RE, STD_PREFIX, testsetOf, type LuoguAggregate, type ProblemToml } from '@polyforge/shared';
+import { DEFAULT_TESTSET, groupLayout, groupTotal, judgeMode, parseIndexList, PROBLEM_NAME_RE, STD_PREFIX, testLimitLookup, testsetOf, type LuoguAggregate, type ProblemToml, type TestGroup } from '@polyforge/shared';
 import type { JobCtx } from '../jobs.js';
 import { HttpError, safeJoin } from '../util/fs.js';
 import { ZipWriter } from '../util/zip.js';
@@ -15,7 +15,7 @@ import { answerPath, inputPath } from './tests.js';
  */
 const fail = (message: string): never => { throw new HttpError(400, 'luogu_export', message); };
 
-export interface LuoguCase { k: number; testset: string; index: number; score: number; subtask: number }
+export interface LuoguCase { k: number; testset: string; index: number; score: number; subtask: number; timeLimit?: number; memoryLimit?: number }
 export interface LuoguSubtask { id: number; label: string; points: number; policy: 'COMPLETE_GROUP' | 'EACH_TEST'; dependencies: number[] }
 
 /** Test cases and subtasks: per testset the ungrouped tests (if any), then its groups; ids continue over testsets. */
@@ -23,11 +23,14 @@ export function luoguLayout(config: ProblemToml, sets: { name: string; tests: nu
   const cases: LuoguCase[] = [], subtasks: LuoguSubtask[] = [];
   const points = !!config.tests.points;
   for (const set of sets) {
+    const firstCase = cases.length;
     const ts = testsetOf(config, set.name) ?? fail(`Unknown testset: ${set.name}`);
     const where = set.name === DEFAULT_TESTSET ? '' : `${set.name}: `;
     const tests = [...set.tests].sort((a, b) => a - b);
     if (!tests.length) fail(`${where}No tests to export.`);
-    const groups = ts.groups ? checkGroups(set.name, ts.group).filter(g => parseIndexList(g.tests ?? '').length || (warnings.push(`${where}Subtask ${g.name} has no tests and is not exported.`), false)) : [];
+    const groups = points && ts.groups ? checkGroups(set.name, ts.group).filter(g => parseIndexList(g.tests ?? '').length || (warnings.push(`${where}Subtask ${g.name} has no tests and is not exported.`), false)) : [];
+    if (points && !groups.length) fail(`${where}Points are enabled but there are no scored subtasks.`);
+    const layout = groupLayout(ts, points), limits = testLimitLookup(config, ts);
     const available = new Set(tests);
     const of = new Map<number, string>();
     for (const g of groups) {
@@ -38,32 +41,26 @@ export function luoguLayout(config: ProblemToml, sets: { name: string; tests: nu
     // Without subtask points the testset's 100 points are split over its tests.
     const share = new Map<number, number>();
     if (!points || !groups.length) splitScore(100, tests.length).forEach((s, i) => share.set(tests[i], s));
-    const score = new Map<number, number>();
     const ids = new Map<string, number>();
     const loose = tests.filter(i => !of.has(i));
-    const entries: { name?: string; tests: number[]; points: number; policy: LuoguSubtask['policy']; deps: string[] }[] = [];
+    const entries: { name?: string; group?: TestGroup; tests: number[]; points: number; policy: LuoguSubtask['policy']; deps: string[] }[] = [];
     if (loose.length) entries.push({ tests: loose, points: loose.reduce((a, i) => a + (share.get(i) ?? 0), 0), policy: 'EACH_TEST', deps: [] });
     for (const g of groups) {
       const idx = [...new Set(parseIndexList(g.tests ?? ''))].sort((a, b) => a - b);
-      let p = points ? g.points : idx.reduce((a, i) => a + (share.get(i) ?? 0), 0);
+      const p = groupTotal(g);
       if (p === undefined) fail(`${where}Subtask ${g.name} has no score.`);
-      if (!Number.isInteger(p)) {
-        warnings.push(`${where}Subtask ${g.name}: Luogu requires integer scores; ${p} is rounded to ${Math.round(p!)}.`);
-        p = Math.round(p!);
-      }
-      entries.push({ name: g.name, tests: idx, points: p!, policy: g.policy ?? 'COMPLETE_GROUP', deps: g.dependencies ?? [] });
+      if (!Number.isSafeInteger(p)) fail(`${where}Subtask ${g.name}: Luogu requires integer scores.`);
+      entries.push({ name: g.name, group: g, tests: idx, points: p!, policy: g.policy ?? 'COMPLETE_GROUP', deps: g.dependencies ?? [] });
     }
     for (const e of entries) {
       const id = subtasks.length === 0 && !e.name ? 0 : (subtasks.length ? subtasks[subtasks.length - 1].id + 1 : 1);
       if (e.name) ids.set(e.name, id);
-      const explicit = e.policy === 'EACH_TEST' && e.tests.every(i => ts.cases?.[i]?.points !== undefined);
-      if (explicit) for (const i of e.tests) {
-        const points = ts.cases![i].points!;
-        if (!Number.isInteger(points)) fail(`${where}Luogu requires integer per-test scores.`);
-        score.set(i, points);
-      }
-      else splitScore(e.points, e.tests.length).forEach((s, i) => score.set(e.tests[i], s));
-      e.tests.forEach(i => of.set(i, `#${id}`));
+      const scores = splitScore(e.points, e.tests.length);
+      e.tests.forEach((index, k) => {
+        const score = e.policy === 'EACH_TEST' && e.name ? layout.byGroup[e.name][index] ?? 0 : scores[k];
+        if (!Number.isSafeInteger(score)) fail(`${where}Luogu requires integer per-test scores.`);
+        cases.push({ k: cases.length + 1, testset: set.name, index, score, subtask: id, ...limits(index, e.group) });
+      });
       subtasks.push({ id, label: e.name ? `${where}${e.name}` : `${where}—`, points: e.points, policy: e.policy, dependencies: [] });
     }
     // Dependencies, transitively (the script checks each one directly).
@@ -76,7 +73,8 @@ export function luoguLayout(config: ProblemToml, sets: { name: string; tests: nu
       const st = subtasks.find(s => s.id === ids.get(e.name!))!;
       st.dependencies = [...closure(e.name)].map(d => ids.get(d)).filter((d): d is number => d !== undefined).sort((a, b) => a - b);
     }
-    for (const i of tests) cases.push({ k: cases.length + 1, testset: set.name, index: i, score: score.get(i) ?? 0, subtask: Number(of.get(i)!.slice(1)) });
+    const ordered = cases.splice(firstCase).sort((a, b) => a.index - b.index || a.subtask - b.subtask);
+    ordered.forEach((entry, index) => entry.k = firstCase + index + 1); cases.push(...ordered);
   }
   return { cases, subtasks };
 }
@@ -111,7 +109,10 @@ export function luoguScript(subtasks: LuoguSubtask[], agg: { time: LuoguAggregat
 export function luoguConfig(config: ProblemToml, cases: LuoguCase[]): string {
   return cases.map(c => {
     const test = testsetOf(config, c.testset)?.cases?.[c.index];
-    return `${c.k}.in:\n  timeLimit: ${test?.time_limit ?? config.problem.time_limit}\n  memoryLimit: ${(test?.memory_limit ?? config.problem.memory_limit) * 1024}\n  score: ${c.score}\n  subtaskId: ${c.subtask}\n${test?.pretest || c.testset === 'pretests' ? '  isPretest: true\n' : ''}`;
+    const time = c.timeLimit ?? test?.time_limit ?? config.problem.time_limit;
+    const memory = (c.memoryLimit ?? test?.memory_limit ?? config.problem.memory_limit) * 1024;
+    if (!Number.isSafeInteger(memory)) fail('Luogu memory limits must be exactly representable in whole KiB.');
+    return `${c.k}.in:\n  timeLimit: ${time}\n  memoryLimit: ${memory}\n  score: ${c.score}\n  subtaskId: ${c.subtask}\n${test?.pretest || c.testset === 'pretests' ? '  isPretest: true\n' : ''}`;
   }).join('\n');
 }
 
@@ -122,7 +123,7 @@ export async function luoguData(judge: Judge, ctx: ProblemCtx, index: string, jo
   const sets = await exportedTests(judge, ctx, testsets, index, job);
   const { cases, subtasks } = luoguLayout(config, sets, warnings);
   const folder = p.name;
-  const zip = new ZipWriter();
+  const zip = new ZipWriter({ async: true });
   for (const c of cases) {
     job.signal.throwIfAborted();
     for (const [extension, file] of [['in', inputPath(ctx, c.index, c.testset)], ['out', answerPath(ctx, c.index, c.testset)]]) {
@@ -161,7 +162,9 @@ export async function luoguData(judge: Judge, ctx: ProblemCtx, index: string, jo
   }
   const readme = luoguReadme(config, { cases: cases.length, subtasks, spj: !!checker, mode, agg, sets: sets.map(s => s.name) });
   warnings.push('Luogu does not automatically install score.txt. Paste its contents into the whole-problem scoring script after uploading data.zip.');
-  return { data: zip.finish(), readme, tests: cases.length, warnings };
+  const data = await zip.finishAsync();
+  if (data.length > 50 * 1024 * 1024) warnings.push('Luogu documents a 50 MiB compressed upload limit; this package is larger.');
+  return { data, readme, tests: cases.length, warnings };
 }
 
 export async function addLuoguProblem(judge: Judge, ctx: ProblemCtx, index: string, zip: ZipWriter, job: JobCtx, testsets: string[], agg: { time: LuoguAggregate; memory: LuoguAggregate }) {

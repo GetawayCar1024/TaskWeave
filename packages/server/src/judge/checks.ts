@@ -118,10 +118,8 @@ export async function localChecks(_judge: Judge, ctx: ProblemCtx): Promise<Local
       }
     }
     if (config.tests.points && ts.name === DEFAULT_TESTSET) {
-      const noPoints = ts.group.filter((g) => g.points === undefined).map((g) => g.name);
+      const noPoints = ts.group.filter(g => g.points === undefined && g.test_points === undefined).map(g => g.name);
       if (noPoints.length) add('warning', 'tests', 'groupsWithoutPoints', { list: noPoints.join(', ') }, file);
-      const sum = ts.group.reduce((a, g) => a + (g.points ?? 0), 0);
-      if (sum !== 100) add('info', 'tests', 'pointsSum', { sum }, file);
     }
   }
   return out;

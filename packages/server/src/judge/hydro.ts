@@ -4,7 +4,7 @@ import path from 'node:path';
 import { stringify as yaml } from 'yaml';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
-import { flattenFiles, groupLayout, judgeMode, parseIndexList, PROBLEM_NAME_RE, testsetOf, testsetsOf, type ProblemToml, type TestGroup } from '@polyforge/shared';
+import { flattenFiles, groupLayout, groupTotal, judgeMode, parseIndexList, PROBLEM_NAME_RE, testsetOf, testsetsOf, testLimitLookup, type ProblemToml, type TestGroup } from '@polyforge/shared';
 import { buildMacros, renderLatex, type DefsToml } from '../../../web/src/lib/latex.js';
 import { parseDefsToml, readSharedDefs } from '../defs.js';
 import type { JobCtx } from '../jobs.js';
@@ -31,6 +31,7 @@ export function hydroSubtasks(config: ProblemToml, sets: { name: string; tests: 
     if (!tests.length) fail(`${set.name}: No tests to export.`);
     const points = !!config.tests.points;
     const layout = groupLayout(ts, points);
+    const limits = testLimitLookup(config, ts);
     const groups: TestGroup[] = points && ts.groups ? checkGroups(set.name, ts.group) : [
       { name: 'all', tests: tests.join(','), policy: 'EACH_TEST', points: 100 },
     ];
@@ -50,15 +51,18 @@ export function hydroSubtasks(config: ProblemToml, sets: { name: string; tests: 
       for (const dependency of group.dependencies ?? []) add(dependency);
       const indices = [...new Set(parseIndexList(group.tests ?? ''))].sort((a, b) => a - b);
       if (!indices.length || indices.some(i => !tests.includes(i))) fail(`${set.name}: Subtask ${name} is empty or refers to missing tests.`);
-      const score = group.points ?? fail(`${set.name}: Subtask ${name} has no score.`);
+      const score = groupTotal(group) ?? fail(`${set.name}: Subtask ${name} has no score.`);
+      if (!Number.isSafeInteger(score) || score < 0) fail(`${set.name}/${name}: Hydro requires nonnegative integer scores.`);
       const type = group.policy === 'EACH_TEST' ? 'sum' : 'min';
       const id = out.length + 1;
       ids.set(name, id);
       out.push({ id, type, score, if: (group.dependencies ?? []).map(d => ids.get(d)!), cases: indices.map(index => {
-        const override = ts.cases?.[index];
+        const limit = limits(index, group);
+        if (!Number.isSafeInteger(limit.memoryLimit)) fail(`${set.name}/${name}: Hydro rounds memory to whole MiB. Choose a whole-MiB limit before exporting.`);
+        const pointsPerTest = type === 'min' ? score : points && ts.groups ? layout.byGroup[group.name]?.[index] ?? 0 : defaults.get(index)!;
+        if (!Number.isSafeInteger(pointsPerTest)) fail(`${set.name}/${name}: Hydro requires integer per-test scores.`);
         return { input: `${testFileStem(set.name, index)}.in`, output: `${testFileStem(set.name, index)}.ans`,
-          score: type === 'min' ? score : points && ts.groups ? layout.points[index] ?? 0 : defaults.get(index)!,
-          time: `${override?.time_limit ?? config.problem.time_limit}ms`, memory: `${Math.ceil(override?.memory_limit ?? config.problem.memory_limit)}m` };
+          score: pointsPerTest, time: `${limit.timeLimit}ms`, memory: `${limit.memoryLimit}m` };
       }) });
     };
     for (const group of groups) add(group.name);
@@ -102,7 +106,11 @@ export async function hydroPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, t
   const warnings: string[] = [];
   const sets = await exportedTests(judge, ctx, testsets, p.name, job);
   const subtasks = hydroSubtasks(config, sets);
-  const zip = new ZipWriter();
+  const nativeCases = subtasks.flatMap(subtask => subtask.cases);
+  if (nativeCases.length > 100 || nativeCases.reduce((sum, test) => sum + Number(test.time.replace(/ms$/, '')), 0) > 60000 || nativeCases.some(test => Number(test.memory.replace(/m$/, '')) > 512)) {
+    warnings.push('This package exceeds Hydro default judge budgets (100 cases, 60 s total time or 512 MiB memory). These are deployment-configurable; check the target judge settings.');
+  }
+  const zip = new ZipWriter({ async: true });
   const used = new Set<string>();
   const outputNames = new Set(['config.yaml', 'polyforge-files.json', 'lemon-license.txt']);
   for (const set of sets) for (const index of set.tests) {
@@ -224,5 +232,5 @@ export async function hydroPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, t
   zip.add('testdata/polyforge-files.json', JSON.stringify(extraFiles, null, 2));
   zip.add('problem.yaml', yaml({ title: p.title.zh || p.title.en || p.name, statements, tag: [], polyforge: { name: p.name, titles: p.title } }));
   if (!statements.length) warnings.push('This Hydro package has no statement. Complete it before publishing the problem.');
-  return { data: zip.finish(), tests: sets.reduce((n, set) => n + set.tests.length, 0), warnings };
+  return { data: await zip.finishAsync(), tests: sets.reduce((n, set) => n + set.tests.length, 0), warnings };
 }

@@ -39,8 +39,9 @@ import type { ProblemWatcher } from './workspace/watcher.js';
 import type { WsHub } from './ws.js';
 import { convertStatementMode } from './workspace/statements.js';
 import { importPackage, inspectPackage } from './imports/packages.js';
+import { PackageUploads } from './imports/uploads.js';
 import { TrashStore } from './workspace/trash.js';
-import type { PackageImportOptions } from '@polyforge/shared';
+import type { PackageImportOptions, PackageSelection, PackageBatchResult } from '@polyforge/shared';
 
 export interface AppDeps {
   global: GlobalStore;
@@ -282,6 +283,36 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return result;
     } finally { importing = false; }
   };
+  const packageUploads = new PackageUploads(global.dir);
+  app.addHook('onClose', () => packageUploads.dispose());
+  app.post<{ Body: Buffer; Querystring: PackageImportOptions }>('/api/packages/uploads', { bodyLimit: 256 * 1024 * 1024 }, async req => packageUploads.stage(req.body, req.query));
+  app.delete<{ Params: { id: string } }>('/api/packages/uploads/:id', async req => { await packageUploads.discard(req.params.id); return { ok: true }; });
+  app.post<{ Body: { items: PackageSelection[]; problemId?: string } }>('/api/packages/import', async req => {
+    const { items, problemId } = req.body ?? {};
+    if (!Array.isArray(items) || !items.length || items.length > 1000 || items.some(item => !item || typeof item.uploadId !== 'string') || problemId && items.length !== 1) throw new HttpError(400, 'bad_request', 'Select problems to import.');
+    if (!idle() || importing) throw new HttpError(409, 'busy', 'Wait for running tasks before importing data');
+    if (!problemId) for (const item of items) registry.requireRoot(item.root);
+    importing = true;
+    const results = new Map<PackageSelection, PackageBatchResult['items'][number]>();
+    try {
+      // Group by upload: one decompression even when a contest archive contains many problems.
+      for (const uploadId of new Set(items.map(item => item.uploadId))) {
+        const selections = items.filter(item => item.uploadId === uploadId);
+        let archive: Map<string, Buffer>;
+        try { archive = await packageUploads.read(uploadId, selections[0].format); }
+        catch (e) { for (const item of selections) results.set(item, { name: item.name ?? '', error: (e as Error).message }); continue; }
+        for (const item of selections) {
+          try {
+            if (item.format !== selections[0].format) throw new HttpError(400, 'bad_request', 'Mixed formats for one uploaded archive.');
+            results.set(item, { name: item.name ?? '', result: await importPackage(deps.judge, archive, item, problemId) });
+          } catch (e) { results.set(item, { name: item.name ?? '', error: (e as Error).message }); }
+        }
+      }
+      hub.broadcast({ type: 'problems:changed' });
+      if (problemId) hub.broadcast({ type: 'problem:changed', problemId });
+      return { items: items.map(item => results.get(item)!) } satisfies PackageBatchResult;
+    } finally { importing = false; }
+  });
   app.post<{ Body: Buffer; Querystring: PackageImportOptions & { preview?: string } }>('/api/problems/import/package', { bodyLimit: 256 * 1024 * 1024 }, async req => {
     if (req.query.preview === '1') return inspectPackage(req.body, req.query);
     registry.requireRoot(req.query.root);

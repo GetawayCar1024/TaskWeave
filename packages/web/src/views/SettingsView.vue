@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FreeSelect from '../components/FreeSelect.vue';
 import { computed, h, onMounted, ref, watch } from 'vue';
 import { ArrowLeft, Check, Plus, X } from 'lucide-vue-next';
 import { useI18n } from 'vue-i18n';
@@ -507,11 +508,9 @@ registerExitGuard(async () => {
                   <n-select v-model:value="e.currency" size="tiny" :options="CURRENCIES.map((c) => ({ label: c, value: c }))" style="width: 80px" />
                 </div>
                 <div v-for="(p, pi) in e.prices" :key="pi" class="price-row">
-                  <n-select
+                  <free-select
                     v-model:value="p.model"
                     size="tiny"
-                    filterable
-                    tag
                     :options="['*', ...e.models.split(/[\s,]+/).filter(Boolean)].map((m) => ({ label: m === '*' ? t('settings.priceOther') : m, value: m }))"
                   />
                   <n-input-number v-model:value="p.input" size="tiny" :min="0" :show-button="false" placeholder="—" />

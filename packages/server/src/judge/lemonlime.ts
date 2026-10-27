@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_TESTSET, groupLayout, judgeMode, parseIndexList, PROBLEM_NAME_RE, testsetOf, testsetsOf, type ProblemToml } from '@polyforge/shared';
+import { DEFAULT_TESTSET, groupLayout, groupTotal, judgeMode, parseIndexList, PROBLEM_NAME_RE, testsetOf, testsetsOf, testLimitLookup, type ProblemToml, type TestGroup } from '@polyforge/shared';
 import type { JobCtx } from '../jobs.js';
 import { exists, HttpError, safeJoin, toPosix } from '../util/fs.js';
 import type { ZipWriter } from '../util/zip.js';
@@ -36,11 +36,12 @@ export function lemonTestCases(config: ProblemToml, indices: number[], folder: s
   const where = testset === DEFAULT_TESTSET ? '' : `${testset}: `;
   const available = new Set(indices);
   const result: LemonTestCase[] = [];
-  const make = (tests: number[], score: number, dependencies: number[] = []) => {
+  const limits = testLimitLookup(config, ts);
+  const make = (tests: number[], score: number, dependencies: number[] = [], group?: TestGroup) => {
     if (!Number.isSafeInteger(score) || score < 0 || score > 2147483647) fail('LemonLime requires nonnegative integer scores (up to 2147483647).');
-    const timeLimit = ts.cases?.[tests[0]]?.time_limit ?? config.problem.time_limit;
-    const memoryLimit = ts.cases?.[tests[0]]?.memory_limit ?? config.problem.memory_limit;
-    if (tests.some(i => (ts.cases?.[i]?.time_limit ?? config.problem.time_limit) !== timeLimit || (ts.cases?.[i]?.memory_limit ?? config.problem.memory_limit) !== memoryLimit)) fail(`${where}LemonLime bundled tests must use the same time and memory limits.`);
+    const { timeLimit, memoryLimit } = limits(tests[0], group);
+    if (![timeLimit, memoryLimit].every(value => Number.isSafeInteger(value) && value > 0 && value <= 2147483647)) fail(`${where}LemonLime requires integer time (ms) and memory (MiB), from 1 to 2147483647.`);
+    if (tests.some(i => limits(i, group).timeLimit !== timeLimit || limits(i, group).memoryLimit !== memoryLimit)) fail(`${where}LemonLime bundled tests must use the same time and memory limits.`);
     result.push({ fullScore: score, timeLimit, memoryLimit,
       inputFiles: [...tests.map(i => `${folder}/${testFileStem(testset, i)}.in`), ...dependencies.map(i => `${i}_lemon_SUbtaskDEPENDENCE_fLAg`)],
       outputFiles: tests.map(i => `${folder}/${testFileStem(testset, i)}.ans`) });
@@ -69,12 +70,13 @@ export function lemonTestCases(config: ProblemToml, indices: number[], folder: s
     for (const dep of g.dependencies ?? []) addGroup(dep);
     const tests = [...new Set(parseIndexList(g.tests ?? ''))].sort((a,b) => a-b);
     if (!tests.length || tests.some(i => !available.has(i))) fail(`${where}Subtask ${name} is empty or refers to missing tests.`);
-    if (g.points === undefined) fail(`${where}Subtask ${name} has no score.`);
-    if (!Number.isSafeInteger(g.points)) fail(`${where}Subtask ${name}: LemonLime requires integer scores.`);
+    const total = groupTotal(g);
+    if (total === undefined) fail(`${where}Subtask ${name} has no score.`);
+    if (!Number.isSafeInteger(total)) fail(`${where}Subtask ${name}: LemonLime requires integer scores.`);
     const deps = [...closure(name)].flatMap(d => exported.get(d)!).sort((a, b) => a - b);
     const first = result.length;
-    if (g.policy === 'EACH_TEST') tests.forEach(i => make([i], layout.points[i] ?? 0, deps));
-    else make(tests, g.points!, deps);
+    if (g.policy === 'EACH_TEST') tests.forEach(i => make([i], layout.byGroup[g.name][i] ?? 0, deps, g));
+    else make(tests, g.points!, deps, g);
     exported.set(name, Array.from({length: result.length - first}, (_, i) => offset + first + i + 1));
   };
   for (const g of groups) addGroup(g.name);
@@ -171,7 +173,7 @@ export async function exportedTests(judge: Judge, ctx: ProblemCtx, testsets: str
   return out;
 }
 
-export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: string, zip: ZipWriter, job: JobCtx, testsets = [DEFAULT_TESTSET]) {
+export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: string, zip: ZipWriter, job: JobCtx, testsets = [DEFAULT_TESTSET], subfolders = false) {
   const { config } = ctx, p = config.problem, mode = judgeMode(p);
   const checker = await preflightLemonChecker(judge, ctx, index);
   const folder = p.name;
@@ -208,7 +210,7 @@ export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: stri
     inputFileName: p.input === 'stdin' ? `${p.name}.in` : p.input,
     outputFileName: p.output === 'stdout' ? `${p.name}.out` : p.output,
     standardInputCheck: !p.input || p.input === 'stdin', standardOutputCheck: !p.output || p.output === 'stdout',
-    taskType: mode === 'grader' ? 3 : 0, subFolderCheck: true,
+    taskType: mode === 'grader' ? 3 : 0, subFolderCheck: subfolders,
     comparisonMode: checker ? 4 : 1, diffArguments: '--ignore-space-change --text --brief', realPrecision: 6,
     specialJudge: checker ? checkerName : '', compilerConfiguration: { 'g++': cppConfiguration }, answerFileExtension: 'ans', testCases,
     ...(mode === 'grader' ? { sourceFilesPath: [`${p.name}.cpp`], sourceFilesName: [`${p.name}.cpp`], graderFilesPath: [] as string[], graderFilesName: [] as string[] } : {}),
@@ -236,4 +238,14 @@ export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: stri
   return { task, tests: count };
 }
 
-export const lemonReadme = (platform: string) => `LemonLime contest package\n\nOpen the .cdf file in LemonLime (JSON CDF version 1.0).\nContestants: source/<contestant>/<problem>/<problem>.cpp\nThe source directory is deliberately empty.\nInputs, answers, checkers and supplied grader files are in data/.\nThe selected testsets of each problem are exported one after another (files of testsets other than "tests" are prefixed with the testset name); each testset is scored by its own subtasks, and a testset without point settings totals 100 points.\nSubtasks are ordered by dependencies; bundled tests share one score.\nChecker executables target ${platform}; other platforms must rebuild them from checker-sources/problem/ with -I checker-sources/shared/. The Lemon checker uses Testlib for Lemons (registerLemonChecker), independently of the Polygon checker. Preserve the included header license. Configure your C++ compiler in LemonLime.\nGrader problems use LemonLime Communication mode.\n`;
+export const lemonReadme = (platform: string, subfolders = false) => `LemonLime contest package
+
+Open the .cdf file in LemonLime (JSON CDF version 1.0).
+Contestants: source/<contestant>/${subfolders ? '<problem>/' : ''}<problem>.cpp
+Search subfolders for contestant code: ${subfolders ? 'enabled' : 'disabled'}.
+Inputs, answers, checkers and supplied grader files are in data/.
+Each selected testset keeps its own subtasks. Bundled entries take the minimum; sum entries carry per-test points.
+CDF limits are milliseconds and MiB. Shared inputs can be used by several entries with independent limits.
+Checker executables target ${platform}; rebuild from checker-sources/problem/ with -I checker-sources/shared/ on other platforms. Preserve the included header license.
+Grader problems use LemonLime Communication mode. Configure the C++ compiler in LemonLime.
+`;

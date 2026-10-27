@@ -1,4 +1,4 @@
-import { crc32, deflateRawSync, inflateRawSync } from 'node:zlib';
+import { crc32, deflateRaw, deflateRawSync, inflateRawSync } from 'node:zlib';
 import { HttpError, validateFileName } from './fs.js';
 
 interface Entry {
@@ -25,10 +25,35 @@ export class ZipWriter {
   private entries: Entry[] = [];
   private offset = 0;
   private stamp = dosTime(new Date());
+  private queued: { name: string; data: Buffer; executable: boolean }[] = [];
+  constructor(private options: { async?: boolean; level?: number } = {}) {}
+  private stored(name: string) { return /\.(?:zip|7z|gz|xz|bz2|zst|png|jpe?g|webp|woff2?)$/i.test(name); }
 
   add(name: string, data: Buffer | string, executable = false): void {
     const buf = typeof data === 'string' ? Buffer.from(data, 'utf8') : data;
-    const deflated = deflateRawSync(buf);
+    if (this.options.async) { this.queued.push({ name, data: buf, executable }); return; }
+    const deflated = this.stored(name) ? buf : deflateRawSync(buf, { level: this.options.level ?? 1 });
+    this.append(name, buf, deflated, executable);
+  }
+
+  /** Compression uses libuv workers; the desktop UI/server stays responsive while packing. */
+  async finishAsync(): Promise<Buffer> {
+    const queued = this.queued.splice(0), compressed = new Array<Buffer>(queued.length);
+    let next = 0;
+    const results = await Promise.allSettled(Array.from({ length: Math.min(4, queued.length) }, async () => {
+      while (next < queued.length) {
+        const index = next++, entry = queued[index];
+        compressed[index] = this.stored(entry.name) ? entry.data : await new Promise<Buffer>((resolve, reject) =>
+          deflateRaw(entry.data, { level: this.options.level ?? 1 }, (error, result) => error ? reject(error) : resolve(result)));
+      }
+    }));
+    const failed = results.find(result => result.status === 'rejected');
+    if (failed?.status === 'rejected') throw failed.reason;
+    for (const [i, entry] of queued.entries()) this.append(entry.name, entry.data, compressed[i], entry.executable);
+    return this.finish();
+  }
+
+  private append(name: string, buf: Buffer, deflated: Buffer, executable: boolean) {
     const useDeflate = deflated.length < buf.length;
     const e: Entry = {
       name: Buffer.from(name.replace(/\\/g, '/'), 'utf8'),
@@ -57,6 +82,7 @@ export class ZipWriter {
   }
 
   finish(): Buffer {
+    if (this.queued.length) throw new Error('Use finishAsync() for an asynchronous ZIP writer.');
     const central: Buffer[] = [];
     let size = 0;
     for (const e of this.entries) {

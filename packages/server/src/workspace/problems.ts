@@ -289,7 +289,7 @@ export class ProblemRegistry {
     const tl = req.timeLimit ?? 1000;
     const ml = req.memoryLimit ?? 256;
     const mode = judgeModeSchema.parse(req.judgeMode ?? (req.interactive ? 'io' : 'batch'));
-    if (req.dataOnly && mode !== 'batch') throw new HttpError(400, 'data_only', 'Data-only problems support batch input/answer pairs only.');
+    if (req.dataOnly && mode !== 'batch') throw new HttpError(400, 'data_only', 'Compatibility mode supports batch input/answer pairs only.');
     const interactive = mode === 'io';
     const vars: Record<string, string> = {
       '"{{name}}"': JSON.stringify(name),
@@ -490,13 +490,16 @@ export class ProblemRegistry {
         else delete target.groups;
       }
       if (p.group !== undefined) {
-        const groups = checkGroups(name, p.group);
+        const groups = checkGroups(name, p.group, true);
         // An explicit edit of scoring replaces unsupported imported script semantics.
         delete target.unresolved_scoring;
         for (const group of groups) {
           const old = (target.group ?? []).find((g: TestGroup) => g.name === group.name);
-          if (old?.points === group.points && old?.tests === group.tests && (old?.policy ?? 'COMPLETE_GROUP') === (group.policy ?? 'COMPLETE_GROUP')) continue;
-          for (const i of parseIndexList(group.tests ?? '')) if (target.cases?.[i]) delete target.cases[i].points;
+          // Overrides belong to this membership, never erase another group's imported values.
+          for (const i of parseIndexList(group.tests ?? '')) if (group.cases?.[i]) {
+            if (old?.test_points !== group.test_points && group.test_points !== undefined) delete group.cases[i].points;
+            for (const field of ['time_limit', 'memory_limit'] as const) if (old?.[field] !== group[field]) delete group.cases[i][field];
+          }
         }
         if (groups.length) target.group = groups;
         else delete target.group;
@@ -676,9 +679,8 @@ async function countFiles(dir: string): Promise<number> {
 }
 
 /** Validate a testset's groups (subtasks) and drop empty fields before writing TOML. */
-export function checkGroups(testset: string, list: TestGroup[]): TestGroup[] {
+export function checkGroups(testset: string, list: TestGroup[], orderedDependencies = false): TestGroup[] {
   const names = new Set<string>();
-  const covered = new Map<number, string>();
   const out = list.map((g) => {
     const name = String(g.name ?? '').trim();
     if (!name) throw new HttpError(400, 'invalid_group', `${testset}: a group has no name`);
@@ -691,15 +693,18 @@ export function checkGroups(testset: string, list: TestGroup[]): TestGroup[] {
     }
     for (const i of parseIndexList(tests)) {
       if (i < 1) throw new HttpError(400, 'invalid_group', `${testset}: test indices start at 1`);
-      if (covered.has(i)) throw new HttpError(400, 'invalid_group', `${testset}: test ${i} is in groups ${covered.get(i)} and ${name}`);
-      covered.set(i, name);
     }
     const r: TestGroup = { name };
-    if (tests) r.tests = tests;
+    if (tests) r.tests = compressRanges(parseIndexList(tests));
     if (g.points !== undefined && g.points !== null) {
       const points = Number(g.points);
       if (!Number.isFinite(points) || points < 0) throw new HttpError(400, 'invalid_group', `${testset}: group ${name}: points must be finite and nonnegative`);
       r.points = points;
+    }
+    for (const field of ['test_points', 'time_limit', 'memory_limit'] as const) if (g[field] !== undefined && g[field] !== null) {
+      const value = Number(g[field]);
+      if (!Number.isFinite(value) || (field === 'test_points' ? value < 0 : value <= 0) || field === 'time_limit' && !Number.isSafeInteger(value)) throw new HttpError(400, 'invalid_group', `${testset}: group ${name}: invalid ${field}`);
+      r[field] = value;
     }
     if (g.policy) {
       if (!(GROUP_POLICIES as readonly string[]).includes(g.policy)) throw new HttpError(400, 'invalid_group', `${testset}: group ${name}: unknown points policy ${g.policy}`);
@@ -707,12 +712,14 @@ export function checkGroups(testset: string, list: TestGroup[]): TestGroup[] {
     }
     if (g.dependencies?.length) r.dependencies = [...new Set(g.dependencies.map((d) => String(d).trim()))];
     if (g.validator?.trim()) r.validator = g.validator.trim();
+    if (g.cases) r.cases = structuredClone(g.cases);
     return r;
   });
   for (const g of out) {
     for (const d of g.dependencies ?? []) {
       if (d === g.name) throw new HttpError(400, 'invalid_group', `${testset}: group ${g.name} depends on itself`);
       if (!names.has(d)) throw new HttpError(400, 'invalid_group', `${testset}: group ${g.name} depends on unknown group ${d}`);
+      if (orderedDependencies && d >= g.name) throw new HttpError(400, 'invalid_group', `${testset}: subtask ${g.name} can only depend on a lexicographically smaller name (${d}).`);
     }
   }
   // Dependencies must not form a cycle.
@@ -726,5 +733,5 @@ export function checkGroups(testset: string, list: TestGroup[]): TestGroup[] {
     state.set(n, 2);
   };
   for (const g of out) visit(g.name, []);
-  return out;
+  return out.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
 }

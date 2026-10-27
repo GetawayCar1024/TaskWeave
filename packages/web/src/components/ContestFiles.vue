@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FreeSelect from './FreeSelect.vue';
 import 'katex/dist/katex.min.css';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { onBeforeRouteLeave, useRoute } from 'vue-router';
@@ -255,7 +256,7 @@ watch(previewLang, async (value, _old, onCleanup) => {
             <n-button size="tiny" type="primary" :disabled="readonly || !dirty || busy" :title="'Ctrl+S'" @click="save()">{{ t('common.save') }}</n-button>
           </template>
         </editor-tab-bar>
-        <div v-if="isNotes && current" class="notes-help"><span>{{ t('contest.notesLanguageHelp') }}</span><n-select :value="notesLang" :aria-label="t('contest.notesLanguage')" filterable tag size="small" style="width: 140px" :options="notesLanguages" :disabled="busy" @update:value="openNotes" /><n-button size="tiny" secondary :disabled="busy" @click="insertTemplate">{{ previewLang === 'zh' ? t('contest.filesInsertNotes') : t('contest.filesInsertNotesEn') }}</n-button></div>
+        <div v-if="isNotes && current" class="notes-help"><free-select :value="notesLang" :aria-label="t('contest.notesLanguage')" size="small" style="width: 140px" :options="notesLanguages" :disabled="busy" @update:value="openNotes" /><n-button size="tiny" secondary :disabled="busy" @click="insertTemplate">{{ previewLang === 'zh' ? t('contest.filesInsertNotes') : t('contest.filesInsertNotesEn') }}</n-button></div>
         <div v-if="opening && !current" class="empty-editor">{{ t('contest.filesLoading') }}</div>
         <n-alert v-else-if="current && readonly" type="info" :show-icon="false" class="banner">{{ t('contest.filesReadonly') }}</n-alert>
         <div v-else-if="current" class="body">

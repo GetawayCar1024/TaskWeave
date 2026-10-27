@@ -200,18 +200,18 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
   app.post<P & { Body: ProblemExportRequest }>('/api/problems/:id/export', async (req) => {
     const ctx = await judge.ctx(req.params.id);
     const format = req.body?.format;
-    if (format === 'luogu' || format === 'hydro') {
+    if (jobs.running(ctx.ref.id, 'export')) throw new HttpError(409, 'busy', 'Another export is running for this problem');
+    if (format === 'luogu' || format === 'hydro' || format === 'joi') {
       if (format === 'luogu' && req.body.luogu) requireLuoguOptions(req.body.luogu);
-      if (jobs.running(ctx.ref.id, 'export')) throw new HttpError(409, 'busy', 'Another export is running for this problem');
       return jobs.start('export', ctx.ref.id, async job => {
         const result = await buildProblemDataPackage(judge, ctx, format, job, req.body);
-        const file = format === 'luogu' ? `data-${Date.now()}.zip` : `${ctx.config.problem.name}-hydro-${Date.now()}.zip`;
+        const file = format === 'luogu' ? `data-${Date.now()}.zip` : `${ctx.config.problem.name}-${format}-${Date.now()}.zip`;
         await atomicWrite(path.join(exportDir(ctx), file), result.data);
         return { file, size: result.data.length, tests: result.tests, warnings: result.warnings };
       });
     }
     if (req.body?.format && req.body.format !== 'polygon') throw new HttpError(400, 'bad_request', 'Unknown export format');
-    return jobs.start('export', ctx.ref.id, (job) => exportPackage(judge, ctx, job));
+    return jobs.start('export', ctx.ref.id, (job) => exportPackage(judge, ctx, job, undefined, req.body?.format === 'polygon'));
   });
   app.get<{ Params: { id: string; file: string } }>('/api/problems/:id/export/:file', async (req, reply) => {
     const ctx = await judge.ctx(req.params.id);

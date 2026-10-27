@@ -3,7 +3,7 @@ import { computed, h, ref, watch } from 'vue';
 import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NDataTable, NInput, NProgress, NScrollbar, NSelect, NSpace, NSwitch, NTabPane, NTabs, NTag, useDialog, useMessage, type DataTableColumns } from 'naive-ui';
-import { compressRanges, parseIndexList, testsetsOf, type TestFileResponse, type TestInfo } from '@polyforge/shared';
+import { compressRanges, originalTestName, parseIndexList, testsetsOf, type TestFileResponse, type TestInfo } from '@polyforge/shared';
 import TestsetDialog from './TestsetDialog.vue';
 import PackageImportDialog from './PackageImportDialog.vue';
 import ToolWindow from './ToolWindow.vue';
@@ -193,21 +193,19 @@ const columns = computed<DataTableColumns<TestInfo>>(() => [
     render: (r) =>
       h('span', { class: 'mono origin', title: r.origin === 'manual' ? t('tests.manual') : t('tests.generated') }, [
         h(r.origin === 'manual' ? Pencil : Cog, { size: 12, class: 'origin-icon' }),
-        r.origin === 'manual' ? r.source.replace(/^tests\/manual\//, '') : r.source,
+        r.origin === 'manual' ? originalTestName(r) : r.source,
       ]),
   },
   {
     title: '',
     key: 'flags',
-    width: 84,
+    width: 118,
     render: (r) =>
       h('span', { class: 'flags' }, [
         r.sample ? h(NTag, { size: 'tiny', type: 'info', bordered: false }, () => t('tests.sample')) : null,
-        r.group
-          ? h(NTag, { size: 'tiny', bordered: false, title: pointsOn.value && r.points !== undefined ? `${t('tests.group')} ${r.group} · ${t('tests.points')} ${r.points}` : `${t('tests.group')} ${r.group}` }, () =>
-              pointsOn.value && r.points !== undefined ? `${r.group} · ${r.points}` : r.group,
-            )
-          : null,
+        ...(r.groups ?? (r.group ? [{ name: r.group, points: r.points }] : [])).map(group => h(NTag, { size: 'tiny', bordered: false,
+          title: `${t('tests.group')} ${group.name}${pointsOn.value && group.points !== undefined ? ` · ${t('tests.points')} ${group.points}` : ''}` },
+          () => pointsOn.value && group.points !== undefined ? `${group.name} · ${group.points}` : group.name)),
       ]),
   },
   { title: t('tests.size'), key: 'inputSize', width: 62, render: (r) => (r.inputSize !== undefined ? formatSize(r.inputSize) : '—') },
@@ -453,6 +451,7 @@ watch(
 }
 :deep(.flags) {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 2px;
 }
 :deep(.row-selected td) {

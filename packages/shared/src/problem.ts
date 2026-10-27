@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { groupLayout } from './judge.js';
 
 export const SOLUTION_TAGS = ['MA', 'OK', 'WA', 'TL', 'TL-OR-OK', 'TM', 'ML', 'RE', 'PE', 'RJ', 'NR', 'FL'] as const;
 export type SolutionTag = (typeof SOLUTION_TAGS)[number];
@@ -49,11 +50,26 @@ export const TESTSET_NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
 
 export const GROUP_POLICIES = ['COMPLETE_GROUP', 'EACH_TEST'] as const;
 
+export function distinctIoFiles(input: string, output: string): boolean {
+  const normalize = (value: string) => value.trim().replace(/\\/g, '/').replace(/^(?:\.\/)+/, '').replace(/\/\.\//g, '/').toLowerCase();
+  return normalize(input || 'stdin') !== normalize(output || 'stdout');
+}
+
 const testGroupSchema = z
   .object({
     name: z.string(),
     points: z.number().finite().nonnegative().optional(),
-    /** COMPLETE_GROUP: the points only when every test passes; EACH_TEST: split over the tests. */
+    /** Uniform score of each case in sum mode. `points` remains the legacy group total. */
+    test_points: z.number().finite().nonnegative().optional(),
+    time_limit: z.number().int().positive().optional(),
+    memory_limit: z.number().finite().positive().optional(),
+    /** Imported membership-specific overrides (shared tests may differ between groups). */
+    cases: z.record(z.string().regex(/^[1-9]\d*$/), z.object({
+      points: z.number().finite().nonnegative().optional(),
+      time_limit: z.number().int().positive().optional(),
+      memory_limit: z.number().finite().positive().optional(),
+    })).optional(),
+    /** COMPLETE_GROUP: minimum of test scores; EACH_TEST: sum of test scores. */
     policy: z.enum(GROUP_POLICIES).optional(),
     /** Groups that must pass completely for this group to score. */
     dependencies: z.array(z.string()).optional(),
@@ -76,6 +92,9 @@ const testsetSchema = z
       time_limit: z.number().int().positive().optional(),
       memory_limit: z.number().positive().optional(),
       pretest: z.boolean().optional(),
+      provided_answer: z.boolean().optional(),
+      original_input: z.string().optional(),
+      original_output: z.string().optional(),
     })).optional(),
     unresolved_scoring: z.boolean().optional(),
     groups: z.boolean().optional(),
@@ -94,7 +113,7 @@ export const problemTomlSchema = z.object({
       type: problemTypeSchema.default('cf'),
       title: localized.default({}),
       time_limit: z.number().int().positive().default(1000),
-      memory_limit: z.number().int().positive().default(256),
+      memory_limit: z.number().finite().positive().default(256),
       input: z.string().default('stdin'),
       output: z.string().default('stdout'),
       interactive: z.boolean().default(false),
@@ -102,7 +121,7 @@ export const problemTomlSchema = z.object({
       /** A deliberately limited workspace for existing input/answer pairs and scoring only. */
       data_only: z.boolean().default(false),
     })
-    .loose(),
+    .loose().refine(p => distinctIoFiles(p.input, p.output), { message: 'Input and output filenames must be different.', path: ['output'] }),
   polygon: z.object({ id: z.number().int().optional() }).loose().default({}),
   checker: sourceEntry.optional(),
   /** Independent checker using the Lemon score/report-file protocol. */
@@ -140,13 +159,23 @@ export function polygonPointsOk(points: number): boolean {
 }
 
 /** Problem features Polygon cannot represent; these block pushing / Polygon packages. */
-export function polygonFeatureWarnings(config: ProblemToml): string[] {
+export function polygonFeatureWarnings(config: ProblemToml, target: 'sync' | 'package' = 'sync'): string[] {
   const warnings = testsetsOf(config).some(ts => ts.largeSamples?.trim()) ? ['Polygon does not support downloadable large samples. Show all samples in the statement before syncing.'] : [];
-  if (config.problem.data_only) warnings.push('Data-only problems cannot sync with Polygon. Complete the statement, validator, checker and main solution, then enable full authoring.');
+  if (target === 'sync' && config.problem.data_only) warnings.push('Compatibility-mode problems cannot sync with Polygon. Complete the statement, validator, checker and main solution, then enable full authoring.');
   if (testsetsOf(config).some(ts => ts.unresolvedScoring)) warnings.push('Imported scoring is not representable. Edit the subtask configuration before judging or exporting.');
-  if (testsetsOf(config).some(ts => Object.values(ts.cases ?? {}).some(c => (c.time_limit !== undefined && c.time_limit !== config.problem.time_limit) || (c.memory_limit !== undefined && c.memory_limit !== config.problem.memory_limit)))) warnings.push('Polygon does not support per-test time or memory limits. Use the problem limits before syncing.');
-  if (config.tests.points) warnings.push(...testsetsOf(config).filter(ts => ts.groups).flatMap(ts => ts.group.filter(g => g.points !== undefined && !polygonPointsOk(g.points)).map(g => `${ts.name}/${g.name}: Polygon requires test points with at most 2 decimal places.`)));
-  if (config.tests.points && testsetsOf(config).some(ts => Object.values(ts.cases ?? {}).some(c => c.points !== undefined && !polygonPointsOk(c.points)))) warnings.push('Polygon requires test points with at most 2 decimal places.');
+  if (target === 'sync') {
+    if (config.problem.time_limit < 250 || config.problem.time_limit > 15000 || config.problem.time_limit % 50 !== 0) warnings.push('Polygon requires 250–15000 ms in steps of 50 ms.');
+    if (!Number.isInteger(config.problem.memory_limit) || config.problem.memory_limit < 4 || config.problem.memory_limit > 1024) warnings.push('Polygon requires integer memory limits from 4 to 1024 MiB.');
+    if (testsetsOf(config).some(ts => Object.values(ts.cases ?? {}).some(c => (c.time_limit !== undefined && c.time_limit !== config.problem.time_limit) || (c.memory_limit !== undefined && c.memory_limit !== config.problem.memory_limit)))) warnings.push('Polygon does not support per-test time or memory limits. Use the problem limits before syncing.');
+    if (testsetsOf(config).some(ts => ts.group.some(g => (g.time_limit !== undefined && g.time_limit !== config.problem.time_limit) || (g.memory_limit !== undefined && g.memory_limit !== config.problem.memory_limit) || Object.values(g.cases ?? {}).some(c => (c.time_limit !== undefined && c.time_limit !== config.problem.time_limit) || (c.memory_limit !== undefined && c.memory_limit !== config.problem.memory_limit))))) warnings.push('Polygon does not support per-subtask time or memory limits. Use the problem limits before syncing.');
+    if (testsetsOf(config).some(ts => Object.values(groupLayout(ts, false).memberships).some(names => names.length > 1))) warnings.push('Polygon sync assigns each test to one group. Polygon ZIP export can duplicate shared memberships; use that package or separate the tests before syncing.');
+  }
+  if (config.tests.points) for (const ts of testsetsOf(config)) {
+    const layout = groupLayout(ts, true);
+    const scores = [...Object.values(layout.points), ...Object.values(layout.byGroup).flatMap(points => Object.values(points))];
+    if (scores.some(points => !polygonPointsOk(points))) warnings.push(`${ts.name}: Polygon requires test points with at most 2 decimal places.`);
+    if (scores.some(points => points >= 1e9)) warnings.push(`${ts.name}: Polygon requires test points below 1000000000.`);
+  }
   return warnings;
 }
 
@@ -163,7 +192,7 @@ export interface TestsetConfig {
   /** Problem-relative folder with the manual tests. */
   manual: string;
   answers?: 'generated' | 'provided';
-  cases?: Record<string, { points?: number; time_limit?: number; memory_limit?: number; pretest?: boolean }>;
+  cases?: Record<string, { points?: number; time_limit?: number; memory_limit?: number; pretest?: boolean; provided_answer?: boolean; original_input?: string; original_output?: string }>;
   unresolvedScoring?: boolean;
   groups: boolean;
   group: TestGroup[];

@@ -65,12 +65,12 @@ async function submit() {
       <n-form-item :label="t('create.titleZh')"><n-input v-model:value="form.titleZh" /></n-form-item>
       <n-form-item :label="t('create.titleEn')"><n-input v-model:value="form.titleEn" /></n-form-item>
       <n-form-item :label="t('problem.timeLimit')">
-        <n-input-number v-model:value="form.timeLimit" :min="100" :max="15000" :step="500">
+        <n-input-number v-model:value="form.timeLimit" :min="1" :max="Number.MAX_SAFE_INTEGER" :step="100">
           <template #suffix>ms</template>
         </n-input-number>
       </n-form-item>
       <n-form-item :label="t('problem.memoryLimit')">
-        <n-input-number v-model:value="form.memoryLimit" :min="4" :max="1024" :step="64">
+        <n-input-number v-model:value="form.memoryLimit" :min="0.001" :max="Number.MAX_SAFE_INTEGER" :step="64">
           <template #suffix>MB</template>
         </n-input-number>
       </n-form-item>

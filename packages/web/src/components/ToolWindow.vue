@@ -31,7 +31,7 @@ const props = withDefaults(
   }>(),
   { size: 'lg', width: undefined, status: null, progress: null, error: null },
 );
-const emit = defineEmits<{ 'update:show': [boolean] }>();
+const emit = defineEmits<{ 'update:show': [boolean]; 'after-leave': [] }>();
 const { t } = useI18n();
 
 const WIDTHS = { sm: 'min(460px, 94vw)', md: 'min(600px, 94vw)', lg: 'min(960px, 94vw)', xl: 'min(1200px, 96vw)', full: '92vw' } as const;
@@ -49,6 +49,7 @@ const STATUS_TYPE = { running: 'info', done: 'success', failed: 'error', cancell
     :segmented="{ content: true, footer: 'soft' }"
     :content-style="{ padding: '0' }"
     @update:show="emit('update:show', $event)"
+    @after-leave="emit('after-leave')"
   >
     <template #header>
       <div class="tw-head">

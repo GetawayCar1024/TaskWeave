@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FreeSelect from './FreeSelect.vue';
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NForm, NFormItem, NInput, NInputNumber, NSelect, NSpace, useMessage } from 'naive-ui';
@@ -104,16 +105,16 @@ async function saveCounterexample() {
     <n-form label-placement="left" label-width="auto" size="small" :disabled="running">
       <n-form-item :label="t('stress.generator')">
         <n-space>
-          <n-select v-model:value="form.generator" :options="generators" filterable tag style="width: 200px" />
+          <free-select v-model:value="form.generator" :options="generators" style="width: 200px" />
           <n-input v-model:value="form.args" class="mono" style="width: 320px" :placeholder="t('stress.argsPlaceholder')" />
         </n-space>
       </n-form-item>
       <div class="hint">{{ t('stress.argsHint') }}</div>
       <n-form-item :label="t('stress.solution')">
-        <n-select v-model:value="form.solution" :options="solutions" filterable tag />
+        <free-select v-model:value="form.solution" :options="solutions" />
       </n-form-item>
       <n-form-item :label="t('stress.reference')">
-        <n-select v-model:value="form.reference" :options="solutions" filterable tag />
+        <free-select v-model:value="form.reference" :options="solutions" />
       </n-form-item>
       <n-form-item :label="t('stress.limits')">
         <n-space align="center">

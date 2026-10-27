@@ -20,7 +20,7 @@ export interface ProblemCtx {
 }
 
 export function requireFullProblem(ctx: ProblemCtx) {
-  if (ctx.config.problem.data_only) throw new HttpError(400, 'data_only', 'This feature requires full authoring. Complete the statement, validator, checker and main solution, then leave data-only mode.');
+  if (ctx.config.problem.data_only) throw new HttpError(400, 'data_only', 'This feature requires full authoring. Complete the statement, validator, checker and main solution, then leave compatibility mode.');
 }
 
 export class Judge {

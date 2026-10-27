@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { testsetOf, testsetsOf, type QuickRunRequest, type QuickRunResponse } from '@polyforge/shared';
+import { testsetOf, testsetsOf, testLimitLookup, type QuickRunRequest, type QuickRunResponse } from '@polyforge/shared';
 import { exists, HttpError } from '../util/fs.js';
 import { readHead, runChecker, runHelper, runSolution, withTmp } from './execute.js';
 import type { Judge, ProblemCtx } from './index.js';
@@ -35,8 +35,8 @@ export async function quickRun(judge: Judge, ctx: ProblemCtx, req: QuickRunReque
       }
     }
     const stderrFile = path.join(tmp, 'stderr.txt');
-    const test = req.test === undefined ? undefined : testsetOf(ctx.config, req.testset)?.cases?.[req.test];
-    const limits = { ...ctx.limits, timeLimitMs: test?.time_limit ?? ctx.limits.timeLimitMs, memoryLimitMb: test?.memory_limit ?? ctx.limits.memoryLimitMb };
+    const effective = req.test !== undefined ? testLimitLookup(c, testsetOf(c, req.testset) ?? testsetsOf(c)[0])(req.test) : null;
+    const limits = { ...ctx.limits, timeLimitMs: effective?.timeLimit ?? ctx.limits.timeLimitMs, memoryLimitMb: effective?.memoryLimit ?? ctx.limits.memoryLimitMb };
     const r = await runSolution(judge.runner, out.program!, inFile, limits, tmp, { interactor, stderrFile });
     const size = (await fsp.stat(r.outputFile).catch(() => null))?.size ?? 0;
     const res: QuickRunResponse = {

@@ -14,6 +14,8 @@ pnpm desktop
 ```
 
 The installer and portable executable are written to `packages/desktop/dist/`.
+Desktop resources use `app.asar`; `runner/runner.cpp` is unpacked alongside it so g++
+can compile the local judge without extracting all application resources.
 For an app directory without installers:
 
 ```powershell

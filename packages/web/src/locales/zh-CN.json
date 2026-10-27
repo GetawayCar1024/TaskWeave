@@ -7,17 +7,17 @@
     "legacyLocation": "旧版条目，请选择恢复目录", "confirmDelete": "永久删除这 {n} 个条目？此操作无法撤销。", "restored": "已恢复", "deleted": "已从回收站永久删除"
   },
   "dataOnly": {
-    "title": "纯数据模式",
+    "title": "兼容模式",
     "authoringMode": "造题模式",
     "full": "完整造题（推荐）",
-    "warning": "不推荐使用纯数据模式造题：此模式仅管理输入、答案、分数和样例，可导出数据与选手样例包。补全题面、validator、checker 和标程后才能启用评测、对拍、Polygon 同步等完整功能。",
+    "warning": "兼容模式：管理已有数据、子任务与导出。补全题面、校验器、检查器和标程后可启用完整造题。",
     "refresh": "刷新数据",
-    "completeHint": "可以在左侧新建题面、validator.cpp 和 solutions/std.cpp，在信息面板中登记程序角色并选择 checker。保存后启用完整造题。",
+    "completeHint": "补全以下内容后可启用评测、对拍和同步。",
     "missing": "尚未补全：",
     "enable": "启用完整造题",
     "enabled": "已启用完整造题模式",
-    "downSamples": "纯数据题目的 down.zip 包含已设置的样例文件，不包含题面 PDF。",
-    "lemonHint": "纯数据题目默认使用 LemonLime 自带的逐行比较（忽略多余空格和制表符），无需 checker 源码。该比较器也会忽略行内多余空白。建议补全造题文件后使用完整模式。"
+    "downSamples": "兼容模式的 down.zip 包含已设置的样例文件。",
+    "lemonHint": "兼容模式默认使用 LemonLime 自带的忽略多余空白比较器。"
   },
   "statementMode": {
     "title": "题面编写方式",
@@ -29,6 +29,18 @@
     "splitHint": "整体内容将全部放入 legend.tex，其他正文段落为空。你可以随后手动拆分。同步到 Polygon 时也会自动执行此转换。"
   },
   "packages": {
+    "polygon-package": "Polygon 题目包",
+    "data": "数据包",
+    "joi": "JOI / AtCoder",
+    "joiExport": "JOI / AtCoder",
+    "fileCount": "已选择 {n} 个 ZIP",
+    "selection": "选择",
+    "includeProblem": "导入此题",
+    "alreadyImported": "已导入",
+    "selectedProblems": "已选 {n} / {total} 道题",
+    "batchImported": "已导入 {n} 道题",
+    "defaultTime": "默认时间限制",
+    "defaultMemory": "默认内存限制",
     "invalidZip": "请选择有效的 ZIP 题目包，文件头或文件大小不正确。",
     "validated": "校验通过：{files} 个文件，{tests} 个测试点，解压后 {size}",
     "hydroExport": "Hydro 整题包",
@@ -38,10 +50,10 @@
     "importData": "导入数据",
     "exportProblem": "导出单题",
     "format": "格式",
-    "luogu-data": "洛谷数据包（仅数据）",
+    "luogu-data": "数据包",
     "hydro-data": "Hydro 数据包（仅数据）",
     "hydro-problem": "Hydro 题目包（整题）",
-    "wholeHint": "导入题面、多语言、样例、数据、分数和程序配置。额外文件保留在“其他文件”中；缺少造题文件时以纯数据模式打开。",
+    "wholeHint": "导入题面、数据与程序；额外文件保留在“其他文件”中。",
     "dataHint": "仅导入 .in/.out 或 .in/.ans 及计分配置。配置文件与多余文件保留在“其他文件”中。",
     "file": "ZIP 文件",
     "choose": "选择 ZIP…",
@@ -51,7 +63,7 @@
     "testset": "目标测试集",
     "replaceData": "将替换目标测试集的数据与计分配置，不改变题面和程序。原始数据文件保留，旧 problem.toml 备份到 .polyforge/import-backups。",
     "imported": "已导入 {n} 个测试点，保留 {extras} 个额外文件",
-    "luoguExport": "洛谷 data.zip",
+    "luoguExport": "洛谷",
     "luoguHint": "每道题导出 data.zip，根目录包含全部选中数据、config.yml 和 score.txt。上传洛谷后，需要把 score.txt 粘贴到整题计分脚本中；不会自动安装脚本。",
     "documents": "题面 / 题解（PDF、HTML、Markdown、TeX）",
     "backToProblem": "返回题目",
@@ -67,7 +79,7 @@
     "convertedChecker": "已生成并配置独立的 Lemon 检查器，请核对转换结果。",
     "convertCheckerHint": "仅转换基础 testlib 头文件和初始化调用，保留原文件；quitp 按比例计分。复杂计分接口需手动处理。",
     "lemonChecker": "Lemon 检查器",
-    "lemonCheckerHint": "仅用于 LemonLime 导出。请单独选择使用 Testlib for Lemons 的源码：包含 lemon/testlib.h，并调用 registerLemonChecker(argc, argv)。导出前会检查配置、编译及评分协议。",
+    "lemonCheckerHint": "LemonLime 专用，使用 Testlib for Lemons 协议。",
     "inlineSample": "在题面中展示",
     "largeSample": "大样例（下发文件）",
     "down": "导出 down.zip",
@@ -114,6 +126,7 @@
     "backToContest": "返回比赛"
   },
   "common": {
+    "confirm": "确定",
     "refresh": "刷新",
     "noMatch": "没有匹配项",
     "cancel": "取消",
@@ -133,6 +146,8 @@
     "root": "所在目录"
   },
   "problem": {
+    "sameIo": "输入文件与输出文件必须不同。",
+    "invalidInfo": "请检查短名称、时空限制和输入输出文件名。",
     "renameHint": "短名称用于题目列表、比赛和导出；修改后这些位置会自动同步。",
     "timeLimit": "时间限制",
     "memoryLimit": "内存限制",
@@ -320,6 +335,7 @@
     "images": "图片"
   },
   "info": {
+    "unsaved": "题目信息有未保存的更改，是否保存？",
     "file": "当前文件",
     "path": "路径",
     "role": "角色",
@@ -729,6 +745,7 @@
     }
   },
   "contest": {
+    "lemonSubfolders": "从子文件夹寻找选手代码",
     "luoguPerProblem": "逐题设置用时与内存汇总方式（保存到各题目）",
     "notesDefault": "通用（旧版兼容）",
     "notesLanguage": "注意事项语言",
@@ -828,7 +845,7 @@
     "editIndex": "题号",
     "renumber": "按顺序重新编号",
     "renumberHint": "按当前顺序把题号改为 A、B、C…",
-    "luoguFormat": "洛谷（测试数据 + config.yml + 计分脚本）",
+    "luoguFormat": "洛谷",
     "luoguHint": "每道题一个文件夹：测试数据 名称k.in / 名称k.out、config.yml（时限、内存、分值、Subtask）、整题计分脚本 scoring-script.txt（捆绑测试与子任务依赖）、自定义检查器 checker.cpp，以及上传说明 README.txt。",
     "luoguTime": "总用时",
     "luoguMemory": "总内存",
@@ -845,6 +862,26 @@
     "toc": "目录页"
   },
   "testsets": {
+    "inputName": "输入文件名",
+    "outputName": "输出文件名",
+    "memberships": "已属子任务",
+    "selectFor": "子任务 {name} · 选择测试点",
+    "searchFiles": "搜索文件名或编号",
+    "selectVisible": "全选匹配项",
+    "invertVisible": "反选匹配项",
+    "clearVisible": "取消匹配项",
+    "selectedCount": "已选 {n} / {total} 个测试点",
+    "quickSelect": "快速选择测试点",
+    "inferFilenames": "按文件名识别",
+    "noFilenameGroups": "未找到 xxx-yyy 或 xxx_yyy 格式的文件名（yyy 为数字）。",
+    "unmatchedFilenames": "以下文件未匹配，已保留原分组：{names}",
+    "inferred": "已识别 {n} 个子任务，请设置分数后保存。",
+    "dragGroup": "拖动子任务",
+    "mixedScores": "原包分值",
+    "perTestScore": "每个测试点的分数，子任务内求和",
+    "bundleScore": "每个测试点均使用此分数，子任务内取最小值",
+    "sortRule": "保存后按名称字典序排序；仅可依赖名称更小的子任务。",
+    "unsaved": "子任务有未保存的更改，是否保存？",
     "title": "测试集与子任务",
     "delete": "删除测试集",
     "badName": "测试集名称只能包含小写字母、数字和连字符，并以字母开头",
@@ -870,8 +907,8 @@
     "groupValidator": "校验器",
     "problemValidator": "（题目校验器）",
     "policy": {
-      "COMPLETE_GROUP": "捆绑（全部通过）",
-      "EACH_TEST": "按测试点得分"
+      "COMPLETE_GROUP": "捆绑",
+      "EACH_TEST": "加和"
     },
     "note": "推送前需在 Polygon 上建好同名测试集"
   },

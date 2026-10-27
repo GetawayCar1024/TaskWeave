@@ -4,6 +4,7 @@ import path from 'node:path';
 import {
   LANG_TO_POLYGON,
   contestTomlSchema,
+  groupLayout,
   judgeMode,
   OI_SECTIONS,
   parseIndexList,
@@ -52,10 +53,11 @@ export interface ContestDeps {
 export async function runContestBatch(deps: ContestDeps, contestId: string, req: ContestBatchRequest, job: JobCtx): Promise<ContestBatchResult> {
   const { judge, contests, sync } = deps;
   const { ref, config } = await contests.config(contestId);
-  if (req.exportFormat && !['polygon', 'lemonlime', 'luogu', 'hydro'].includes(req.exportFormat)) throw new HttpError(400, 'bad_request', 'Unknown export format');
+  if (req.exportFormat && !['polygon', 'hydro', 'luogu', 'joi', 'lemonlime'].includes(req.exportFormat)) throw new HttpError(400, 'bad_request', 'Unknown export format');
   const lemon = req.action === 'export' && req.exportFormat === 'lemonlime';
   const luogu = req.action === 'export' && req.exportFormat === 'luogu';
   const hydro = req.action === 'export' && req.exportFormat === 'hydro';
+  const joi = req.action === 'export' && req.exportFormat === 'joi';
   if (luogu) {
     if (req.luogu) requireLuoguOptions(req.luogu);
     if (req.luoguByProblem !== undefined && (!req.luoguByProblem || typeof req.luoguByProblem !== 'object' || Array.isArray(req.luoguByProblem))) throw new HttpError(400, 'bad_request', 'Invalid per-problem Luogu options');
@@ -68,11 +70,11 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
   const want = req.indices?.length ? new Set(req.indices) : null;
   const list = config.problems.filter((p) => !want || want.has(p.index));
   const items: ContestBatchItem[] = [];
-  const zip = req.action === 'export' ? new ZipWriter() : null;
+  const zip = req.action === 'export' ? new ZipWriter({ async: true }) : null;
   const exported: { index: string; name: string }[] = [];
   const lemonTasks: Awaited<ReturnType<typeof addLemonProblem>>['task'][] = [];
-  if ((lemon || luogu || hydro) && !list.length) throw new HttpError(400, 'empty_contest', 'No problems to export.');
-  if (luogu || hydro) {
+  if ((lemon || luogu || hydro || joi) && !list.length) throw new HttpError(400, 'empty_contest', 'No problems to export.');
+  if (luogu || hydro || joi) {
     const names = new Set<string>();
     for (const p of list) {
       const ctx = await judge.ctx(p.problem);
@@ -167,14 +169,14 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
         }
         case 'export': {
           if (lemon) {
-            const r = await addLemonProblem(judge, ctx, p.index, zip!, sub, exportTestsets(ctx, p.index, req.testsets?.[p.problem]));
+            const r = await addLemonProblem(judge, ctx, p.index, zip!, sub, exportTestsets(ctx, p.index, req.testsets?.[p.problem]), req.lemon?.subfolders === true);
             lemonTasks.push(r.task);
             item.ok = true;
             item.message = plural(r.tests, 'test');
             break;
           }
-          if (luogu || hydro) {
-            const r = await buildProblemDataPackage(judge, ctx, luogu ? 'luogu' : 'hydro', sub, { testsets: req.testsets?.[p.problem], luogu: req.luoguByProblem?.[p.problem] ?? req.luogu });
+          if (luogu || hydro || joi) {
+            const r = await buildProblemDataPackage(judge, ctx, luogu ? 'luogu' : hydro ? 'hydro' : 'joi', sub, { testsets: req.testsets?.[p.problem], luogu: req.luoguByProblem?.[p.problem] ?? req.luogu });
             zip!.add(`${ctx.config.problem.name}/${r.filename}`, r.data);
             if (r.readme) zip!.add(`${ctx.config.problem.name}/README.txt`, r.readme);
             item.ok = true;
@@ -183,7 +185,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
             break;
           }
           const name = ctx.config.problem.name;
-          const r = await exportPackage(judge, ctx, sub, { zip: zip!, prefix: `problems/${name}/` });
+          const r = await exportPackage(judge, ctx, sub, { zip: zip!, prefix: `problems/${name}/` }, req.exportFormat === 'polygon');
           exported.push({ index: p.index, name });
           item.ok = true;
           item.message = plural(r.tests, 'test');
@@ -223,6 +225,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
     const failed = () => items.filter(item => !item.ok).map(item => `${item.index}: ${item.message}\n${(item.details ?? []).join('\n')}`).join('\n');
     if (lemon && items.some(item => !item.ok)) throw new HttpError(400, 'lemonlime_export', `LemonLime export failed; no incomplete archive was produced.\n${failed()}`);
     if (luogu && items.some(item => !item.ok)) throw new HttpError(400, 'luogu_export', `Luogu export failed; no incomplete archive was produced.\n${failed()}`);
+    if (joi && items.some(item => !item.ok)) throw new HttpError(400, 'joi_export', `JOI / AtCoder export failed.\n${failed()}`);
     if (hydro && items.some(item => !item.ok)) throw new HttpError(400, 'hydro_export', `Hydro export failed; no incomplete archive was produced.\n${failed()}`);
     job.progress(list.length, list.length, 'writing');
     if (luogu) zip.add('README.txt', luoguContestReadme(config.contest.title.zh || config.contest.title.en || config.contest.name, list.map(p => p.index)));
@@ -230,13 +233,14 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
     else if (lemon) {
       zip.add(`${config.contest.name}.cdf`, JSON.stringify({ version: '1.0', contestTitle: config.contest.title.zh || config.contest.title.en || config.contest.name, tasks: lemonTasks, contestants: [] }, null, 2));
       zip.add('source/', '');
-      zip.add('README.txt', lemonReadme(`${process.platform}/${process.arch}`));
+      zip.add('README.txt', lemonReadme(`${process.platform}/${process.arch}`, req.lemon?.subfolders === true));
     }
+    else if (joi) zip.add('README.txt', 'Each problem folder contains an in/out ZIP. polyforge.yaml is an optional PolyForge companion for scoring and limits.\n');
     else if (config.contest.type === 'cf') zip.add('contest.xml', contestXml(config.contest.title, config.contest.name, exported));
     else zip.add('contest.toml', await fsp.readFile(path.join(ref.dir, 'contest.toml')));
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
-    const file = `${config.contest.name}${lemon ? '-lemonlime' : luogu ? '-luogu' : hydro ? '-hydro' : ''}-${stamp}-${randomBytes(4).toString('hex')}.zip`;
-    const data = zip.finish();
+    const file = `${config.contest.name}${lemon ? '-lemonlime' : luogu ? '-luogu' : hydro ? '-hydro' : joi ? '-joi' : ''}-${stamp}-${randomBytes(4).toString('hex')}.zip`;
+    const data = await zip.finishAsync();
     await atomicWrite(path.join(contestExportDir(ref), file), data);
     result.file = file;
     result.size = data.length;
@@ -263,10 +267,7 @@ function contestXml(title: Record<string, string>, name: string, problems: { ind
 }
 
 /**
- * "测试点是否等分": every test of "tests" is worth the same. A subtask's points count as
- * spread evenly over its tests (also when bundled), so they must divide evenly and match
- * the other subtasks; tests outside every subtask score nothing. Without points the
- * problem's 100 points are split over the tests, which is equal only if it divides.
+ * "测试点是否等分": compare the actual member scores, including uniform sums and bundles.
  */
 export function equalTestPoints(config: ProblemToml, tests: number[]): boolean {
   const ts = testsetsOf(config)[0];
@@ -275,17 +276,12 @@ export function equalTestPoints(config: ProblemToml, tests: number[]): boolean {
   const present = new Set(tests);
   const values: number[] = [];
   const grouped = new Set<number>();
+  const layout = groupLayout(ts, true);
   for (const g of ts.group) {
-    const idx = [...new Set(parseIndexList(g.tests ?? ''))].filter(i => present.has(i) && !grouped.has(i));
+    const idx = [...new Set(parseIndexList(g.tests ?? ''))].filter(i => present.has(i));
     if (!idx.length) continue;
     idx.forEach(i => grouped.add(i));
-    if (g.policy === 'EACH_TEST' && idx.every(i => ts.cases?.[i]?.points !== undefined)) {
-      values.push(...idx.map(i => ts.cases![i].points!));
-      continue;
-    }
-    const each = (g.points ?? 0) / idx.length;
-    if (Math.abs(each * 100 - Math.round(each * 100)) > 1e-6) return false;
-    values.push(each);
+    values.push(...idx.map(index => layout.byGroup[g.name][index] ?? 0));
   }
   if (tests.some(i => !grouped.has(i))) values.push(0);
   return values.every(v => Math.abs(v - values[0]) < 1e-9);

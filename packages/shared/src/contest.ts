@@ -94,13 +94,14 @@ export type ContestAction = (typeof CONTEST_ACTIONS)[number];
 export type LuoguAggregate = 'sum' | 'min' | 'max';
 
 export interface ContestBatchRequest {
-  exportFormat?: 'polygon' | 'lemonlime' | 'luogu' | 'hydro';
+  exportFormat?: 'polygon' | 'hydro' | 'luogu' | 'joi' | 'lemonlime';
   /** lemonlime / luogu: testsets to export per problem id (default: ["tests"]). */
   testsets?: Record<string, string[]>;
   /** luogu: how the scoring script combines the time / memory of the subtasks. */
   luogu?: { time: LuoguAggregate; memory: LuoguAggregate };
   /** Per-problem Luogu settings, keyed by stable problem id. */
   luoguByProblem?: Record<string, LuoguExportOptions>;
+  lemon?: { subfolders?: boolean };
   commit?: boolean;
   buildPackage?: boolean;
   packageType?: 'standard' | 'full';

@@ -27,6 +27,9 @@ export function waitJob(job: JobInfo, onProgress?: (j: JobInfo) => void, signal?
       const j = await api.job(job.id).catch(() => null);
       if (j && j.status !== 'running') finish(j);
     }, 1500);
+    // Small exports can finish between the start response and WS subscription.
+    // Check immediately instead of adding a full polling interval to every fast job.
+    void api.job(job.id).then(current => { if (current.status !== 'running') finish(current); }).catch(() => {});
     signal?.addEventListener('abort', abort, { once: true });
   });
 }

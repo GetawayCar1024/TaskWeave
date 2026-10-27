@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, h, reactive, ref, watch } from 'vue';
+import { computed, h, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import { stdCheckerDescription } from '../lib/stdCheckers';
 import { useI18n } from 'vue-i18n';
 import {
@@ -16,19 +17,24 @@ import {
   NAlert,
   NTag,
   useMessage,
+  useDialog,
   type SelectOption,
 } from 'naive-ui';
-import { PROBLEM_NAME_RE, SOLUTION_TAGS, isSourceFile, judgeMode, type JudgeMode, type PatchProblemRequest, type SolutionTag } from '@polyforge/shared';
+import { distinctIoFiles, PROBLEM_NAME_RE, SOLUTION_TAGS, isSourceFile, judgeMode, type JudgeMode, type PatchProblemRequest, type SolutionTag } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 import { formatSize } from '../lib/format';
 import type { Judge } from '../lib/judge';
 import { tagType } from '../lib/tags';
 import { Check, X } from 'lucide-vue-next';
 import { SHARED_TAB, type Workspace } from '../lib/workspace';
+import FreeSelect from './FreeSelect.vue';
+import { unsavedChoice } from '../lib/confirmUnsaved';
+import { registerExitGuard } from '../lib/exitGuards';
 
 const props = defineProps<{ ws: Workspace; judge: Judge }>();
 const { t, locale } = useI18n();
 const message = useMessage();
+const dialog = useDialog();
 
 /** Input / output choices: the standard stream, or a file (kept when already set). */
 const streamOptions = (std: 'stdin' | 'stdout', cur: string) => [
@@ -61,6 +67,12 @@ const form = reactive({
   validator: null as string | null,
   interactor: null as string | null,
 });
+const baseline = ref('');
+const inputSelect = ref<InstanceType<typeof FreeSelect>>(), outputSelect = ref<InstanceType<typeof FreeSelect>>();
+const inputDraft = ref(false), outputDraft = ref(false), saving = ref(false);
+const dirty = computed(() => inputDraft.value || outputDraft.value || !!baseline.value && JSON.stringify(form) !== baseline.value);
+function commitStreams() { inputSelect.value?.commit(); outputSelect.value?.commit(); }
+const valid = computed(() => PROBLEM_NAME_RE.test(form.name.trim()) && distinctIoFiles(form.input, form.output) && form.timeLimit > 0 && form.memoryLimit > 0);
 
 function reset() {
   const c = cfg.value;
@@ -81,29 +93,24 @@ function reset() {
     validator: c.validator?.source ?? null,
     interactor: c.interactor?.source ?? null,
   });
+  baseline.value = JSON.stringify(form);
 }
-watch(cfg, reset, { immediate: true });
-
-const dirty = computed(() => {
-  const c = cfg.value;
-  if (!c) return false;
-  return (
-    form.name !== c.problem.name ||
-    form.titleZh !== (c.problem.title.zh ?? '') ||
-    form.titleEn !== (c.problem.title.en ?? '') ||
-    form.timeLimit !== c.problem.time_limit ||
-    form.memoryLimit !== c.problem.memory_limit ||
-    form.judgeMode !== judgeMode(c.problem) ||
-    JSON.stringify(form.graderSources) !== JSON.stringify(c.grader?.sources ?? []) ||
-    JSON.stringify(form.graderHeaders) !== JSON.stringify(c.grader?.headers ?? []) ||
-    form.input !== c.problem.input ||
-    form.output !== c.problem.output ||
-    form.checker !== (c.checker?.source ?? null) ||
-    form.lemonChecker !== (c.lemon_checker?.source ?? null) ||
-    form.validator !== (c.validator?.source ?? null) ||
-    form.interactor !== (c.interactor?.source ?? null)
-  );
-});
+watch(cfg, () => { if (!dirty.value) reset(); }, { immediate: true });
+async function canLeave() {
+  commitStreams();
+  if (!dirty.value) return true;
+  const choice = await unsavedChoice(dialog, t('editor.unsavedTitle'), t('info.unsaved'), { save: t('common.save'), discard: t('editor.discard'), cancel: t('common.cancel') });
+  if (choice === 'save') return save();
+  if (choice === 'discard') { reset(); return true; }
+  return false;
+}
+registerExitGuard(canLeave);
+onBeforeRouteLeave(canLeave);
+onBeforeRouteUpdate((to, from) => to.path !== from.path ? canLeave() : true);
+const beforeUnload = (event: BeforeUnloadEvent) => { if (dirty.value) { event.preventDefault(); event.returnValue = ''; } };
+window.addEventListener('beforeunload', beforeUnload);
+onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload));
+defineExpose({ canLeave, dirty });
 
 const localSources = computed(() => props.ws.files.value.filter((f) => isSourceFile(f.path)).map((f) => f.path));
 
@@ -133,9 +140,12 @@ async function convertChecker() {
   finally { converting.value = false; }
 }
 
-async function save() {
+async function save(): Promise<boolean> {
+  if (saving.value) return false;
+  commitStreams();
   const c = cfg.value;
-  if (!c) return;
+  if (!c || !valid.value) { message.error(t('problem.invalidInfo')); return false; }
+  const saved = JSON.stringify(form);
   const req: PatchProblemRequest = {
     ...(form.name !== c.problem.name ? { name: form.name.trim() } : {}),
     title: { ...c.problem.title, zh: form.titleZh, en: form.titleEn },
@@ -151,11 +161,15 @@ async function save() {
     interactor: form.interactor,
   };
   try {
+    saving.value = true;
     await props.ws.patch(req);
+    baseline.value = saved;
     message.success(t('common.saved'));
+    return !dirty.value;
   } catch (e) {
     message.error(errorMessage(e));
-  }
+    return false;
+  } finally { saving.value = false; }
 }
 
 async function setTag(source: string, tag: SolutionTag) {
@@ -208,30 +222,30 @@ const activeInfo = computed(() => {
 
       <n-card v-if="cfg" size="small" :title="t('info.problem')">
         <template #header-extra>
-          <n-button size="tiny" type="primary" :disabled="!dirty || !PROBLEM_NAME_RE.test(form.name.trim())" @click="save">{{ t('common.save') }}</n-button>
+          <n-button size="tiny" type="primary" :disabled="!dirty || !valid" :loading="saving" @click="save">{{ t('common.save') }}</n-button>
         </template>
         <n-form size="small" label-placement="left" label-width="100" :show-feedback="false" class="form">
           <n-form-item :label="t('create.name')"><n-input v-model:value="form.name" :aria-label="t('create.name')" :status="PROBLEM_NAME_RE.test(form.name.trim()) ? undefined : 'error'" /></n-form-item>
-          <p class="small dim">{{ t('problem.renameHint') }}</p>
           <n-form-item :label="t('create.titleZh')"><n-input v-model:value="form.titleZh" /></n-form-item>
           <n-form-item :label="t('create.titleEn')"><n-input v-model:value="form.titleEn" /></n-form-item>
           <n-form-item :label="t('problem.timeLimit')">
-            <n-input-number v-model:value="form.timeLimit" :min="100" :max="15000" :step="500">
+            <n-input-number v-model:value="form.timeLimit" :min="1" :max="Number.MAX_SAFE_INTEGER" :step="100">
               <template #suffix>ms</template>
             </n-input-number>
           </n-form-item>
           <n-form-item :label="t('problem.memoryLimit')">
-            <n-input-number v-model:value="form.memoryLimit" :min="4" :max="1024" :step="64">
+            <n-input-number v-model:value="form.memoryLimit" :min="0.001" :max="Number.MAX_SAFE_INTEGER" :step="64">
               <template #suffix>MB</template>
             </n-input-number>
           </n-form-item>
           <n-form-item :label="t('problem.io')">
             <div class="io">
               <!-- stdin / stdout, or a file name typed in (e.g. input.txt) -->
-              <n-select v-model:value="form.input" :options="streamOptions('stdin', form.input)" filterable tag :placeholder="t('problem.ioFile')" />
-              <n-select v-model:value="form.output" :options="streamOptions('stdout', form.output)" filterable tag :placeholder="t('problem.ioFile')" />
+              <free-select ref="inputSelect" v-model:value="form.input" :options="streamOptions('stdin', form.input)" :placeholder="t('problem.ioFile')" @draft="inputDraft = $event" />
+              <free-select ref="outputSelect" v-model:value="form.output" :options="streamOptions('stdout', form.output)" :placeholder="t('problem.ioFile')" @draft="outputDraft = $event" />
             </div>
           </n-form-item>
+          <n-alert v-if="!distinctIoFiles(form.input, form.output)" type="error" :show-icon="false">{{ t('problem.sameIo') }}</n-alert>
           <n-form-item :label="t('oiFeatures.mode')"><n-select v-model:value="form.judgeMode" :options="['batch', 'io', 'grader'].map(value => ({ value, label: t(`oiFeatures.${value}`) }))" /></n-form-item>
           <template v-if="form.judgeMode === 'grader'">
             <n-alert type="warning" style="margin-bottom: 12px">{{ t('oiFeatures.graderWarning') }}</n-alert>

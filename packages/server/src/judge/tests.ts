@@ -1,6 +1,7 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_TESTSET, TESTSET_NAME_RE, compressRanges, groupLayout, parseIndexList, testsetOf, type TestInfo, type TestsManifest, type TestsetConfig } from '@polyforge/shared';
+import { DEFAULT_TESTSET, TESTSET_NAME_RE, compressRanges, parseIndexList, testsetOf, testMetadata, type TestInfo, type TestsManifest, type TestsetConfig } from '@polyforge/shared';
+import { randomBytes } from 'node:crypto';
 import { HttpError } from '../util/fs.js';
 import type { JobCtx } from '../jobs.js';
 import { atomicWrite, exists, safeJoin, sha1 } from '../util/fs.js';
@@ -15,6 +16,10 @@ interface Entry extends TestInfo {
   inputHash?: string;
   validKey?: string;
   answerKey?: string;
+  inputStamp?: string;
+  answerStamp?: string;
+  inputCacheStamp?: string;
+  answerCacheStamp?: string;
 }
 
 interface Manifest extends TestsManifest {
@@ -52,8 +57,12 @@ export function requireTestset(ctx: ProblemCtx, name = DEFAULT_TESTSET): Testset
 }
 
 export async function readManifest(ctx: ProblemCtx, ts?: string): Promise<Manifest | null> {
-  if (providedAnswers(ctx, requireTestset(ctx, ts))) return prepareProvidedTests(ctx, ts);
-  return readStoredManifest(ctx, ts);
+  const configuration = requireTestset(ctx, ts);
+  if (providedAnswers(ctx, configuration)) return prepareProvidedTests(ctx, ts);
+  const manifest = await readStoredManifest(ctx, ts);
+  if (!manifest) return null;
+  const metadata = testMetadata(ctx.config, configuration);
+  return { ...manifest, tests: manifest.tests.map(test => ({ ...test, ...metadata(test.index) })) };
 }
 
 async function readStoredManifest(ctx: ProblemCtx, ts?: string): Promise<Manifest | null> {
@@ -65,36 +74,69 @@ async function readStoredManifest(ctx: ProblemCtx, ts?: string): Promise<Manifes
 }
 
 const providedAnswers = (ctx: ProblemCtx, ts: TestsetConfig) => ctx.config.problem.data_only || ts.answers === 'provided';
+const providedFlights = new Map<string, { fingerprint: string; promise: Promise<Manifest> }>();
 
-/** Rebuild disposable caches from durable input/answer pairs, without a compiler or main solution. */
+/** Concurrent preview/export requests share a refresh; metadata changes queue a fresh one. */
 export async function prepareProvidedTests(ctx: ProblemCtx, testset = DEFAULT_TESTSET): Promise<Manifest> {
+  const key = manifestPath(ctx, testset);
+  const fingerprint = JSON.stringify([requireTestset(ctx, testset), ctx.config.tests.points, ctx.config.problem.time_limit, ctx.config.problem.memory_limit]);
+  const running = providedFlights.get(key);
+  if (running?.fingerprint === fingerprint) return running.promise;
+  if (running) { await running.promise.catch(() => {}); return prepareProvidedTests(ctx, testset); }
+  const promise = prepareProvided(ctx, testset).finally(() => { if (providedFlights.get(key)?.promise === promise) providedFlights.delete(key); });
+  providedFlights.set(key, { fingerprint, promise });
+  return promise;
+}
+
+const stamp = (stat: NonNullable<Awaited<ReturnType<typeof fsp.stat>>>) => `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.ino}`;
+async function cacheProvidedFile(source: string, target: string, previousSource?: string, previousTarget?: string) {
+  const [sourceStat, targetStat] = await Promise.all([fsp.stat(source), fsp.stat(target).catch(() => null)]);
+  if (!sourceStat.isFile()) throw new Error(`Not a file: ${source}`);
+  const sourceStamp = `${path.resolve(source)}:${stamp(sourceStat)}`;
+  if (sourceStamp === previousSource && targetStat && stamp(targetStat) === previousTarget) return { size: sourceStat.size, sourceStamp, targetStamp: previousTarget };
+  const tmp = `${target}.pf-copy-${randomBytes(4).toString('hex')}`;
+  try {
+    await fsp.copyFile(source, tmp);
+    const after = await fsp.stat(source);
+    if (`${path.resolve(source)}:${stamp(after)}` !== sourceStamp) throw new Error(`File changed while refreshing: ${source}`);
+    await fsp.rename(tmp, target);
+    return { size: sourceStat.size, sourceStamp, targetStamp: stamp(await fsp.stat(target)) };
+  } finally { await fsp.rm(tmp, { force: true }); }
+}
+
+async function prepareProvided(ctx: ProblemCtx, testset: string): Promise<Manifest> {
   const ts = requireTestset(ctx, testset);
   const errors: string[] = [];
-  const planned = await plan(ctx, errors, ts);
-  const layout = groupLayout(ts, !!ctx.config.tests.points);
+  const [planned, previous] = await Promise.all([plan(ctx, errors, ts), readStoredManifest(ctx, testset)]);
+  const previousTests = new Map(previous?.tests.map(test => [test.index, test]) ?? []);
+  const metadata = testMetadata(ctx.config, ts);
   const samples = new Set(parseIndexList(ts.samples ?? ''));
   const large = new Set(parseIndexList(ts.largeSamples ?? ''));
-  const tests: Entry[] = [];
+  const tests: Entry[] = new Array(planned.length);
   await fsp.mkdir(testsDir(ctx, testset), { recursive: true });
-  for (const p of planned) {
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(12, planned.length) }, async () => { while (next < planned.length) {
+    const position = next++, p = planned[position];
     const entry: Entry = { index: p.index, origin: p.origin, source: p.source, valid: null,
-      timeLimit: ts.cases?.[p.index]?.time_limit, memoryLimit: ts.cases?.[p.index]?.memory_limit,
-      group: layout.mapping[p.index], points: layout.points[p.index], sample: samples.has(p.index) || undefined,
+      ...metadata(p.index), sample: samples.has(p.index) || undefined,
       largeSample: (samples.has(p.index) && large.has(p.index)) || undefined };
-    tests.push(entry);
+    tests[position] = entry;
     if (!p.manualPath) { entry.error = 'Provided answers require manual .in/.out or .in/.ans pairs; generators are unavailable.'; continue; }
     const stem = p.manualPath.replace(/\.in$/i, '');
     const ans = await exists(stem + '.ans') ? stem + '.ans' : stem + '.out';
+    entry.originalInput ??= p.source;
+    entry.originalOutput ??= path.relative(ctx.ref.dir, ans).replace(/\\/g, '/');
     try {
-      const input = await fsp.readFile(p.manualPath), answer = await fsp.readFile(ans);
-      entry.inputSize = input.length; entry.answerSize = answer.length;
-      entry.inputHash = sha1(input); entry.answerKey = sha1(answer);
-      const copy = async (file: string, bytes: Buffer) => {
-        const old = await fsp.readFile(file).catch(() => null);
-        if (!old?.equals(bytes)) await atomicWrite(file, bytes);
-      };
-      await copy(inputPath(ctx, p.index, testset), input);
-      await copy(answerPath(ctx, p.index, testset), answer);
+      const old = previousTests.get(p.index);
+      const copied = await Promise.allSettled([
+        cacheProvidedFile(p.manualPath, inputPath(ctx, p.index, testset), old?.inputStamp, old?.inputCacheStamp),
+        cacheProvidedFile(ans, answerPath(ctx, p.index, testset), old?.answerStamp, old?.answerCacheStamp),
+      ]);
+      const failed = copied.find(result => result.status === 'rejected');
+      if (failed?.status === 'rejected') throw failed.reason;
+      const [input, answer] = copied.map(result => (result as PromiseFulfilledResult<Awaited<ReturnType<typeof cacheProvidedFile>>>).value);
+      Object.assign(entry, { inputSize: input.size, answerSize: answer.size, inputStamp: input.sourceStamp, answerStamp: answer.sourceStamp,
+        inputCacheStamp: input.targetStamp, answerCacheStamp: answer.targetStamp });
       if (entry.sample) {
         const sp = sampleStatementPaths(p, testset);
         if (await exists(safeJoin(ctx.ref.dir, sp.input))) entry.statementInput = sp.input;
@@ -105,10 +147,9 @@ export async function prepareProvidedTests(ctx: ProblemCtx, testset = DEFAULT_TE
       await fsp.rm(inputPath(ctx, p.index, testset), { force: true });
       await fsp.rm(answerPath(ctx, p.index, testset), { force: true });
     }
-  }
+  } }));
   for (const t of tests) if (t.error) errors.push(`Test ${t.index}: ${t.error}`);
   for (const i of samples) if (!tests.some(t => t.index === i)) errors.push(`Sample test ${i} does not exist (${testset}).`);
-  const previous = await readStoredManifest(ctx, testset);
   const manifest: Manifest = { testset, generatedAt: new Date().toISOString(), ok: !errors.length, tests, errors, hasOverview: false };
   if (previous && JSON.stringify({ ...previous, generatedAt: '' }) === JSON.stringify({ ...manifest, generatedAt: '' })) return previous;
   await atomicWrite(manifestPath(ctx, testset), JSON.stringify(manifest, null, 1));
@@ -119,7 +160,7 @@ export async function prepareProvidedTests(ctx: ProblemCtx, testset = DEFAULT_TE
 export function publicManifest(m: Manifest): TestsManifest {
   return {
     ...m,
-    tests: m.tests.map(({ inputKey: _a, inputHash: _b, validKey: _c, answerKey: _d, ...t }) => t),
+    tests: m.tests.map(({ inputKey: _a, inputHash: _b, validKey: _c, answerKey: _d, inputStamp: _e, answerStamp: _f, inputCacheStamp: _g, answerCacheStamp: _h, ...t }) => t),
   };
 }
 
@@ -205,8 +246,7 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
   await fsp.mkdir(dir, { recursive: true });
   const prev = new Map((await readManifest(ctx, ts.name))?.tests.map((t) => [t.index, t]) ?? []);
   const planned = await plan(ctx, errors, ts);
-  const layout = groupLayout(ts, !!ctx.config.tests.points);
-  const group = (i: number) => layout.mapping[i];
+  const metadata = testMetadata(ctx.config, ts);
   const samples = new Set(parseIndexList(ts.samples ?? ''));
   const largeSamples = new Set(parseIndexList(ts.largeSamples ?? ''));
   const inputPath = (c: ProblemCtx, i: number) => inputPathOf(c, i, ts.name);
@@ -257,13 +297,10 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
       statementInput: await has(sp?.input),
       statementOutput: await has(sp?.output),
       index: p.index,
-      timeLimit: ts.cases?.[p.index]?.time_limit,
-      memoryLimit: ts.cases?.[p.index]?.memory_limit,
+      ...metadata(p.index),
       origin: p.origin,
       source: p.source,
       line: p.line,
-      group: group(p.index),
-      points: layout.points[p.index],
       sample: samples.has(p.index) || undefined,
       largeSample: (samples.has(p.index) && largeSamples.has(p.index)) || undefined,
     });
@@ -374,9 +411,12 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
     const e = entries.get(p.index)!;
     const old = prev.get(p.index);
     const ans = answerPath(ctx, p.index);
-    const ownSrc = e.group ? groupValidatorSources.get(e.group) : undefined;
-    const validator = ownSrc ? groupValidators.get(ownSrc) : problemValidator;
-    if (ownSrc && !validator) e.error ??= `validator ${ownSrc} of group ${e.group} unavailable`;
+    const validators = (e.groups?.length ? e.groups.map(g => g.name) : ['']).map(group => {
+      const source = groupValidatorSources.get(group);
+      const program = source ? groupValidators.get(source) : problemValidator;
+      if (source && !program) e.error ??= `validator ${source} of group ${group} unavailable`;
+      return { group, program };
+    });
     if (e.error) {
       // Never leave the answer of an older version of this test for exports.
       await fsp.rm(ans, { force: true });
@@ -385,25 +425,27 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
     }
     const inFile = inputPath(ctx, p.index);
 
-    if (validator) {
+    const activeValidators = validators.filter((v): v is { group: string; program: Program } => !!v.program);
+    if (activeValidators.length) {
       // Samples also get the validator's test markup (which lines belong to which test
       // case, from setTestCase), for the per-test-case highlighting of the statement.
       const markup = true;
-      const key = sha1(JSON.stringify([e.inputHash, validator.hash, e.group ?? '', ts.name, markup]));
+      const key = sha1(JSON.stringify([e.inputHash, activeValidators.map(v => [v.program.hash, v.group]), ts.name, markup]));
       const ov = overviewPath(ctx, p.index);
       if (old?.validKey === key && old.valid !== undefined) {
         Object.assign(e, { validKey: key, valid: old.valid, validatorMessage: old.validatorMessage, hasOverview: old.hasOverview, inputCases: old.inputCases });
       } else {
-        await withTmp(ctx.ref.dir, async (tmp) => {
+        e.valid = true;
+        for (const { group, program } of activeValidators) await withTmp(ctx.ref.dir, async (tmp) => {
           const err = path.join(tmp, 'err.txt');
           const mu = path.join(tmp, 'markup.txt');
-          const args = ['--testOverviewLogFileName', ov, '--testset', ts.name, ...(e.group ? ['--group', e.group] : []), ...(markup ? ['--testMarkupFileName', mu] : [])];
+          const args = ['--testOverviewLogFileName', ov, '--testset', ts.name, ...(group ? ['--group', group] : []), ...(markup ? ['--testMarkupFileName', mu] : [])];
           await fsp.rm(ov, { force: true });
-          const r = await runHelper(judge.runner, validator, args, { cwd: tmp, stdin: inFile, stderr: err }, job.signal);
+          const r = await runHelper(judge.runner, program, args, { cwd: tmp, stdin: inFile, stderr: err }, job.signal);
           e.validKey = key;
-          e.valid = r.status === 'OK';
+          e.valid = e.valid && r.status === 'OK';
           const msg = (await readHead(err, 2000)).trim();
-          e.validatorMessage = e.valid ? undefined : msg || describeRun(r);
+          if (r.status !== 'OK') e.validatorMessage = [e.validatorMessage, `${group ? `${group}: ` : ''}${msg || describeRun(r)}`].filter(Boolean).join('\n');
           e.hasOverview = await exists(ov);
           e.inputCases = markup && e.valid ? parseTestMarkup(await fsp.readFile(mu).catch(() => null)) : undefined;
         });
@@ -413,7 +455,12 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
     }
     tick(`validate ${p.index}`);
 
-    if (main && e.valid !== false && !(ctx.config.problem.interactive && !interactor)) {
+    if (p.manualPath && ts.cases?.[p.index]?.provided_answer && e.valid !== false) {
+      const stem = p.manualPath.replace(/\.in$/i, '');
+      const supplied = await exists(stem + '.ans') ? stem + '.ans' : stem + '.out';
+      const copied = await cacheProvidedFile(supplied, ans, old?.answerStamp, old?.answerCacheStamp);
+      e.answerStamp = copied.sourceStamp; e.answerCacheStamp = copied.targetStamp; e.answerSize = copied.size;
+    } else if (main && e.valid !== false && !(ctx.config.problem.interactive && !interactor)) {
       const lim = { ...ctx.limits, timeLimitMs: e.timeLimit ?? ctx.limits.timeLimitMs, memoryLimitMb: e.memoryLimit ?? ctx.limits.memoryLimitMb };
       const key = sha1(JSON.stringify([e.inputHash, main.hash, interactor?.hash ?? '', lim]));
       if (old?.answerKey === key && (await exists(ans))) {

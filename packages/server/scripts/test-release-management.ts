@@ -163,8 +163,8 @@ async function dataProblem(registry: ProblemRegistry, name: string) {
   const p = await registry.create({ name, dataOnly: true, title: { zh: '求和', en: 'Sum' } });
   for (let i = 1; i <= 2; i++) { await atomicWrite(path.join(p.dir, `tests/manual/${i}.in`), `${i} 1\n`); await atomicWrite(path.join(p.dir, `tests/manual/${i}.ans`), `${i + 1}\n`); }
   await registry.patch(p.id, { samples: '1', points: true, testsets: { tests: { groups: true, group: [
-    { name: 'advanced', points: 70, tests: '2', policy: 'EACH_TEST', dependencies: ['basic'] },
-    { name: 'basic', points: 30, tests: '1', policy: 'COMPLETE_GROUP' },
+    { name: '1-advanced', points: 70, tests: '2', policy: 'EACH_TEST', dependencies: ['0-basic'] },
+    { name: '0-basic', points: 30, tests: '1', policy: 'COMPLETE_GROUP' },
   ] } } });
   return p;
 }

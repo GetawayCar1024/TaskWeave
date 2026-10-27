@@ -7,17 +7,17 @@
     "legacyLocation": "Legacy entry; choose a restore root", "confirmDelete": "Permanently delete these {n} entries? This cannot be undone.", "restored": "Restored", "deleted": "Permanently deleted from the recycle bin"
   },
   "dataOnly": {
-    "title": "Data-only mode",
+    "title": "Compatibility mode",
     "authoringMode": "Authoring mode",
     "full": "Full authoring (recommended)",
-    "warning": "Data-only authoring is not recommended. Manage inputs, answers, scores and samples, and export data or sample bundles. Complete the statement, validator, checker and main solution to enable judging, stress testing and Polygon sync.",
+    "warning": "Compatibility mode manages existing data, subtasks and exports. Complete the statement, validator, checker and main solution to enable full authoring.",
     "refresh": "Refresh data",
-    "completeHint": "Create statement files, validator.cpp and solutions/std.cpp in the sidebar, register their roles and choose a checker in Information. Save them before enabling full authoring.",
+    "completeHint": "Complete these files to enable judging, stress testing and sync.",
     "missing": "Still missing:",
     "enable": "Enable full authoring",
     "enabled": "Full authoring enabled",
-    "downSamples": "For data-only problems, down.zip contains the selected sample files without a statement PDF.",
-    "lemonHint": "Data-only problems default to LemonLime's built-in line comparison (ignore extra spaces and tabs), requiring no checker source. It also ignores extra intra-line whitespace. Completing the authoring files is recommended."
+    "downSamples": "In compatibility mode, down.zip contains the selected sample files.",
+    "lemonHint": "Compatibility mode uses LemonLime's built-in comparator that ignores extra whitespace."
   },
   "statementMode": {
     "title": "Statement layout",
@@ -29,6 +29,18 @@
     "splitHint": "All statement text will be placed in legend.tex; other body sections start empty. You can split them manually afterward. Polygon sync also performs this conversion automatically."
   },
   "packages": {
+    "polygon-package": "Polygon problem package",
+    "data": "Data package",
+    "joi": "JOI / AtCoder",
+    "joiExport": "JOI / AtCoder",
+    "fileCount": "{n} ZIP files selected",
+    "selection": "Selection",
+    "includeProblem": "Import this problem",
+    "alreadyImported": "Imported",
+    "selectedProblems": "{n} / {total} problems selected",
+    "batchImported": "Imported {n} problem(s)",
+    "defaultTime": "Default time limit",
+    "defaultMemory": "Default memory limit",
     "invalidZip": "Choose a valid ZIP package. The file header or size is invalid.",
     "validated": "Validated: {files} files, {tests} tests, {size} unpacked",
     "hydroExport": "Hydro problem package",
@@ -38,10 +50,10 @@
     "importData": "Import test data",
     "exportProblem": "Export problem",
     "format": "Format",
-    "luogu-data": "Luogu data package (data only)",
+    "luogu-data": "Data package",
     "hydro-data": "Hydro data package (data only)",
     "hydro-problem": "Hydro package (whole problem)",
-    "wholeHint": "Import statements, languages, samples, data, scores and program configuration. Extra files appear under Other files. Incomplete authoring files open in data-only mode.",
+    "wholeHint": "Import statements, data and programs. Extra files appear under Other files.",
     "dataHint": "Import only .in/.out or .in/.ans pairs and scoring configuration. Original configuration and extra files appear under Other files.",
     "file": "ZIP file",
     "choose": "Choose ZIP…",
@@ -51,7 +63,7 @@
     "testset": "Target testset",
     "replaceData": "Replaces the target testset's data and scoring configuration, keeping statements and programs. Original data files are retained; the previous problem.toml is backed up under .polyforge/import-backups.",
     "imported": "Imported {n} tests and retained {extras} extra files",
-    "luoguExport": "Luogu data.zip",
+    "luoguExport": "Luogu",
     "luoguHint": "Each problem exports data.zip with all selected data, config.yml and score.txt at its root. After uploading to Luogu, paste score.txt into the whole-problem scoring script; it is not installed automatically.",
     "documents": "Statements / tutorials (PDF, HTML, Markdown, TeX)",
     "backToProblem": "Back to problem",
@@ -67,7 +79,7 @@
     "convertedChecker": "Created and configured a separate Lemon checker. Review the converted source.",
     "convertCheckerHint": "Converts basic testlib includes and initialization, preserving the original. quitp keeps proportional scoring; complex scoring APIs need manual conversion.",
     "lemonChecker": "Lemon checker",
-    "lemonCheckerHint": "Used only for LemonLime export. Select a separate source using Testlib for Lemons: include lemon/testlib.h and call registerLemonChecker(argc, argv). Export checks configuration, compilation and the scoring protocol.",
+    "lemonCheckerHint": "LemonLime only; uses the Testlib for Lemons protocol.",
     "inlineSample": "Show in statement",
     "largeSample": "Large sample (downloadable files)",
     "down": "Export down.zip",
@@ -114,6 +126,7 @@
     "backToContest": "Back to contest"
   },
   "common": {
+    "confirm": "Confirm",
     "refresh": "Refresh",
     "noMatch": "No matches",
     "cancel": "Cancel",
@@ -133,6 +146,8 @@
     "root": "Location"
   },
   "problem": {
+    "sameIo": "Input and output filenames must be different.",
+    "invalidInfo": "Check the short name, limits and input/output filenames.",
     "renameHint": "The short name is used in problem lists, contests and exports; all update automatically after a rename.",
     "timeLimit": "Time limit",
     "memoryLimit": "Memory limit",
@@ -320,6 +335,7 @@
     "images": "Images"
   },
   "info": {
+    "unsaved": "Problem information has unsaved changes. Save them?",
     "file": "Current file",
     "path": "Path",
     "role": "Role",
@@ -729,6 +745,7 @@
     }
   },
   "contest": {
+    "lemonSubfolders": "Search subfolders for contestant code",
     "luoguPerProblem": "Time and memory aggregation per problem (saved to each problem)",
     "notesDefault": "Default (legacy)",
     "notesLanguage": "Instructions language",
@@ -828,7 +845,7 @@
     "editIndex": "Problem letter",
     "renumber": "Renumber",
     "renumberHint": "Set the letters to A, B, C… in the current order",
-    "luoguFormat": "Luogu (tests + config.yml + scoring script)",
+    "luoguFormat": "Luogu",
     "luoguHint": "One folder per problem: data files <name>k.in / <name>k.out, config.yml (limits, scores, subtasks), the problem scoring script scoring-script.txt (bundled subtasks and dependencies), checker.cpp for a custom checker, and README.txt with upload instructions.",
     "luoguTime": "Total time",
     "luoguMemory": "Total memory",
@@ -845,6 +862,26 @@
     "toc": "Contents page"
   },
   "testsets": {
+    "inputName": "Input filename",
+    "outputName": "Output filename",
+    "memberships": "Subtasks",
+    "selectFor": "Subtask {name} · Select tests",
+    "searchFiles": "Search filename or index",
+    "selectVisible": "Select matches",
+    "invertVisible": "Invert matches",
+    "clearVisible": "Clear matches",
+    "selectedCount": "{n} / {total} tests selected",
+    "quickSelect": "Quick test selection",
+    "inferFilenames": "Group by filename",
+    "noFilenameGroups": "No xxx-yyy or xxx_yyy filenames found (yyy must be numeric).",
+    "unmatchedFilenames": "Kept existing memberships for unmatched files: {names}",
+    "inferred": "Detected {n} subtasks. Set their scores and save.",
+    "dragGroup": "Drag subtask",
+    "mixedScores": "Imported scores",
+    "perTestScore": "Score of each test, summed within the subtask",
+    "bundleScore": "Each test has this score; the subtask takes the minimum",
+    "sortRule": "Saving sorts names lexicographically; dependencies must have smaller names.",
+    "unsaved": "Subtasks have unsaved changes. Save them?",
     "title": "Testsets and groups",
     "delete": "Delete testset",
     "badName": "Testset names use lowercase letters, digits and dashes, starting with a letter",
@@ -870,8 +907,8 @@
     "groupValidator": "Validator",
     "problemValidator": "(problem validator)",
     "policy": {
-      "COMPLETE_GROUP": "Complete group",
-      "EACH_TEST": "Each test"
+      "COMPLETE_GROUP": "Bundled",
+      "EACH_TEST": "Sum"
     },
     "note": "Create a testset with the same name on Polygon before pushing"
   },

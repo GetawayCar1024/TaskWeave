@@ -242,10 +242,18 @@ const running = computed(() => job.value?.status === 'running');
 const busy = computed(() => submitting.value || running.value);
 const result = ref<ContestBatchResult | null>(null);
 const showExport = ref(false);
-const exportFormat = ref<'polygon' | 'lemonlime' | 'luogu' | 'hydro'>('lemonlime');
+let exportClosed: (() => void) | undefined;
+function afterExportClose() { exportClosed?.(); exportClosed = undefined; }
+function closeExportBeforeNotice() {
+  if (!showExport.value) return Promise.resolve();
+  return new Promise<void>(resolve => { exportClosed = resolve; showExport.value = false; });
+}
+onUnmounted(afterExportClose);
+const exportFormat = ref<'polygon' | 'hydro' | 'luogu' | 'joi' | 'lemonlime'>('polygon');
 // LemonLime / Luogu: testsets per problem (default "tests"), and Luogu's time / memory aggregation.
 const exportTestsets = ref<Record<string, { all: string[]; chosen: string[]; luogu: LuoguExportOptions }>>({});
 const loadingExportOptions = ref(false);
+const lemonSubfolders = ref(false);
 const aggOptions = computed(() => (['sum', 'min', 'max'] as const).map((value) => ({ value, label: t(`contest.agg.${value}`) })));
 async function loadExportTestsets() {
   loadingExportOptions.value = true;
@@ -267,6 +275,7 @@ const exportJob = computed(() => (job.value && job.value.id === exportJobId.valu
 const exportError = ref('');
 async function run(action: ContestAction) {
   if (action === 'export') {
+    if (submitting.value) return;
     if (!running.value) exportJobId.value = null;
     exportError.value = '';
     showExport.value = true;
@@ -290,7 +299,7 @@ async function exportContest() {
   const luoguByProblem = exportFormat.value === 'luogu' ? Object.fromEntries(Object.entries(exportTestsets.value).map(([id, value]) => [id, { ...value.luogu }])) : undefined;
   exportError.value = '';
   try {
-    const started = await api.contestBatch(props.id, { action: 'export', exportFormat: exportFormat.value, testsets, luoguByProblem });
+    const started = await api.contestBatch(props.id, { action: 'export', exportFormat: exportFormat.value, testsets, luoguByProblem, lemon: { subfolders: lemonSubfolders.value } });
     if (!alive) return;
     exportJobId.value = started.id;
     await follow(started);
@@ -307,6 +316,8 @@ const follower = createJobFollower(waitJob, current => {
   if (done.status !== 'done') return;
   const r = done.result as ContestBatchResult;
   result.value = r;
+  if (r.action === 'export') await closeExportBeforeNotice();
+  if (!alive) return;
   const bad = r.items.filter((x) => !x.ok).length;
   if (bad) message.warning(t('contest.batchBad', { n: bad }));
   else message.success(t(`contest.done.${r.action}`));
@@ -511,6 +522,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
 
     <tool-window
       v-model:show="showExport"
+      @after-leave="afterExportClose"
       :title="t('oiFeatures.exportTitle')"
       size="lg"
       :status="exportJob?.status ?? null"
@@ -519,12 +531,10 @@ const columns = computed<DataTableColumns<Row>>(() => [
     >
       <n-form label-placement="left" label-width="auto" size="small" :show-feedback="false" :disabled="busy" class="export-form">
         <n-form-item :label="t('contest.exportFormat')">
-          <n-select v-model:value="exportFormat" :options="[{ value: 'lemonlime', label: 'LemonLime (.cdf + data + source)' }, { value: 'luogu', label: t('contest.luoguFormat') }, { value: 'hydro', label: t('packages.hydroExport') }, { value: 'polygon', label: t('oiFeatures.polygon'), disabled: hasDataOnly }]" />
+          <n-select v-model:value="exportFormat" :disabled="busy" :options="[{ value: 'polygon', label: t('oiFeatures.polygon') }, { value: 'hydro', label: t('packages.hydroExport') }, { value: 'luogu', label: t('contest.luoguFormat') }, { value: 'joi', label: t('packages.joiExport') }, { value: 'lemonlime', label: 'LemonLime' }]" />
         </n-form-item>
-        <n-alert v-if="exportFormat === 'lemonlime'" type="info" :show-icon="false" class="pf-dialog-note">{{ t('oiFeatures.exportHint') }}</n-alert>
+        <n-checkbox v-if="exportFormat === 'lemonlime'" v-model:checked="lemonSubfolders" :disabled="busy" class="pf-dialog-note">{{ t('contest.lemonSubfolders') }}</n-checkbox>
         <n-alert v-if="exportFormat === 'lemonlime' && hasDataOnly" type="warning" :show-icon="false" class="pf-dialog-note">{{ t('dataOnly.lemonHint') }}</n-alert>
-        <n-alert v-if="exportFormat === 'luogu'" type="info" :show-icon="false" class="pf-dialog-note">{{ t('packages.luoguHint') }}</n-alert>
-        <n-alert v-if="exportFormat === 'hydro'" type="info" :show-icon="false" class="pf-dialog-note">{{ t('packages.hydroContestHint') }}</n-alert>
       </n-form>
       <div v-if="exportFormat === 'luogu'" class="per-problem-options">
         <div class="pf-label">{{ t('contest.luoguPerProblem') }}</div>

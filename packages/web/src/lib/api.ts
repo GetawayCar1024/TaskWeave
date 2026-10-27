@@ -1,5 +1,5 @@
 import type { DefsToml } from './latex';
-import type { PackageCandidate, PackageImportOptions, PackageImportResult } from '@polyforge/shared';
+import type { PackageCandidate, PackageImportOptions, PackageImportResult, PackageUpload, PackageSelection, PackageBatchResult } from '@polyforge/shared';
 import type { ProblemExportRequest, TrashEntry } from '@polyforge/shared';
 import { serverText } from './serverText';
 import {
@@ -123,6 +123,9 @@ export const api = {
   emptyTrash: (entries: string[]) => request('DELETE', '/trash', { entries }),
   packageCandidates: (file: File, options: PackageImportOptions) => uploadPackage<PackageCandidate[]>('/problems/import/package', file, options, true),
   importPackage: (file: File, options: PackageImportOptions, id?: string) => uploadPackage<PackageImportResult>(id ? `/problems/${pid(id)}/import/data` : '/problems/import/package', file, options),
+  stagePackage: (file: File, format: PackageImportOptions['format']) => uploadPackage<PackageUpload>('/packages/uploads', file, { format }),
+  discardPackage: (id: string) => request('DELETE', `/packages/uploads/${encodeURIComponent(id)}`),
+  importPackages: (items: PackageSelection[], problemId?: string) => request<PackageBatchResult>('POST', '/packages/import', { items, problemId }),
   statementSamples: (id: string, lang?: string) => request<import('@polyforge/shared').StatementSample[]>('GET', `/problems/${pid(id)}/statement-samples${lang ? `?lang=${encodeURIComponent(lang)}` : ''}`),
   contestDown: async (id: string, lang: string, pdf: Blob, statements: ContestStatement[], notes: string, single = false) => {
     const base64 = await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1]); r.onerror = reject; r.readAsDataURL(pdf); });

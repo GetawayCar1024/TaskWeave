@@ -7,8 +7,10 @@ import { atomicWrite, exists, HttpError, safeJoin, validateFileName } from '../u
 import { readZip } from '../util/zip.js';
 import type { Judge } from '../judge/index.js';
 import { badPackage, hydroLimit, parseData, yamlObject, type DataPlan } from './data.js';
+import { publishProblem } from './publish.js';
+import { polygonCandidates, readPolygonPackage, importPolygonPackage } from './polygon.js';
 
-const formats = ['luogu-data', 'hydro-data', 'hydro-problem'];
+const formats = ['polygon-package', 'hydro-problem', 'data', 'joi', 'luogu-data', 'hydro-data'];
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 64) || 'imported-problem';
 const subtree = (files: Map<string, Buffer>, prefix: string) => new Map([...files].filter(([name]) => name.startsWith(prefix)).map(([name, data]) => [name.slice(prefix.length), data]));
 const language = (name: string) => {
@@ -18,6 +20,15 @@ const language = (name: string) => {
 
 export function packageCandidates(files: Map<string, Buffer>, options: PackageImportOptions): PackageCandidate[] {
   if (!formats.includes(options.format)) return badPackage('Unknown import format.');
+  if (options.format === 'polygon-package') return polygonCandidates(files);
+  if (options.format === 'joi' || options.format === 'data') {
+    const prefixes = new Set<string>();
+    const outputs = new Set([...files.keys()].flatMap(file => { const match = /^(.*\/)?out\/.+$/i.exec(file); return match ? [(match[1] ?? '').toLowerCase()] : []; }));
+    for (const file of files.keys()) { const match = /^(.*\/)?in\/.+$/i.exec(file); if (match && outputs.has((match[1] ?? '').toLowerCase())) prefixes.add(match[1] ?? ''); }
+    if (!prefixes.size) for (const file of files.keys()) if (/\.in$/i.test(file)) prefixes.add(file.slice(0, file.lastIndexOf('/') + 1));
+    const roots = [...prefixes].filter(prefix => ![...prefixes].some(other => other !== prefix && prefix.startsWith(other)));
+    return (roots.length ? roots : ['']).map(entry => ({ entry, title: '', name: options.name || slug(entry.split('/').filter(Boolean).pop() || 'imported-problem') }));
+  }
   if (options.format !== 'hydro-problem') return [{ entry: '', title: '', name: options.name || 'imported-problem' }];
   return [...files.keys()].filter(p => /(?:^|\/)problem\.ya?ml$/i.test(p)).sort().map(file => {
     const meta = yamlObject(files.get(file), file);
@@ -110,8 +121,9 @@ function addData(local: Map<string, Buffer>, plan: DataPlan, manual: string) {
   plan.pairs.forEach((p, i) => {
     local.set(`${manual}/${i + 1}.in`, p.inputData);
     local.set(`${manual}/${i + 1}.ans`, p.outputData);
+    plan.cases[i + 1] = { ...plan.cases[i + 1], original_input: plan.cases[i + 1]?.original_input ?? p.input, original_output: plan.cases[i + 1]?.original_output ?? p.output };
   });
-  return { manual, answers: 'provided', groups: true, group: plan.groups, cases: plan.cases,
+  return { manual, answers: 'provided', groups: plan.groups.length > 0, group: plan.groups, cases: plan.cases,
     ...(plan.samples.length ? { samples: compressRanges(plan.samples) } : {}),
     ...(plan.unresolvedScoring ? { unresolved_scoring: true } : {}) };
 }
@@ -119,7 +131,7 @@ function addData(local: Map<string, Buffer>, plan: DataPlan, manual: string) {
 function readPackageInput(archive: Map<string, Buffer>, options: PackageImportOptions) {
   if (!formats.includes(options.format)) return badPackage('Unknown import format.');
   if (!archive.size) return badPackage('The ZIP archive contains no files.');
-  const full = options.format === 'hydro-problem', format = options.format === 'luogu-data' ? 'luogu' : 'hydro';
+  const full = options.format === 'hydro-problem', format = options.format === 'luogu-data' ? 'luogu' : options.format === 'hydro-data' || full ? 'hydro' : options.format === 'joi' ? 'joi' : 'data';
   const candidates = packageCandidates(archive, options);
   let files = archive, plan: DataPlan, metadata: Record<string, any> = {}, dataPrefix = '', chosen: PackageCandidate | undefined;
   if (full) {
@@ -134,6 +146,10 @@ function readPackageInput(archive: Map<string, Buffer>, options: PackageImportOp
     plan = parseData(data, 'hydro');
     hydroStatements(files, metadata, language(options.lang ?? 'zh'), []);
     const cfg = plan.sourceConfig;
+    if (cfg.filename !== undefined) {
+      if (typeof cfg.filename !== 'string' || /[\\/]/.test(cfg.filename)) return badPackage('Invalid Hydro file-IO name.');
+      validateFileName(cfg.filename);
+    }
     for (const role of ['checker', 'validator', 'interactor', 'manager']) {
       if (cfg[role] === undefined) continue;
       const file = typeof cfg[role] === 'string' ? cfg[role] : cfg[role]?.file;
@@ -151,31 +167,49 @@ function readPackageInput(archive: Map<string, Buffer>, options: PackageImportOp
       }
     }
   } else {
+    if (options.entry) {
+      if (!candidates.some(candidate => candidate.entry === options.entry)) return badPackage('Unknown problem directory in archive.');
+      files = subtree(archive, options.entry);
+    }
     const data = dataFiles(files); dataPrefix = data.prefix;
-    plan = parseData(data.files, format);
+    plan = parseData(data.files, format === 'data' ? 'auto' : format);
   }
   return { full, format, candidates, files, plan, metadata, dataPrefix, chosen };
 }
 
 /** Validate archive integrity and each candidate's configuration before enabling Import. */
-export function inspectPackage(bytes: Buffer, options: PackageImportOptions): PackageCandidate[] {
-  const archive = readZip(bytes);
+export function inspectPackage(bytes: Buffer | Map<string, Buffer>, options: PackageImportOptions): PackageCandidate[] {
+  const archive = bytes instanceof Map ? bytes : readZip(bytes);
   if (!archive.size) return badPackage('The ZIP archive contains no files.');
   const candidates = packageCandidates(archive, options);
   if (!candidates.length) return badPackage('No problem.yaml in this Hydro package.');
   const size = [...archive.values()].reduce((sum, bytes) => sum + bytes.length, 0);
   return candidates.map(candidate => {
     try {
+      if (options.format === 'polygon-package') {
+        const result = readPolygonPackage(archive, { ...options, entry: candidate.entry });
+        const checked = problemTomlSchema.safeParse(result.doc);
+        if (!checked.success) return badPackage(`Invalid Polygon configuration: ${checked.error.message}`);
+        return { ...candidate, files: result.local.size, size, tests: result.tests, warnings: result.warnings };
+      }
       const input = readPackageInput(archive, { ...options, entry: candidate.entry });
-      return { ...candidate, files: archive.size, size, tests: input.plan.pairs.length, warnings: input.plan.warnings };
+      const valid = problemTomlSchema.safeParse({ problem: { name: candidate.name, time_limit: input.plan.timeLimit, memory_limit: input.plan.memoryLimit },
+        tests: { cases: input.plan.cases, group: input.plan.groups, points: input.plan.pointsEnabled ?? true } });
+      if (!valid.success) return badPackage(`Imported configuration is invalid: ${valid.error.message}`);
+      return { ...candidate, files: archive.size, size, tests: input.plan.pairs.length, warnings: input.plan.warnings, timeLimit: input.plan.timeLimit, memoryLimit: input.plan.memoryLimit,
+        titles: input.metadata?.polyforge?.titles ?? input.plan.sourceConfig?.problem?.title };
     } catch (e) { return { ...candidate, files: archive.size, size, error: (e as Error).message }; }
   });
 }
 
-export async function importPackage(judge: Judge, bytes: Buffer, options: PackageImportOptions, problemId?: string): Promise<PackageImportResult> {
+export async function importPackage(judge: Judge, bytes: Buffer | Map<string, Buffer>, options: PackageImportOptions, problemId?: string): Promise<PackageImportResult> {
   if (!formats.includes(options.format)) return badPackage('Unknown import format.');
   if (problemId && options.format === 'hydro-problem') return badPackage('Whole Hydro problem import creates a new problem. Use Hydro data import for an existing problem.');
-  const archive = readZip(bytes);
+  const archive = bytes instanceof Map ? bytes : readZip(bytes);
+  if (options.format === 'polygon-package') {
+    if (problemId) return badPackage('Polygon packages create new problems.');
+    return importPolygonPackage(judge, archive, options);
+  }
   const fallbackLang = language(options.lang ?? 'zh');
   const { full, format, candidates, chosen, files, plan, metadata, dataPrefix } = readPackageInput(archive, options);
   const local = new Map<string, Buffer>(), warnings = [...plan.warnings];
@@ -208,8 +242,8 @@ export async function importPackage(judge: Judge, bytes: Buffer, options: Packag
     dir = ref.dir; name = current.config.problem.name;
     originalConfig = await fs.readFile(path.join(dir, 'problem.toml'), 'utf8');
     doc = parse(originalConfig) as Record<string, any>;
-    if (testset === 'tests') doc.tests = { ...testConfig, points: true };
-    else { doc.testsets ??= {}; doc.testsets[testset] = testConfig; doc.tests ??= {}; doc.tests.points = true; }
+    if (testset === 'tests') doc.tests = { ...testConfig, points: plan.pointsEnabled ?? true };
+    else { doc.testsets ??= {}; doc.testsets[testset] = testConfig; doc.tests ??= {}; if (plan.pointsEnabled !== false) doc.tests.points = true; }
     // An import into an existing problem only changes data/scoring, not statement or programs.
   } else {
     const root = registry.requireRoot(options.root);
@@ -217,8 +251,14 @@ export async function importPackage(judge: Judge, bytes: Buffer, options: Packag
     if (!PROBLEM_NAME_RE.test(name)) return badPackage('Name must be lowercase letters, digits and dashes (up to 64 characters).');
     dir = path.join(root, name);
     doc = { problem: { name, type: 'cf', data_only: true, title: { [fallbackLang]: chosen?.title || name }, time_limit: plan.timeLimit,
-      memory_limit: plan.memoryLimit, input: 'stdin', output: 'stdout', judge_mode: 'batch' }, tests: { ...testConfig, points: true } };
+      memory_limit: plan.memoryLimit, input: 'stdin', output: 'stdout', judge_mode: 'batch' }, tests: { ...testConfig, points: plan.pointsEnabled ?? true } };
     if (testset !== 'tests') return badPackage('New problems import their data into the tests testset.');
+    if (plan.sourceConfig.format === 'polyforge-inout') {
+      const p = plan.sourceConfig.problem;
+      if (p?.title) doc.problem.title = p.title;
+      if (p?.input) doc.problem.input = p.input;
+      if (p?.output) doc.problem.output = p.output;
+    }
   }
   if (full) {
     const sources = hydroStatements(files, metadata, fallbackLang, warnings);
@@ -242,7 +282,7 @@ export async function importPackage(judge: Judge, bytes: Buffer, options: Packag
         local.set(`statement/${lang}/samples/samples-${i + 1}.out`, Buffer.from(s.output));
       });
     }
-    for (const [file, data] of files) if (file.startsWith('additional_file/')) local.set(`statement/images/${file.slice('additional_file/'.length)}`, data);
+    for (const [file, data] of files) if (file.startsWith('additional_file/') && /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(file)) local.set(`statement/images/${file.slice('additional_file/'.length)}`, data);
     if (canonicalSamples?.length) {
       canonicalSamples.forEach((s, i) => { local.set(`tests/samples/${i + 1}.in`, Buffer.from(s.input)); local.set(`tests/samples/${i + 1}.ans`, Buffer.from(s.output)); });
       doc.testsets = { samples: { manual: 'tests/samples', answers: 'provided', samples: `1-${canonicalSamples.length}`, groups: true,
@@ -281,35 +321,31 @@ export async function importPackage(judge: Judge, bytes: Buffer, options: Packag
     const ready = byLang.size > 0 && doc.validator && doc.checker && doc.solutions?.length && (!cfg.type || ['default', 'interactive'].includes(cfg.type));
     doc.problem.data_only = !ready;
   }
-  if (!problemId && doc.problem.data_only) warnings.unshift('Data-only mode is not recommended for authoring. Complete the statement, validator, checker and main solution to enable full features.');
+  if (!problemId) {
+    if (options.title) doc.problem.title = options.title;
+    if (options.timeLimit !== undefined) doc.problem.time_limit = options.timeLimit;
+    if (options.memoryLimit !== undefined) doc.problem.memory_limit = options.memoryLimit;
+  }
   local.set(`${other}/IMPORT.md`, Buffer.from(`# ${options.format}\n\n${warnings.map(w => '- ' + w).join('\n')}\n\n## Source files / 原始文件\n\n${extras.map(p => '- ' + p).join('\n')}\n`));
   const parsed = problemTomlSchema.safeParse(doc);
   if (!parsed.success) return badPackage(`Imported configuration is invalid: ${parsed.error.message}`);
-  let created = false;
+  if (!problemId) return { problem: await publishProblem(judge, local, doc, options.root), tests: plan.pairs.length, extras, warnings };
   const written: string[] = [];
   try {
-    if (!problemId) {
-      await fs.mkdir(path.dirname(dir), { recursive: true });
-      await fs.mkdir(dir).catch((e: NodeJS.ErrnoException) => { if (e.code === 'EEXIST') throw new HttpError(409, 'exists', `Folder already exists: ${dir}`); throw e; });
-      created = true;
-    }
     for (const [rel, data] of local) {
       const abs = safeJoin(dir, rel);
-      if (problemId && await exists(abs)) throw new HttpError(409, 'exists', `Import destination already exists: ${rel}`);
+      if (await exists(abs)) throw new HttpError(409, 'exists', `Import destination already exists: ${rel}`);
       await atomicWrite(abs, data); written.push(abs);
     }
     // Publish last. A parse failure or partial write cannot replace the existing data configuration.
-    if (problemId) {
-      if (await fs.readFile(path.join(dir, 'problem.toml'), 'utf8') !== originalConfig) throw new HttpError(409, 'conflict', 'problem.toml changed during import. Retry with the current configuration.');
-      await atomicWrite(path.join(dir, '.polyforge', 'import-backups', id, 'problem.toml'), originalConfig!);
-    }
+    if (await fs.readFile(path.join(dir, 'problem.toml'), 'utf8') !== originalConfig) throw new HttpError(409, 'conflict', 'problem.toml changed during import. Retry with the current configuration.');
+    await atomicWrite(path.join(dir, '.polyforge', 'import-backups', id, 'problem.toml'), originalConfig!);
     await atomicWrite(path.join(dir, 'problem.toml'), stringify(doc));
   } catch (e) {
-    if (created) await fs.rm(dir, { recursive: true, force: true });
-    else for (const file of written) await fs.rm(file, { force: true });
+    for (const file of written) await fs.rm(file, { force: true });
     throw e;
   }
   await registry.scan();
-  const ref = problemId ? await registry.get(problemId) : (await registry.scan()).find(p => path.resolve(p.dir) === path.resolve(dir))!;
+  const ref = await registry.get(problemId);
   return { problem: await registry.summary(ref), tests: plan.pairs.length, extras, warnings };
 }

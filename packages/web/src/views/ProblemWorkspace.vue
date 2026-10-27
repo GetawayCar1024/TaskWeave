@@ -13,6 +13,7 @@ import DiffDialog from '../components/DiffDialog.vue';
 import EditorPane from '../components/EditorPane.vue';
 import FileSidebar, { type SidebarAction } from '../components/FileSidebar.vue';
 import InfoPanel from '../components/InfoPanel.vue';
+import FreeSelect from '../components/FreeSelect.vue';
 import InvocationWindow from '../components/InvocationWindow.vue';
 import { vKeepScroll } from '../lib/keepScroll';
 import SyncDialog from '../components/SyncDialog.vue';
@@ -73,7 +74,7 @@ registerExitGuard(async () => {
 });
 const judge = useJudge(props.id, ws);
 const ai = useAi(props.id);
-const showAi = computed({ get: () => rightTab.value === 'ai', set: (v: boolean) => { if (v) rightTab.value = 'ai'; else if (rightTab.value === 'ai') rightTab.value = 'info'; } });
+const showAi = computed({ get: () => rightTab.value === 'ai', set: (v: boolean) => { void showTools(v ? 'ai' : 'info'); } });
 const summary = computed(() => ws.state.detail?.summary);
 const dataOnly = computed(() => !!summary.value?.dataOnly);
 const showDataOnlyWarning = ref(true);
@@ -105,10 +106,13 @@ async function convertStatement(lang: string, mode: 'whole' | 'sections') {
 
 // ---- right panel / judge actions ----
 const rightTab = ref<'info' | 'tests' | 'run' | 'selftest' | 'ai'>('info');
+const infoPanel = ref<InstanceType<typeof InfoPanel>>();
 const rightSplitSize = ref(0.76);
-function showTools(tab: typeof rightTab.value) {
-  if (dataOnly.value && ['run', 'selftest', 'ai'].includes(tab)) return;
+async function showTools(tab: typeof rightTab.value): Promise<boolean> {
+  if (dataOnly.value && ['run', 'selftest', 'ai'].includes(tab)) return false;
+  if (rightTab.value === 'info' && tab !== 'info' && infoPanel.value && !await infoPanel.value.canLeave()) return false;
   rightTab.value = tab;
+  return true;
 }
 const runPanel = ref<InstanceType<typeof RunPanel>>();
 const showInvocation = ref(false);
@@ -213,7 +217,7 @@ const commands = computed<Command[]>(() => {
 });
 
 async function generate() {
-  showTools('tests');
+  if (!await showTools('tests')) return;
   try {
     await judge.generate();
   } catch (e) {
@@ -221,16 +225,16 @@ async function generate() {
   }
 }
 
-function runCurrent() {
+async function runCurrent() {
   if (dataOnly.value) return;
-  showTools('run');
+  if (!await showTools('run')) return;
   // The panel may mount on this tick; wait for it.
   setTimeout(() => runPanel.value?.run(), 0);
 }
 
-function runOnTest(n: number) {
+async function runOnTest(n: number) {
   if (dataOnly.value) return;
-  showTools('run');
+  if (!await showTools('run')) return;
   setTimeout(() => runPanel.value?.runOnTest(n), 0);
 }
 
@@ -594,9 +598,9 @@ onBeforeUnmount(() => {
             />
           </template>
           <template #2>
-            <n-tabs v-model:value="rightTab" type="line" size="small" class="right-tabs" pane-class="right-pane">
+            <n-tabs :value="rightTab" @update:value="showTools" type="line" size="small" class="right-tabs" pane-class="right-pane">
               <n-tab-pane key="info" name="info" :tab="t('panel.info')">
-                <info-panel v-keep-scroll="`info:${id}`" :ws="ws" :judge="judge" />
+                <info-panel ref="infoPanel" :ws="ws" :judge="judge" />
               </n-tab-pane>
               <n-tab-pane key="tests" name="tests" :tab="t('panel.tests')">
                 <n-scrollbar v-keep-scroll="`tests:${id}`" style="height: 100%"><tests-panel :ws="ws" :judge="judge" :problem-id="id" @run-on-test="runOnTest" /></n-scrollbar>
@@ -638,7 +642,7 @@ onBeforeUnmount(() => {
 
     <dir-picker v-model:show="movePicker" :initial="summary?.root" @pick="moveTo" />
     <tool-window v-model:show="languageDialog" :title="t('improve.language')" size="sm">
-      <n-select v-model:value="languageCode" filterable tag :options="languageOptions" :placeholder="t('improve.selectLanguage')" />
+      <free-select v-model:value="languageCode" :options="languageOptions" :placeholder="t('improve.selectLanguage')" />
       <template #footer>
         <n-button @click="languageDialog = false">{{ t('common.cancel') }}</n-button>
         <n-button type="primary" :disabled="!/^[a-z]{2,8}$/.test(languageCode) || languageCode === 'images'" @click="createLanguage">{{ t('common.create') }}</n-button>

@@ -1,6 +1,6 @@
 /**
  * Build the desktop app (Electron) into packages/desktop/dist:
- *   packages/desktop/app/        what goes into the app (no asar: g++ needs runner.cpp on disk)
+ *   packages/desktop/app/        sources for app.asar; runner.cpp is unpacked for g++
  *     main.cjs                   Electron main + the whole server, bundled with esbuild
  *     preload.cjs                window.polyforgeDesktop
  *     web/ assets/ runner/       the same layout as the npm package
@@ -112,7 +112,8 @@ const files = await build({
     appId: 'dev.polyforge.desktop',
     productName: 'PolyForge',
     directories: { app: out, output: path.join(desk, 'dist') },
-    asar: false,
+    asar: true,
+    asarUnpack: ['runner/**'],
     // The exe is never a plain Node (ELECTRON_RUN_AS_NODE, e.g. set by VS Code terminals, would
     // make it one and it would exit at once); also a hardening measure.
     electronFuses: { runAsNode: false },

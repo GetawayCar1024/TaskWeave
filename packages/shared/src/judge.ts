@@ -38,6 +38,8 @@ export interface CompileResult {
 }
 
 export interface TestInfo {
+  originalInput?: string;
+  originalOutput?: string;
   timeLimit?: number;
   memoryLimit?: number;
   largeSample?: boolean;
@@ -48,6 +50,8 @@ export interface TestInfo {
   /** 1-based line of the command in script.txt. */
   line?: number;
   group?: string;
+  /** A test can be scored independently by several subtasks. */
+  groups?: { name: string; points?: number; timeLimit: number; memoryLimit: number }[];
   /**
    * Samples: input / output shown in the statement instead of the test's input and
    * answer (a manual test's NN.statement.in / NN.statement.out next to NN.in; needed
@@ -110,7 +114,7 @@ export interface CheckerOutcome {
   points?: number;
 }
 
-export interface InvocationCell {
+export interface InvocationOutcome {
   wallMs?: number;
   verdict: Verdict;
   timeMs: number;
@@ -120,6 +124,11 @@ export interface InvocationCell {
   points?: number;
   /** Solution output saved for the diff view. */
   hasOutput?: boolean;
+}
+
+export interface InvocationCell extends InvocationOutcome {
+  /** Actual reruns when shared memberships have different execution limits. */
+  groupResults?: Record<string, InvocationOutcome>;
 }
 
 export interface InvocationSolution {
@@ -165,8 +174,10 @@ export type InvocationSelection = { testset: string; tests?: number[] }[];
 
 /** Per-test results and group definitions a score is computed from. */
 export interface ScoringInput {
-  tests: { index: number; group?: string; points?: number; verdict: Verdict; checkerPoints?: number }[];
-  groups: { name: string; points?: number; policy: 'COMPLETE_GROUP' | 'EACH_TEST'; dependencies: string[]; tests: number[] }[];
+  tests: { index: number; group?: string; points?: number; verdict: Verdict; checkerPoints?: number; timeMs?: number; memoryKb?: number; wallMs?: number }[];
+  groups: { name: string; points?: number; policy: 'COMPLETE_GROUP' | 'EACH_TEST'; dependencies: string[]; tests: number[];
+    testPoints?: Record<string, number>; limits?: Record<string, { timeLimit: number; memoryLimit: number }>;
+    results?: Record<string, InvocationOutcome> }[];
 }
 
 export interface Invocation {
@@ -388,33 +399,50 @@ export interface StressResult {
 }
 
 /**
- * Group of each test and per-test points derived from the group totals (as pushed to
- * Polygon): COMPLETE_GROUP puts the whole score on the last test, EACH_TEST splits it.
+ * Local scoring: bundled cases each have the subtask score; sum cases use their uniform
+ * per-test score. Legacy group totals and imported nonuniform scores remain readable.
  */
-export function groupLayout(ts: TestsetConfig, pointsEnabled: boolean): { mapping: Record<string, string>; points: Record<string, number> } {
+export function groupLayout(ts: TestsetConfig, pointsEnabled: boolean) {
   const mapping: Record<string, string> = {};
   const points: Record<string, number> = {};
-  if (!ts.groups) return { mapping, points };
+  if (pointsEnabled) for (const [index, test] of Object.entries(ts.cases ?? {})) if (test.points !== undefined) points[index] = test.points;
+  const memberships: Record<string, string[]> = {};
+  const byGroup: Record<string, Record<string, number>> = Object.create(null);
+  if (!ts.groups) return { mapping, points, memberships, byGroup };
   for (const g of ts.group) {
     const idx = [...new Set(parseIndexList(g.tests ?? ''))].sort((a, b) => a - b);
-    idx.forEach((i) => (mapping[i] = g.name));
-    if (pointsEnabled && g.points !== undefined && idx.length) {
+    idx.forEach(i => { mapping[i] ??= g.name; (memberships[i] ??= []).push(g.name); });
+    const scores: Record<string, number> = {};
+    byGroup[g.name] = scores;
+    if (pointsEnabled && (g.points !== undefined || g.test_points !== undefined) && idx.length) {
       if ((g.policy ?? 'COMPLETE_GROUP') === 'COMPLETE_GROUP') {
-        idx.forEach((i) => (points[i] = 0));
-        points[idx[idx.length - 1]] = g.points;
+        idx.forEach(i => scores[i] = g.points ?? 0);
       } else {
-        if (idx.every(i => ts.cases?.[i]?.points !== undefined)) {
-          idx.forEach(i => points[i] = ts.cases![i].points!);
-          continue;
+        if (g.test_points !== undefined) idx.forEach(i => scores[i] = g.test_points!);
+        else if (idx.every(i => (g.cases?.[i]?.points ?? ts.cases?.[i]?.points) !== undefined)) idx.forEach(i => scores[i] = g.cases?.[i]?.points ?? ts.cases![i].points!);
+        else {
+          // Legacy totals: preserve their old integer distribution until explicitly edited.
+          const whole = Math.floor(g.points ?? 0), each = Math.floor(whole / idx.length), extra = whole - each * idx.length;
+          idx.forEach((i, k) => scores[i] = each + (k >= idx.length - extra ? 1 : 0));
+          scores[idx[idx.length - 1]] = Math.round((scores[idx[idx.length - 1]] + (g.points ?? 0) - whole) * 1e6) / 1e6;
         }
-        // Integer shares that add up exactly: the last tests get one point more.
-        const whole = Math.floor(g.points);
-        const each = Math.floor(whole / idx.length);
-        const extra = whole - each * idx.length;
-        idx.forEach((i, k) => (points[i] = each + (k >= idx.length - extra ? 1 : 0)));
-        points[idx[idx.length - 1]] = Math.round((points[idx[idx.length - 1]] + g.points - whole) * 1e6) / 1e6;
       }
     }
   }
-  return { mapping, points };
+  for (const [index, names] of Object.entries(memberships)) {
+    if (names.length === 1 && byGroup[names[0]][index] !== undefined) points[index] = byGroup[names[0]][index];
+    else delete points[index];
+  }
+  return { mapping, points, memberships, byGroup };
+}
+
+/** Polygon distributes bundled points over its tests; local displays keep the min-model values. */
+export function polygonGroupLayout(ts: TestsetConfig, pointsEnabled: boolean) {
+  const result = groupLayout(ts, pointsEnabled);
+  if (pointsEnabled && ts.groups) for (const group of ts.group) if (group.policy !== 'EACH_TEST') {
+    const indices = [...new Set(parseIndexList(group.tests ?? ''))].sort((a, b) => a - b);
+    for (const index of indices) result.points[index] = 0;
+    if (indices.length) result.points[indices[indices.length - 1]] = group.points ?? 0;
+  }
+  return result;
 }

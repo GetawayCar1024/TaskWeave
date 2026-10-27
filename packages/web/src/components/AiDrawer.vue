@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FreeSelect from './FreeSelect.vue';
 import { computed, nextTick, ref, watch } from 'vue';
 import { checkMessage } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
@@ -336,14 +337,12 @@ const usageTitle = computed(() => {
               style="width: 45%"
               @update:value="(v: string) => setModel(v, s.endpoints.find((e) => e.name === v)?.models[0] ?? '')"
             />
-            <n-select
+            <free-select
               size="small"
               :value="s.pick.model || null"
               :options="modelOptions"
               :placeholder="t('ai.modelPlaceholder')"
               :disabled="ai.running.value"
-              filterable
-              tag
               style="flex: 1"
               @update:value="(v: string) => setModel(s.pick.endpoint, v)"
             />
@@ -429,7 +428,7 @@ const usageTitle = computed(() => {
           </div>
 
           <div v-if="tab === 'agent' && isContest" class="presets">
-            <n-select v-model:value="presetLang" size="tiny" :options="LANG_OPTIONS" filterable tag :title="t('ai.presetLang')" style="width: 76px" />
+            <free-select v-model:value="presetLang" size="tiny" :options="LANG_OPTIONS" :title="t('ai.presetLang')" style="width: 76px" />
             <n-button v-for="p in CONTEST_PRESETS" :key="p.key" size="tiny" secondary @click="usePreset(contestPrompt(p))">
               {{ t(`ai.cpreset.${p.key}`) }}<template v-if="p.needsLang"> ({{ presetLang }})</template>
             </n-button>

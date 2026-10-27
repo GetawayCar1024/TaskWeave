@@ -53,7 +53,8 @@ test('CDF preserves bundles, expands per-test scores and puts dependency targets
   c.tests.group![0].points=60.125;
   assert.ok(polygonFeatureWarnings(c).length);
   assert.throws(() => lemonTestCases(c,[1,2,3,4,5],'A-test'), /integer scores/);
-  for (const groups of [ [{name:'a',tests:'0'}], [{name:'a',tests:'1-999999999'}], [{name:'a',tests:'1',points:-1}], [{name:'a',dependencies:['b']},{name:'b',dependencies:['a']}], [{name:'a',tests:'1'},{name:'b',tests:'1'}] ]) assert.throws(() => checkGroups('tests',groups));
+  for (const groups of [ [{name:'a',tests:'0'}], [{name:'a',tests:'1-999999999'}], [{name:'a',tests:'1',points:-1}], [{name:'a',dependencies:['b']},{name:'b',dependencies:['a']}] ]) assert.throws(() => checkGroups('tests',groups));
+  assert.equal(checkGroups('tests', [{name:'a',tests:'1'},{name:'b',tests:'1'}]).length, 2);
 });
 
 function unzip(bytes: Buffer) {
@@ -98,7 +99,7 @@ test('grader builds, cache invalidation, real judging, Polygon rejection and com
     await registry.patch(p.id,{validator:null, testsets:{ tests:{script:null} }});
     await fs.writeFile(path.join(p.dir,'tests/manual/01.in'),'2 3\n');
     await fs.writeFile(path.join(p.dir,'tests/manual/02.in'),'8 9\n');
-    await registry.patch(p.id,{points:true,testsets:{tests:{groups:true,group:[{name:'advanced',tests:'2',points:70,dependencies:['basic']},{name:'basic',tests:'1',points:30}]}}});
+    await registry.patch(p.id,{points:true,testsets:{tests:{groups:true,group:[{name:'1-advanced',tests:'2',points:70,dependencies:['0-basic']},{name:'0-basic',tests:'1',points:30}]}}});
     let ctx=await judge.ctx(p.id);
     assert.equal(judgeMode(ctx.config.problem),'grader'); assert.equal(ctx.config.problem.interactive,false);
     const first=await judge.compile(ctx,'solutions/std.cpp'); assert.ok(first.result.ok,first.result.log);
@@ -113,7 +114,7 @@ test('grader builds, cache invalidation, real judging, Polygon rejection and com
     const inv=await readInvocation(ctx,id);
     assert.equal(inv.status,'done',inv.error ?? 'invocation should finish'); assert.equal(inv.solutions[0].score?.total,100);
     assert.equal(inv.solutions[1].score?.total,0); assert.equal(inv.cells[1][1]?.verdict,'OK');
-    assert.deepEqual(inv.solutions[1].score?.groups[0].blockedBy,['basic']);
+    assert.deepEqual(inv.solutions[1].score?.groups.find(g => g.name === '1-advanced')?.blockedBy,['0-basic']);
     const sync=new PolygonSync(judge);
     const preview=await sync.pushPreview(ctx);assert.equal(preview.blocked,true);assert.ok(preview.warnings[0].includes('Grader'));
     await assert.rejects(sync.push(ctx,{keys:[],commit:false,buildPackage:false},job),/Grader/);
@@ -148,6 +149,7 @@ test('grader builds, cache invalidation, real judging, Polygon rejection and com
     const cdf=JSON.parse(archive.get('oi-round.cdf')!.toString());assert.equal(cdf.version,'1.0');assert.deepEqual(cdf.contestants,[]);
     assert.deepEqual(cdf.tasks.map((t:any)=>t.taskType),[3,0]);assert.equal(cdf.tasks[1].standardInputCheck,false);assert.equal(cdf.tasks[1].inputFileName,'batch-demo.in');
     assert.ok(cdf.tasks.every((t:any)=>t.comparisonMode===4));
+    assert.ok(cdf.tasks.every((t:any)=>t.subFolderCheck===false));
     assert.ok(archive.has('data/grader-demo/checker-sources/shared/lemon/testlib.h'));
     assert.equal(cdf.tasks[0].compilerConfiguration['g++'],'C++17 O2');
     for(const task of cdf.tasks) for(const row of task.testCases) for(const file of [...row.inputFiles,...row.outputFiles].filter((f:string)=>!f.endsWith('_lemon_SUbtaskDEPENDENCE_fLAg'))) assert.ok(archive.has('data/'+file),file);

@@ -170,8 +170,19 @@ export async function runInvocation(
               setCell({ verdict: 'SKIP', timeMs: 0, memoryKb: 0, message: t.error ?? (t.valid === false ? 'invalid test' : 'no answer') });
               return;
             }
-            await withTmp(ctx.ref.dir, async (tmp) => {
-              const limits = { ...ctx.limits, timeLimitMs: t.timeLimit ?? ctx.limits.timeLimitMs, memoryLimitMb: t.memoryLimit ?? ctx.limits.memoryLimitMb };
+            const contexts = new Map<string, { timeLimit: number; memoryLimit: number; groups: string[] }>();
+            for (const group of t.groups?.length ? t.groups : [{ name: '', timeLimit: t.timeLimit ?? ctx.limits.timeLimitMs, memoryLimit: t.memoryLimit ?? ctx.limits.memoryLimitMb }]) {
+              const key = `${group.timeLimit}:${group.memoryLimit}`;
+              const context = contexts.get(key) ?? { timeLimit: group.timeLimit, memoryLimit: group.memoryLimit, groups: [] };
+              if (group.name) context.groups.push(group.name);
+              contexts.set(key, context);
+            }
+            const groupResults: NonNullable<InvocationCell['groupResults']> = Object.create(null);
+            let summary: InvocationCell | undefined;
+            // Different budgets can change program behavior (e.g. allocation failure), so run
+            // those contexts independently instead of inferring verdicts from a wider run.
+            for (const context of contexts.values()) await withTmp(ctx.ref.dir, async (tmp) => {
+              const limits = { ...ctx.limits, timeLimitMs: context.timeLimit, memoryLimitMb: context.memoryLimit };
               const r = await runSolution(judge.runner, prog, inFile, limits, tmp, { interactor, signal: job.signal });
               const cell: InvocationCell = {
                 verdict: r.verdict,
@@ -187,15 +198,19 @@ export async function runInvocation(
                 cell.message = c.message;
                 cell.points = c.points;
               }
-              const st = await fsp.stat(r.outputFile).catch(() => null);
-              if (st && st.size <= MAX_SAVED_OUTPUT) {
+              if (!summary || summary.verdict === 'OK' && cell.verdict !== 'OK') {
+                const st = await fsp.stat(r.outputFile).catch(() => null);
                 const dest = refOutputPath(ctx, inv, si, { testset: t.testset, index: t.index });
-                await fsp.mkdir(path.dirname(dest), { recursive: true });
-                await fsp.copyFile(r.outputFile, dest);
-                cell.hasOutput = true;
+                if (st && st.size <= MAX_SAVED_OUTPUT) {
+                  await fsp.mkdir(path.dirname(dest), { recursive: true });
+                  await fsp.copyFile(r.outputFile, dest);
+                  cell.hasOutput = true;
+                } else await fsp.rm(dest, { force: true });
+                summary = cell;
               }
-              setCell(cell);
+              for (const name of context.groups) groupResults[name] = cell;
             });
+            setCell({ ...summary!, ...(contexts.size > 1 ? { groupResults, message: Object.entries(groupResults).map(([name, result]) => `${name}: ${result.verdict} (${result.timeMs} ms, ${result.memoryKb} KiB)`).join('\n') } : {}) });
             job.progress(++done, total, 'running');
           },
         );
@@ -218,7 +233,7 @@ export async function runInvocation(
     inv.solutions.forEach((s, i) => {
       const cells = inv.cells[i] ?? [];
       if (s.compile?.ok !== false) s.expectation = checkTag(s.tag, cells, inv.timeLimit);
-      const ran = cells.filter((c): c is InvocationCell => !!c && c.verdict !== 'SKIP');
+      const ran = cells.flatMap(cell => cell ? cell.groupResults ? Object.values(cell.groupResults) : [cell] : []).filter(cell => cell.verdict !== 'SKIP');
       s.maxTimeMs = ran.length ? Math.max(...ran.map((c) => c.timeMs)) : undefined;
       s.maxMemoryKb = ran.length ? Math.max(...ran.map((c) => c.memoryKb)) : undefined;
     });
