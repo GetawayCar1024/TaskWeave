@@ -309,7 +309,12 @@ export class Compiler {
     // Invalidate first; a failed compile must never leave a runnable old binary.
     await fsp.rm(recordPath, { force: true });
     await fsp.rm(exe, { force: true });
-    const [cmd, ...args] = substitute(splitCommand(a.lang.compile), vars);
+    const [cmd, ...configuredArgs] = substitute(splitCommand(a.lang.compile), vars);
+    // Existing Windows language presets may be carried to Linux. Its ELF linker
+    // has no PE --stack option; the Linux supervisor sets the runtime stack limit.
+    const args = process.platform === 'linux' && C_COMPILERS.test(path.basename(cmd))
+      ? configuredArgs.filter(arg => !/^-Wl,--stack(?:=|,)\d+(?:,\d+)?$/.test(arg))
+      : configuredArgs;
     args.push(...a.extraArgs);
     const compileOnce = () => new Promise<CacheRecord>((resolve) => {
       execFile(

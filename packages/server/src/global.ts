@@ -32,7 +32,7 @@ export interface RawAiEndpoint {
 export const DEFAULT_POLYGON_API = 'https://polygon.codeforces.com/api/';
 import { ASSETS_DIR } from './paths.js';
 import { atomicWrite, copyMissing, exists, HttpError } from './util/fs.js';
-import { migrateDefaultProfile, migrateProfilePaths, migrateTrashEntry } from './workspace/migrateNames.js';
+import { migrateDefaultProfile, migrateProfilePaths, migrateTrashEntry, migrateStateIgnore } from './workspace/migrateNames.js';
 
 
 export function defaultGlobalDir(): string {
@@ -78,6 +78,7 @@ export class GlobalStore {
     await fsp.mkdir(this.dir, { recursive: true });
     await copyMissing(path.join(ASSETS_DIR, 'shared'), this.sharedDir);
     await copyMissing(path.join(ASSETS_DIR, 'templates'), this.templatesDir);
+    await migrateStateIgnore(path.join(this.templatesDir, 'problem', '.gitignore'));
     for (const f of ['config.toml', 'languages.toml', 'secrets.toml']) {
       const dest = path.join(this.dir, f);
       if (!(await exists(dest))) await fsp.copyFile(path.join(ASSETS_DIR, f), dest);

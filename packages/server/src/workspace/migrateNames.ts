@@ -7,6 +7,14 @@ import { atomicWrite, HttpError } from '../util/fs.js';
 /** Rename only the application's own state directory, preserving identity and all bytes. */
 export async function migrateWorkspaceState(directory: string): Promise<void> {
   await renameState(path.join(directory, LEGACY_STATE), path.join(directory, '.taskweave'));
+  await migrateStateIgnore(path.join(directory, '.gitignore'));
+}
+export async function migrateStateIgnore(file: string): Promise<void> {
+  const before = await fs.readFile(file, 'utf8').catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+  if (before === null) return;
+  const names = new Set([LEGACY_STATE, LEGACY_STATE + '/', '/' + LEGACY_STATE, '/' + LEGACY_STATE + '/']);
+  const after = before.split('\n').map(line => names.has(line.replace(/\r$/, '')) ? line.replace(LEGACY_STATE, '.taskweave') : line).join('\n');
+  if (after !== before) await atomicWrite(file, after);
 }
 const moving = new Map<string, Promise<void>>();
 function renameState(from: string, to: string): Promise<void> {

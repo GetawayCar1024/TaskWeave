@@ -64,12 +64,14 @@ test('namespace migration retains identities, sessions, answers and original-vol
     const baseline = (await judge.ctx(p.id)).config.tests.answer_baseline!;
     await fs.mkdir(path.join(p.dir, '.taskweave/ai/history'), { recursive: true });
     await fs.writeFile(path.join(p.dir, '.taskweave/ai/history/session.json'), '{"text":"kept history"}');
+    await fs.writeFile(path.join(p.dir, '.gitignore'), '# keep user rules\r\n' + LEGACY_STATE + '/\r\ncustom.txt\r\n');
     await fs.rename(path.join(p.dir, '.taskweave'), path.join(p.dir, LEGACY_STATE));
     await fs.rename(path.join(c.dir, '.taskweave'), path.join(c.dir, LEGACY_STATE));
     const moved = path.join(p.root, 'renamed-folder'); await fs.rename(p.dir, moved);
     assert.equal((await registry.get(p.id)).id, p.id);
     await registry.scan(); await contests.scan();
     assert.equal((await registry.get(p.id)).dir, moved);
+    assert.equal(await fs.readFile(path.join(moved, '.gitignore'), 'utf8'), '# keep user rules\r\n.taskweave/\r\ncustom.txt\r\n');
     assert.equal((await contests.detail(c.id)).problems[0].summary?.id, p.id);
     assert.equal(await fs.readFile(path.join(moved, '.taskweave/ai/history/session.json'), 'utf8'), '{"text":"kept history"}');
     assert.equal((await judge.ctx(p.id)).config.tests.answer_baseline, baseline);

@@ -13,11 +13,10 @@ importers:
         version: 0.28.2
 
   packages/desktop:
-    dependencies:
+    devDependencies:
       '@taskweave/shared':
         specifier: workspace:*
         version: link:../shared
-    devDependencies:
       '@types/node':
         specifier: ^26.6.2
         version: 26.6.2

@@ -165,6 +165,11 @@ bool create(Proc& p, int input, int output, int stderrFd) {
     if (dup2(input, STDIN_FILENO) < 0 || dup2(output, STDOUT_FILENO) < 0 || dup2(stderrFd, STDERR_FILENO) < 0) childError(errors[1], "redirect");
     if (!p.spec.cwd.empty() && chdir(p.spec.cwd.c_str())) childError(errors[1], "chdir");
     rlimit core{0, 0}; if (setrlimit(RLIMIT_CORE, &core)) childError(errors[1], "core limit");
+    rlimit stack{};
+    if (getrlimit(RLIMIT_STACK, &stack) == 0 && stack.rlim_cur != RLIM_INFINITY && stack.rlim_cur < 256ULL * 1024 * 1024) {
+      stack.rlim_cur = stack.rlim_max == RLIM_INFINITY ? 256ULL * 1024 * 1024 : std::min<rlim_t>(stack.rlim_max, 256ULL * 1024 * 1024);
+      if (setrlimit(RLIMIT_STACK, &stack)) childError(errors[1], "stack limit");
+    }
     if (p.spec.timeLimit > 0) {
       const rlim_t seconds = static_cast<rlim_t>((p.spec.timeLimit + 999) / 1000);
       rlimit cpu{seconds, seconds + 1}; if (setrlimit(RLIMIT_CPU, &cpu)) childError(errors[1], "CPU limit");

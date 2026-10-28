@@ -8,10 +8,8 @@
   "scripts": {
     "typecheck": "tsc -p ."
   },
-  "dependencies": {
-    "@taskweave/shared": "workspace:*"
-  },
   "devDependencies": {
+    "@taskweave/shared": "workspace:*",
     "@types/node": "^26.6.2",
     "electron": "^44.4.5",
     "electron-builder": "^26.15.3",
