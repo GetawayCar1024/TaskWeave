@@ -47,7 +47,7 @@ async function fixture(run: (runner: Runner, spec: (mode: string, extra?: Partia
 test('Linux runner preserves argv, Unicode paths and exact redirected bytes', linux, async () => fixture(async (runner, spec, home, exe) => {
   const args = ['two words', 'quote"', 'back\\slash', '', '你好', '=value'];
   const run = await runner.run(spec('args', { argv: [exe, 'args', ...args] }));
-  assert.equal(run.status, 'OK', run.error); assert.ok(run.memoryKb > 0); assert.ok(run.wallMs >= run.timeMs - 30);
+  assert.equal(run.status, 'OK', run.error ?? ''); assert.ok(run.memoryKb > 0); assert.ok(run.wallMs >= run.timeMs - 30);
   assert.equal(await fs.readFile(path.join(home, 'stdout'), 'utf8'), args.map(arg => `${Buffer.byteLength(arg)}:${arg}\n`).join(''));
   const input = path.join(home, '输入 空格.in'), output = path.join(home, '答案 输出');
   const bytes = Buffer.from([0, 255, 13, 10, 42]); await fs.writeFile(input, bytes);

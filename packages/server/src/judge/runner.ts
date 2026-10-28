@@ -9,7 +9,7 @@ import { withBuildLocks, verifyBuild, type BuildIdentity } from './buildLock.js'
 
 export interface ProcSpec {
   build?: BuildIdentity;
-  /** argv; argv[0] is resolved by CreateProcess (absolute path or on PATH). */
+  /** argv; argv[0] is an absolute path or resolved on PATH. */
   argv: string[];
   cwd: string;
   stdin?: string;
@@ -80,7 +80,7 @@ export function quoteArg(a: string): string {
 }
 
 function specText(p: ProcSpec): string {
-  const lines = [`cmd=${p.argv.map(quoteArg).join(' ')}`, `cwd=${p.cwd}`];
+  const lines = [...(process.platform === 'linux' ? p.argv.map(arg => `arg=${arg}`) : [`cmd=${p.argv.map(quoteArg).join(' ')}`]), `cwd=${p.cwd}`];
   if (p.stdin) lines.push(`stdin=${p.stdin}`);
   if (p.stdout) lines.push(`stdout=${p.stdout}`);
   if (p.stderr) lines.push(`stderr=${p.stderr}`);
@@ -89,7 +89,7 @@ function specText(p: ProcSpec): string {
   lines.push(`memory_limit=${Math.round(p.memoryLimitBytes ?? 0)}`);
   lines.push(`output_limit=${Math.round(p.outputLimitBytes ?? 0)}`);
   lines.push(`process_limit=${p.processLimit ?? 1}`);
-  for (const l of lines) if (l.includes('\n')) throw new HttpError(400, 'bad_spec', 'Newline in run spec');
+  for (const l of lines) if (/[\r\n\0]/.test(l)) throw new HttpError(400, 'bad_spec', 'Newline or NUL in run spec');
   return lines.join('\n');
 }
 
@@ -139,8 +139,8 @@ export class Runner {
   /** Compile the runner with the local g++ on first use; cached by source hash. */
   async ensure(): Promise<string> {
     if (this.exe) return this.exe;
-    if (process.platform !== 'win32') {
-      throw new HttpError(501, 'unsupported_platform', 'The runner currently supports Windows only');
+    if (!['win32', 'linux'].includes(process.platform)) {
+      throw new HttpError(501, 'unsupported_platform', 'The runner supports Windows and Linux');
     }
     this.building ??= this.build().finally(() => (this.building = null));
     this.exe = await this.building;
@@ -149,19 +149,20 @@ export class Runner {
 
   private async build(): Promise<string> {
     const src = await fsp.readFile(RUNNER_SRC);
-    const exe = path.join(this.binDir, `runner-${sha1(src).slice(0, 12)}.exe`);
+    const windows = process.platform === 'win32';
+    const exe = path.join(this.binDir, `runner-${sha1(src).slice(0, 12)}${windows ? '.exe' : ''}`);
     if (!(await exists(exe))) {
       await fsp.mkdir(this.binDir, { recursive: true });
-      const tmp = `${exe}.tmp.exe`;
+      const tmp = `${exe}.tmp${windows ? '.exe' : ''}`;
       await new Promise<void>((resolve, reject) => {
-        execFile('g++', ['-O2', '-static', '-std=c++17', '-o', tmp, RUNNER_SRC], { timeout: 120_000, windowsHide: true }, (err, _o, stderr) =>
+        execFile('g++', ['-O2', ...(windows ? ['-static'] : []), '-std=c++17', '-o', tmp, RUNNER_SRC], { timeout: 120_000, windowsHide: true }, (err, _o, stderr) =>
           err ? reject(new HttpError(500, 'runner_build_failed', `Failed to build runner with g++: ${stderr || err.message}`)) : resolve(),
         );
       });
       await fsp.rename(tmp, exe);
       // Drop runners built from older sources.
       for (const f of await fsp.readdir(this.binDir)) {
-        if (/^runner-[0-9a-f]+\.exe$/.test(f) && f !== path.basename(exe)) await fsp.rm(path.join(this.binDir, f), { force: true }).catch(() => {});
+        if (/^runner-[0-9a-f]+(?:\.exe)?$/.test(f) && f !== path.basename(exe)) await fsp.rm(path.join(this.binDir, f), { force: true }).catch(() => {});
       }
     }
     return exe;
@@ -172,10 +173,12 @@ export class Runner {
       const child = spawn(exe, args, { windowsHide: true, signal });
       let out = '';
       let err = '';
+      let failure: Error | undefined;
       child.stdout.on('data', (d) => (out += d));
       child.stderr.on('data', (d) => (err += d));
-      child.on('error', reject);
-      child.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(`runner exited ${code}: ${err || out}`))));
+      child.on('error', error => { failure = error; });
+      // Hold executable read locks until the supervisor has cleaned up its process tree.
+      child.on('close', code => failure ? reject(failure) : code === 0 ? resolve(out) : reject(new Error(`runner exited ${code}: ${err || out}`)));
       child.stdin.end(input);
     });
   }

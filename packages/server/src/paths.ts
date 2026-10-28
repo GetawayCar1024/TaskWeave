@@ -27,5 +27,6 @@ export const ROOT = findRoot();
 const first = (...candidates: string[]) => candidates.find((p) => existsSync(p)) ?? candidates[0];
 
 export const ASSETS_DIR = path.join(ROOT, 'assets');
-export const RUNNER_SRC = first(...(ROOT.endsWith('.asar') ? [path.join(ROOT + '.unpacked', 'runner', 'runner.cpp')] : []), path.join(ROOT, 'runner', 'runner.cpp'), path.join(ROOT, 'packages', 'server', 'runner', 'runner.cpp'));
+const runnerFile = process.platform === 'linux' ? 'runner-linux.cpp' : 'runner.cpp';
+export const RUNNER_SRC = first(...(ROOT.endsWith('.asar') ? [path.join(ROOT + '.unpacked', 'runner', runnerFile)] : []), path.join(ROOT, 'runner', runnerFile), path.join(ROOT, 'packages', 'server', 'runner', runnerFile));
 export const WEB_DIST = first(path.join(ROOT, 'web'), path.join(ROOT, 'packages', 'web', 'dist'));
