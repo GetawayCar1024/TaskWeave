@@ -135,7 +135,7 @@ test('batch invocation publishes a test grid before compiling and incremental re
     assert.ok(result.cells.flat().some(c => c && c.timeMs > 0));
     console.log('Batch CPU/wall ms:', result.cells.flat().map(c => [c?.timeMs, c?.wallMs]));
     const sleeper = 'solutions/sleep.cpp';
-    await fs.writeFile(path.join(p.dir, sleeper), '#include <windows.h>\nint main(){Sleep(300);}');
+    await fs.writeFile(path.join(p.dir, sleeper), '#include <thread>\n#include <chrono>\nint main(){std::this_thread::sleep_for(std::chrono::milliseconds(300));}');
     const prog = await f.judge.require(ctx, sleeper, 'Solution');
     const timing = await f.judge.runner.run({argv:prog.argv,build:prog.build,cwd:p.dir,timeLimitMs:1000,wallLimitMs:3000});
     assert.ok(timing.wallMs >= 250);assert.ok(timing.timeMs < timing.wallMs / 2);
