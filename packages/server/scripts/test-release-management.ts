@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import type { LightMyRequestResponse } from 'fastify';
-import type { JobInfo } from '@polyforge/shared';
+import type { JobInfo } from '@taskweave/shared';
 import { GlobalStore } from '../src/global.js';
 import { ProblemRegistry } from '../src/workspace/problems.js';
 import { ContestRegistry } from '../src/workspace/contests.js';
@@ -33,7 +33,7 @@ async function fixture(run: (ctx: { home: string; global: GlobalStore; registry:
   const registry = new ProblemRegistry(global), contests = new ContestRegistry(registry, global), hub = new WsHub();
   const judge = new Judge(global, registry, hub), files = new FileService(new SelfWrites()), watcher = new ProblemWatcher(registry, files, hub);
   const app = await buildApp({ global, registry, contests, hub, judge, files, watcher, jobs: new JobManager(hub), token: 'test-only' });
-  const call: Call = (method, url, payload) => app.inject({ method, url, payload, headers: { host: 'localhost', 'x-polyforge-token': 'test-only', ...(Buffer.isBuffer(payload) ? { 'content-type': 'application/zip' } : {}) } });
+  const call: Call = (method, url, payload) => app.inject({ method, url, payload, headers: { host: 'localhost', 'x-taskweave-token': 'test-only', ...(Buffer.isBuffer(payload) ? { 'content-type': 'application/zip' } : {}) } });
   try { await run({ home, global, registry, contests, judge, call }); }
   finally { await app.close(); await watcher.stop(); await fs.rm(home, { recursive: true, force: true }); }
 }
@@ -61,14 +61,14 @@ test('renaming a problem updates contest summaries and export names while retain
   const p = await registry.create({ name: 'old-name', dataOnly: true });
   await atomicWrite(path.join(p.dir, 'tests/manual/1.in'), '1\n'); await atomicWrite(path.join(p.dir, 'tests/manual/1.ans'), '2\n');
   await registry.patch(p.id, { samples: '1' });
-  await atomicWrite(path.join(p.dir, '.polyforge/sync.json'), 'history');
+  await atomicWrite(path.join(p.dir, '.taskweave/sync.json'), 'history');
   const c = await contests.create({ name: 'round', problems: [{ index: 'A', problem: p.id }] });
   const response = await call('PATCH', `/api/problems/${p.id}`, { name: 'new-name' });
   assert.equal(response.statusCode, 200, response.body);
   assert.equal(response.json().summary.id, p.id); assert.equal(path.basename(response.json().summary.dir), 'new-name');
   assert.equal((await contests.detail(c.id)).problems[0].summary?.name, 'new-name');
   assert.equal((await contestStatements(judge, contests, c.id, 'en'))[0].samples[0].inputFile, 'new-name/new-name1.in');
-  assert.equal(await fs.readFile(path.join(response.json().summary.dir, '.polyforge/sync.json'), 'utf8'), 'history');
+  assert.equal(await fs.readFile(path.join(response.json().summary.dir, '.taskweave/sync.json'), 'utf8'), 'history');
   const other = await registry.create({ name: 'taken', dataOnly: true });
   assert.equal((await call('PATCH', `/api/problems/${p.id}`, { name: other.name })).statusCode, 409);
   assert.equal((await call('PATCH', `/api/problems/${p.id}`, { name: '../escape' })).statusCode, 400);
@@ -79,7 +79,7 @@ test('recycle and restore problems/contests, preserve history, reject collisions
   const p = await registry.create({ name: 'recyclable', dataOnly: true });
   await atomicWrite(path.join(p.dir, 'tests/manual/1.in'), 'original');
   await atomicWrite(path.join(p.dir, 'tests/manual/1.out'), 'answer');
-  await atomicWrite(path.join(p.dir, '.polyforge/ai/session/history.json'), '{"history":true}');
+  await atomicWrite(path.join(p.dir, '.taskweave/ai/session/history.json'), '{"history":true}');
   const c = await contests.create({ name: 'recycle-round', problems: [{ index: 'B', problem: p.id }] });
   await atomicWrite(path.join(c.dir, 'files/notes.en.tex'), 'Keep contest notes');
   let response = await call('DELETE', `/api/problems/${p.id}`);
@@ -97,7 +97,7 @@ test('recycle and restore problems/contests, preserve history, reject collisions
   assert.equal(response.statusCode, 200, response.body); assert.equal(response.json().id, p.id);
   const restored = await registry.get(p.id);
   assert.equal(await fs.readFile(path.join(restored.dir, 'tests/manual/1.in'), 'utf8'), 'original');
-  assert.equal(await fs.readFile(path.join(restored.dir, '.polyforge/ai/session/history.json'), 'utf8'), '{"history":true}');
+  assert.equal(await fs.readFile(path.join(restored.dir, '.taskweave/ai/session/history.json'), 'utf8'), '{"history":true}');
   assert.equal((await contests.detail(c.id)).problems[0].summary?.id, p.id);
   response = await call('DELETE', `/api/contests/${c.id}`); assert.equal(response.statusCode, 200, response.body);
   const contestEntry = (await call('GET', '/api/trash')).json().entries.find((entry: any) => entry.kind === 'contest');
@@ -199,7 +199,7 @@ test('contest Luogu/Hydro archives contain standalone problem packages and persi
   const deps = { judge, contests, sync: new PolygonSync(judge) };
   const options = { [a.id]: { time: 'min' as const, memory: 'sum' as const }, [b.id]: { time: 'max' as const, memory: 'min' as const } };
   const result = await runContestBatch(deps, c.id, { action: 'export', exportFormat: 'luogu', luoguByProblem: options }, job());
-  const outer = readZip(await fs.readFile(path.join(c.dir, '.polyforge/export', result.file!)));
+  const outer = readZip(await fs.readFile(path.join(c.dir, '.taskweave/export', result.file!)));
   const first = readZip(outer.get('alpha/data.zip')!), second = readZip(outer.get('beta/data.zip')!);
   assert.match(first.get('score.txt')!.toString(), /@time\d+ < @final_time/);
   assert.match(first.get('score.txt')!.toString(), /@final_memory = @memory\d+ \+ @memory\d+/);
@@ -209,6 +209,6 @@ test('contest Luogu/Hydro archives contain standalone problem packages and persi
   const single = await buildProblemDataPackage(judge, await judge.ctx(a.id), 'luogu', job());
   assert.equal(readZip(single.data).get('score.txt')!.toString(), first.get('score.txt')!.toString());
   const hydro = await runContestBatch(deps, c.id, { action: 'export', exportFormat: 'hydro' }, job());
-  const hydroOuter = readZip(await fs.readFile(path.join(c.dir, '.polyforge/export', hydro.file!)));
+  const hydroOuter = readZip(await fs.readFile(path.join(c.dir, '.taskweave/export', hydro.file!)));
   for (const name of ['alpha', 'beta']) assert.ok(readZip(hydroOuter.get(`${name}/${name}-hydro.zip`)!).has('problem.yaml'));
 }));

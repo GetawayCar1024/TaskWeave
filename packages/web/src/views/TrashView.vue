@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NDataTable, NEmpty, NInput, NSelect, NTag, useDialog, useMessage, type DataTableColumns } from 'naive-ui';
 import { ArrowLeft, RefreshCw, RotateCcw, Trash2 } from 'lucide-vue-next';
-import type { TrashEntry } from '@polyforge/shared';
+import type { TrashEntry } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import { formatSize, problemTitle } from '../lib/format';
 import { onWs } from '../lib/ws';

@@ -1,18 +1,18 @@
 {
   "name": "taskweave",
   "private": true,
-  "version": "0.4.1",
+  "version": "0.4.2-dev",
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "scripts": {
-    "dev": "pnpm -r --parallel --filter @polyforge/server --filter @polyforge/web dev",
-    "build": "pnpm --filter @polyforge/web build",
+    "dev": "pnpm -r --parallel --filter @taskweave/server --filter @taskweave/web dev",
+    "build": "pnpm --filter @taskweave/web build",
     "icons": "node scripts/build-icons.mjs",
-    "start": "pnpm build && pnpm --filter @polyforge/server start",
+    "start": "pnpm build && pnpm --filter @taskweave/server start",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm --filter @polyforge/server test",
+    "test": "pnpm --filter @taskweave/server test",
     "desktop": "pnpm build && node scripts/build-desktop.mjs",
-    "desktop:run": "pnpm build && node scripts/build-desktop.mjs --app-only && pnpm --filter @polyforge/desktop exec electron app"
+    "desktop:run": "pnpm build && node scripts/build-desktop.mjs --app-only && pnpm --filter @taskweave/desktop exec electron app"
   },
   "engines": {
     "node": ">=20"

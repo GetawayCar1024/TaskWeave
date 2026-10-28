@@ -4,7 +4,7 @@ import { lintMessage } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
 import { NButton, NEmpty, NScrollbar, NSpin, NTag, useMessage } from 'naive-ui';
 import ToolWindow from './ToolWindow.vue';
-import { lintStatement, type LintResult } from '@polyforge/shared';
+import { lintStatement, type LintResult } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import type { Workspace } from '../lib/workspace';
 import TextDiff from './TextDiff.vue';

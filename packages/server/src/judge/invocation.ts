@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_TESTSET, checkTag, invocationOutputName, invocationRefs, testsetsOf, type Invocation, type InvocationCell, type InvocationSelection, type InvocationSummary, type InvocationTestRef, type SolutionScore, type TestInfo } from '@polyforge/shared';
+import { DEFAULT_TESTSET, checkTag, invocationOutputName, invocationRefs, testsetsOf, type Invocation, type InvocationCell, type InvocationSelection, type InvocationSummary, type InvocationTestRef, type SolutionScore, type TestInfo } from '@taskweave/shared';
 import type { JobCtx } from '../jobs.js';
 import { atomicWrite, exists, HttpError } from '../util/fs.js';
 import type { Program } from './compiler.js';

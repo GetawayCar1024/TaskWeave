@@ -24,4 +24,30 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - name: Native Linux runner contract
-        run: pnpm --filter @polyforge/server exec tsx --test --test-concurrency=1 scripts/test-linux-runner.ts
+        run: pnpm --filter @taskweave/server exec tsx --test --test-concurrency=1 scripts/test-linux-runner.ts
+      - name: Full regression suite
+        run: pnpm test
+      - name: Desktop prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends xvfb libgtk-3-0 libnss3 libgbm1 libasound2
+      - run: pnpm build
+      - run: node scripts/build-desktop.mjs --linux
+      - name: Run packaged application
+        run: xvfb-run -a pnpm --filter @taskweave/server exec tsx ../../scripts/smoke-desktop.mts
+      - name: Corresponding source archive
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          git archive --format=zip --prefix="TaskWeave-${version}/" --output="packages/desktop/dist/TaskWeave-${version}-source.zip" HEAD
+      - name: Checksums
+        working-directory: packages/desktop/dist
+        run: sha256sum TaskWeave-*-linux-x64.AppImage TaskWeave-*-linux-x64.tar.gz TaskWeave-*-source.zip > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TaskWeave-linux-x64
+          path: |
+            packages/desktop/dist/TaskWeave-*-linux-x64.AppImage
+            packages/desktop/dist/TaskWeave-*-linux-x64.tar.gz
+            packages/desktop/dist/TaskWeave-*-source.zip
+            packages/desktop/dist/SHA256SUMS.txt
+          if-no-files-found: error

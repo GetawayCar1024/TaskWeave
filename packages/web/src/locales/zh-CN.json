@@ -77,7 +77,7 @@
     "noHydroProblem": "包中没有 problem.yaml，请确认选择了 Hydro 整题包。",
     "problem": "包中的题目",
     "testset": "目标测试集",
-    "replaceData": "将替换目标测试集的数据与计分配置，不改变题面和程序。原始数据文件保留，旧 problem.toml 备份到 .polyforge/import-backups。",
+    "replaceData": "将替换目标测试集的数据与计分配置，不改变题面和程序。原始数据文件保留，旧 problem.toml 备份到 .taskweave/import-backups。",
     "imported": "已导入 {n} 个测试点，保留 {extras} 个额外文件",
     "luoguExport": "洛谷",
     "luoguHint": "每道题导出 data.zip，根目录包含全部选中数据、config.yml 和 score.txt。上传洛谷后，需要把 score.txt 粘贴到整题计分脚本中；不会自动安装脚本。",
@@ -129,7 +129,7 @@
   },
   "app": {
     "unauthorized": "未授权",
-    "unauthorizedHint": "请使用启动 Taskweave 时终端里打印的链接（带 token）打开本页面。",
+    "unauthorizedHint": "请使用启动 TaskWeave 时终端里打印的链接（带 token）打开本页面。",
     "loadFailed": "加载失败",
     "connected": "已连接到本地服务",
     "disconnected": "与本地服务断开，正在重连…"

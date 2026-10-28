@@ -4,7 +4,7 @@ Vendored without modifications from https://github.com/GitPinkRabbit/Testlib-for
 at commit ce95947b3894572e6664c8906bf8768d26c7a77e. See LICENSE and the notices in testlib.h.
 
 LemonLime references this project for its Lemon special judge protocol.
-Taskweave keeps it separate from the ordinary shared/testlib.h.
+TaskWeave keeps it separate from the ordinary shared/testlib.h.
 
 ```cpp
 #include "lemon/testlib.h"
@@ -21,7 +21,7 @@ Configure this source as `lemon_checker`, separately from the ordinary checker.
 Lemon calls it with: input, contestant output, answer, full score, score file, message file.
 For proportional partial credit with this library, set `quitpRelativeScoring = true` before calling `quitp`.
 
-## Taskweave checker templates
+## TaskWeave checker templates
 
 `checkers/` contains MIT-licensed adaptations of the upstream checkers at the pinned
 commit above: ncmp (int64), wcmp (tokens), lcmp (tokens within lines), fcmp (lines),

@@ -1,4 +1,4 @@
-# Taskweave 全局配置
+# TaskWeave 全局配置
 
 [ui]
 locale = "zh-CN"   # zh-CN | en

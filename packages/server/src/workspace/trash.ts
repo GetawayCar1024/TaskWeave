@@ -2,16 +2,17 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { parse } from 'smol-toml';
-import type { RestoreTrashRequest, TrashEntry } from '@polyforge/shared';
+import type { RestoreTrashRequest, TrashEntry } from '@taskweave/shared';
 import { samePath, type GlobalStore } from '../global.js';
 import { atomicWrite, exists, HttpError, safeJoin, validateFileName } from '../util/fs.js';
 import type { ProblemRef, ProblemRegistry } from './problems.js';
 import type { ContestRegistry } from './contests.js';
 import { libraryParent } from './library.js';
+import { migrateTrashEntry } from './migrateNames.js';
 
-const META = '.polyforge-trash.json';
+const META = '.taskweave-trash.json';
 type Metadata = Omit<TrashEntry, 'key' | 'size' | 'legacy' | 'error'> & { version: 1 | 2; folder: string; size?: number };
-const LOCAL_TRASH = '.polyforge-trash';
+const LOCAL_TRASH = '.taskweave-trash';
 const within = (parent: string, child: string) => { const rel = path.relative(parent, child); return rel === '' || rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel); };
 
 async function directorySize(dir: string): Promise<number> {
@@ -37,7 +38,7 @@ async function moveDirectory(from: string, to: string) {
   await fs.rm(from, { recursive: true, force: true });
 }
 
-/** Managed entries plus the problem folders produced by earlier PolyForge versions. */
+/** Managed entries plus the problem folders produced by earlier TaskWeave versions. */
 export class TrashStore {
   readonly dir: string;
   constructor(private global: GlobalStore, private problems: ProblemRegistry, private contests: ContestRegistry) {
@@ -54,11 +55,12 @@ export class TrashStore {
 
   private async inspect(key: string, includeSize = false): Promise<{ entry: TrashEntry; payload: string; folder: string }> {
     const dir = await this.entryDir(key);
+    await migrateTrashEntry(dir);
     const legacy = await exists(path.join(dir, 'problem.toml'));
     if (legacy) {
       const raw = parse(await fs.readFile(path.join(dir, 'problem.toml'), 'utf8')) as Record<string, any>;
       const folder = key.replace(/-\d{8}-\d{6}$/, '');
-      const identity = (await fs.readFile(path.join(dir, '.polyforge/identity'), 'utf8').catch(() => '')).trim();
+      const identity = (await fs.readFile(path.join(dir, '.taskweave/identity'), 'utf8').catch(() => '')).trim();
       return { payload: dir, folder, entry: { key, kind: 'problem', name: raw.problem?.name ?? folder, title: raw.problem?.title ?? {},
         originalId: identity || folder, deletedAt: (await fs.stat(dir)).mtime.toISOString(), size: includeSize ? await directorySize(dir) : 0, legacy: true } };
     }
@@ -83,6 +85,7 @@ export class TrashStore {
     for (const ent of await fs.readdir(this.dir, { withFileTypes: true })) {
       if (!ent.isDirectory() || ent.isSymbolicLink() || ent.name.startsWith('.')) continue;
       const dir = path.join(this.dir, ent.name);
+      await migrateTrashEntry(dir);
       if (!await exists(path.join(dir, META)) && !await exists(path.join(dir, 'problem.toml'))) continue;
       try { entries.push((await this.inspect(ent.name, true)).entry); }
       catch (e) { entries.push({ key: ent.name, kind: 'problem', name: ent.name, title: {}, size: 0, deletedAt: '', error: (e as Error).message }); }
@@ -143,6 +146,7 @@ export class TrashStore {
     await moveDirectory(payload, target);
     if (!entry.legacy) {
       const dir = await this.entryDir(key);
+      await migrateTrashEntry(dir);
       if (!samePath(path.dirname(payload), dir)) await fs.rm(path.dirname(payload), { recursive: true, force: true });
       await fs.rm(dir, { recursive: true, force: true });
     }

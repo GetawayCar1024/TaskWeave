@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Taskweave D Fold" data-variant="D">
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="TaskWeave D Fold" data-variant="D">
       <defs><linearGradient id="taskweave-tile" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#E6EBF8"/></linearGradient></defs>
 
       <g><path d="M59 65H102L151 191H108Z" fill="#8396DF"/><path d="M109 65H195L148 191H106L140 105H109Z" fill="#3F54C3"/><path d="M109 65L140 105H181L195 65Z" fill="#3F54C3"/><path d="M106 191H148L133 151Z" fill="#8396DF"/></g>

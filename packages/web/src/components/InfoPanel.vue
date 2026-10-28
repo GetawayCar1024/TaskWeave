@@ -20,7 +20,7 @@ import {
   useDialog,
   type SelectOption,
 } from 'naive-ui';
-import { distinctIoFiles, PROBLEM_NAME_RE, SOLUTION_TAGS, isSourceFile, judgeMode, type JudgeMode, type LemonComparison, type PatchProblemRequest, type SolutionTag } from '@polyforge/shared';
+import { distinctIoFiles, PROBLEM_NAME_RE, SOLUTION_TAGS, isSourceFile, judgeMode, type JudgeMode, type LemonComparison, type PatchProblemRequest, type SolutionTag } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import { serverText } from '../lib/serverText';
 import { formatSize } from '../lib/format';

@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { polygonFeatureWarnings, polygonLossWarnings, groupLayout, groupTotal, judgeMode, convertStatement, statementSyntaxWarnings, DEFAULT_TESTSET, LANG_TO_POLYGON, STATEMENT_SECTIONS, STD_PREFIX, parseIndexList, testsetsOf, testLimitLookup, type SolutionTag, type TestsManifest } from '@polyforge/shared';
+import { polygonFeatureWarnings, polygonLossWarnings, groupLayout, groupTotal, judgeMode, convertStatement, statementSyntaxWarnings, DEFAULT_TESTSET, LANG_TO_POLYGON, STATEMENT_SECTIONS, STD_PREFIX, parseIndexList, testsetsOf, testLimitLookup, type SolutionTag, type TestsManifest } from '@taskweave/shared';
 import type { JobCtx } from '../jobs.js';
 import { defsForProblem, readSharedDefs } from '../defs.js';
 import { stdRefToPath } from '../sharedFiles.js';
@@ -10,7 +10,7 @@ import { pickLanguage } from './compiler.js';
 import type { Judge, ProblemCtx } from './index.js';
 import { parseScript } from './script.js';
 import { answerPath, generateTests, inputPath } from './tests.js';
-import { flattenFiles } from '@polyforge/shared';
+import { flattenFiles } from '@taskweave/shared';
 import { lemonNativeSource } from './lemonNative.js';
 import { buildTree } from '../workspace/files.js';
 import { addAttachments } from '../workspace/attachments.js';
@@ -226,7 +226,7 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
       <tests>${testsXml.join('')}</tests>${groupsXml}
     </testset>`);
   }
-  zip.add('polyforge-tests.json', JSON.stringify({ format: 'polyforge-polygon', version: 1, tests: provenance }));
+  zip.add('taskweave-tests.json', JSON.stringify({ format: 'taskweave-polygon', version: 1, tests: provenance }));
 
   // ---- statements & tutorials (per language; tutorials follow the statement languages) ----
   const statements: string[] = [];

@@ -3,7 +3,7 @@ import { computed, h, ref, watch } from 'vue';
 import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NDataTable, NInput, NProgress, NScrollbar, NSelect, NSpace, NSwitch, NTabPane, NTabs, NTag, useDialog, useMessage, type DataTableColumns } from 'naive-ui';
-import { compressRanges, originalTestName, parseIndexList, testsetsOf, type TestFileResponse, type TestInfo } from '@polyforge/shared';
+import { compressRanges, originalTestName, parseIndexList, testsetsOf, type TestFileResponse, type TestInfo } from '@taskweave/shared';
 import TestsetDialog from './TestsetDialog.vue';
 import AnswersDialog from './AnswersDialog.vue';
 import PackageImportDialog from './PackageImportDialog.vue';
@@ -175,7 +175,7 @@ function statementButton(test: TestInfo, which: 'in' | 'out') {
 function openGenerated(kind: 'in' | 'ans' | 'overview') {
   const dir = testset.value === 'tests' ? 'tests' : `testsets/${testset.value}`;
   const suffix = kind === 'overview' ? 'overview.txt' : kind;
-  props.ws.openFile(`.polyforge/${dir}/${selected.value}.${suffix}`).catch(e => message.error(errorMessage(e)));
+  props.ws.openFile(`.taskweave/${dir}/${selected.value}.${suffix}`).catch(e => message.error(errorMessage(e)));
 }
 
 async function generate() {

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { invocationRefs } from '@polyforge/shared';
+import { invocationRefs } from '@taskweave/shared';
 import { GlobalStore } from '../src/global.js';
 import { ProblemRegistry } from '../src/workspace/problems.js';
 import { Judge } from '../src/judge/index.js';

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { inflateRawSync } from 'node:zlib';
-import { problemTomlSchema, judgeMode, polygonFeatureWarnings, type ScoringInput } from '@polyforge/shared';
+import { problemTomlSchema, judgeMode, polygonFeatureWarnings, type ScoringInput } from '@taskweave/shared';
 import { GlobalStore } from '../src/global.js';
 import { ProblemRegistry, checkGroups } from '../src/workspace/problems.js';
 import { ContestRegistry } from '../src/workspace/contests.js';
@@ -131,7 +131,7 @@ test('grader builds, cache invalidation, real judging, Polygon rejection and com
     const builtin = await runContestBatch({judge,contests,sync},contest.id,{action:'export',exportFormat:'lemonlime'},job);
     const builtinArchive = unzip(await fs.readFile(path.join(contestExportDir(await contests.get(contest.id)), builtin.file!)));
     assert.ok(JSON.parse(builtinArchive.get('oi-round.cdf')!.toString()).tasks.every((task: any) => task.comparisonMode === 1 && task.specialJudge === ''));
-    assert.equal((await fs.stat(path.join(traditional.dir,'.polyforge','tests'))).isDirectory(), true);
+    assert.equal((await fs.stat(path.join(traditional.dir,'.taskweave','tests'))).isDirectory(), true);
     for (const problem of [p,traditional]) {
       await fs.writeFile(path.join(problem.dir,'lemon-checker.cpp'), '#include "lemon/testlib.h"\nint main(int argc,char**argv){registerLemonChecker(argc,argv);long long a=ans.readLong(),b=ouf.readLong();if(a!=b)quitf(_wa,"mismatch");quitf(_ok,"ok");}\n');
       await registry.patch(problem.id,{lemonChecker:'lemon-checker.cpp'});
@@ -161,7 +161,7 @@ test('grader builds, cache invalidation, real judging, Polygon rejection and com
     for(let i=0;i<task.graderFilesPath.length;i++) await fs.writeFile(path.join(runDir,task.graderFilesName[i]),archive.get('data/'+task.graderFilesPath[i])!);
     await fs.copyFile(path.join(p.dir,'solutions/std.cpp'),path.join(runDir,'grader-demo.cpp'));
     const exe=path.join(runDir,process.platform==='win32'?'grader-demo.exe':'grader-demo');
-    // Like PolyForge's Windows compiler preset, make the standalone fixture independent of MinGW runtime DLLs.
+    // Like TaskWeave's Windows compiler preset, make the standalone fixture independent of MinGW runtime DLLs.
     execFileSync('g++',['-std=c++17',...(process.platform === 'win32' ? ['-static'] : []),'-o',exe,'grader-demo.cpp',...task.graderFilesName],{cwd:runDir,windowsHide:true});
     assert.equal(execFileSync(exe,[],{input:'2 3\n',windowsHide:true}).toString().trim(),'5');
     // The packaged checker speaks Lemon's six-argument protocol and rejects wrong output.

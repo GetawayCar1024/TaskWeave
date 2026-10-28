@@ -69,7 +69,7 @@ test('one executable per source across edits, failures, concurrent requests and 
     assert.notEqual(first.hash, second.hash);
     await assert.rejects(verifyBuild(first.build), /source changed/);
     await verifyBuild(second.build);
-    const build = path.join(p.dir, '.polyforge', 'build');
+    const build = path.join(p.dir, '.taskweave', 'build');
     assert.deepEqual(await fs.readdir(build), [path.basename(first.build!.dir)]);
     const concurrent = await Promise.all(Array.from({ length: 4 }, async () => judge.compile(await judge.ctx(p.id), source)));
     assert.ok(concurrent.every(r => r.result.cached && r.program?.hash === second.hash));
@@ -87,7 +87,7 @@ test('one executable per source across edits, failures, concurrent requests and 
     assert.equal(failed.program, undefined);
     await assert.rejects(fs.access(second.argv[0]));
     await compile(0);
-    // Simulate a content-addressed directory left by an older PolyForge version.
+    // Simulate a content-addressed directory left by an older TaskWeave version.
     const legacy = path.join(build, '0123456789abcdef');
     await fs.mkdir(legacy);
     await fs.writeFile(path.join(legacy, 'compile.json'), JSON.stringify({ source: first.srcPath, ok: true, log: '' }));
@@ -178,7 +178,7 @@ test('workspace API maintains roles, language folders, samples and validates cus
   const contests = new ContestRegistry(registry, global);
   const app = await buildApp({ global, registry, contests, files, watcher, hub, judge, jobs, token: 'test-only' });
   const call = async (method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH', url: string, payload?: object) => {
-    const r = await app.inject({ method, url, payload, headers: { host: 'localhost', 'x-polyforge-token': 'test-only' } });
+    const r = await app.inject({ method, url, payload, headers: { host: 'localhost', 'x-taskweave-token': 'test-only' } });
     assert.equal(r.statusCode, 200, r.body);
     return r.json();
   };
@@ -193,11 +193,11 @@ test('workspace API maintains roles, language folders, samples and validates cus
     assert.equal(judge.langOf((await registry.detail(p.id)).config!, 'solution/2.cpp'), 'cpp20');
     await call('POST', `${base}/mkdir`, { path: 'statement/ja' });
     assert.ok((await registry.detail(p.id)).tree.find(f => f.name === 'statement')?.children?.find(f => f.name === 'ja')?.children?.some(f => f.name === 'legend.tex'));
-    await fs.mkdir(path.join(p.dir, '.polyforge', 'tests'), { recursive: true });
-    await fs.writeFile(path.join(p.dir, '.polyforge', 'tests', '1.in'), '3\n1 2 3\n');
-    await fs.writeFile(path.join(p.dir, '.polyforge', 'tests', '1.ans'), '6\n');
-    await fs.writeFile(path.join(p.dir, '.polyforge', 'tests', 'manifest.json'), JSON.stringify({ generatedAt: 'old', testset: 'tests', tests: [{ index: 1, origin: 'manual', source: 'tests/manual/01.in' }], errors: [], ok: true }));
-    assert.equal((await call('GET', `${base}/files/.polyforge/tests/1.in`)).content, '3\n1 2 3\n');
+    await fs.mkdir(path.join(p.dir, '.taskweave', 'tests'), { recursive: true });
+    await fs.writeFile(path.join(p.dir, '.taskweave', 'tests', '1.in'), '3\n1 2 3\n');
+    await fs.writeFile(path.join(p.dir, '.taskweave', 'tests', '1.ans'), '6\n');
+    await fs.writeFile(path.join(p.dir, '.taskweave', 'tests', 'manifest.json'), JSON.stringify({ generatedAt: 'old', testset: 'tests', tests: [{ index: 1, origin: 'manual', source: 'tests/manual/01.in' }], errors: [], ok: true }));
+    assert.equal((await call('GET', `${base}/files/.taskweave/tests/1.in`)).content, '3\n1 2 3\n');
     await call('PUT', `${base}/files/tests/manual/01.statement.out`, { content: 'override' });
     assert.equal((await call('GET', `${base}/tests/1/statement-out`)).content, 'override');
     await call('DELETE', `${base}/files/tests/manual/01.statement.out`);
@@ -235,7 +235,7 @@ test('workspace API maintains roles, language folders, samples and validates cus
     await call('PUT', `/api/contests/${contest.id}`, { statement: { subtitle: '第二轮认证', session: '提高级', schedule: '14:30–18:30', compileOptions: '-O2 -std=c++17', instructions: '1. 请检查文件名。\n2. 使用标准输入输出。' } });
     await registry.patch(p.id, { samples: '1' });
     for (const style of ['oi', 'cf']) {
-      const tex = await app.inject({ method: 'GET', url: `/api/contests/${contest.id}/tex?lang=zh&style=${style}`, headers: { host: 'localhost', 'x-polyforge-token': 'test-only' } });
+      const tex = await app.inject({ method: 'GET', url: `/api/contests/${contest.id}/tex?lang=zh&style=${style}`, headers: { host: 'localhost', 'x-taskweave-token': 'test-only' } });
       assert.equal(tex.statusCode, 200, tex.body);
       assert.match(tex.body, /\\begin\{document\}/);
       assert.match(tex.body, /margin=20mm/);
@@ -260,8 +260,8 @@ test('workspace API maintains roles, language folders, samples and validates cus
     assert.equal((await registry.detail(p.id)).config!.solutions.some(s => s.source === 'solution/2.cpp'), false);
     await call('DELETE', `${base}/cache`);
     assert.ok(await fs.readFile(path.join(p.dir, 'problem.toml')));
-    assert.ok(await fs.readFile(path.join(p.dir, '.polyforge', 'sync.json')));
-    await assert.rejects(fs.access(path.join(p.dir, '.polyforge', 'tests')));
+    assert.ok(await fs.readFile(path.join(p.dir, '.taskweave', 'sync.json')));
+    await assert.rejects(fs.access(path.join(p.dir, '.taskweave', 'tests')));
   } finally { await app.close(); await fs.rm(dir, { recursive: true, force: true }); }
 });
 
@@ -276,7 +276,7 @@ test('contest short name can change without moving its identity or losing settin
     await registry.create({ name: 'existing-problem' });
     const first = await contests.create({ name: 'round-one', title: { zh: '模拟赛' }, problems: [{ index: 'A', problem: 'existing-problem' }] });
     await contests.create({ name: 'round-two' });
-    const history = path.join(first.dir, '.polyforge', 'batches');
+    const history = path.join(first.dir, '.taskweave', 'batches');
     await fs.mkdir(history, { recursive: true });
     await fs.writeFile(path.join(history, 'latest.json'), '{"items":[]}');
     const renamed = await contests.update(first.id, { name: ' round-renamed ' });

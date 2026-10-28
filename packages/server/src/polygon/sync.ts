@@ -21,7 +21,7 @@ import {
   type PushItem,
   type PushPreview,
   type PushRequest,
-} from '@polyforge/shared';
+} from '@taskweave/shared';
 import type { JobCtx } from '../jobs.js';
 import type { Judge, ProblemCtx } from '../judge/index.js';
 import { requireFullProblem } from '../judge/index.js';
@@ -50,7 +50,7 @@ import {
   type Item,
 } from './items.js';
 
-/** `.polyforge/sync.json`: hashes of every item as of the last push/pull (DESIGN §3.2). */
+/** `.taskweave/sync.json`: hashes of every item as of the last push/pull (DESIGN §3.2). */
 interface SyncState {
   polygonId?: number;
   revision?: number;
@@ -80,7 +80,7 @@ async function writeSync(ctx: ProblemCtx, s: SyncState) {
 }
 
 /**
- * Content of text items as of the last sync (`.polyforge/sync-base/`), the common
+ * Content of text items as of the last sync (`.taskweave/sync-base/`), the common
  * ancestor for three-way merges. Binary items only need their hash.
  */
 interface BaseSnapshot {
@@ -363,7 +363,7 @@ export class PolygonSync {
     let conflict = false;
     if (req.commit) {
       job.progress(done++, total, 'problem.commitChanges');
-      const r = await client.call<{ committed?: boolean; conflictOccurred?: boolean; message?: string } | null>('problem.commitChanges', { problemId: polygonId, minorChanges: false, message: req.message?.trim() || 'Taskweave sync' });
+      const r = await client.call<{ committed?: boolean; conflictOccurred?: boolean; message?: string } | null>('problem.commitChanges', { problemId: polygonId, minorChanges: false, message: req.message?.trim() || 'TaskWeave sync' });
       if (r && r.committed === false) {
         conflict = !!r.conflictOccurred;
         warnings.push(conflict ? `Polygon did not commit: a conflict occurred while updating the working copy (${r.message || 'conflict'}). Resolve it on Polygon.` : `Polygon did not commit: ${r.message || 'No changes'}`);

@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue';
 import { NSelect } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
-import type { LibraryKind } from '@polyforge/shared';
+import type { LibraryKind } from '@taskweave/shared';
 import { api } from '../lib/api';
 const props = defineProps<{ value?: string; kind: LibraryKind; root?: string; disabled?: boolean }>();
 const emit = defineEmits<{ 'update:value': [string] }>();

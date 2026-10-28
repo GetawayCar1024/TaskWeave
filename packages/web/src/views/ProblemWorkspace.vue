@@ -5,7 +5,7 @@ import { unsavedChoice } from '../lib/confirmUnsaved';
 import { useI18n } from 'vue-i18n';
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 import { NAlert, NButton, NDropdown, NInput, NResult, NSelect, NScrollbar, NSpin, NSplit, NTabPane, NTabs, NTooltip, useDialog, useMessage } from 'naive-ui';
-import { isSourceFile, statementLanguages } from '@polyforge/shared';
+import { isSourceFile, statementLanguages } from '@taskweave/shared';
 import DirPicker from '../components/DirPicker.vue';
 import { loadSettings } from '../lib/settings';
 import AppHeader from '../components/AppHeader.vue';

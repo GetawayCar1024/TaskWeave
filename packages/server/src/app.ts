@@ -8,12 +8,13 @@ import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import {
   TOKEN_HEADER,
+  LEGACY_ID,
   type CreateProblemRequest,
   type MoveFileRequest,
   type PatchProblemRequest,
   type SettingsResponse,
   type WriteFileRequest,
-} from '@polyforge/shared';
+} from '@taskweave/shared';
 import { parseDefsToml, readSharedDefs } from './defs.js';
 import type { GlobalStore } from './global.js';
 import type { JobManager } from './jobs.js';
@@ -42,8 +43,8 @@ import { importPackage, inspectPackage } from './imports/packages.js';
 import { PackageUploads } from './imports/uploads.js';
 import { TrashStore } from './workspace/trash.js';
 import { LibraryFolders } from './workspace/library.js';
-import type { CreateLibraryFolderRequest, LibraryLocation } from '@polyforge/shared';
-import type { PackageImportOptions, PackageSelection, PackageBatchResult } from '@polyforge/shared';
+import type { CreateLibraryFolderRequest, LibraryLocation } from '@taskweave/shared';
+import type { PackageImportOptions, PackageSelection, PackageBatchResult } from '@taskweave/shared';
 
 export interface AppDeps {
   global: GlobalStore;
@@ -125,7 +126,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     if (!isApi && !isWs) return;
     // WebSockets and <img src> (statement images) cannot send headers; nor can the OI worker's font loader.
     const queryOk = isWs || /^\/api\/problems\/[^/]+\/raw\//.test(req.url) || /^\/api\/contests\/[^/]+\/file\/raw\?/.test(req.url) || /^\/api\/system-fonts\/[a-z]+\?/.test(req.url);
-    const given = req.headers[TOKEN_HEADER] ?? (queryOk ? new URL(req.url, 'http://x').searchParams.get('token') : null);
+    const given = req.headers[TOKEN_HEADER] ?? req.headers[`x-${LEGACY_ID}-token`] ?? (queryOk ? new URL(req.url, 'http://x').searchParams.get('token') : null);
     if (given !== token) return reply.code(401).send({ error: 'unauthorized', message: 'Missing or invalid token' });
   });
 
@@ -444,7 +445,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     await deps.judge.compiler.waitForMaintenance();
     const ref = await registry.get(req.params.id);
     for (const name of ['build', 'tests', 'testsets', 'tmp', 'export']) {
-      await fsp.rm(safeJoin(ref.dir, `.polyforge/${name}`), { recursive: true, force: true });
+      await fsp.rm(safeJoin(ref.dir, `.taskweave/${name}`), { recursive: true, force: true });
     }
     hub.broadcast({ type: 'problem:changed', problemId: ref.id });
     return { ok: true };

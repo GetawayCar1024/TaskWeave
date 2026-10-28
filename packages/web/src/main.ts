@@ -1,3 +1,4 @@
+import './lib/migrateStorage';
 import { createApp } from 'vue';
 import { createRouter, createWebHistory } from 'vue-router';
 import App from './App.vue';
@@ -18,11 +19,11 @@ const router = createRouter({
 });
 
 /*
- * After PolyForge is rebuilt or updated, an open tab still refers to the old page
+ * After TaskWeave is rebuilt or updated, an open tab still refers to the old page
  * chunks, which are gone (404): navigation then silently fails ("the click does
  * nothing"). Reload to the requested page instead, once per target.
  */
-const RELOAD_KEY = 'polyforge-chunk-reload';
+const RELOAD_KEY = 'taskweave-chunk-reload';
 let pending: string | null = null;
 function reloadTo(path: string | null) {
   const target = path ?? location.pathname + location.search;

@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { testsetOf } from '@polyforge/shared';
+import { testsetOf } from '@taskweave/shared';
 import { GlobalStore } from '../src/global.js';
 import { ProblemRegistry } from '../src/workspace/problems.js';
 import { ContestRegistry } from '../src/workspace/contests.js';
@@ -77,7 +77,7 @@ test('answer publication rollback and interrupted-transaction recovery retain th
   try { await assert.rejects(replaceAnswerFiles(p.dir, [{ output: 'tests/manual/1.ans', from: fresh }, { output: 'tests/manual/2.ans', from: fresh }], job().signal), /injected/); }
   finally { fs.rename = rename; }
   assert.equal(await fs.readFile(one, 'utf8'), 'previous-1'); assert.equal(await fs.readFile(two, 'utf8'), 'previous-2');
-  const transaction = path.join(p.dir, '.polyforge/answer-transaction');
+  const transaction = path.join(p.dir, '.taskweave/answer-transaction');
   await atomicWrite(path.join(transaction, '1.ans'), 'previous-1');
   await atomicWrite(path.join(transaction, 'journal.json'), JSON.stringify({ version: 1, committed: false, files: [{ output: 'tests/manual/1.ans', previous: '1.ans' }] }));
   await fs.writeFile(one, 'partially-published');
@@ -134,7 +134,7 @@ test('Lemon archives select target filenames and root scripts compile all suppli
 test('new local-volume trash preserves identity, restores, and removes payloads without recursive copies', async () => fixture(async (judge, home) => {
   const contests = new ContestRegistry(judge.registry, judge.global), trash = new TrashStore(judge.global, judge.registry, contests);
   const p = await judge.registry.create({ name: 'local-trash', dataOnly: true }); await atomicWrite(path.join(p.dir, 'tests/manual/1.in'), 'keep');
-  let entry = await trash.recycleProblem(p.id); assert.ok(entry.trash.includes('.polyforge-trash'));
+  let entry = await trash.recycleProblem(p.id); assert.ok(entry.trash.includes('.taskweave-trash'));
   assert.equal((await trash.restore(entry.key)).id, p.id);
   assert.equal(await fs.readFile(path.join(p.dir, 'tests/manual/1.in'), 'utf8'), 'keep');
   entry = await trash.recycleProblem(p.id); await trash.remove(entry.key); await assert.rejects(fs.access(entry.trash));

@@ -1,13 +1,13 @@
 # JOI/AtCoder in/out ZIPs and Polygon problem packages
 
-Research date: **2026-10-27**. Target: **PolyForge 0.3.4**. This note supplements [package-formats.md](./package-formats.md). Platform claims below come from official documentation, platform developers, or actual archives published by contest organizers. Proposed PolyForge conventions are identified explicitly.
+Research date: **2026-10-27**. Target: **TaskWeave 0.3.4**. This note supplements [package-formats.md](./package-formats.md). Platform claims below come from official documentation, platform developers, or actual archives published by contest organizers. Proposed TaskWeave conventions are identified explicitly.
 
 Source snapshots: Polygon's official API documentation at [`Codeforces/polygon-misc@8430c507`](https://github.com/Codeforces/polygon-misc/tree/8430c5076f7bcf39dd079ca0c34d46ed23fa459c); Hydro source at [`0dba6c4a`](https://github.com/hydro-dev/Hydro/tree/0dba6c4ac1870a96ef83dc2b0e514142181b7075). Luogu's live help pages were checked against the sources in the preceding note.
 
 ## Implementation conclusions
 
 1. **Offer “JOI/AtCoder-style in/out ZIP” as a directory-pair format.** A real JOI task ZIP has `in/01-01.txt` and `out/01-01.txt`; a contest ZIP can contain several problem directories with this structure. The directory names establish input/output roles; `.txt` alone does not. Preserve the complete original relative filenames and bytes. [J-ambulance] [J-2027-data]
-2. **There is no universal JOI/AtCoder scoring manifest established by these sources.** JOI publishes contest-specific scoring information separately as TXT or PDF; sampled data ZIPs contain no config. If PolyForge needs round-trip limits, scoring, dependencies, and names, document a **PolyForge companion**, such as `polyforge.yaml`, rather than claiming that `config.yaml` is a JOI or AtCoder standard. [J-2025-page] [J-2026-score] [J-c2-score]
+2. **There is no universal JOI/AtCoder scoring manifest established by these sources.** JOI publishes contest-specific scoring information separately as TXT or PDF; sampled data ZIPs contain no config. If TaskWeave needs round-trip limits, scoring, dependencies, and names, document a **TaskWeave companion**, such as `taskweave.yaml`, rather than claiming that `config.yaml` is a JOI or AtCoder standard. [J-2025-page] [J-2026-score] [J-c2-score]
 3. **Do not derive authoritative subtasks from `xxx-yyy`.** Official JOI scoring sets overlap and can include selected tests from other filename prefixes and samples. Keep test identity separate from scoring-set membership. [J-2026-score] [J-c2-score]
 4. **Polygon ZIP import is descriptor-driven full-problem import.** Import names, statements/tutorials, sample presentation, testsets, group policies/dependencies, sources and their roles, checker/validator tests, and additional assets. API synchronization is a separate operation; local ZIP import need not bind to a Polygon account/problem ID. [P-example] [P-nerc-zip] [P-api]
 5. **“Full” is a build option, not a fourth ZIP variant.** Polygon builds `standard`, `linux`, and `windows` packages. Standard lacks generated test data; Linux and Windows contain generated tests. Materialized tests plus sources make the Linux-style variant the useful target for a portable local full export. [P-api-packages]
@@ -97,12 +97,12 @@ Other AtCoder task types need their own handling. For example, AHC001 publishes 
 
 AtCoder's ordinary output-format relaxation permits replacing or adding whitespace characters (CR/LF/space/tab), unless a statement overrides this. This is closer to whitespace-token comparison than Hydro/Luogu's trailing-whitespace-only default, so keep checker semantics in imported metadata rather than choosing solely by archive layout. [A-rules]
 
-### Proposed PolyForge companion: product convention only
+### Proposed TaskWeave companion: product convention only
 
-**Recommendation, not an official JOI/AtCoder format:** place optional `polyforge.yaml` next to each problem's `in/` and `out/`. Require a format marker and version; do not interpret an arbitrary `config.yml` as this schema.
+**Recommendation, not an official JOI/AtCoder format:** place optional `taskweave.yaml` next to each problem's `in/` and `out/`. Require a format marker and version; do not interpret an arbitrary `config.yml` as this schema.
 
 ```yaml
-format: polyforge-inout
+format: taskweave-inout
 version: 1
 problem:
   name: sum
@@ -146,7 +146,7 @@ Suggested contract:
 - `min` means one bundle worth `points`; with binary AC/WA cases it contributes that weight iff every member passes. `sum` with `test_points` means **that same weight for each member**; the displayed group maximum is `caseCount * test_points`, not an independent total silently divided among tests.
 - Optional per-case score/limit overrides can retain imported heterogeneous data. Heterogeneous sum scores should remain explicit rather than being silently converted to a uniform weight.
 - Define inheritance as **case > subtask > problem**. For a case referenced by two groups with different limits, the memberships have different effective judge contexts; a single shared execution at the larger limit is not equivalent.
-- `sample` does not imply a score or group. Preserve unknown keys/files and original scoring documents. Native bare in/out export remains useful when only testcase bytes are requested; export with the companion when PolyForge round-tripping is requested.
+- `sample` does not imply a score or group. Preserve unknown keys/files and original scoring documents. Native bare in/out export remains useful when only testcase bytes are requested; export with the companion when TaskWeave round-tripping is requested.
 
 The local file provides capabilities absent from the bare archive; it does not install limits or scoring in JOI/AtCoder's judging systems.
 
@@ -181,7 +181,7 @@ The current official API documents: [P-api-packages]
 
 `problem.buildPackage(full=true)` creates all three variants; `full=false` creates only standard. There is **no documented `type=full`**. Verification is a separate `verify` build parameter. A standard package with absent generated inputs is not malformed just because the local importer cannot execute its generator. [P-api-packages]
 
-**PolyForge recommendation:** preserve the descriptor, source programs, commands, and available data when importing standard archives, recording unresolved generated tests. Full export should materialize the selected testsets and their answers, or state exactly which references remain unresolved. Imported provided answers must stay authoritative. Generator execution/answer generation is an explicit judging/build operation, not filename detection.
+**TaskWeave recommendation:** preserve the descriptor, source programs, commands, and available data when importing standard archives, recording unresolved generated tests. Full export should materialize the selected testsets and their answers, or state exactly which references remain unresolved. Imported provided answers must stay authoritative. Generator execution/answer generation is an explicit judging/build operation, not filename detection.
 
 The official help describes exported ZIPs as packages used by online judges and a separate “Add tests from archive” feature. The API provides individual authoring operations and package downloads. These sources do not establish a universal “upload this full ZIP to Polygon and restore the entire problem” endpoint. Implementing local Polygon ZIP import/export therefore does not by itself implement API synchronization. [P-manual] [P-api]
 
@@ -389,7 +389,7 @@ Those are appropriate local authoring concepts. The native representations diffe
 | Polygon | `points-policy="complete-group"`, group `points=P`; emitted member test weights sum to `P`. For example one test gets `P`, the others `0`. | `points-policy="each-test"`; each `<test points="w">`. Do not reuse the bundle's per-case weights. [P-groups] [P-roi-zip] |
 | Hydro | `type: min`, `score: P`; each case's possible score should be `P` for ordinary binary checking. | `type: sum`, explicit per-case `score: w`, subtask `score: n*w`. [H-normalize] [H-flow] |
 | Luogu | `subtaskId` gives membership; use an understood subtask/problem scoring-script policy for all-or-nothing scoring. | Filename-keyed per-case `score: w` plus additive scoring. `subtaskId` alone does not define either aggregation. [L-config] [L-score] |
-| Bare JOI/AtCoder in/out | Not encoded. | Not encoded. A PolyForge companion can preserve either local convention. [J-ambulance] [J-2026-data] |
+| Bare JOI/AtCoder in/out | Not encoded. | Not encoded. A TaskWeave companion can preserve either local convention. [J-ambulance] [J-2026-data] |
 
 **Verified Polygon weight example:** ROI `1/problem.xml` group `1` contains tests 2–22 and is worth **25**; only test **18** has `points="25.0"`, the rest have `points="0.0"`. Computing the minimum of those stored numbers would incorrectly give 0 even on a completely correct submission. All inspected ROI complete-group `points` attributes equal the sum of their members' test weights. [P-roi-zip]
 

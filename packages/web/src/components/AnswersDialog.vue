@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { NAlert, NButton, NFormItem, NSelect, useMessage } from 'naive-ui';
 import { useI18n } from 'vue-i18n';
-import type { AnswerBackupInfo, AnswerOperationResult, JobInfo } from '@polyforge/shared';
+import type { AnswerBackupInfo, AnswerOperationResult, JobInfo } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import { waitJob } from '../lib/jobs';
 import { createJobFollower } from '../lib/jobFollower';

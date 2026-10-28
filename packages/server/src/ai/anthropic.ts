@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { AiTestResult } from '@polyforge/shared';
+import type { AiTestResult } from '@taskweave/shared';
 import type { RawAiEndpoint } from '../global.js';
 import type { AgentMessage, Block, ChatRequest, ChatResponse, Provider, StopReason } from './provider.js';
 import { cleanApiError, ToolInputParseError } from './provider.js';

@@ -1,6 +1,6 @@
-# PolyForge — 本地造题平台设计文档
+# TaskWeave — 本地造题平台设计文档
 
-> 暂定名 PolyForge。一个本地优先（local-first）的 Polygon 替代/增强工具：文件存在本地，网页端做编辑、评测、造数据，需要时一键同步到 Polygon。
+> 暂定名 TaskWeave。一个本地优先（local-first）的 Polygon 替代/增强工具：文件存在本地，网页端做编辑、评测、造数据，需要时一键同步到 Polygon。
 
 ---
 
@@ -38,8 +38,8 @@
    + 全局目录    (native helper)
 ```
 
-- **服务端只监听 `127.0.0.1`**，启动后自动打开浏览器（`npm start` / 以后可打包成 `npx polyforge`）。
-- **无数据库**：所有状态都是文件。缓存（编译产物、生成的测试、hash、同步状态）放在题目内的 `.polyforge/` 隐藏目录，可随时删除重建。
+- **服务端只监听 `127.0.0.1`**，启动后自动打开浏览器（`npm start` / 以后可打包成 `npx taskweave`）。
+- **无数据库**：所有状态都是文件。缓存（编译产物、生成的测试、hash、同步状态）放在题目内的 `.taskweave/` 隐藏目录，可随时删除重建。
 - **WebSocket 推送**：文件变化、编译进度、评测进度、AI 流式输出都走 WS，前端不轮询。
 
 ### 技术选型
@@ -59,7 +59,7 @@
 仓库结构（monorepo，pnpm workspace）：
 
 ```
-polyforge/
+taskweave/
 ├─ packages/
 │  ├─ shared/        # 类型定义、problem.toml schema (zod)、常量
 │  ├─ server/        # Fastify 服务
@@ -78,10 +78,10 @@ polyforge/
 
 ### 3.1 全局目录（共有文件）
 
-默认 `~/.polyforge/`，可在设置中修改。
+默认 `~/.taskweave/`，可在设置中修改。
 
 ```
-~/.polyforge/
+~/.taskweave/
 ├─ config.toml            # 全局配置：界面语言、题目根目录、编辑器偏好
 ├─ secrets.toml           # Polygon key/secret、AI key（与题目分离，题目文件夹可放心 git）
 ├─ languages.toml         # 本地语言配置（见 §5）
@@ -129,7 +129,7 @@ D:/problems/
    │  └─ script.txt             # Polygon 格式的 generator 脚本 (gen_random 10 5 > $)
    ├─ validator-tests/          # validator 自测（期望 VALID/INVALID）
    ├─ checker-tests/            # checker 自测
-   └─ .polyforge/               # 缓存，可删除，建议 .gitignore
+   └─ .taskweave/               # 缓存，可删除，建议 .gitignore
       ├─ build/                 # 编译产物
       ├─ tests/                 # 生成出的完整 .in/.ans
       ├─ runs/                  # 历次 invocation 结果
@@ -150,7 +150,7 @@ interactive = false
 
 [polygon]
 id = 123456              # 绑定后写入；为空表示尚未创建
-# 该题最近一次同步的 revision 等写在 .polyforge/sync.json
+# 该题最近一次同步的 revision 等写在 .taskweave/sync.json
 
 [checker]
 source = "std:ncmp"      # 或 "checker.cpp"
@@ -226,7 +226,7 @@ tests = "1-10"
 
 **推送流程**（本地 → Polygon）：
 1. 若 `polygon.id` 为空：调用 `problem.create` 创建题目，写回 id。
-2. 对每个文件计算 hash，与 `.polyforge/sync.json` 比较，得到变更集。
+2. 对每个文件计算 hash，与 `.taskweave/sync.json` 比较，得到变更集。
 3. 在界面上展示变更集（新增/修改/删除），用户确认。
 4. 按依赖顺序调用：`updateInfo` → `saveFile`（resource / source）→ `setValidator` / `setChecker` / `setInteractor` → `saveSolution`（带 tag）→ `saveStatement` → `saveScript` / `saveTest` → `enableGroups`/`enablePoints`/`saveTestGroup`。
 5. 可选 `commitChanges`（附带 message）和 `buildPackage`。
@@ -282,7 +282,7 @@ models = ["gpt-5", "claude-sonnet-5"]
 ⑨ 生成报告：哪些检查通过、哪些需要人工关注
 ```
 
-- 流水线状态保存到 `.polyforge/ai/`，关掉页面后可以继续。
+- 流水线状态保存到 `.taskweave/ai/`，关掉页面后可以继续。
 - 右侧 AI 面板流式显示输出；也支持在任意文件上"让 AI 改这个文件"（带上下文：题面 + 当前文件 + 最近运行错误）。
 - AI 永远不直接覆盖文件：先给出 diff，用户接受后才写盘。
 

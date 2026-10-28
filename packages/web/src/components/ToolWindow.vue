@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NModal, NProgress, NTag } from 'naive-ui';
-import type { JobInfo } from '@polyforge/shared';
+import type { JobInfo } from '@taskweave/shared';
 import { serverText } from '../lib/serverText';
 
 /**

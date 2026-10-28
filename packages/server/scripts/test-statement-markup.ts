@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { convertStatement, lintStatement } from '@polyforge/shared';
+import { convertStatement, lintStatement } from '@taskweave/shared';
 import { renderLatex } from '../../web/src/lib/latex.js';
 import { GlobalStore } from '../src/global.js';
 import { ProblemRegistry } from '../src/workspace/problems.js';

@@ -17,7 +17,8 @@ import {
   CURRENCIES,
   type EndpointPricing,
   type ModelPrice,
-} from '@polyforge/shared';
+  legacyEnv,
+} from '@taskweave/shared';
 
 export interface RawAiEndpoint {
   name: string;
@@ -31,14 +32,13 @@ export interface RawAiEndpoint {
 export const DEFAULT_POLYGON_API = 'https://polygon.codeforces.com/api/';
 import { ASSETS_DIR } from './paths.js';
 import { atomicWrite, copyMissing, exists, HttpError } from './util/fs.js';
+import { migrateDefaultProfile, migrateProfilePaths, migrateTrashEntry } from './workspace/migrateNames.js';
 
 
 export function defaultGlobalDir(): string {
-  const override = process.env.TASKWEAVE_HOME || process.env.POLYFORGE_HOME;
+  const override = process.env.TASKWEAVE_HOME || process.env[legacyEnv('HOME')];
   if (override) return path.resolve(override);
-  const current = path.join(os.homedir(), '.taskweave'), legacy = path.join(os.homedir(), '.polyforge');
-  // Reuse an existing installation in place, including secrets, templates and trash indexes.
-  return !existsSync(path.join(current, 'config.toml')) && existsSync(path.join(legacy, 'config.toml')) ? legacy : current;
+  return migrateDefaultProfile(os.homedir());
 }
 
 /**
@@ -83,7 +83,9 @@ export class GlobalStore {
       if (!(await exists(dest))) await fsp.copyFile(path.join(ASSETS_DIR, f), dest);
     }
     await fsp.mkdir(path.join(this.cacheDir, 'bin'), { recursive: true });
+    await migrateProfilePaths(this.dir);
     await this.loadConfig();
+    for (const entry of await fsp.readdir(path.join(this.dir, 'trash'), { withFileTypes: true }).catch(() => [])) if (entry.isDirectory() && !entry.isSymbolicLink()) await migrateTrashEntry(path.join(this.dir, 'trash', entry.name));
     await this.checkTestlib();
   }
 
@@ -93,7 +95,7 @@ export class GlobalStore {
       fsp.readFile(file, 'utf8').then((t) => t.match(/#define VERSION "([^"]+)"/)?.[1], () => undefined);
     const [mine, bundled] = await Promise.all([version(path.join(this.sharedDir, 'testlib.h')), version(path.join(ASSETS_DIR, 'shared', 'testlib.h'))]);
     if (mine && bundled && mine !== bundled) {
-      console.log(`[taskweave] shared/testlib.h is ${mine}; Taskweave ships ${bundled}. To update: copy ${path.join(ASSETS_DIR, 'shared', 'testlib.h')} to ${path.join(this.sharedDir, 'testlib.h')}`);
+      console.log(`[taskweave] shared/testlib.h is ${mine}; TaskWeave ships ${bundled}. To update: copy ${path.join(ASSETS_DIR, 'shared', 'testlib.h')} to ${path.join(this.sharedDir, 'testlib.h')}`);
     }
   }
 
@@ -122,7 +124,7 @@ export class GlobalStore {
       if (!roots.some((x) => samePath(x, norm))) roots.push(norm);
     }
     parsed.data.problems.roots = roots;
-    await atomicWrite(this.configPath, '# Taskweave 全局配置\n\n' + stringify(parsed.data) + '\n');
+    await atomicWrite(this.configPath, '# TaskWeave 全局配置\n\n' + stringify(parsed.data) + '\n');
     this.config = parsed.data;
     return this.config;
   }

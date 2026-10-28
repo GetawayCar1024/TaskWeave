@@ -13,7 +13,7 @@ import {
   type FileRole,
   type PatchProblemRequest,
   type SolutionTag,
-} from '@polyforge/shared';
+} from '@taskweave/shared';
 import { SHARED_TAB, type Workspace } from '../lib/workspace';
 import { tagType } from '../lib/tags';
 import { FilePlus, Folder, FolderPlus, Image, Languages, Plus } from 'lucide-vue-next';
@@ -34,8 +34,8 @@ const props = defineProps<{ ws: Workspace }>();
 const emit = defineEmits<{ action: [SidebarAction] }>();
 const { t } = useI18n();
 
-const mode = ref<'roles' | 'dirs'>((localStorage.getItem('polyforge-tree-mode') as 'roles' | 'dirs') || 'roles');
-watch(mode, (m) => localStorage.setItem('polyforge-tree-mode', m));
+const mode = ref<'roles' | 'dirs'>((localStorage.getItem('taskweave-tree-mode') as 'roles' | 'dirs') || 'roles');
+watch(mode, (m) => localStorage.setItem('taskweave-tree-mode', m));
 
 
 /** Where "new file" in a role group puts the file by default. */
@@ -200,7 +200,7 @@ const dirTree = computed<Node[]>(() => toDirNodes(props.ws.state.detail?.tree ??
 const LANG_NAMES: Record<string, string> = { zh: '中文', en: 'English', ru: 'Русский' };
 const countLeaves = (n: Node): number => (n.children ?? []).reduce((a, c) => a + (c.isLeaf ? 1 : countLeaves(c)), 0);
 
-const expanded = ref<string[]>(JSON.parse(localStorage.getItem('polyforge-tree-expanded') ?? 'null') ?? [
+const expanded = ref<string[]>(JSON.parse(localStorage.getItem('taskweave-tree-expanded') ?? 'null') ?? [
   'group:statement',
   'group:tutorial',
   'group:validator',
@@ -209,8 +209,8 @@ const expanded = ref<string[]>(JSON.parse(localStorage.getItem('polyforge-tree-e
   'group:generator',
   'group:solution',
 ]);
-watch(expanded, (v) => localStorage.setItem('polyforge-tree-expanded', JSON.stringify(v)));
-const seenLangKeys = new Set<string>(JSON.parse(localStorage.getItem('polyforge-tree-seen-langs') ?? '[]'));
+watch(expanded, (v) => localStorage.setItem('taskweave-tree-expanded', JSON.stringify(v)));
+const seenLangKeys = new Set<string>(JSON.parse(localStorage.getItem('taskweave-tree-seen-langs') ?? '[]'));
 watch(
   roleTree,
   (tree) => {
@@ -218,7 +218,7 @@ watch(
     const fresh = keys.filter((k) => !seenLangKeys.has(k));
     if (!fresh.length) return;
     fresh.forEach((k) => seenLangKeys.add(k));
-    localStorage.setItem('polyforge-tree-seen-langs', JSON.stringify([...seenLangKeys]));
+    localStorage.setItem('taskweave-tree-seen-langs', JSON.stringify([...seenLangKeys]));
     expanded.value = [...new Set([...expanded.value, ...fresh])];
   },
   { immediate: true },

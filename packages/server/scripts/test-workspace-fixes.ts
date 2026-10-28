@@ -21,7 +21,7 @@ import {
   hasLanguageSection,
   languageSectionText,
   removeLanguageSection,
-} from '@polyforge/shared';
+} from '@taskweave/shared';
 
 async function setup(prefix: string) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
@@ -33,7 +33,7 @@ async function setup(prefix: string) {
   const watcher = new ProblemWatcher(registry, files, hub), judge = new Judge(global, registry, hub);
   const app = await buildApp({ global, registry, contests, hub, files, watcher, judge, jobs, token: 'test-only' });
   const call = (method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH', url: string, payload?: object) =>
-    app.inject({ method, url, payload, headers: { host: 'localhost', 'x-polyforge-token': 'test-only' } });
+    app.inject({ method, url, payload, headers: { host: 'localhost', 'x-taskweave-token': 'test-only' } });
   const cleanup = async () => { await app.close(); await watcher.stop(); await fs.rm(home, { recursive: true, force: true }); };
   return { home, global, registry, contests, jobs, hub, app, call, cleanup };
 }
@@ -112,7 +112,7 @@ test('deleting a contest removes its folder, allows re-creating it and respects 
     const p = await s.registry.create({ name: 'kept' });
     const c = await s.contests.create({ name: 'round', problems: [{ index: 'A', problem: p.id }] });
     await fs.writeFile(path.join(c.dir, 'files', 'announce.md'), 'hi');
-    await fs.mkdir(path.join(c.dir, '.polyforge', 'batches'), { recursive: true });
+    await fs.mkdir(path.join(c.dir, '.taskweave', 'batches'), { recursive: true });
 
     let release!: () => void;
     const blocker = new Promise<void>(r => (release = r));

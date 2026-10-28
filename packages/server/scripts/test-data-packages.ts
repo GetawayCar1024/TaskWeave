@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { stringify, parse } from 'smol-toml';
 import type { LightMyRequestResponse } from 'fastify';
-import { classifyFile, testsetsOf } from '@polyforge/shared';
+import { classifyFile, testsetsOf } from '@taskweave/shared';
 import { GlobalStore } from '../src/global.js';
 import { ProblemRegistry } from '../src/workspace/problems.js';
 import { ContestRegistry } from '../src/workspace/contests.js';
@@ -32,7 +32,7 @@ async function fixture(run: (f: { dir: string; global: GlobalStore; registry: Pr
   const registry = new ProblemRegistry(global), contests = new ContestRegistry(registry, global), hub = new WsHub();
   const judge = new Judge(global, registry, hub), files = new FileService(new SelfWrites()), watcher = new ProblemWatcher(registry, files, hub);
   const app = await buildApp({ global, registry, contests, hub, judge, files, watcher, jobs: new JobManager(hub), token: 'test-only' });
-  const call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH', url: string, payload?: object | Buffer) => app.inject({ method, url, payload, headers: { host: 'localhost', 'x-polyforge-token': 'test-only', ...(Buffer.isBuffer(payload) ? { 'content-type': 'application/zip' } : {}) } });
+  const call = (method: 'GET' | 'POST' | 'PUT' | 'PATCH', url: string, payload?: object | Buffer) => app.inject({ method, url, payload, headers: { host: 'localhost', 'x-taskweave-token': 'test-only', ...(Buffer.isBuffer(payload) ? { 'content-type': 'application/zip' } : {}) } });
   try { await run({ dir, global, registry, judge, contests, call }); }
   finally { await app.close(); await watcher.stop(); await fs.rm(dir, { recursive: true, force: true }); }
 }
@@ -181,9 +181,9 @@ test('API import prerequisites, single exports, data-only down.zip and contest L
   const c = await contests.create({ name: 'weak-contest', problems: [{ index: 'A', problem: p.id }] });
   response = await call('POST', `/api/contests/${c.id}/down`, { lang: 'zh', samplesOnly: true }); assert.equal(response.statusCode, 200);
   const result = await runContestBatch({ judge, contests, sync: new PolygonSync(judge) }, c.id, { action: 'export', exportFormat: 'lemonlime' }, job());
-  const lemon = readZip(await fs.readFile(path.join(c.dir, '.polyforge/export', result.file!)));
+  const lemon = readZip(await fs.readFile(path.join(c.dir, '.taskweave/export', result.file!)));
   assert.equal(JSON.parse(lemon.get('weak-contest.cdf')!.toString()).tasks[0].comparisonMode, 1);
   const luogu = await runContestBatch({ judge, contests, sync: new PolygonSync(judge) }, c.id, { action: 'export', exportFormat: 'luogu' }, job());
-  const contestZip = readZip(await fs.readFile(path.join(c.dir, '.polyforge/export', luogu.file!)));
+  const contestZip = readZip(await fs.readFile(path.join(c.dir, '.taskweave/export', luogu.file!)));
   assert.ok(readZip(contestZip.get('api-data/data.zip')!).has('config.yml'));
 }));

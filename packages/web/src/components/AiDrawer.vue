@@ -23,7 +23,7 @@ import {
   useMessage,
   useDialog,
 } from 'naive-ui';
-import type { AiChangeContent, AiFinding, AiSessionMode, AiTranscriptItem, LocalCheck } from '@polyforge/shared';
+import type { AiChangeContent, AiFinding, AiSessionMode, AiTranscriptItem, LocalCheck } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import type { Ai } from '../lib/ai';
 import { CONTEST_PRESETS, PRESETS, pastedStatementPrompt, type ContestPreset } from '../lib/aiPresets';
@@ -57,7 +57,7 @@ watch(() => props.ai.state.current?.mode, mode => { if (mode) tab.value = mode; 
 const checks = ref<LocalCheck[] | null>(null);
 const isContest = computed(() => props.problemId.startsWith('contest:'));
 /** Local checks and AI findings: heights set by dragging their bottom border (kept). */
-const sizeKey = (name: string) => `polyforge-ai-${isContest.value ? 'contest' : 'problem'}-${name}-height`;
+const sizeKey = (name: string) => `taskweave-ai-${isContest.value ? 'contest' : 'problem'}-${name}-height`;
 const checksSize = useResizable(sizeKey('checks'), { edge: 'bottom', initial: 170, min: 48, max: () => window.innerHeight * 0.5 });
 const findingsSize = useResizable(sizeKey('findings'), { edge: 'bottom', initial: 180, min: 48, max: () => window.innerHeight * 0.55 });
 
@@ -68,8 +68,8 @@ async function loadChecks() {
 }
 
 /** Contest presets that need a language: the one picked next to the buttons. */
-const presetLang = ref(localStorage.getItem('polyforge-ai-preset-lang') || 'en');
-watch(presetLang, (l) => localStorage.setItem('polyforge-ai-preset-lang', l));
+const presetLang = ref(localStorage.getItem('taskweave-ai-preset-lang') || 'en');
+watch(presetLang, (l) => localStorage.setItem('taskweave-ai-preset-lang', l));
 const LANG_OPTIONS = ['zh', 'en', 'ru', 'ja', 'ko', 'fr', 'de', 'es'].map((l) => ({ label: l, value: l }));
 const contestPrompt = (p: ContestPreset) => p.prompt.split('{lang}').join(presetLang.value.trim() || 'en');
 
@@ -269,7 +269,7 @@ async function review(accept: boolean, paths = [...picked.value]) {
 const STATUS_TYPE = { added: 'success', modified: 'warning', deleted: 'error' } as const;
 
 /** Height limit of the change list, set by dragging its top edge (kept across sessions). */
-const changesSize = useResizable('polyforge-ai-changes-height', { edge: 'top', initial: 180, min: 80, max: () => window.innerHeight * 0.45 });
+const changesSize = useResizable('taskweave-ai-changes-height', { edge: 'top', initial: 180, min: 80, max: () => window.innerHeight * 0.45 });
 
 /** Token breakdown for the usage line tooltip. */
 const usageTitle = computed(() => {

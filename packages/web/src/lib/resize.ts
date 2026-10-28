@@ -7,7 +7,7 @@ export type ResizeEdge = 'top' | 'bottom' | 'left' | 'right';
  * on that edge). The size is kept in localStorage under `key`; double-clicking the
  * handle restores the initial size.
  *
- *   const h = useResizable('polyforge-x-height', { edge: 'bottom', initial: 180, min: 60 });
+ *   const h = useResizable('taskweave-x-height', { edge: 'bottom', initial: 180, min: 60 });
  *   <div :style="{ height: `${h.size.value}px` }">…<div class="pf-resize-handle bottom" @pointerdown="h.start" @dblclick="h.reset" /></div>
  */
 export function useResizable(key: string | null, opts: { edge: ResizeEdge; initial: number; min: number; max?: () => number }) {

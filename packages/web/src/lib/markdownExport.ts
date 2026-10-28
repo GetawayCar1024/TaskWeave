@@ -58,7 +58,7 @@ export function serializeMarkdown(element: HTMLElement, options: MarkdownExportO
   }
 
   // Translate semantic preview classes into portable inline styles. Exported
-  // HTML should work without loading PolyForge's stylesheet.
+  // HTML should work without loading TaskWeave's stylesheet.
   function styles(node: HTMLElement): string {
     const declarations: Record<string, string> = {};
     if (node.matches('.sc')) declarations['text-transform'] = 'uppercase';

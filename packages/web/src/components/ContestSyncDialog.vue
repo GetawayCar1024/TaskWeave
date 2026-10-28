@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { NAlert, NButton, NCheckbox, NInput, NSpace, NSpin, NTabPane, NTabs, NTag, NSelect, useMessage } from 'naive-ui';
-import type { ContestBatchResult, ContestDetail, ContestPullPreview, ContestPullResult, ContestSyncRow, ContestSyncState, ContestSyncStatus, JobInfo } from '@polyforge/shared';
+import type { ContestBatchResult, ContestDetail, ContestPullPreview, ContestPullResult, ContestSyncRow, ContestSyncState, ContestSyncStatus, JobInfo } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import { waitJob } from '../lib/jobs';
 import { serverText } from '../lib/serverText';

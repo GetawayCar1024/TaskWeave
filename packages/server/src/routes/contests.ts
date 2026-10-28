@@ -2,7 +2,7 @@ import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { commonContestLanguages, CONTEST_ACTIONS, type ContestBatchRequest, type ContestImportRequest, type ContestPullRequest, type ContestRepullRequest, type CreateContestRequest, type UpdateContestRequest } from '@polyforge/shared';
+import { commonContestLanguages, CONTEST_ACTIONS, type ContestBatchRequest, type ContestImportRequest, type ContestPullRequest, type ContestRepullRequest, type CreateContestRequest, type UpdateContestRequest } from '@taskweave/shared';
 import { contestPull, contestPullPreview, contestRepull, contestSyncStatus } from '../polygon/contestSync.js';
 import type { JobManager } from '../jobs.js';
 import { contestExportDir, contestStatements, importContest, runContestBatch, singleProblemDocument, type ContestDeps } from '../judge/contest.js';
@@ -11,7 +11,7 @@ import { contestDown } from '../judge/down.js';
 import { atomicWrite, exists, HttpError, validateFileName } from '../util/fs.js';
 import { buildTree, FileService, SelfWrites } from '../workspace/files.js';
 import { contestFile, contestNotes } from '../workspace/contestFiles.js';
-import { convertStatement, largeSampleNotice } from '@polyforge/shared';
+import { convertStatement, largeSampleNotice } from '@taskweave/shared';
 import type { WsHub } from '../ws.js';
 
 /** Contest jobs use `contest:<id>` as their owner so the contest page can find them. */
@@ -105,9 +105,9 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps & { aiRunn
     const statements = await contestStatements(judge, contests, ref.id, lang);
     const folder = `${doc}-${lang}-${Date.now()}-${randomBytes(3).toString('hex')}`;
     const esc = (text: string) => text.replace(/[\\{}%&#_$]/g, c => c === '\\' ? '\\textbackslash{}' : '\\' + c);
-    const out: string[] = [`% polyforge-language: ${lang}`, `\\section*{${esc(config.contest.title[lang] || config.contest.name)}}`];
+    const out: string[] = [`% taskweave-language: ${lang}`, `\\section*{${esc(config.contest.title[lang] || config.contest.name)}}`];
     const copyImages = async (source: string, from: string, prefix: string) => {
-      // Snapshots are PolyForge documents (rendered by its TeX preview, never compiled as
+      // Snapshots are TaskWeave documents (rendered by its TeX preview, never compiled as
       // LaTeX nor sent to Polygon): the preview dialect keeps them rendering exactly like
       // the sources (the conversion is idempotent) and normalises Markdown images to
       // \includegraphics, which are copied next to the snapshot.
@@ -163,7 +163,7 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps & { aiRunn
   });
   app.get<P>('/api/contests/:id/batch/latest', async req => {
     const ref = await contests.get(req.params.id);
-    return JSON.parse(await fsp.readFile(path.join(ref.dir, '.polyforge', 'batches', 'latest.json'), 'utf8').catch(() => 'null'));
+    return JSON.parse(await fsp.readFile(path.join(ref.dir, '.taskweave', 'batches', 'latest.json'), 'utf8').catch(() => 'null'));
   });
 
   app.put<P & { Body: UpdateContestRequest }>('/api/contests/:id', async (req) => {

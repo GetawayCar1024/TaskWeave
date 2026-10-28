@@ -1,10 +1,10 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import type { FileContent, FileNode } from '@polyforge/shared';
+import type { FileContent, FileNode } from '@taskweave/shared';
 import { atomicWrite, exists, HttpError, looksBinary, safeJoin, sha1, TMP_MARKER, toPosix, validateFileName } from '../util/fs.js';
 
 /** Directories never shown in the tree nor watched. */
-export const HIDDEN_DIRS = new Set(['.polyforge', '.polyforge-trash', '.git', 'node_modules']);
+export const HIDDEN_DIRS = new Set(['.taskweave', '.taskweave-trash', '.git', 'node_modules']);
 
 /** Files larger than this are returned truncated (read-only in the editor). */
 const MAX_EDITABLE = 4 * 1024 * 1024;

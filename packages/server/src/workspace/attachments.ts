@@ -1,5 +1,5 @@
 import { promises as fsp } from 'node:fs';
-import { flattenFiles } from '@polyforge/shared';
+import { flattenFiles } from '@taskweave/shared';
 import { HttpError, safeJoin } from '../util/fs.js';
 import { ZipWriter } from '../util/zip.js';
 import { buildTree } from './files.js';

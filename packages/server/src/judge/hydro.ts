@@ -4,7 +4,7 @@ import path from 'node:path';
 import { stringify as yaml } from 'yaml';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
-import { flattenFiles, groupLayout, groupTotal, judgeMode, parseIndexList, PROBLEM_NAME_RE, testsetOf, testsetsOf, testLimitLookup, type ProblemToml, type TestGroup } from '@polyforge/shared';
+import { flattenFiles, groupLayout, groupTotal, judgeMode, parseIndexList, PROBLEM_NAME_RE, testsetOf, testsetsOf, testLimitLookup, type ProblemToml, type TestGroup } from '@taskweave/shared';
 import { buildMacros, renderLatex, type DefsToml } from '../../../web/src/lib/latex.js';
 import { parseDefsToml, readSharedDefs } from '../defs.js';
 import type { JobCtx } from '../jobs.js';
@@ -113,7 +113,7 @@ export async function hydroPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, t
   }
   const zip = new ZipWriter({ async: true });
   const used = new Set<string>();
-  const outputNames = new Set(['config.yaml', 'polyforge-files.json', 'lemon-license.txt']);
+  const outputNames = new Set(['config.yaml', 'taskweave-files.json', 'lemon-license.txt']);
   for (const set of sets) for (const index of set.tests) {
     for (const [ext, file] of [['in', inputPath(ctx, index, set.name)], ['ans', answerPath(ctx, index, set.name)]]) {
       const name = `${testFileStem(set.name, index)}.${ext}`;
@@ -235,8 +235,8 @@ export async function hydroPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, t
     const name = allocate(`extra-${file.name}`, outputNames);
     zip.add(`testdata/${name}`, await fs.readFile(safeJoin(ctx.ref.dir, file.path))); extraFiles[file.path] = name;
   }
-  zip.add('testdata/polyforge-files.json', JSON.stringify(extraFiles, null, 2));
-  zip.add('problem.yaml', yaml({ title: p.title.zh || p.title.en || p.name, statements, tag: [], polyforge: { name: p.name, titles: p.title } }));
+  zip.add('testdata/taskweave-files.json', JSON.stringify(extraFiles, null, 2));
+  zip.add('problem.yaml', yaml({ title: p.title.zh || p.title.en || p.name, statements, tag: [], taskweave: { name: p.name, titles: p.title } }));
   if (!statements.length) warnings.push('This Hydro package has no statement. Complete it before publishing the problem.');
   return { data: await zip.finishAsync(), tests: sets.reduce((n, set) => n + set.tests.length, 0), warnings };
 }

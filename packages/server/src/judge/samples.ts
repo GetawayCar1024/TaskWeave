@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs';
-import { parseIndexList, sampleFileNames, sampleNotePath, testsetsOf, type StatementSample } from '@polyforge/shared';
+import { parseIndexList, sampleFileNames, sampleNotePath, testsetsOf, type StatementSample } from '@taskweave/shared';
 import { exists, HttpError, safeJoin, sha1 } from '../util/fs.js';
 import type { ProblemCtx } from './index.js';
 import { answerPath, inputPath, readManifest, sampleStatementPaths } from './tests.js';

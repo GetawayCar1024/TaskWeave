@@ -1,4 +1,4 @@
-import { groupLayout, groupTotal, parseIndexList, testLimitLookup, type GroupScore, type InvocationCell, type ScoringInput, type SolutionScore, type TestsetConfig } from '@polyforge/shared';
+import { groupLayout, groupTotal, parseIndexList, testLimitLookup, type GroupScore, type InvocationCell, type ScoringInput, type SolutionScore, type TestsetConfig } from '@taskweave/shared';
 import type { ProblemCtx } from './index.js';
 
 /** Scores apply when points are enabled. */

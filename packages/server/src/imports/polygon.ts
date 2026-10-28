@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
-import { compressRanges, DEFAULT_TESTSET, LANG_FROM_POLYGON, STATEMENT_SECTIONS, TESTSET_NAME_RE,
-  type PackageCandidate, type PackageImportOptions, type PackageImportResult, type SolutionTag, type TestGroup } from '@polyforge/shared';
+import { compressRanges, DEFAULT_TESTSET, LANG_FROM_POLYGON, STATEMENT_SECTIONS, TESTSET_NAME_RE, LEGACY_ID, packageFormatIs,
+  type PackageCandidate, type PackageImportOptions, type PackageImportResult, type SolutionTag, type TestGroup } from '@taskweave/shared';
 import type { Judge } from '../judge/index.js';
 import { parseScript } from '../judge/script.js';
 import { validateFileName } from '../util/fs.js';
@@ -102,10 +102,10 @@ export function readPolygonPackage(archive: Map<string, Buffer>, options: Packag
   const files = subtree(archive, candidate.entry), xml = polygonXml(files.get(descriptor(files)!));
   const local = new Map<string, Buffer>(), warnings: string[] = [], extras: string[] = [];
   let provenance: Record<string, any> = {};
-  const provenanceBytes = files.get('polyforge-tests.json');
+  const provenanceBytes = files.get('taskweave-tests.json') ?? files.get(`${LEGACY_ID}-tests.json`);
   if (provenanceBytes && provenanceBytes.length < 4 * 1024 * 1024) {
-    try { const value = JSON.parse(provenanceBytes.toString('utf8')); if (value.format === 'polyforge-polygon' && value.version === 1 && value.tests && typeof value.tests === 'object') provenance = value.tests; }
-    catch { warnings.push('Invalid Taskweave filename metadata; used the native Polygon paths.'); }
+    try { const value = JSON.parse(provenanceBytes.toString('utf8')); if (packageFormatIs(value.format, 'polygon') && value.version === 1 && value.tests && typeof value.tests === 'object') provenance = value.tests; }
+    catch { warnings.push('Invalid TaskWeave filename metadata; used the native Polygon paths.'); }
   }
   for (const [name, bytes] of files) { local.set(`other/polygon/${name}`, bytes); extras.push(`other/polygon/${name}`); }
   if (candidate.entry) for (const [name, bytes] of archive) if (!candidates.some(c => name.startsWith(c.entry))) local.set(`other/polygon/archive/${name}`, bytes);

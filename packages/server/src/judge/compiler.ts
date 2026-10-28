@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import type { Semaphore } from './runner.js';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { STD_PREFIX, type CompileResult, type Diagnostic, type Language, type LanguagesConfig } from '@polyforge/shared';
+import { STD_PREFIX, type CompileResult, type Diagnostic, type Language, type LanguagesConfig } from '@taskweave/shared';
 import type { GlobalStore } from '../global.js';
 import { stdRefToPath } from '../sharedFiles.js';
 import { atomicWrite, exists, HttpError, safeJoin, sha1, toPosix } from '../util/fs.js';
@@ -124,7 +124,7 @@ export class Compiler {
     clearTimeout(this.pruneTimer);
     this.pruneTimer = setTimeout(() => {
       if (!this.canPrune() || this.inflight.size) return this.schedulePrune(root);
-      this.maintenance = this.prune().catch(e => console.warn('[polyforge] cache cleanup:', e.message));
+      this.maintenance = this.prune().catch(e => console.warn('[taskweave] cache cleanup:', e.message));
     }, 1000);
     this.pruneTimer.unref();
   }
@@ -179,7 +179,7 @@ export class Compiler {
       if (!rel) throw new HttpError(400, 'bad_source', `Invalid std reference: ${source}`);
       return { srcPath: path.join(this.global.sharedDir, rel), buildRoot: path.join(this.global.cacheDir, 'bin') };
     }
-    return { srcPath: safeJoin(problemDir, source), buildRoot: path.join(problemDir, '.polyforge', 'build') };
+    return { srcPath: safeJoin(problemDir, source), buildRoot: path.join(problemDir, '.taskweave', 'build') };
   }
 
   async compile(problemDir: string, source: string, langOverride?: string, buildRootOverride?: string, grader?: { sources: string[]; headers: string[] }): Promise<CompileOutcome> {

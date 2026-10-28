@@ -1,4 +1,4 @@
-import type { JobInfo } from '@polyforge/shared';
+import type { JobInfo } from '@taskweave/shared';
 import { api } from './api';
 import { onWs } from './ws';
 

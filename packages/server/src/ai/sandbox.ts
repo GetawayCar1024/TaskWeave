@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import type { AiChange, AiChangeContent } from '@polyforge/shared';
+import type { AiChange, AiChangeContent } from '@taskweave/shared';
 import { atomicWrite, exists, HttpError, looksBinary, safeJoin, sha1, toPosix } from '../util/fs.js';
 import { HIDDEN_DIRS } from '../workspace/files.js';
 import { contestFile } from '../workspace/contestFiles.js';

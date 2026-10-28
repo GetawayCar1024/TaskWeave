@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { ToolProbe } from '@polyforge/shared';
+import type { ToolProbe } from '@taskweave/shared';
 
 interface ExecResult {
   code: number;
@@ -36,7 +36,7 @@ async function probeCxx(tool: string, sharedDir: string): Promise<ToolProbe> {
   if (!p) return { tool, found: false };
   const v = await run(p, ['--version']);
   const probe: ToolProbe = { tool, found: true, path: p, version: firstLine(v.stdout) };
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'polyforge-probe-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'taskweave-probe-'));
   try {
     const src = path.join(dir, 'hello.cpp');
     const exe = path.join(dir, process.platform === 'win32' ? 'hello.exe' : 'hello');
@@ -82,7 +82,7 @@ async function probeStd(tool: string, std: string): Promise<ToolProbe> {
   const label = `${tool} -std=${std}`;
   const p = await which(tool);
   if (!p) return { tool: label, found: false };
-  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'polyforge-probe-'));
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'taskweave-probe-'));
   try {
     const src = path.join(dir, 'std.cpp');
     await fsp.writeFile(src, 'int main() {}\n');

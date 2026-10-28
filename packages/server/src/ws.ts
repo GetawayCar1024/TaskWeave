@@ -1,5 +1,5 @@
 import type { WebSocket } from 'ws';
-import type { WsEvent } from '@polyforge/shared';
+import type { WsEvent } from '@taskweave/shared';
 
 export class WsHub {
   private clients = new Set<WebSocket>();

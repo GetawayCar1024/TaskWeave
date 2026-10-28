@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { addUsage, emptyUsage, priceFor, usageCost, type Currency, type UsageGroup, type UsageRecord, type UsageStats } from '@polyforge/shared';
+import { addUsage, emptyUsage, priceFor, usageCost, type Currency, type UsageGroup, type UsageRecord, type UsageStats } from '@taskweave/shared';
 import type { GlobalStore, RawAiEndpoint } from '../global.js';
 
 /**
@@ -22,7 +22,7 @@ export class UsageLog {
       await fsp.appendFile(this.file, JSON.stringify(r) + '\n');
     });
     // A failed write must not poison the chain for every later record.
-    this.writing = write.catch((e) => console.warn('[polyforge] usage log:', (e as Error).message));
+    this.writing = write.catch((e) => console.warn('[taskweave] usage log:', (e as Error).message));
     return write;
   }
 

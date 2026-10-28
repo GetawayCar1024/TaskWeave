@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { LEMON_PREFIX, STD_PREFIX, type SharedFileEntry, type SharedListResponse } from '@polyforge/shared';
+import { LEMON_PREFIX, STD_PREFIX, type SharedFileEntry, type SharedListResponse } from '@taskweave/shared';
 
 /** Descriptions of the testlib standard checkers as shown by Polygon. */
 const CHECKER_DESCRIPTIONS: Record<string, string> = {

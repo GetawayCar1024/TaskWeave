@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NForm, NFormItem, NInput, NInputNumber, NSelect, useMessage } from 'naive-ui';
-import { PROBLEM_NAME_RE, type ContestSummary, type JobInfo, type ProblemSummary } from '@polyforge/shared';
+import { PROBLEM_NAME_RE, type ContestSummary, type JobInfo, type ProblemSummary } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import { problemTitle } from '../lib/format';
 import DirPicker from './DirPicker.vue';

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
 import type { WsHub } from '../ws.js';
-import { CONTEST_FILE } from '@polyforge/shared';
+import { CONTEST_FILE } from '@taskweave/shared';
 import { TMP_MARKER } from '../util/fs.js';
 import { HIDDEN_DIRS, type FileService } from './files.js';
 import { PROBLEM_FILE, type ProblemRegistry } from './problems.js';
@@ -30,7 +30,7 @@ export class ProblemWatcher {
     await this.registry.scan();
     this.watcher = watch(roots, {
       ignoreInitial: true,
-      // root/problem/.polyforge/... etc.
+      // root/problem/.taskweave/... etc.
       ignored: (p) => {
         const base = path.basename(p);
         if (base.startsWith(TMP_MARKER)) return true;

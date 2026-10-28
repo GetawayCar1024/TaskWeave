@@ -1,14 +1,14 @@
-# Taskweave
+# TaskWeave
 
-<img src="assets/branding/taskweave.svg" width="80" height="80" align="right" alt="Taskweave 图标" />
+<img src="assets/branding/taskweave.svg" width="80" height="80" align="right" alt="TaskWeave 图标" />
 
-**本地优先的出题、数据编排与评测桌面工具。原名 PolyForge。**
+**本地优先的出题、数据编排与评测桌面工具。**
 
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/GetawayCar1024/taskweave)](https://github.com/GetawayCar1024/taskweave/releases/latest)
 ![Platform](https://img.shields.io/badge/platform-Windows%20x64-lightgrey)
 
-题面、程序和测试数据都保存在本地文件夹里。Taskweave 在一个窗口中完成编写、生成数据、评测、对拍、比赛管理与 Polygon 双向同步，并能导出 Polygon package、LemonLime、Hydro、洛谷与 JOI / AtCoder 数据包及 OI 风格的 PDF；也可以让 AI 在独立副本中协助修改，再逐个文件审阅后接受。
+题面、程序和测试数据都保存在本地文件夹里。TaskWeave 在一个窗口中完成编写、生成数据、评测、对拍、比赛管理与 Polygon 双向同步，并能导出 Polygon package、LemonLime、Hydro、洛谷与 JOI / AtCoder 数据包及 OI 风格的 PDF；也可以让 AI 在独立副本中协助修改，再逐个文件审阅后接受。
 
 [下载](https://github.com/GetawayCar1024/taskweave/releases/latest) · [使用指南](docs/guide.md) · [更新日志](CHANGELOG.md) · [问题反馈](https://github.com/GetawayCar1024/taskweave/issues)
 
@@ -34,11 +34,13 @@
 
 目前提供 **Windows x64** 桌面版。
 
-1. 从 [Releases](https://github.com/GetawayCar1024/taskweave/releases/latest) 下载 `Taskweave-<版本>-setup.exe`（安装版）或 `Taskweave-<版本>-portable.exe`（免安装版）。
+Linux x64 试制说明与 CI 产物见 [Linux 构建与验证](docs/linux.md)。
+
+1. 从 [Releases](https://github.com/GetawayCar1024/taskweave/releases/latest) 下载 `TaskWeave-<版本>-setup.exe`（安装版）或 `TaskWeave-<版本>-portable.exe`（免安装版）。
 2. 安装 [MinGW-w64](https://www.mingw-w64.org/)（例如 [WinLibs](https://winlibs.com/) 或 MSYS2），把 `g++` 所在目录加入 `PATH`，在终端运行 `g++ --version` 确认。首次评测时会自动编译自带的 runner。
 3. 可选：Python、Java、Kotlin、Rust、Go 等其他语言的编译器或解释器。
 
-使用发行版不需要 Node.js。安装版会创建桌面和开始菜单快捷方式。新安装的全局目录为 `%USERPROFILE%\.taskweave`；升级时自动接续已有的 `%USERPROFILE%\.polyforge` 配置、题库设置与密钥。
+使用发行版不需要 Node.js。安装版会创建桌面和开始菜单快捷方式。全局目录为 `%USERPROFILE%\.taskweave`；升级自动迁移旧版配置、题库身份、密钥、会话与答案备份。
 
 ## 快速上手
 
@@ -56,8 +58,8 @@
 | 位置 | 内容 |
 | --- | --- |
 | 题目根目录 | 每道题一个文件夹，`problem.toml` 记录题目信息，其余是题面、程序和测试（结构见[使用指南](docs/guide.md#题目文件夹)）。 |
-| `%USERPROFILE%\.taskweave\`，或已有的 `.polyforge\` | 全局目录（用环境变量 `TASKWEAVE_HOME` 指定，兼容 `POLYFORGE_HOME`）：`config.toml`、`languages.toml`、`secrets.toml`（Polygon 与 AI 密钥）、共享的 testlib / checker / 宏、题目模板、默认比赛目录 `contests/`、回收站索引 `trash/`、可选的字体目录 `fonts/`。 |
-| 题目中的 `.polyforge/` | 编译与测试缓存、评测记录、同步基线和 AI 会话；请用应用中的“清除缓存”清理。 |
+| `%USERPROFILE%\.taskweave\` | 全局目录（用环境变量 `TASKWEAVE_HOME` 指定）：`config.toml`、`languages.toml`、`secrets.toml`（Polygon 与 AI 密钥）、共享的 testlib / checker / 宏、题目模板、默认比赛目录 `contests/`、回收站索引 `trash/`、可选的字体目录 `fonts/`。 |
+| 题目中的 `.taskweave/` | 编译与测试缓存、评测记录、同步基线和 AI 会话；请用应用中的“清除缓存”清理。 |
 
 密钥只保存在全局目录的 `secrets.toml` 中，不会写入题目文件夹，题目可以放心提交到 Git。
 
@@ -116,7 +118,7 @@ docs/              使用指南、设计文档、各版本说明与改动明细
 
 ## 许可证
 
-Taskweave 以 [GNU Affero General Public License v3.0 或更高版本](LICENSE)（AGPL-3.0-or-later）发布。
+TaskWeave 以 [GNU Affero General Public License v3.0 或更高版本](LICENSE)（AGPL-3.0-or-later）发布。
 
 内置的第三方组件保留各自的许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)：
 
@@ -125,4 +127,4 @@ Taskweave 以 [GNU Affero General Public License v3.0 或更高版本](LICENSE)�
 - Fira Mono（SIL OFL 1.1）、Latin Modern 与 New Computer Modern（GUST Font License）字体；
 - [typst.ts](https://github.com/Myriad-Dreamin/typst.ts)、Monaco Editor、KaTeX、Vue、Naive UI、Fastify 等开源依赖。
 
-Taskweave 与 Codeforces、Polygon、洛谷、LemonLime 均无关联，相关名称归各自所有者。
+TaskWeave 与 Codeforces、Polygon、洛谷、LemonLime 均无关联，相关名称归各自所有者。

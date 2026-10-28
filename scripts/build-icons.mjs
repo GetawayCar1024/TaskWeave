@@ -36,5 +36,5 @@ try {
   await fs.writeFile(path.join(desktop, 'icon.ico'), ico);
   await fs.writeFile(path.join(web, 'favicon.ico'), ico);
   await fs.copyFile(source, path.join(web, 'taskweave.svg'));
-  console.log('Taskweave icons: 512px PNG, 16–256px ICO, browser SVG and favicon.');
+  console.log('TaskWeave icons: 512px PNG, 16–256px ICO, browser SVG and favicon.');
 } finally { await fs.rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 }); }

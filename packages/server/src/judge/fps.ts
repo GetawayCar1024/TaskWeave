@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { judgeMode, testsetsOf, type ProblemExportRequest } from '@polyforge/shared';
+import { judgeMode, testsetsOf, type ProblemExportRequest } from '@taskweave/shared';
 import type { Judge, ProblemCtx } from './index.js';
 import type { JobCtx } from '../jobs.js';
 import { HttpError, safeJoin } from '../util/fs.js';
@@ -79,7 +79,7 @@ export async function fpsItem(judge: Judge, ctx: ProblemCtx, job: JobCtx, option
     [...sampleInputs, ...sampleOutputs, ...inputs, ...outputs, ...solutions, ...embedded].join('\n') + '\n</item>';
   return { xml, tests: inputs.length, warnings: [...new Set(warnings)] };
 }
-export const fpsDocument = (items: string[]) => Buffer.from('<?xml version="1.0" encoding="UTF-8"?>\n<fps version="1.6" url="https://github.com/zhblue/freeproblemset/"><generator name="Taskweave"/>\n' + items.join('\n') + '\n</fps>\n');
+export const fpsDocument = (items: string[]) => Buffer.from('<?xml version="1.0" encoding="UTF-8"?>\n<fps version="1.6" url="https://github.com/zhblue/freeproblemset/"><generator name="TaskWeave"/>\n' + items.join('\n') + '\n</fps>\n');
 export async function fpsPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, options: Pick<ProblemExportRequest, 'testsets' | 'lang'> = {}) {
   const result = await fpsItem(judge, ctx, job, options);
   return { data: fpsDocument([result.xml]), tests: result.tests, warnings: result.warnings };

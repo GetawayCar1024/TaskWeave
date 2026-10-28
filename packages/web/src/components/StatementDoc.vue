@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { largeSampleNotice, type StatementSection, type StatementSample } from '@polyforge/shared';
+import { largeSampleNotice, type StatementSection, type StatementSample } from '@taskweave/shared';
 import { sampleHtml } from '../lib/latex';
 
 /** A rendered statement (or tutorial): used by the editor preview and the contest print view. */

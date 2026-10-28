@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2018-2019 Project LemonPlus, Dust1404
 // SPDX-FileCopyrightText: 2019-2022 Project LemonLime
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Adapted by Taskweave, 2026-10-28: standalone local checker, Qt removed,
+// Adapted by TaskWeave, 2026-10-28: standalone local checker, Qt removed,
 // native Unicode file opening, exit-code protocol. Comparison rules come from
 // Project-LemonLime/Project_LemonLime@69aa22370706a4f14b394a6e27aa92e7eca4a8f5
 // src/core/casejudger.cpp. See LICENSE and README.md alongside this file.

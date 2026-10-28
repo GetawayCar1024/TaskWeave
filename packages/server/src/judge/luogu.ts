@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_TESTSET, groupLayout, groupTotal, judgeMode, parseIndexList, PROBLEM_NAME_RE, STD_PREFIX, testLimitLookup, testsetOf, type LuoguAggregate, type ProblemToml, type TestGroup } from '@polyforge/shared';
+import { DEFAULT_TESTSET, groupLayout, groupTotal, judgeMode, parseIndexList, PROBLEM_NAME_RE, STD_PREFIX, testLimitLookup, testsetOf, type LuoguAggregate, type ProblemToml, type TestGroup } from '@taskweave/shared';
 import type { JobCtx } from '../jobs.js';
 import { HttpError, safeJoin } from '../util/fs.js';
 import { ZipWriter } from '../util/zip.js';
@@ -136,7 +136,7 @@ export async function luoguData(judge: Judge, ctx: ProblemCtx, index: string, jo
   // YAML comments are ignored by Luogu, and let our own importer restore policies,
   // dependency edges and sample flags without evaluating arbitrary scoring scripts.
   const metadata = { version: 1, subtasks, aggregation: agg, samples: cases.filter(c => parseIndexList(testsetOf(config, c.testset)?.samples ?? '').includes(c.index)).map(c => c.k) };
-  zip.add('config.yml', `# polyforge-scoring: ${JSON.stringify(metadata)}\n` + luoguConfig(config, cases));
+  zip.add('config.yml', `# taskweave-scoring: ${JSON.stringify(metadata)}\n` + luoguConfig(config, cases));
   zip.add('score.txt', luoguScript(subtasks, agg));
   if (p.input !== 'stdin' || p.output !== 'stdout') warnings.push(`${index}: Luogu uses standard input / output; file input / output (${p.input} / ${p.output}) is not exported.`);
   const read = (source: string) => fs.readFile(judge.compiler.resolveSource(ctx.ref.dir, source).srcPath, 'utf8');

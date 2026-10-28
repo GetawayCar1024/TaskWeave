@@ -1,4 +1,4 @@
-import { PROBLEM_NAME_RE, type ContestStatement } from '@polyforge/shared';
+import { PROBLEM_NAME_RE, type ContestStatement } from '@taskweave/shared';
 import { HttpError } from '../util/fs.js';
 import { ZipWriter } from '../util/zip.js';
 import { contestNotes } from '../workspace/contestFiles.js';
@@ -8,7 +8,7 @@ import { singleProblemDocument } from './contest.js';
 import type { Judge } from './index.js';
 import { readSamples } from './samples.js';
 import { generateTests } from './tests.js';
-import { testsetsOf } from '@polyforge/shared';
+import { testsetsOf } from '@taskweave/shared';
 
 /** PDF is the browser's current upstream OI render. Recheck its input snapshot
  * before packaging public samples, so concurrent edits never silently mismatch. */

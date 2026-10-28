@@ -52,7 +52,7 @@
   function svg(mark, { size = 256, tile = true, mono = false, reveal = false, id = `study-${sequence++}` } = {}) {
     const parts = mark.parts.map(part => `<path d="${part.d}" fill="${mono ? colors.ink : colors[part.tone]}"${!mono && part.opacity ? ` opacity="${part.opacity}"` : ''}/>`).join('');
     const cutout = mark.material ? `<clipPath id="${id}-cut"><path d="${mark.material}" clip-rule="evenodd"/></clipPath>` : '';
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 256 256" role="img" aria-label="Taskweave ${mark.id} ${mark.title}" data-variant="${mark.id}">
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 256 256" role="img" aria-label="TaskWeave ${mark.id} ${mark.title}" data-variant="${mark.id}">
       <defs><linearGradient id="${id}-tile" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="${colors.top}"/><stop offset="1" stop-color="${colors.bottom}"/></linearGradient>${cutout}</defs>
       ${tile ? `<rect x="8" y="8" width="240" height="240" rx="55" fill="url(#${id}-tile)"/><rect x="8.5" y="8.5" width="239" height="239" rx="54.5" fill="none" stroke="${colors.rim}"/>` : ''}
       <g${mark.material ? ` clip-path="url(#${id}-cut)"` : ''}${reveal && mark.tPath ? ' opacity=".14"' : ''}>${parts}</g>

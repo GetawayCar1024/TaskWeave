@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { ImportRequest, PullPreviewRequest, PullRequest, PushRequest, SaveSecretsRequest } from '@polyforge/shared';
+import type { ImportRequest, PullPreviewRequest, PullRequest, PushRequest, SaveSecretsRequest } from '@taskweave/shared';
 import type { JobManager } from '../jobs.js';
 import type { Judge } from '../judge/index.js';
 import type { PolygonSync } from '../polygon/sync.js';

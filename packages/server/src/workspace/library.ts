@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { CONTEST_FILE, type CreateLibraryFolderRequest, type LibraryDirectory, type LibraryLocation } from '@polyforge/shared';
+import { CONTEST_FILE, type CreateLibraryFolderRequest, type LibraryDirectory, type LibraryLocation } from '@taskweave/shared';
 import { HttpError, exists, safeJoin, toPosix, validateFileName } from '../util/fs.js';
 import type { ProblemRegistry } from './problems.js';
 import type { GlobalStore } from '../global.js';

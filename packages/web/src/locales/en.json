@@ -77,7 +77,7 @@
     "noHydroProblem": "No problem.yaml found. Choose a Hydro whole-problem package.",
     "problem": "Problem in archive",
     "testset": "Target testset",
-    "replaceData": "Replaces the target testset's data and scoring configuration, keeping statements and programs. Original data files are retained; the previous problem.toml is backed up under .polyforge/import-backups.",
+    "replaceData": "Replaces the target testset's data and scoring configuration, keeping statements and programs. Original data files are retained; the previous problem.toml is backed up under .taskweave/import-backups.",
     "imported": "Imported {n} tests and retained {extras} extra files",
     "luoguExport": "Luogu",
     "luoguHint": "Each problem exports data.zip with all selected data, config.yml and score.txt at its root. After uploading to Luogu, paste score.txt into the whole-problem scoring script; it is not installed automatically.",
@@ -129,7 +129,7 @@
   },
   "app": {
     "unauthorized": "Unauthorized",
-    "unauthorizedHint": "Open this page with the link (including the token) printed in the terminal when Taskweave started.",
+    "unauthorizedHint": "Open this page with the link (including the token) printed in the terminal when TaskWeave started.",
     "loadFailed": "Failed to load",
     "connected": "Connected to local server",
     "disconnected": "Disconnected from local server, reconnecting…"

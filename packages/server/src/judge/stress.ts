@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import type { StressRequest, StressResult } from '@polyforge/shared';
+import type { StressRequest, StressResult } from '@taskweave/shared';
 import type { JobCtx } from '../jobs.js';
 import { atomicWrite, exists, HttpError } from '../util/fs.js';
 import { copyNormalized, describeRun, readHead, runChecker, runHelper, runSolution, withTmp } from './execute.js';

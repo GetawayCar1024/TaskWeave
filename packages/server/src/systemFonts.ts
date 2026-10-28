@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import type { SystemFontStatus } from '@polyforge/shared';
+import type { SystemFontStatus } from '@taskweave/shared';
 
 /**
  * Fonts of the OI (CNOI) template that may not be redistributed (Microsoft-supplied

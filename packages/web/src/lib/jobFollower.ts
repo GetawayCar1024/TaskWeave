@@ -1,4 +1,4 @@
-import type { JobInfo } from '@polyforge/shared';
+import type { JobInfo } from '@taskweave/shared';
 
 type WaitJob = (job: JobInfo, progress: (job: JobInfo) => void, signal: AbortSignal) => Promise<JobInfo>;
 

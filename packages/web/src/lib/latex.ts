@@ -1,6 +1,6 @@
 import { codeHtml } from './codeHighlight';
 import katex from 'katex';
-import { convertStatement } from '@polyforge/shared';
+import { convertStatement } from '@taskweave/shared';
 
 /**
  * Renderer for the LaTeX subset used by Polygon statements (DESIGN §4.6). Produces

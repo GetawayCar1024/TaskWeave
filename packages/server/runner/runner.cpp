@@ -1,4 +1,4 @@
-// PolyForge runner: runs one program (or a solution + interactor pair) under Windows
+// TaskWeave runner: runs one program (or a solution + interactor pair) under Windows
 // Job Objects and prints the result as JSON on stdout.
 //
 // The spec is read from stdin as UTF-8 `key=value` lines. Keys before any section apply

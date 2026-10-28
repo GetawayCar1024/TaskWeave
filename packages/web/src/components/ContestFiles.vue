@@ -5,7 +5,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { onBeforeRouteLeave, useRoute } from 'vue-router';
 import { NAlert, NButton, NInput, NModal, NSelect, useDialog, useMessage } from 'naive-ui';
 import { ArrowLeft, FileText, FolderOpen, Plus, Upload } from 'lucide-vue-next';
-import { commonContestLanguages, type ContestDetail, type FileContent, type FileNode } from '@polyforge/shared';
+import { commonContestLanguages, type ContestDetail, type FileContent, type FileNode } from '@taskweave/shared';
 import { api, errorMessage, token } from '../lib/api';
 import { unsavedChoice } from '../lib/confirmUnsaved';
 import { registerExitGuard } from '../lib/exitGuards';
@@ -33,8 +33,8 @@ const loaded = computed(() => current.value?.loaded ?? null);
 const isDirty = (f: OpenFile) => f.text !== f.original;
 const newName = ref(''); const busy = ref(false);
 // Shares the problem editor's preview switch.
-const showPreview = ref(localStorage.getItem('polyforge-preview') !== 'off');
-watch(showPreview, v => localStorage.setItem('polyforge-preview', v ? 'on' : 'off'));
+const showPreview = ref(localStorage.getItem('taskweave-preview') !== 'off');
+watch(showPreview, v => localStorage.setItem('taskweave-preview', v ? 'on' : 'off'));
 const syncScroll = ref(true);
 const editorRef = ref<InstanceType<typeof CodeEditor>>(); const previewHost = ref<HTMLDivElement>();
 const opening = ref(false);
@@ -46,7 +46,7 @@ const langs = computed(() => commonContestLanguages(contest.value?.problems ?? [
 watch(langs, values => { if (!lang.value || !values.includes(lang.value)) lang.value = values.includes('zh') ? 'zh' : values[0] ?? null; }, { immediate: true });
 const fileLang = ref('zh');
 // Stored metadata also survives renaming; infer the language for snapshots created by older versions.
-const snapshotLang = computed(() => text.value.match(/^%\s*polyforge-language:\s*([a-z]{2,8})\s*$/m)?.[1]
+const snapshotLang = computed(() => text.value.match(/^%\s*taskweave-language:\s*([a-z]{2,8})\s*$/m)?.[1]
   ?? selected.value.match(/^(?:statements|tutorials)-([a-z]{2,8})-\d+-/)?.[1]);
 const isNotes = computed(() => /^notes(?:\.[a-z]{2,8})?\.tex$/.test(selected.value));
 const notesLang = computed(() => selected.value.match(/^notes\.([a-z]{2,8})\.tex$/)?.[1] ?? 'default');

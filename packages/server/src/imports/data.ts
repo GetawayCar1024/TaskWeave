@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { parseDocument } from 'yaml';
 import { parse as parseToml } from 'smol-toml';
-import { compressRanges, type TestGroup, type TestsetConfig } from '@polyforge/shared';
+import { compressRanges, LEGACY_ID, packageFormatIs, type TestGroup, type TestsetConfig } from '@taskweave/shared';
 import { HttpError, validateFileName } from '../util/fs.js';
 import { splitScore } from '../judge/lemonlime.js';
 import { luoguScript, type LuoguSubtask } from '../judge/luogu.js';
@@ -152,7 +152,7 @@ export function parseLuoguData(files: Map<string, Buffer>): DataPlan {
     else { unresolvedScoring = true; warnings.push('The Luogu scoring script cannot be represented as local subtasks. The original script is preserved in Other files; edit the subtask configuration before judging or exporting.'); }
   }
   let samples: number[] = [];
-  const metadata = source?.toString('utf8').match(/^# polyforge-scoring: (.+)$/m)?.[1];
+  const metadata = source?.toString('utf8').match(new RegExp(`^# (?:taskweave|${LEGACY_ID})-scoring: (.+)$`, 'm'))?.[1];
   if (metadata && !unresolvedScoring) {
     try {
       const m = JSON.parse(metadata);
@@ -164,7 +164,7 @@ export function parseLuoguData(files: Map<string, Buffer>): DataPlan {
         }
         if (Array.isArray(m.samples)) samples = m.samples.filter((i: unknown) => Number.isInteger(i) && Number(i) > 0 && Number(i) <= pairs.length);
       }
-    } catch { warnings.push('Invalid Taskweave metadata comment; imported the official config.yml fields instead.'); }
+    } catch { warnings.push('Invalid TaskWeave metadata comment; imported the official config.yml fields instead.'); }
   }
   const names = new Map(subtasks.map(s => [s.id, s.label]));
   const localGroups = subtasks.map(s => ({ name: s.label, points: s.points, policy: s.policy, tests: compressRanges(groups.get(s.id)!), dependencies: s.dependencies.map(d => names.get(d) ?? badPackage(`Unknown subtask dependency: ${d}`)) }));
@@ -280,8 +280,8 @@ export function parseInoutData(files: Map<string, Buffer>): DataPlan {
 }
 
 function configKind(value: Record<string, any>): 'hydro' | 'luogu' | 'companion' | undefined {
-  if (value.format === 'polyforge-inout') {
-    if (value.version !== 1) return badPackage('Unsupported polyforge-inout configuration version.');
+  if (packageFormatIs(value.format, 'inout')) {
+    if (value.version !== 1) return badPackage('Unsupported taskweave-inout configuration version.');
     return 'companion';
   }
   if (Array.isArray(value.subtasks) || Array.isArray(value.cases) || typeof value.checker_type === 'string') return 'hydro';
@@ -294,17 +294,17 @@ export function parseData(files: Map<string, Buffer>, format: DataFormat): DataP
   if (format === 'luogu') return parseLuoguData(files);
   if (format === 'hydro') return parseHydroData(files);
   const names = [...files.keys()].filter(name => /\.(ya?ml|json|toml|ini|txt|cfg|conf)$/i.test(name) && !/^(in|out)\//i.test(name))
-    .sort((a, b) => Number(!/^(polyforge|config)\./i.test(a)) - Number(!/^(polyforge|config)\./i.test(b)) || a.localeCompare(b));
+    .sort((a, b) => Number(!/^(taskweave|config)\./i.test(a)) - Number(!/^(taskweave|config)\./i.test(b)) || a.localeCompare(b));
   let configError: unknown;
   for (const name of names) {
     const bytes = files.get(name)!;
     if (bytes.length > 4 * 1024 * 1024) continue;
     let cfg: Record<string, any>;
     try { cfg = /\.toml$/i.test(name) ? parseToml(bytes.toString('utf8')) as Record<string, any> : yamlObject(bytes, name); }
-    catch (e) { if (/^(config|polyforge)\.ya?ml$/i.test(name)) configError = e; continue; }
+    catch (e) { if (/^(config|taskweave)\.ya?ml$/i.test(name)) configError = e; continue; }
     const kind = configKind(cfg);
     if (!kind) continue;
-    if (kind === 'companion') return companionData(files, cfg);
+    if (kind === 'companion') return companionData(files, { ...cfg, format: 'taskweave-inout' });
     const virtual = new Map(files);
     const canonical = kind === 'hydro' ? 'config.yaml' : 'config.yml';
     // JSON is valid YAML; preserve the original file separately while using its recognized shape.

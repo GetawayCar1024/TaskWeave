@@ -1,6 +1,6 @@
-# Taskweave / D / Porcelain
+# TaskWeave / D / Porcelain
 
-最终确认 **Taskweave + D 边角精修 + Porcelain**，用于 0.4.0。精修重点是原稿的边角、接缝与收口；T 是自然浮现的加分项。
+最终确认 **TaskWeave + D 边角精修 + Porcelain**，用于 0.4.0。精修重点是原稿的边角、接缝与收口；T 是自然浮现的加分项。
 
 - [原稿与精修对照](round-4.html)：同尺寸并排、三处边角放大、16–48px、单色与深色背景检查，支持 SVG 下载。
 - [完整对比图](candidates-v4.png)，`candidates.png` 是最新图的别名。
@@ -20,7 +20,7 @@
 ## 归档
 
 - [第三轮](round-3.html) / [对比图](candidates-v3.png)：用户认为 T 的设计过于刻意，回到原版 D 精修边角。
-- [第二轮](round-2.html) / [对比图](candidates-v2.png)：六个英文名称、A–F 图形与四种配色；用户倾向 Taskweave、D 和 Porcelain。
+- [第二轮](round-2.html) / [对比图](candidates-v2.png)：六个英文名称、A–F 图形与四种配色；用户倾向 TaskWeave、D 和 Porcelain。
 - [第一轮](round-1.html) / [对比图](round-1.png)
 
 正式母版为 [`assets/branding/taskweave.svg`](../../assets/branding/taskweave.svg)，运行 `pnpm icons` 生成应用图标资源。

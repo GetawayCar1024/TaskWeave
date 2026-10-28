@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NCheckbox, NForm, NFormItem, NInput, NInputNumber, NSelect, useMessage } from 'naive-ui';
-import { PROBLEM_NAME_RE, TESTSET_NAME_RE, type DetectedPackageFormat, type ImportPackageFormat, type PackageCandidate, type PackageImportResult } from '@polyforge/shared';
+import { PROBLEM_NAME_RE, TESTSET_NAME_RE, type DetectedPackageFormat, type ImportPackageFormat, type PackageCandidate, type PackageImportResult } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import { serverText } from '../lib/serverText';
 import { formatSize } from '../lib/format';

@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parse, stringify } from 'smol-toml';
-import { problemTomlSchema, contestTomlSchema } from '@polyforge/shared';
+import { problemTomlSchema, contestTomlSchema } from '@taskweave/shared';
 import { GlobalStore } from '../src/global.js';
 import { ProblemRegistry } from '../src/workspace/problems.js';
 import { ContestRegistry } from '../src/workspace/contests.js';
@@ -43,15 +43,15 @@ test('legacy whole-file conversion preserves sources; unified contests reference
     await fs.writeFile(path.join(cf.dir, 'tests/manual/01.in'), '1 2\n');
     await fs.writeFile(path.join(cf.dir, 'tests/manual/01.statement.out'), '3\n');
     await registry.patch(cf.id, { samples: '1', polygonId: 123 });
-    await fs.mkdir(path.join(cf.dir, '.polyforge'), { recursive: true });
-    await fs.writeFile(path.join(cf.dir, '.polyforge/sync.json'), '{"keep":true}');
+    await fs.mkdir(path.join(cf.dir, '.taskweave'), { recursive: true });
+    await fs.writeFile(path.join(cf.dir, '.taskweave/sync.json'), '{"keep":true}');
     const original = await fs.readFile(path.join(cf.dir, 'problem.toml'), 'utf8');
     const oi = await registry.convertToOi(cf.id);
     assert.equal(oi.type, 'oi');
     assert.equal(oi.status.polygonId, undefined);
     assert.equal(await fs.readFile(path.join(cf.dir, 'problem.toml'), 'utf8'), original);
-    assert.equal(await fs.readFile(path.join(cf.dir, '.polyforge/sync.json'), 'utf8'), '{"keep":true}');
-    await assert.rejects(fs.access(path.join(oi.dir, '.polyforge/sync.json')));
+    assert.equal(await fs.readFile(path.join(cf.dir, '.taskweave/sync.json'), 'utf8'), '{"keep":true}');
+    await assert.rejects(fs.access(path.join(oi.dir, '.taskweave/sync.json')));
     assert.deepEqual(await fs.readdir(path.join(oi.dir, 'statement/zh')), ['statement.tex', 'tutorial.tex']);
     const body = await fs.readFile(path.join(oi.dir, 'statement/zh/statement.tex'), 'utf8');
     assert.match(body, /\\section\*\{题目描述\}/);
@@ -117,7 +117,7 @@ test('unified attachments API preserves bytes, prevents overwrite/path escapes, 
   const judge = new Judge(global, registry, hub);
   const jobs = new JobManager(hub);
   const app = await buildApp({ global, registry, contests, files, watcher, hub, judge, jobs, token: 'types-test' });
-  const headers = { host: 'localhost', 'x-polyforge-token': 'types-test' };
+  const headers = { host: 'localhost', 'x-taskweave-token': 'types-test' };
   try {
     const oi = await registry.create({ name: 'handout', type: 'oi' });
     const cf = await registry.create({ name: 'cf' });

@@ -23,7 +23,7 @@ import {
   type ProblemDetail,
   type ProblemSummary,
   type ProblemToml,
-} from '@polyforge/shared';
+} from '@taskweave/shared';
 import type { GlobalStore } from '../global.js';
 import { samePath } from '../global.js';
 import { atomicWrite, exists, HttpError, isDir, safeJoin, toPosix } from '../util/fs.js';
@@ -31,6 +31,7 @@ import { buildTree } from './files.js';
 import { cfToOi, oiTemplate } from './oiStatement.js';
 import { convertStatementMode } from './statements.js';
 import { libraryParent, parentFolder, workspaceDirectories } from './library.js';
+import { migrateWorkspaceState, migrateTrashEntry } from './migrateNames.js';
 
 export interface ProblemRef {
   id: string;
@@ -64,7 +65,8 @@ export class ProblemRegistry {
     const found: { dir: string; root: string; name: string; identity?: string }[] = [];
     for (const root of this.roots) {
       for (const { dir, name } of await workspaceDirectories(root, PROBLEM_FILE)) {
-        const identity = await fsp.readFile(path.join(dir, '.polyforge', 'identity'), 'utf8').catch(() => '');
+        await migrateWorkspaceState(dir);
+        const identity = await fsp.readFile(path.join(dir, '.taskweave', 'identity'), 'utf8').catch(() => '');
         found.push({ dir, root, name, identity: /^[a-zA-Z0-9_-]+(?:~[0-9]+)?$/.test(identity.trim()) ? identity.trim() : undefined });
       }
     }
@@ -76,8 +78,9 @@ export class ProblemRegistry {
     for (const entry of await fsp.readdir(trash, { withFileTypes: true }).catch(() => [])) {
       if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
       const dir = path.join(trash, entry.name);
-      const meta = await fsp.readFile(path.join(dir, '.polyforge-trash.json'), 'utf8').then(JSON.parse).catch(() => null);
-      const identity = meta?.kind === 'problem' ? meta.originalId : (await fsp.readFile(path.join(dir, '.polyforge/identity'), 'utf8').catch(() => '')).trim();
+      await migrateTrashEntry(dir);
+      const meta = await fsp.readFile(path.join(dir, '.taskweave-trash.json'), 'utf8').then(JSON.parse).catch(() => null);
+      const identity = meta?.kind === 'problem' ? meta.originalId : (await fsp.readFile(path.join(dir, '.taskweave/identity'), 'utf8').catch(() => '')).trim();
       if (typeof identity === 'string' && /^[a-zA-Z0-9_-]+(?:~[0-9]+)?$/.test(identity)) reserved.add(identity);
     }
     for (const p of found) {
@@ -86,7 +89,7 @@ export class ProblemRegistry {
         id = p.name;
         for (let i = 2; next.has(id) || reserved.has(id); i++) id = `${p.name}~${i}`;
       }
-      if (id !== p.identity) await atomicWrite(path.join(p.dir, '.polyforge', 'identity'), id);
+      if (id !== p.identity) await atomicWrite(path.join(p.dir, '.taskweave', 'identity'), id);
       next.set(id, { id, dir: p.dir, root: p.root });
     }
     this.byId = next;

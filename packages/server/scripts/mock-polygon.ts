@@ -1,10 +1,10 @@
 /**
  * In-memory mock of the Polygon API for developing and testing sync without a real
- * account. Verifies apiSig like Polygon does and implements the methods PolyForge uses.
+ * account. Verifies apiSig like Polygon does and implements the methods TaskWeave uses.
  *
- *   pnpm --filter @polyforge/server mock-polygon [--port 4700] [--key K] [--secret S]
+ *   pnpm --filter @taskweave/server mock-polygon [--port 4700] [--key K] [--secret S]
  *
- * Point PolyForge at it with secrets.toml: [polygon] api_url = "http://127.0.0.1:4700/api/".
+ * Point TaskWeave at it with secrets.toml: [polygon] api_url = "http://127.0.0.1:4700/api/".
  * GET /__dump returns the whole state as JSON; GET /__contest defines a contest;
  * GET /__delete?problem=ID deletes a problem (problems.list shows it with showDeleted only).
  * Tests start it in-process with startMockPolygon().

@@ -1,7 +1,7 @@
 /**
  * End-to-end check of Polygon pull + three-way merge against the mock.
- * Needs: `pnpm mock-polygon` on :4700 and a PolyForge server on :4600 started with
- * POLYFORGE_TOKEN=tok and a home whose problem root is <home>/probs.
+ * Needs: `pnpm mock-polygon` on :4700 and a TaskWeave server on :4600 started with
+ * TASKWEAVE_TOKEN=tok and a home whose problem root is <home>/probs.
  *   npx tsx scripts/test-sync-merge.ts <home>
  */
 import { promises as fsp } from 'node:fs';
@@ -10,7 +10,7 @@ import { PolygonClient } from '../src/polygon/client.js';
 
 const HOME = process.argv[2];
 const PROBS = path.join(HOME, 'probs');
-const H = { 'x-polyforge-token': process.env.POLYFORGE_TOKEN ?? 'tok', 'content-type': 'application/json' };
+const H = { 'x-taskweave-token': process.env.TASKWEAVE_TOKEN ?? 'tok', 'content-type': 'application/json' };
 const api = async (method: string, p: string, body?: unknown): Promise<any> => {
   const res = await fetch(`http://127.0.0.1:4600/api${p}`, { method, headers: H, body: body === undefined ? undefined : JSON.stringify(body) });
   let data = await res.json();

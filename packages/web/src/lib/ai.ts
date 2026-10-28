@@ -1,5 +1,5 @@
 import { computed, reactive } from 'vue';
-import type { AiChange, AiEndpoint, AiFinding, AiSessionDetail, AiSessionMode, AiSessionSummary, AiTranscriptItem, WsEvent } from '@polyforge/shared';
+import type { AiChange, AiEndpoint, AiFinding, AiSessionDetail, AiSessionMode, AiSessionSummary, AiTranscriptItem, WsEvent } from '@taskweave/shared';
 import { api } from './api';
 
 /**

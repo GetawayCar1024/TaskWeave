@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NForm, NFormItem, NSelect, useMessage } from 'naive-ui';
-import { luoguExportOptions, testsetsOf, type LuoguAggregate, type ProblemDetail, type ProblemExportRequest, type JobInfo } from '@polyforge/shared';
+import { luoguExportOptions, testsetsOf, type LuoguAggregate, type ProblemDetail, type ProblemExportRequest, type JobInfo } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import { waitJob } from '../lib/jobs';
 import { serverText } from '../lib/serverText';

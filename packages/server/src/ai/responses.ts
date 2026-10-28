@@ -1,5 +1,5 @@
 import type OpenAI from 'openai';
-import type { AiTestResult } from '@polyforge/shared';
+import type { AiTestResult } from '@taskweave/shared';
 import { OpenAiProvider } from './openai.js';
 import { cleanApiError, ToolInputParseError, type Block, type ChatRequest, type ChatResponse, type StopReason } from './provider.js';
 

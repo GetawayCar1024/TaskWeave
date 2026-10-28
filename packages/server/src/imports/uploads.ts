@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import type { PackageImportOptions, PackageUpload } from '@polyforge/shared';
+import type { PackageImportOptions, PackageUpload } from '@taskweave/shared';
 import { HttpError } from '../util/fs.js';
 import { inspectPackage } from './packages.js';
 import { detectPackageFormat, directoryPackage, readPackageArchive } from './input.js';

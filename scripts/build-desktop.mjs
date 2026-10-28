@@ -2,9 +2,9 @@
  * Build the desktop app (Electron) into packages/desktop/dist:
  *   packages/desktop/app/        sources for app.asar; runner.cpp is unpacked for g++
  *     main.cjs                   Electron main + the whole server, bundled with esbuild
- *     preload.cjs                window.polyforgeDesktop
+ *     preload.cjs                window.taskweaveDesktop
  *     web/ assets/ runner/       the same layout as the npm package
- *   packages/desktop/dist/       Taskweave-<version>-setup.exe and Taskweave-<version>-portable.exe
+ *   packages/desktop/dist/       TaskWeave-<version>-setup.exe and TaskWeave-<version>-portable.exe
  *
  * Usage: pnpm desktop            (pnpm desktop -- --dir: unpacked app only, for a quick try)
  */
@@ -21,6 +21,8 @@ const version = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')
 const dirOnly = process.argv.includes('--dir');
 /** --app-only: just packages/desktop/app (run it with the installed Electron). */
 const appOnly = process.argv.includes('--app-only');
+const targetPlatform = process.argv.includes('--linux') ? 'linux' : process.argv.includes('--win') ? 'win32' : process.platform;
+if (!['win32', 'linux'].includes(targetPlatform)) throw new Error('Desktop packaging supports Windows and Linux.');
 
 if (!existsSync(path.join(root, 'packages/web/dist/index.html'))) {
   console.error('packages/web/dist is missing: run `pnpm build` first');
@@ -39,8 +41,8 @@ await esbuild({
   // an 'electron' npm package from a parent node_modules). import.meta.url for the server's
   // path lookups comes from the bundle's own file.
   format: 'cjs',
-  define: { 'import.meta.url': '__pfImportMetaUrl' },
-  banner: { js: "const __pfImportMetaUrl = require('node:url').pathToFileURL(__filename).href;" },
+   define: { 'import.meta.url': '__twImportMetaUrl' },
+   banner: { js: "const __twImportMetaUrl = require('node:url').pathToFileURL(__filename).href;" },
 });
 await esbuild({ ...common, entryPoints: [path.join(desk, 'src/preload.cts')], outfile: path.join(out, 'preload.cjs'), format: 'cjs' });
 
@@ -52,8 +54,7 @@ if (!existsSync(path.join(out, 'web/index.html')) || !webAssets.some((f) => f.en
 }
 cpSync(path.join(root, 'assets'), path.join(out, 'assets'), { recursive: true });
 cpSync(path.join(desk, 'build/icon.png'), path.join(out, 'icon.png'));
-mkdirSync(path.join(out, 'runner'));
-cpSync(path.join(root, 'packages/server/runner/runner.cpp'), path.join(out, 'runner/runner.cpp'));
+cpSync(path.join(root, 'packages/server/runner'), path.join(out, 'runner'), { recursive: true });
 // Keep attribution, upstream source and integration source next to the shipped binary.
 for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) cpSync(path.join(root, name), path.join(out, name));
 cpSync(path.join(root, 'docs/building.md'), path.join(out, 'BUILDING.md'));
@@ -91,7 +92,7 @@ for (const entry of readdirSync(packageStore, { withFileTypes: true })) {
 }
 writeFileSync(
   path.join(out, 'package.json'),
-  JSON.stringify({ name: 'taskweave', productName: 'Taskweave', version, description: 'Local-first problem preparation, judging and platform packages', main: 'main.cjs', author: 'Taskweave', license: 'AGPL-3.0-or-later' }, null, 2),
+  JSON.stringify({ name: 'taskweave', productName: 'TaskWeave', version, description: 'Local-first problem preparation, judging and platform packages', main: 'main.cjs', author: 'TaskWeave', license: 'AGPL-3.0-or-later' }, null, 2),
 );
 
 if (appOnly) {
@@ -100,17 +101,19 @@ if (appOnly) {
 }
 
 // electron-builder: reuse the Electron that is installed; its own tools (NSIS, rcedit) from a mirror if set.
-process.env.ELECTRON_BUILDER_BINARIES_MIRROR ??= 'https://npmmirror.com/mirrors/electron-builder-binaries/';
+if (process.platform === 'win32') process.env.ELECTRON_BUILDER_BINARIES_MIRROR ??= 'https://npmmirror.com/mirrors/electron-builder-binaries/';
 const require = createRequire(path.join(desk, 'package.json'));
 const electronPkg = JSON.parse(readFileSync(require.resolve('electron/package.json'), 'utf8'));
-const { build } = require('electron-builder');
+const installedElectron = path.join(path.dirname(require.resolve('electron/package.json')), 'dist');
+const { build, Platform, Arch } = require('electron-builder');
 const files = await build({
   // Packaging is local; releases are published separately after review.
   publish: 'never',
   projectDir: desk,
+  targets: (targetPlatform === 'linux' ? Platform.LINUX : Platform.WINDOWS).createTarget(dirOnly ? ['dir'] : targetPlatform === 'linux' ? ['AppImage', 'tar.gz'] : ['nsis', 'portable'], Arch.x64),
   config: {
-    appId: 'dev.polyforge.desktop', // Stable installer identity lets existing installations upgrade.
-    productName: 'Taskweave',
+    appId: 'dev.taskweave.desktop',
+    productName: 'TaskWeave',
     directories: { app: out, output: path.join(desk, 'dist') },
     asar: true,
     asarUnpack: ['runner/**'],
@@ -118,13 +121,15 @@ const files = await build({
     // make it one and it would exit at once); also a hardening measure.
     electronFuses: { runAsNode: false },
     electronVersion: electronPkg.version,
-    electronDist: path.join(path.dirname(require.resolve('electron/package.json')), 'dist'),
+    electronDist: targetPlatform === process.platform && existsSync(installedElectron) ? installedElectron : undefined,
+    linux: { category: 'Development', executableName: 'taskweave', icon: path.join(desk, 'build/icon.png'), artifactName: 'TaskWeave-${version}-linux-${arch}.${ext}' },
     // Icon and version info go into the exe (rcedit); there is no code signing certificate.
     win: { target: dirOnly ? ['dir'] : ['nsis', 'portable'], icon: path.join(desk, 'build/icon.ico'), signExecutable: false },
-    // Desktop and Start-menu shortcuts: Taskweave starts with a double click.
-    nsis: { oneClick: false, allowToChangeInstallationDirectory: true, perMachine: false, shortcutName: 'Taskweave', createDesktopShortcut: true, createStartMenuShortcut: true, runAfterFinish: true },
-    portable: { artifactName: 'Taskweave-${version}-portable.exe' },
-    artifactName: 'Taskweave-${version}-setup.${ext}',
+    // Desktop and Start-menu shortcuts: TaskWeave starts with a double click.
+    // Keep the existing uninstall/upgrade GUID while using the new application namespace.
+    nsis: { guid: '900fe186-d19c-5f01-8401-fdfca40fd475', oneClick: false, allowToChangeInstallationDirectory: true, perMachine: false, shortcutName: 'TaskWeave', createDesktopShortcut: true, createStartMenuShortcut: true, runAfterFinish: true },
+    portable: { artifactName: 'TaskWeave-${version}-portable.exe' },
+    artifactName: 'TaskWeave-${version}-setup.${ext}',
   },
 });
-console.log(`desktop app built (Taskweave ${version}):\n${files.map((f) => `  ${path.relative(root, f)}`).join('\n')}`);
+console.log(`desktop app built (TaskWeave ${version}):\n${files.map((f) => `  ${path.relative(root, f)}`).join('\n')}`);

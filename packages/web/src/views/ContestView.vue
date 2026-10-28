@@ -47,7 +47,7 @@ import {
   MemoryStick,
   ListOrdered,
 } from 'lucide-vue-next';
-import { CONTEST_INDEX_RE, PROBLEM_NAME_RE, luoguExportOptions, testsetsOf, type LuoguExportOptions, type ContestAction, type ContestBatchItem, type ContestBatchResult, type ContestDetail, type JobInfo, type ProblemSummary } from '@polyforge/shared';
+import { CONTEST_INDEX_RE, PROBLEM_NAME_RE, luoguExportOptions, testsetsOf, type LuoguExportOptions, type ContestAction, type ContestBatchItem, type ContestBatchResult, type ContestDetail, type JobInfo, type ProblemSummary } from '@taskweave/shared';
 import AppHeader from '../components/AppHeader.vue';
 import AiDrawer from '../components/AiDrawer.vue';
 import ContestSyncDialog from '../components/ContestSyncDialog.vue';

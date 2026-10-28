@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { testsetOf } from '@polyforge/shared';
+import { testsetOf } from '@taskweave/shared';
 import { GlobalStore } from '../src/global.js';
 import { ProblemRegistry } from '../src/workspace/problems.js';
 import { Judge } from '../src/judge/index.js';
@@ -63,7 +63,7 @@ test('JOI directory packages discover multiple problems, preserve names/bytes, a
   ] } } });
   ctx = await judge.ctx(imported.problem.id);
   const exported = await buildProblemDataPackage(judge, ctx, 'joi', job());
-  const files = readZip(exported.data); assert.ok(files.has('in/01-02.txt')); assert.ok(files.has('polyforge.yaml'));
+  const files = readZip(exported.data); assert.ok(files.has('in/01-02.txt')); assert.ok(files.has('taskweave.yaml'));
   const restored = await importPackage(judge, exported.data, { format: 'joi', name: 'joi-restored' });
   const groups = (await judge.ctx(restored.problem.id)).config.tests.group!;
   assert.deepEqual(groups.map(g => [g.name, g.tests, g.points, g.test_points, g.time_limit, g.memory_limit]), [['0', '1', 23, undefined, 700, 64], ['1', '1-2', 14, 7, 2500, 2048]]);

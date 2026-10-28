@@ -21,8 +21,8 @@ const wholeStatement = computed(() => props.ws.files.value.some(f => f.path === 
 const previewable = computed(() => /\.(tex|md)$/i.test(props.ws.activeTab.value?.path ?? ''));
 const previewHost = ref<HTMLDivElement>();
 const syncScroll = ref(true);
-const showPreview = ref(localStorage.getItem('polyforge-preview') !== 'off');
-watch(showPreview, (v) => localStorage.setItem('polyforge-preview', v ? 'on' : 'off'));
+const showPreview = ref(localStorage.getItem('taskweave-preview') !== 'off');
+watch(showPreview, (v) => localStorage.setItem('taskweave-preview', v ? 'on' : 'off'));
 const { t } = useI18n();
 const host = ref<HTMLDivElement>();
 let editor: monaco.editor.IStandaloneCodeEditor | null = null;

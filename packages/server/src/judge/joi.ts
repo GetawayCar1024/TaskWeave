@@ -1,14 +1,14 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { stringify as yaml } from 'yaml';
-import { groupTotal, parseIndexList, testsetOf } from '@polyforge/shared';
+import { groupTotal, parseIndexList, testsetOf } from '@taskweave/shared';
 import type { JobCtx } from '../jobs.js';
 import { ZipWriter } from '../util/zip.js';
 import type { Judge, ProblemCtx } from './index.js';
 import { exportedTests } from './lemonlime.js';
 import { answerPath, inputPath, planTests } from './tests.js';
 
-/** in/out is the published dataset convention; polyforge.yaml is our optional companion. */
+/** in/out is the published dataset convention; taskweave.yaml is our optional companion. */
 export async function joiPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, testsets: string[]) {
   const sets = await exportedTests(judge, ctx, testsets, ctx.config.problem.name, job);
   const zip = new ZipWriter({ async: true }), used = new Set<string>();
@@ -38,8 +38,8 @@ export async function joiPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, tes
       cases: parseIndexList(group.tests ?? '').map(caseId), dependencies: group.dependencies?.map(groupId),
       overrides: group.cases && Object.fromEntries(Object.entries(group.cases).map(([index, value]) => [caseId(Number(index)), value])) });
   }
-  zip.add('polyforge.yaml', yaml({ format: 'polyforge-inout', version: 1, problem: { name: ctx.config.problem.name, title: ctx.config.problem.title,
+  zip.add('taskweave.yaml', yaml({ format: 'taskweave-inout', version: 1, problem: { name: ctx.config.problem.name, title: ctx.config.problem.title,
     time_ms: ctx.config.problem.time_limit, memory_mib: ctx.config.problem.memory_limit, input: ctx.config.problem.input, output: ctx.config.problem.output },
     points_enabled: !!ctx.config.tests.points, cases, subtasks }));
-  return { data: await zip.finishAsync(), tests: cases.length, warnings: ['JOI / AtCoder in/out ZIPs have no universal scoring configuration. polyforge.yaml preserves Taskweave settings for re-import.'] };
+  return { data: await zip.finishAsync(), tests: cases.length, warnings: ['JOI / AtCoder in/out ZIPs have no universal scoring configuration. taskweave.yaml preserves TaskWeave settings for re-import.'] };
 }

@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { judgeMode, LEMON_COMPARISON_MODES, type CompileResult, type ProblemToml } from '@polyforge/shared';
+import { judgeMode, LEMON_COMPARISON_MODES, type CompileResult, type ProblemToml } from '@taskweave/shared';
 import type { GlobalStore } from '../global.js';
 import { HttpError, isDir } from '../util/fs.js';
 import type { ProblemRef, ProblemRegistry } from '../workspace/problems.js';
@@ -13,7 +13,7 @@ export interface ProblemCtx {
   ref: ProblemRef;
   config: ProblemToml;
   limits: ProblemLimits;
-  /** .polyforge directory of the problem. */
+  /** .taskweave directory of the problem. */
   work: string;
   /** Build cache override (AI sandboxes share the real problem's build cache). */
   buildRoot?: string;
@@ -49,7 +49,7 @@ export class Judge {
     return {
       ref,
       config,
-      work: path.join(ref.dir, '.polyforge'),
+      work: path.join(ref.dir, '.taskweave'),
       buildRoot,
       limits: {
         timeLimitMs: config.problem.time_limit,

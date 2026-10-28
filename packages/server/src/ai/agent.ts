@@ -13,8 +13,8 @@ import type {
   AiTranscriptItem,
   CreateAiSessionRequest,
   AiUsage,
-} from '@polyforge/shared';
-import { addUsage, emptyUsage } from '@polyforge/shared';
+} from '@taskweave/shared';
+import { addUsage, emptyUsage } from '@taskweave/shared';
 import { recordCost, UsageLog } from './usage.js';
 import type { RawAiEndpoint } from '../global.js';
 import type { Judge } from '../judge/index.js';
@@ -67,7 +67,7 @@ interface Live {
   running?: Promise<void>;
 }
 
-const sessionsDir = (ref: { dir: string }) => path.join(ref.dir, '.polyforge', 'ai');
+const sessionsDir = (ref: { dir: string }) => path.join(ref.dir, '.taskweave', 'ai');
 
 /** Owner key of a contest's sessions (problem ids cannot contain ":"). */
 export const contestOwner = (id: string) => `contest:${id}`;
@@ -169,7 +169,7 @@ export class AgentService {
                 authoring: async () => part.kind === 'files' || !(await this.judge.ctx(part.id === '_problem_files' ? 'files' : part.id)).config.problem.data_only,
                 ctx: async () => {
                   const ref = await this.judge.registry.get(part.id === '_problem_files' ? 'files' : part.id);
-                  return this.judge.ctxFor({ id: `${part.id}@ai`, dir: sandbox.dir, root: ref.root }, path.join(ref.dir, '.polyforge', 'build'));
+                  return this.judge.ctxFor({ id: `${part.id}@ai`, dir: sandbox.dir, root: ref.root }, path.join(ref.dir, '.taskweave', 'build'));
                 },
               }),
             },
@@ -196,7 +196,7 @@ export class AgentService {
       run: (name, input, base, sb, mode) => {
         const sandbox = sb as Sandbox;
         const sandboxRef: ProblemRef = { id: `${owner}@ai`, dir: sandbox.dir, root: ref.root };
-        const env: ToolEnv = { ...base, sandbox, ctx: () => this.judge.ctxFor(sandboxRef, path.join(ref.dir, '.polyforge', 'build')),
+        const env: ToolEnv = { ...base, sandbox, ctx: () => this.judge.ctxFor(sandboxRef, path.join(ref.dir, '.taskweave', 'build')),
           authoring: async () => !(await this.judge.ctx(owner)).config.problem.data_only };
         return runTool(name, input, env, mode);
       },

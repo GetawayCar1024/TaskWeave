@@ -1,5 +1,5 @@
 import { ref } from 'vue';
-import type { WsEvent } from '@polyforge/shared';
+import type { WsEvent } from '@taskweave/shared';
 import { token } from './api';
 
 type Handler = (e: WsEvent) => void;

@@ -1,5 +1,5 @@
 import { createI18n } from 'vue-i18n';
-import type { UiLocale } from '@polyforge/shared';
+import type { UiLocale } from '@taskweave/shared';
 import zhCN from './locales/zh-CN.json';
 import en from './locales/en.json';
 

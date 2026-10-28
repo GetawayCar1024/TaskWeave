@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { parse, stringify } from 'smol-toml';
-import { compressRanges, PROBLEM_NAME_RE, problemTomlSchema, TESTSET_NAME_RE, testsetsOf, type PackageCandidate, type PackageImportOptions, type PackageImportResult } from '@polyforge/shared';
+import { compressRanges, PROBLEM_NAME_RE, problemTomlSchema, TESTSET_NAME_RE, testsetsOf, type PackageCandidate, type PackageImportOptions, type PackageImportResult } from '@taskweave/shared';
 import { atomicWrite, exists, HttpError, safeJoin, validateFileName } from '../util/fs.js';
 import { detectPackageFormat, readPackageArchive } from './input.js';
 import { prepareProvidedTests } from '../judge/tests.js';
@@ -14,6 +14,7 @@ import { polygonCandidates, readPolygonPackage, importPolygonPackage } from './p
 import { fpsCandidates, importFps } from './fps.js';
 import { PackageReferences } from './references.js';
 import { importLemon, lemonCandidates } from './lemon.js';
+import { packageMetadata } from '../workspace/migrateNames.js';
 
 const formats = ['polygon-package', 'hydro-problem', 'lemonlime', 'fps', 'data', 'joi', 'luogu-data', 'hydro-data'];
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 64) || 'imported-problem';
@@ -38,10 +39,10 @@ export function packageCandidates(files: Map<string, Buffer>, options: PackageIm
   }
   if (options.format !== 'hydro-problem') return [{ entry: '', title: '', name: options.name || 'imported-problem' }];
   return [...files.keys()].filter(p => /(?:^|\/)problem\.ya?ml$/i.test(p)).sort().map(file => {
-    const meta = yamlObject(files.get(file), file);
+    const meta = packageMetadata(yamlObject(files.get(file), file));
     const entry = file.slice(0, file.lastIndexOf('/') + 1);
     const title = String(meta.title ?? meta.name ?? meta.pid ?? path.posix.basename(entry.slice(0, -1)) ?? 'Imported problem');
-    return { entry, title, name: typeof meta.polyforge?.name === 'string' && PROBLEM_NAME_RE.test(meta.polyforge.name) ? meta.polyforge.name : slug(String(meta.pid ?? (entry ? path.posix.basename(entry.slice(0, -1)) : title))) };
+    return { entry, title, name: typeof meta.taskweave?.name === 'string' && PROBLEM_NAME_RE.test(meta.taskweave.name) ? meta.taskweave.name : slug(String(meta.pid ?? (entry ? path.posix.basename(entry.slice(0, -1)) : title))) };
   });
 }
 
@@ -146,7 +147,7 @@ function readPackageInput(archive: Map<string, Buffer>, options: PackageImportOp
     if (!chosen) return badPackage(candidates.length ? 'Select a problem directory from the Hydro archive.' : 'No problem.yaml in this Hydro package.');
     files = subtree(archive, chosen.entry);
     const metadataFile = [...files.keys()].find(p => /^problem\.ya?ml$/i.test(p))!;
-    metadata = yamlObject(files.get(metadataFile), metadataFile);
+    metadata = packageMetadata(yamlObject(files.get(metadataFile), metadataFile));
     dataPrefix = 'testdata/';
     const data = subtree(files, dataPrefix);
     if (!data.size) return badPackage('Hydro problem has no testdata/ directory.');
@@ -208,7 +209,7 @@ export function inspectPackage(bytes: Buffer | Map<string, Buffer>, options: Pac
         tests: { cases: input.plan.cases, group: input.plan.groups, points: input.plan.pointsEnabled ?? true } });
       if (!valid.success) return badPackage(`Imported configuration is invalid: ${valid.error.message}`);
       return { ...candidate, files: archive.size, size, tests: input.plan.pairs.length, warnings: input.plan.warnings, timeLimit: input.plan.timeLimit, memoryLimit: input.plan.memoryLimit,
-        titles: input.metadata?.polyforge?.titles ?? input.plan.sourceConfig?.problem?.title };
+        titles: input.metadata?.taskweave?.titles ?? input.plan.sourceConfig?.problem?.title };
     } catch (e) { return { ...candidate, files: archive.size, size, error: (e as Error).message }; }
   });
 }
@@ -241,8 +242,8 @@ export async function importPackage(judge: Judge, bytes: Buffer | Map<string, Bu
     const dest = `${other}/archive/${file}`;
     local.set(dest, data); extras.push(dest);
   }
-  // Keep provenance without relying on transient .polyforge caches.
-  local.set(`${other}/polyforge-import.json`, Buffer.from(JSON.stringify({ format: options.format, entry: chosen?.entry,
+  // Keep provenance without relying on transient .taskweave caches.
+  local.set(`${other}/taskweave-import.json`, Buffer.from(JSON.stringify({ format: options.format, entry: chosen?.entry,
     testFiles: plan.pairs.map((p, i) => ({ index: i + 1, input: dataPrefix + p.input, output: p.output ? dataPrefix + p.output : null })) }, null, 2)));
   const testset = options.testset ?? 'tests';
   if (!TESTSET_NAME_RE.test(testset)) return badPackage('Invalid target testset name.');
@@ -268,7 +269,7 @@ export async function importPackage(judge: Judge, bytes: Buffer | Map<string, Bu
     doc = { problem: { name, type: 'cf', data_only: true, title: { [fallbackLang]: chosen?.title || name }, time_limit: plan.timeLimit,
       memory_limit: plan.memoryLimit, input: 'stdin', output: 'stdout', judge_mode: 'batch' }, tests: { ...testConfig, points: plan.pointsEnabled ?? true } };
     if (testset !== 'tests') return badPackage('New problems import their data into the tests testset.');
-    if (plan.sourceConfig.format === 'polyforge-inout') {
+    if (plan.sourceConfig.format === 'taskweave-inout') {
       const p = plan.sourceConfig.problem;
       if (p?.title) doc.problem.title = p.title;
       if (p?.input) doc.problem.input = p.input;
@@ -286,7 +287,7 @@ export async function importPackage(judge: Judge, bytes: Buffer | Map<string, Bu
       // their file:// form, which the preview resolves through the same authenticated API.
       const text = parsed.text.replace(/(!\[[^\]]*\]\()file:\/\/([^\s)]+)(\))/g, '$1$2$3');
       local.set(`statement/${lang}/statement.tex`, Buffer.from(text));
-      doc.problem.title[lang] = typeof metadata.polyforge?.titles?.[lang] === 'string' ? metadata.polyforge.titles[lang] : chosen!.title;
+      doc.problem.title[lang] = typeof metadata.taskweave?.titles?.[lang] === 'string' ? metadata.taskweave.titles[lang] : chosen!.title;
       if (!canonicalSamples && parsed.samples.length) canonicalSamples = parsed.samples;
       if (parsed.samples.length && canonicalSamples && parsed.samples.length !== canonicalSamples.length) {
         // Keep a language with different sample numbering exactly as authored.
@@ -355,7 +356,7 @@ export async function importPackage(judge: Judge, bytes: Buffer | Map<string, Bu
     }
     // Publish last. A parse failure or partial write cannot replace the existing data configuration.
     if (await fs.readFile(path.join(dir, 'problem.toml'), 'utf8') !== originalConfig) throw new HttpError(409, 'conflict', 'problem.toml changed during import. Retry with the current configuration.');
-    await atomicWrite(path.join(dir, '.polyforge', 'import-backups', id, 'problem.toml'), originalConfig!);
+    await atomicWrite(path.join(dir, '.taskweave', 'import-backups', id, 'problem.toml'), originalConfig!);
     await atomicWrite(path.join(dir, 'problem.toml'), stringify(doc));
   } catch (e) {
     for (const file of written) await fs.rm(file, { force: true });
@@ -368,4 +369,4 @@ export async function importPackage(judge: Judge, bytes: Buffer | Map<string, Bu
   return { problem: await registry.summary(ref), tests: plan.pairs.length, extras, warnings };
 }
 
-const testsetOfProvided = (config: import('@polyforge/shared').ProblemToml, name: string) => testsetsOf(config).find(testset => testset.name === name)?.answers === 'provided';
+const testsetOfProvided = (config: import('@taskweave/shared').ProblemToml, name: string) => testsetsOf(config).find(testset => testset.name === name)?.answers === 'provided';

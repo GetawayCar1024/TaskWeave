@@ -8,7 +8,7 @@ import {
   type ProblemDetail,
   type SharedListResponse,
   type WsEvent,
-} from '@polyforge/shared';
+} from '@taskweave/shared';
 import { api, ApiError } from './api';
 import { attachStatementLint } from './latexEditor';
 import { monaco, languageForPath } from './monaco';
@@ -103,7 +103,7 @@ export function useWorkspace(problemId: string) {
       savedVersion: model.getAlternativeVersionId(),
       savedHash: fc.hash,
       dirty: false,
-      readOnly: shared || path.startsWith('.polyforge/') || !!fc.binary || !!fc.truncated,
+      readOnly: shared || path.startsWith('.taskweave/') || !!fc.binary || !!fc.truncated,
       binary: fc.binary,
       truncated: fc.truncated,
       disk: 'ok',

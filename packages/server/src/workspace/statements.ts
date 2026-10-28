@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { OI_SECTIONS, STATEMENT_BODY_SECTIONS, STATEMENT_SECTIONS, type StatementMode } from '@polyforge/shared';
+import { OI_SECTIONS, STATEMENT_BODY_SECTIONS, STATEMENT_SECTIONS, type StatementMode } from '@taskweave/shared';
 import { atomicWrite, exists, HttpError } from '../util/fs.js';
 
 const language = (lang: string) => {

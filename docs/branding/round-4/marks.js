@@ -46,7 +46,7 @@
   let sequence = 0;
   function svg(kind = 'refined', { size = 256, tile = true, mono = false, viewBox = '0 0 256 256', id = `fold-${sequence++}` } = {}) {
     const parts = kind === 'original' ? original : refined;
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="${viewBox}" role="img" aria-label="Taskweave D ${kind}" data-kind="${kind}">
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="${viewBox}" role="img" aria-label="TaskWeave D ${kind}" data-kind="${kind}">
       <defs><linearGradient id="${id}-tile" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="${colors.top}"/><stop offset="1" stop-color="${colors.bottom}"/></linearGradient><clipPath id="${id}-outline"><path d="${silhouette}" clip-rule="evenodd"/></clipPath></defs>
       ${tile ? `<rect x="8" y="8" width="240" height="240" rx="55" fill="url(#${id}-tile)"/><rect x="8.5" y="8.5" width="239" height="239" rx="54.5" fill="none" stroke="${colors.rim}"/>` : ''}
       <g${kind === 'refined' ? ` clip-path="url(#${id}-outline)"` : ''}>${parts.map(part => `<path d="${part.d}" fill="${mono ? colors.ink : colors[part.tone]}"${part.evenodd ? ' fill-rule="evenodd"' : ''}/>`).join('')}</g>

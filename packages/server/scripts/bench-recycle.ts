@@ -29,7 +29,7 @@ try {
   if (process.argv.includes('--watch')) await watcher.start();
   fs.cp = (async (...args: Parameters<typeof fs.cp>) => { copies++; return copy(...args); }) as typeof fs.cp;
   const start = performance.now();
-  const result = await app.inject({ method: 'DELETE', url: `/api/problems/${p.id}`, headers: { host: 'localhost', 'x-polyforge-token': 'test-only' } });
+  const result = await app.inject({ method: 'DELETE', url: `/api/problems/${p.id}`, headers: { host: 'localhost', 'x-taskweave-token': 'test-only' } });
   assert.equal(result.statusCode, 200, result.body);
   console.log(JSON.stringify({ files: 512, sizeMiB: 64, milliseconds: Math.round(performance.now() - start), directoryCopies: copies, watcher: process.argv.includes('--watch') }));
   assert.equal(await fs.readFile(path.join(result.json().trash, 'tests/manual/256.ans'), 'utf8').then(text => text.length), data.length);

@@ -10,7 +10,7 @@ import { Judge } from '../src/judge/index.js';
 import { WsHub } from '../src/ws.js';
 import { addLemonProblem } from '../src/judge/lemonlime.js';
 import { ZipWriter, readZip } from '../src/util/zip.js';
-import { LEMON_COMPARISON_MODES, type LemonComparison } from '@polyforge/shared';
+import { LEMON_COMPARISON_MODES, type LemonComparison } from '@taskweave/shared';
 
 async function fixture(run: (judge: Judge, registry: ProblemRegistry, home: string) => Promise<void>) {
   const home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'tw-lemon-native-')));

@@ -1,5 +1,5 @@
 import { reactive } from 'vue';
-import type { GlobalConfig } from '@polyforge/shared';
+import type { GlobalConfig } from '@taskweave/shared';
 import { api } from './api';
 import { setLocale } from '../i18n';
 

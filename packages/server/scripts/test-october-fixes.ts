@@ -13,7 +13,7 @@ import { AgentService } from '../src/ai/agent.js';
 import { moveProblem } from '../src/workspace/move.js';
 import { importContest } from '../src/judge/contest.js';
 import { buildAndVerify } from '../src/polygon/buildPackage.js';
-import { lintStatement } from '@polyforge/shared';
+import { lintStatement } from '@taskweave/shared';
 import { Sandbox } from '../src/ai/sandbox.js';
 import { runInvocation, readInvocation } from '../src/judge/invocation.js';
 
@@ -32,11 +32,11 @@ test('moving a problem preserves stable identity, history and contest references
   try {
     const p = await f.registry.create({ name: 'sum' });
     const c = await f.contests.create({ name: 'round', problems: [{ index: 'A', problem: p.id }] });
-    await fs.writeFile(path.join(p.dir, '.polyforge/history.json'), 'history');
+    await fs.writeFile(path.join(p.dir, '.taskweave/history.json'), 'history');
     const target = path.join(f.home, 'another');
     const moved = await moveProblem(f.registry, p.id, target);
     assert.equal(moved.id, p.id);
-    assert.equal(await fs.readFile(path.join(moved.dir, '.polyforge/history.json'), 'utf8'), 'history');
+    assert.equal(await fs.readFile(path.join(moved.dir, '.taskweave/history.json'), 'utf8'), 'history');
     assert.equal((await f.contests.detail(c.id)).problems[0].summary?.id, p.id);
     const other = await f.registry.create({ name: 'sum', root: f.global.config.problems.roots[0] });
     assert.notEqual(other.id, moved.id);

@@ -27,8 +27,8 @@ import {
   useDialog,
   type DataTableColumns,
 } from 'naive-ui';
-import { AI_PROTOCOLS, CURRENCIES, globalConfigSchema, type AiProtocol, type Currency, type EndpointPricing, type GlobalConfig, type LanguagesConfig, type SecretsResponse, type ToolProbe, type UsageGroup, type UsageStats } from '@polyforge/shared';
-import { LANGUAGE_PRESETS, addLanguageSection, languageSectionText, removeLanguageSection, type LanguagePreset } from '@polyforge/shared';
+import { AI_PROTOCOLS, CURRENCIES, globalConfigSchema, type AiProtocol, type Currency, type EndpointPricing, type GlobalConfig, type LanguagesConfig, type SecretsResponse, type ToolProbe, type UsageGroup, type UsageStats } from '@taskweave/shared';
+import { LANGUAGE_PRESETS, addLanguageSection, languageSectionText, removeLanguageSection, type LanguagePreset } from '@taskweave/shared';
 import { registerExitGuard } from '../lib/exitGuards';
 import AppHeader from '../components/AppHeader.vue';
 import CodeEditor from '../components/CodeEditor.vue';

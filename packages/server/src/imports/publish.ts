@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { stringify } from 'smol-toml';
-import { problemTomlSchema, PROBLEM_NAME_RE, testsetsOf } from '@polyforge/shared';
+import { problemTomlSchema, PROBLEM_NAME_RE, testsetsOf } from '@taskweave/shared';
 import type { Judge } from '../judge/index.js';
 import { samePath } from '../global.js';
 import { atomicWrite, HttpError, safeJoin } from '../util/fs.js';

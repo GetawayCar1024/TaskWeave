@@ -2,7 +2,7 @@ import { execFile, spawn } from 'node:child_process';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { RUNNER_SRC } from '../paths.js';
-import type { RunStats, RunStatus } from '@polyforge/shared';
+import type { RunStats, RunStatus } from '@taskweave/shared';
 import { exists, HttpError, sha1 } from '../util/fs.js';
 import { withBuildLocks, verifyBuild, type BuildIdentity } from './buildLock.js';
 

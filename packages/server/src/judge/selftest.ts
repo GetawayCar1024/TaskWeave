@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import type { CheckerTestResult, SelfTestReport, ValidatorTestResult, Verdict } from '@polyforge/shared';
+import type { CheckerTestResult, SelfTestReport, ValidatorTestResult, Verdict } from '@taskweave/shared';
 import type { JobCtx } from '../jobs.js';
 import { exists } from '../util/fs.js';
 import { describeRun, readHead, runChecker, runHelper, withTmp } from './execute.js';

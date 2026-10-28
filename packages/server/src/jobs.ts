@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import type { JobInfo, JobKind } from '@polyforge/shared';
+import type { JobInfo, JobKind } from '@taskweave/shared';
 import { HttpError } from './util/fs.js';
 import type { WsHub } from './ws.js';
 

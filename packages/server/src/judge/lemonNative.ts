@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { LEMON_COMPARISON_MODES, type LemonComparison } from '@polyforge/shared';
+import { LEMON_COMPARISON_MODES, type LemonComparison } from '@taskweave/shared';
 
 /** Other platforms use a standalone three-file checker; native CDF still uses modes 0/1/3. */
 export async function lemonNativeSource(shared: string, options: LemonComparison): Promise<string> {

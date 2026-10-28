@@ -2,7 +2,7 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import TurndownService from 'turndown';
 import { gfm } from 'turndown-plugin-gfm';
-import { compressRanges, problemTomlSchema, type PackageCandidate, type PackageImportOptions, type PackageImportResult } from '@polyforge/shared';
+import { compressRanges, problemTomlSchema, type PackageCandidate, type PackageImportOptions, type PackageImportResult } from '@taskweave/shared';
 import type { Judge } from '../judge/index.js';
 import { HttpError, validateFileName } from '../util/fs.js';
 import { publishProblem } from './publish.js';

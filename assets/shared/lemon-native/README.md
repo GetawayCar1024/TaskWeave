@@ -5,7 +5,7 @@ Project-LemonLime/Project_LemonLime commit
 `69aa22370706a4f14b394a6e27aa92e7eca4a8f5`, `src/core/casejudger.cpp`.
 
 Original authors and GPL-3.0-or-later notices are preserved in the source.
-Taskweave changes dated 2026-10-28 remove Qt, accept already-selected modes and
+TaskWeave changes dated 2026-10-28 remove Qt, accept already-selected modes and
 precision, open Unicode paths on Windows, and report verdicts as exit codes.
 See the accompanying `LICENSE` for GNU GPL version 3.
 

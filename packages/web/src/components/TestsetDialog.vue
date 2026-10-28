@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NInput, NInputNumber, NSelect, NSwitch, NTag, useDialog, useMessage } from 'naive-ui';
 import { GripVertical, ListChecks, Plus, Trash2, WandSparkles, X } from 'lucide-vue-next';
-import { compressRanges, DEFAULT_TESTSET, GROUP_POLICIES, TESTSET_NAME_RE, groupLayout, inferFilenameGroups, parseIndexList, pruneForwardDependencies, testsetsOf, type TestGroup, type TestsetPatch } from '@polyforge/shared';
+import { compressRanges, DEFAULT_TESTSET, GROUP_POLICIES, TESTSET_NAME_RE, groupLayout, inferFilenameGroups, parseIndexList, pruneForwardDependencies, testsetsOf, type TestGroup, type TestsetPatch } from '@taskweave/shared';
 import { errorMessage } from '../lib/api';
 import type { Judge } from '../lib/judge';
 import type { Workspace } from '../lib/workspace';

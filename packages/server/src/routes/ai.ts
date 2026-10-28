@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { CreateAiSessionRequest, SaveAiEndpoint } from '@polyforge/shared';
+import type { CreateAiSessionRequest, SaveAiEndpoint } from '@taskweave/shared';
 import { contestOwner, type AgentService } from '../ai/agent.js';
 import { createProvider, defaultModel } from '../ai/provider.js';
 import type { GlobalStore } from '../global.js';

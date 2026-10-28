@@ -8,5 +8,5 @@
 
 The template also uses SimSun, SimHei and KaiTi (© Beijing ZhongYi Electronics,
 Microsoft-supplied fonts). Their license does not permit redistribution, so they are
-not included: Taskweave reads them from the user's own system fonts, or from the
-`fonts` folder of the Taskweave global directory (`packages/server/src/systemFonts.ts`).
+not included: TaskWeave reads them from the user's own system fonts, or from the
+`fonts` folder of the TaskWeave global directory (`packages/server/src/systemFonts.ts`).

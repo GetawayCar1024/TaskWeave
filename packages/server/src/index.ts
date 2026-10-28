@@ -3,7 +3,7 @@ import { startServer } from './server.js';
 
 /**
  * Command line, for development and the test scripts: start the server and print the
- * address. Taskweave itself is the desktop app (packages/desktop).
+ * address. TaskWeave itself is the desktop app (packages/desktop).
  */
 const { values: args } = parseArgs({
   options: {

@@ -12,12 +12,13 @@ import { ProblemRegistry } from './workspace/problems.js';
 import { ContestRegistry } from './workspace/contests.js';
 import { ProblemWatcher } from './workspace/watcher.js';
 import { WsHub } from './ws.js';
+import { legacyEnv } from '@taskweave/shared';
 
 const DEFAULT_PORT = 4523;
 const DEV_WEB_PORT = 5173;
 
 export interface ServerOptions {
-  /** Global directory (new installs: ~/.taskweave; existing ~/.polyforge is reused). */
+  /** Global directory, default ~/.taskweave with automatic legacy-profile migration. */
   home?: string;
   /** Fixed port; otherwise the first free one from 4523. */
   port?: number;
@@ -33,7 +34,7 @@ export interface RunningServer {
   close: () => Promise<void>;
 }
 
-/** Start Taskweave (API + web UI) on 127.0.0.1; used by the CLI and the desktop app. */
+/** Start TaskWeave (API + web UI) on 127.0.0.1; used by the CLI and the desktop app. */
 export async function startServer(opts: ServerOptions = {}): Promise<RunningServer> {
   const dev = !!opts.dev;
   const global = new GlobalStore(opts.home ? path.resolve(opts.home) : defaultGlobalDir());
@@ -82,7 +83,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<RunningServ
  * (tsx watch) do not invalidate the already-open browser tab.
  */
 async function loadToken(global: GlobalStore, dev: boolean): Promise<string> {
-  const override = process.env.TASKWEAVE_TOKEN || process.env.POLYFORGE_TOKEN;
+  const override = process.env.TASKWEAVE_TOKEN || process.env[legacyEnv('TOKEN')];
   if (override) return override;
   if (!dev) return randomBytes(24).toString('hex');
   const file = path.join(global.cacheDir, 'dev-token');

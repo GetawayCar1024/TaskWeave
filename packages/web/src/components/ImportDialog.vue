@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NForm, NFormItem, NInput, NInputNumber, NScrollbar, NSelect, NSpin } from 'naive-ui';
-import { PROBLEM_NAME_RE, type JobInfo, type PolygonProblem, type ProblemSummary } from '@polyforge/shared';
+import { PROBLEM_NAME_RE, type JobInfo, type PolygonProblem, type ProblemSummary } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import { waitJob } from '../lib/jobs';
 import ToolWindow from './ToolWindow.vue';

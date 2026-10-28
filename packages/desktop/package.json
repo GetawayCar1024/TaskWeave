@@ -1,12 +1,15 @@
 {
-  "name": "@polyforge/desktop",
-  "version": "0.4.1",
+  "name": "@taskweave/desktop",
+  "version": "0.4.2-dev",
   "license": "AGPL-3.0-or-later",
   "private": true,
-  "description": "Taskweave desktop: local problem preparation, judging and platform packages",
+  "description": "TaskWeave desktop: local problem preparation, judging and platform packages",
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@taskweave/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

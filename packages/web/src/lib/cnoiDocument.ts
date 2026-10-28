@@ -1,4 +1,4 @@
-import type { ContestStatement } from '@polyforge/shared';
+import type { ContestStatement } from '@taskweave/shared';
 import { rawUrl } from './api';
 import { renderLatex, type MacroTable } from './latex';
 import { ENDNOTE } from './cnoiTemplate';

@@ -1,4 +1,4 @@
-# Taskweave / D edge refinement
+# TaskWeave / D edge refinement
 
 用户反馈：第三轮的 T 太刻意，原 D 更好。精修集中在边角与接缝，T 只是加分项。
 
@@ -9,7 +9,7 @@
 布局以原稿／精修同尺寸并排为主体，右侧解释具体边角修改。下方三个局部放大镜显示顶部切口、连续右斜边、底部收口，再列 16–48px 实际尺寸。原稿与精修全程用同一配色、同一缩放；说明左对齐，图形居中。
 
 ```text
-Taskweave                                    D / Porcelain
+TaskWeave                                    D / Porcelain
 原稿大图           精修大图          具体修改 / SVG 下载
 顶部切口对照       右斜边对照        底部收口对照
 16px / 24px / 32px / 48px 原稿与精修

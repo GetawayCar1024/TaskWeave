@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NDropdown, NInput, NSpin, useMessage } from 'naive-ui';
 import { Check, ChevronDown, Download, FileText, SlidersHorizontal } from 'lucide-vue-next';
-import type { ContestDetail, ContestStatement } from '@polyforge/shared';
+import type { ContestDetail, ContestStatement } from '@taskweave/shared';
 import { renderLatex, type MacroTable } from '../lib/latex';
 import { cnoiMarkdown, cnoiProblemElement, cnoiProblemMarkdown } from '../lib/cnoiDocument';
 import { exportMarkdown } from '../lib/markdownExport';
@@ -176,8 +176,8 @@ async function onExport(format: string) {
     <n-alert v-if="error" type="error">{{ error }}</n-alert>
     <n-alert v-if="missingFonts.length && !error" type="warning" :title="ui(`本机缺少 OI 排版字体：${missingFontText}`, `Missing OI fonts on this computer: ${missingFontText}`)">
       {{ ui(
-        `这些字体的版权不允许随 Taskweave 分发，排版时从本机读取。缺少时，对应文字会改用其他已加载的中文字体；若中文字体全部缺少，中文将显示为方框。Windows 通常自带这些字体；也可以把字体文件（${missingFontFiles}）放到 ${fontDir || '全局目录的 fonts 文件夹'}，再重新检测。`,
-        `These fonts may not be redistributed with Taskweave, so they are read from this computer. Missing ones are replaced by other loaded Chinese fonts; without any, Chinese text shows as boxes. Windows usually includes them; you can also put the font files (${missingFontFiles}) into ${fontDir || 'the fonts folder of the global directory'} and check again.`,
+        `这些字体的版权不允许随 TaskWeave 分发，排版时从本机读取。缺少时，对应文字会改用其他已加载的中文字体；若中文字体全部缺少，中文将显示为方框。Windows 通常自带这些字体；也可以把字体文件（${missingFontFiles}）放到 ${fontDir || '全局目录的 fonts 文件夹'}，再重新检测。`,
+        `These fonts may not be redistributed with TaskWeave, so they are read from this computer. Missing ones are replaced by other loaded Chinese fonts; without any, Chinese text shows as boxes. Windows usually includes them; you can also put the font files (${missingFontFiles}) into ${fontDir || 'the fonts folder of the global directory'} and check again.`,
       ) }}
       <div class="font-actions"><n-button size="small" @click="generate">{{ ui('重新检测', 'Check again') }}</n-button></div>
     </n-alert>

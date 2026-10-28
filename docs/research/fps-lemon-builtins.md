@@ -1,6 +1,6 @@
 # Hydro FPS and LemonLime native comparison modes
 
-Research date: **2026-10-28**. Target: **Taskweave 0.4.1**. This supplements [package-formats.md](./package-formats.md). Platform facts below are traced to official documentation, format-owner sources, and first-party implementations. Recommendations are identified as Taskweave implementation decisions.
+Research date: **2026-10-28**. Target: **TaskWeave 0.4.1**. This supplements [package-formats.md](./package-formats.md). Platform facts below are traced to official documentation, format-owner sources, and first-party implementations. Recommendations are identified as TaskWeave implementation decisions.
 
 Pinned snapshots:
 
@@ -10,11 +10,11 @@ Pinned snapshots:
 
 ## Implementation conclusions
 
-1. **Add FPS as another exchange format alongside existing Hydro ZIP support.** Official Hydro documentation accepts UTF-8 FPS XML, or a ZIP containing one or more FPS XML documents. Its ordinary Hydro ZIP is a separate format with `problem.yaml`, statements, `testdata/`, and `additional_file/`. Hydro's own inspected exporter writes that native ZIP format; its FPS plugin implements import. Taskweave's FPS export will therefore be an independently implemented writer targeting Hydro's importer. [H-FPS-DOC] [H-NATIVE-DOC] [H-NATIVE-EXPORT]
+1. **Add FPS as another exchange format alongside existing Hydro ZIP support.** Official Hydro documentation accepts UTF-8 FPS XML, or a ZIP containing one or more FPS XML documents. Its ordinary Hydro ZIP is a separate format with `problem.yaml`, statements, `testdata/`, and `additional_file/`. Hydro's own inspected exporter writes that native ZIP format; its FPS plugin implements import. TaskWeave's FPS export will therefore be an independently implemented writer targeting Hydro's importer. [H-FPS-DOC] [H-NATIVE-DOC] [H-NATIVE-EXPORT]
 2. **Hydro FPS compatibility is a subset of FPS.** Hydro imports title, statement sections, samples, source/tags, global limits, textual tests, embedded images, remote references, and solution listings. It **does not read `<spj>`, `<tpj>`, `<interactor>`, `<prepend>`, `<template>`, or `<append>`**, although the FPS DTD declares them. An FPS containing a special judge can import into Hydro without installing that judge. Exporting such a task as an ordinary comparison problem would change its semantics. [F-DTD] [H-FPS-RUN]
 3. **Use actual Lemon CDF modes `0`, `1`, and `3` for in-process built-ins.** Keep `specialJudge: ""`. The enum also includes `2` (external `diff`), `4` (Lemon SPJ), and `5` (Testlib SPJ). Native built-ins require no checker executable in the exported archive. Existing `lemon:*` source presets remain custom **mode 4** checkers. [M-ENUM] [M-DISPATCH] [M-TASK-JSON] [T-PRESETS]
 4. **Local equivalents need the upstream comparison rules, including verdicts.** Mode 1 is whitespace-skipping comparison with line-position checks, not unrestricted whitespace-token comparison. Mode 3 uses absolute **or** relative tolerance, `long double`, and C numeric scanning. The source has observable EOF/chunk/parser quirks; the tables below provide tested examples rather than relying on UI descriptions. [M-READER] [M-LINES] [M-SPACES] [M-REAL]
-5. **FPS has no verified portable representation for Taskweave's full scoring/asset model.** The DTD has no subtask scores/dependencies, per-case limits, testset names, arbitrary attachments, file-IO basename, or multilingual-statement manifest. Hydro's importer creates only global-limit config and relies on filename-based test discovery. Preserve these features through the existing native Hydro ZIP and detect FPS export losses explicitly. [F-DTD] [H-FPS-RUN] [H-AUTO] [H-NATIVE-DOC]
+5. **FPS has no verified portable representation for TaskWeave's full scoring/asset model.** The DTD has no subtask scores/dependencies, per-case limits, testset names, arbitrary attachments, file-IO basename, or multilingual-statement manifest. Hydro's importer creates only global-limit config and relies on filename-based test discovery. Preserve these features through the existing native Hydro ZIP and detect FPS export losses explicitly. [F-DTD] [H-FPS-RUN] [H-AUTO] [H-NATIVE-DOC]
 
 ## 1. Hydro's documented FPS entry point and implementation boundary
 
@@ -35,7 +35,7 @@ const content = entry.getData(new Zip.TextWriter());
 const result = await xml2js.parseStringPromise(content);
 ```
 
-`getData` returns a **Promise**, but is not awaited. Hydro's exported `Zip` is `@zip.js/zip.js`; `xml2js` converts its input with `str.toString()`, so the Promise is parsed as `[object Promise]`, rather than XML. Per-entry exceptions are swallowed, potentially ending with “No valid fps format file found”. This is a source-level discrepancy with the documentation, not evidence that every deployed Hydro version has the defect. **Prefer a standalone `.xml` as Taskweave's primary FPS export; implement ZIP-of-FPS import locally as documented, and verify ZIP delivery against the target Hydro version.** [H-FPS-POST] [H-ZIP] [ZIP-GETDATA] [XML2JS-PARSE]
+`getData` returns a **Promise**, but is not awaited. Hydro's exported `Zip` is `@zip.js/zip.js`; `xml2js` converts its input with `str.toString()`, so the Promise is parsed as `[object Promise]`, rather than XML. Per-entry exceptions are swallowed, potentially ending with “No valid fps format file found”. This is a source-level discrepancy with the documentation, not evidence that every deployed Hydro version has the defect. **Prefer a standalone `.xml` as TaskWeave's primary FPS export; implement ZIP-of-FPS import locally as documented, and verify ZIP delivery against the target Hydro version.** [H-FPS-POST] [H-ZIP] [ZIP-GETDATA] [XML2JS-PARSE]
 
 The source checks the uploaded file's size before deciding whether it is XML or ZIP, and checks each ZIP member's uncompressed size against the same setting. It does not implement a total expanded-XML budget across members. Companion files beside XML are not resolved as statement assets or testdata: the ZIP loop attempts to parse non-directory entries as XML. [H-FPS-POST]
 
@@ -48,7 +48,7 @@ The format owner's README identifies HUSTOJ as the reference implementation and 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <fps version="1.6" url="https://github.com/zhblue/freeproblemset/">
-  <generator name="Taskweave 0.4.1"/>
+  <generator name="TaskWeave 0.4.1"/>
   <item>...</item>
   <item>...</item>
 </fps>
@@ -119,7 +119,7 @@ For Hydro-targeted FPS export, use simple matching numeric stems such as `1`, `2
 - CDATA cannot contain `]]>`. Split it as **`]]]]><![CDATA[>`**; HUSTOJ's `fixcdata` uses exactly this replacement. Example: `<![CDATA[a]]]]><![CDATA[>b]]>` decodes to `a]]>b`. An XML serializer must also escape attribute quotes/ampersands. [F-CDATA] [XML-CDATA]
 - **CDATA does not make arbitrary bytes legal XML.** XML 1.0 excludes NUL and most C0 controls, including byte `0x1A`. HUSTOJ's exporter actually deletes `0x1A`; copying that behavior would silently alter testdata. XML 1.0 also specifies CRLF/bare-CR normalization to LF, so cross-parser byte-perfect CR preservation must be designed explicitly (e.g. character references outside CDATA) and tested. Keep original import bytes/provenance; prefer native Hydro ZIP for data that cannot be represented faithfully in UTF-8 XML. [F-CDATA] [XML-CHARS] [XML-EOL]
 
-**Taskweave recommendation:** accept standard escaped text and CDATA, concatenate adjacent text/CDATA nodes, and keep test text independent of HTML rendering. Preserve nonrepresentable binary data through native packages rather than emitting an invented base64 testcase extension. The FPS DTD and Hydro importer provide no such decoding mechanism. [F-DTD] [H-FPS-RUN]
+**TaskWeave recommendation:** accept standard escaped text and CDATA, concatenate adjacent text/CDATA nodes, and keep test text independent of HTML rendering. Preserve nonrepresentable binary data through native packages rather than emitting an invented base64 testcase extension. The FPS DTD and Hydro importer provide no such decoding mechanism. [F-DTD] [H-FPS-RUN]
 
 ### Statement rendering and samples
 
@@ -147,7 +147,7 @@ Hydro's exact implementation:
 - Performs **one** `content.replace(src, "file://" + filename)` per image record, so repeated references to the same source are not all rewritten.
 - Does not download `src`; it uses the embedded base64. An external image link without a matching `img` record remains an external reference. [H-FPS-RUN]
 
-**Taskweave recommendation:** retain original `src → bytes` mappings, use stable collision-free asset filenames, and rewrite every matching local reference during local import/rendering. Record the upstream first-occurrence/filename limitations for Hydro-targeted output, rather than deleting duplicate image uses. The [ordinary Hydro asset format][H-NATIVE-DOC] uses `additional_file/` with normal `file://filename` references and is the better-supported path for complex statement assets.
+**TaskWeave recommendation:** retain original `src → bytes` mappings, use stable collision-free asset filenames, and rewrite every matching local reference during local import/rendering. Record the upstream first-occurrence/filename limitations for Hydro-targeted output, rather than deleting duplicate image uses. The [ordinary Hydro asset format][H-NATIVE-DOC] uses `additional_file/` with normal `file://filename` references and is the better-supported path for complex statement assets.
 
 ### Arbitrary attachments
 
@@ -179,7 +179,7 @@ Current FPS also declares/exports:
 ### Limits and scoring
 
 - The FPS DTD defines text plus a free-form `unit` attribute, not a numeric range or unit enumeration. Canonical first-party exports use **`<time_limit unit="s">1.5</time_limit>`** and **`<memory_limit unit="mb">256</memory_limit>`**. HUSTOJ import also explicitly supports time `ms` and memory `kb` (dividing by 1000 / 1024). [F-DTD] [F-EXPORT] [F-IMPORT-LIMITS]
-- Hydro concatenates text and unit, then its judge parses units. Time supports `s`, `ms`, `us` and floors to integer ms. Memory uses 1024-based `k/m/g` with optional `b`, rounding upward to whole MiB. For Taskweave's ms/MiB model, export `unit="ms"` with integer ms and `unit="mb"` with whole MiB, or seconds as in the canonical example. [H-FPS-RUN] [H-UNITS]
+- Hydro concatenates text and unit, then its judge parses units. Time supports `s`, `ms`, `us` and floors to integer ms. Memory uses 1024-based `k/m/g` with optional `b`, rounding upward to whole MiB. For TaskWeave's ms/MiB model, export `unit="ms"` with integer ms and `unit="mb"` with whole MiB, or seconds as in the canonical example. [H-FPS-RUN] [H-UNITS]
 - Hydro's FPS-generated `config.yaml` has only global `time`, `memory`, plus remote-judge fields when applicable. Per-case/group limits, dependency edges, original scores, file-IO names, and language-rate overrides are not transferred. Hydro infers tests/subtasks from filenames and allocates unspecified scores from 100; preserving a filename is not preserving its original scoring. [H-FPS-RUN] [H-AUTO]
 - FPS's schema supplies no maximum test count. Hydro judge deployment defaults are separately **100 tests**, **60 seconds summed configured testcase time** (including process multiplicity), and **512 MiB maximum case memory**; they are configurable judge budgets, not XML validation rules. A package can import and still exceed judging budgets. [H-JUDGE-CONFIG] [H-JUDGE-LIMITS]
 - Statement samples are distinct from judged tests. To judge a sample in Hydro after FPS import, include it explicitly among `test_input`/`test_output` as well; do not silently add every sample as a scored case. [H-FPS-RUN]
@@ -191,7 +191,7 @@ This example uses the documented fields and supplies named data even when export
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <fps version="1.6" url="https://github.com/zhblue/freeproblemset/">
-  <generator name="Taskweave 0.4.1"/>
+  <generator name="TaskWeave 0.4.1"/>
   <item>
     <title><![CDATA[A + B]]></title>
     <time_limit unit="s">1</time_limit>
@@ -224,7 +224,7 @@ fps-set.zip
 └── part-002.xml
 ```
 
-HUSTOJ's own optional ZIP export contains one `problem.xml`; Hydro documents one or more XMLs. Account for the Hydro ZIP defect described above. For Taskweave import selection, use a stable **XML-entry path + item ordinal**, retaining title/source URL separately; duplicate titles and independently numbered tests in different items are valid use cases. This selection key is a Taskweave implementation recommendation. [F-EXPORT-ZIP] [H-FPS-DOC] [H-FPS-POST]
+HUSTOJ's own optional ZIP export contains one `problem.xml`; Hydro documents one or more XMLs. Account for the Hydro ZIP defect described above. For TaskWeave import selection, use a stable **XML-entry path + item ordinal**, retaining title/source URL separately; duplicate titles and independently numbered tests in different items are valid use cases. This selection key is a TaskWeave implementation recommendation. [F-EXPORT-ZIP] [H-FPS-DOC] [H-FPS-POST]
 
 For comparison, retain ordinary Hydro ZIP handling:
 
@@ -282,7 +282,7 @@ contest/
 ```json
 {
   "version": "1.0",
-  "contestTitle": "Taskweave native comparisons",
+  "contestTitle": "TaskWeave native comparisons",
   "contestants": [],
   "tasks": [
     {
@@ -314,7 +314,7 @@ contest/
 }
 ```
 
-This is derived from the [official CDF fixture][M-FIXTURE] and serializers, not a new Taskweave CDF schema. To select another built-in, change the task's comparison fields as follows; the rest stays a normal native task:
+This is derived from the [official CDF fixture][M-FIXTURE] and serializers, not a new TaskWeave CDF schema. To select another built-in, change the task's comparison fields as follows; the rest stays a normal native task:
 
 ```json
 { "comparisonMode": 0, "realPrecision": 6, "specialJudge": "" }
@@ -324,7 +324,7 @@ This is derived from the [official CDF fixture][M-FIXTURE] and serializers, not 
 { "comparisonMode": 3, "realPrecision": 6, "specialJudge": "" }
 ```
 
-`realPrecision: 6` is an explicit example/Taskweave choice; it is **not LemonLime's default 3**. [M-ENUM]
+`realPrecision: 6` is an explicit example/TaskWeave choice; it is **not LemonLime's default 3**. [M-ENUM]
 
 CDF details important for implementation:
 
@@ -441,7 +441,7 @@ All use `realPrecision: 6` except the final row. [M-REAL]
 | `"1 2\n"` | `"1-2\n"` | **AC** | Reference `-` discarded; contestant `1 -2` instead yields WA. |
 | `"9007199254740993\n"` | `"9007199254740992\n"` | **WA at p=18** | Native long double distinguishes values that JavaScript Number merges. |
 
-**Taskweave recommendation:** version local equivalents against the pinned source rules, with native-oracle tests for EOF/chunk behavior and high-precision numbers. A local C++ comparison helper can supply equivalent long-double/C-scanner behavior while the exported CDF still selects native mode 3; that local implementation need not become an exported SPJ. If deliberately implementing only the cleaner intended semantics, document the differences rather than claiming full equivalence. Exact floating boundary results can depend on the target C/C++ runtime's `long double` representation. [M-REAL]
+**TaskWeave recommendation:** version local equivalents against the pinned source rules, with native-oracle tests for EOF/chunk behavior and high-precision numbers. A local C++ comparison helper can supply equivalent long-double/C-scanner behavior while the exported CDF still selects native mode 3; that local implementation need not become an exported SPJ. If deliberately implementing only the cleaner intended semantics, document the differences rather than claiming full equivalence. Exact floating boundary results can depend on the target C/C++ runtime's `long double` representation. [M-REAL]
 
 ### Mode 2: external `diff` is a separate execution dependency
 
@@ -473,7 +473,7 @@ checker INPUT CONTESTANT_OUTPUT REFERENCE_ANSWER FULL_SCORE SCORE_FILE MESSAGE_F
 
 There are six arguments after the executable. The checker must exit 0 and create the score file containing a **nonnegative integer**; the message file is optional. Missing/invalid score file gives `InvalidSpecialJudge`; nonzero process exit gives `SpecialJudgeRunTimeError`. Score 0 → WA, between 0 and full score → PartlyCorrect, at least full score → CorrectAnswer. The upstream code does not clamp an over-full score before storing it. [M-LEMON-SPJ] [M-MANUAL-SPJ]
 
-Taskweave's existing presets are exactly **`lemon:ncmp`, `lemon:wcmp`, `lemon:lcmp`, `lemon:fcmp`, `lemon:rcmp6`, `lemon:yesno`**. Their sources use the separately vendored Testlib for Lemons and `registerLemonChecker`. They belong in this custom mode, including their existing source/header packaging and protocol check. In particular, `lemon:wcmp` can accept moved tokens without line-position checks, and `lemon:rcmp6` uses Testlib `doubleCompare`/`readDouble`; neither is a native-comparator identity just because the names sound similar. [T-PRESETS] [T-PRESET-TESTS] [T-RCMP6]
+TaskWeave's existing presets are exactly **`lemon:ncmp`, `lemon:wcmp`, `lemon:lcmp`, `lemon:fcmp`, `lemon:rcmp6`, `lemon:yesno`**. Their sources use the separately vendored Testlib for Lemons and `registerLemonChecker`. They belong in this custom mode, including their existing source/header packaging and protocol check. In particular, `lemon:wcmp` can accept moved tokens without line-position checks, and `lemon:rcmp6` uses Testlib `doubleCompare`/`readDouble`; neither is a native-comparator identity just because the names sound similar. [T-PRESETS] [T-PRESET-TESTS] [T-RCMP6]
 
 ### Custom ordinary Testlib protocol
 
@@ -518,7 +518,7 @@ Added **2026-10-28** for the expanded 0.4.1 import scope. This section uses the 
 - **JSON CDF:** UTF-8 JSON object `{ "version": "1.0", "contestTitle": "…", "tasks": [...], "contestants": [...] }`; task/test keys are in section 5. Current saves use compact JSON. Missing `version` is accepted as `1.0`; a different **string** version is rejected. Upstream's `READ_JSON` helper returns errors that callers often ignore, including a non-string version; local import should validate the actual field types instead of reproducing that permissiveness. [M-CONTEST-JSON] [M-TASK-JSON] [M-JSON-HELPERS]
 - **Legacy binary CDF:** the envelope and positional schema below; it is not XML or compressed JSON. Native loading checks the first byte for `{` or `[` and otherwise tries binary. **Check the binary magic on original bytes before any whitespace trimming: its first byte is `0x20`, an ASCII space.** Accepting BOM/leading whitespace for JSON can be a local importer convenience; emit JSON starting with `{` for native compatibility. [M-SAVE-LOAD] [M-BINARY-MAGIC]
 - A native contest is a **directory containing a CDF with sibling `data/` and `source/`**, not a standardized ZIP manifest. A ZIP is transport for that directory. Resolve a descriptor at `wrapper/event/contest.cdf` against `wrapper/event/data/…`; retain arbitrary wrapper folders. Do not assume a test's subdirectory equals `sourceFileName` or the task title. A bare CDF contains configuration/results, not the bytes of tests, checkers, or contestant programs. [M-CONTEST-LAYOUT] [M-SAVE-LOAD] [M-JUDGER]
-- **Multi-CDF recommendation:** enumerate each descriptor and its tasks using **CDF archive path + task ordinal**. Descriptors sharing one directory may be alternative/stale configurations over the same files; do not merge them by title/source name or automatically select the first. Each selected CDF keeps its own relative root and task order. This is Taskweave import policy derived from Lemon's single-descriptor loading behavior. [M-SAVE-LOAD]
+- **Multi-CDF recommendation:** enumerate each descriptor and its tasks using **CDF archive path + task ordinal**. Descriptors sharing one directory may be alternative/stale configurations over the same files; do not merge them by title/source name or automatically select the first. Each selected CDF keeps its own relative root and task order. This is TaskWeave import policy derived from Lemon's single-descriptor loading behavior. [M-SAVE-LOAD]
 
 ### 9.2 Legacy binary: exact current-reader-compatible wire format
 
@@ -598,11 +598,11 @@ The contestant root is `source/<contestant>/`, or `source/<contestant>/<sourceFi
 
 Validate matching lengths of each program path/name array pair and collisions among copied build names. The names are compilation-time identities, so flattening or renaming supplied headers independently can break contestant includes. [M-PREPARE]
 
-`compilerConfiguration` maps compiler **names to configuration names**, e.g. `{"g++":"default"}` or `{"g++":"disable"}`; it does not contain compiler commands, installed language definitions/time-memory multipliers, or checker build commands. Native load drops unknown compiler names and resets unknown configuration names to `default` according to the local desktop settings. Preserve the original mapping during Taskweave import instead of claiming to recover exact flags from a configuration label. SPJ modes 4/5 reference an **executable**, with no native checker-source manifest. [M-COMPILER-REFRESH] [M-PREPARE] [M-LEMON-SPJ] [M-TESTLIB-SPJ]
+`compilerConfiguration` maps compiler **names to configuration names**, e.g. `{"g++":"default"}` or `{"g++":"disable"}`; it does not contain compiler commands, installed language definitions/time-memory multipliers, or checker build commands. Native load drops unknown compiler names and resets unknown configuration names to `default` according to the local desktop settings. Preserve the original mapping during TaskWeave import instead of claiming to recover exact flags from a configuration label. SPJ modes 4/5 reference an **executable**, with no native checker-source manifest. [M-COMPILER-REFRESH] [M-PREPARE] [M-LEMON-SPJ] [M-TESTLIB-SPJ]
 
 ### 9.5 Recommended inventory/config reconciliation
 
-Native CDF loading reads metadata; actual file checks mainly occur during judging. The following recovery rules are **Taskweave recommendations**, not claims that Lemon automatically repairs its CDF. Record every original → resolved path and every unresolved reference in the import preview/provenance. [M-SAVE-LOAD] [M-JUDGER] [M-LINES] [M-LEMON-SPJ]
+Native CDF loading reads metadata; actual file checks mainly occur during judging. The following recovery rules are **TaskWeave recommendations**, not claims that Lemon automatically repairs its CDF. Record every original → resolved path and every unresolved reference in the import preview/provenance. [M-SAVE-LOAD] [M-JUDGER] [M-LINES] [M-LEMON-SPJ]
 
 | Situation | Recommended behavior |
 | --- | --- |

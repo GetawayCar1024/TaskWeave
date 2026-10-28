@@ -1,6 +1,6 @@
-# Third-party components in Taskweave
+# Third-party components in TaskWeave
 
-Taskweave (formerly PolyForge) itself is licensed under the GNU Affero General Public License,
+TaskWeave itself is licensed under the GNU Affero General Public License,
 version 3 or (at your option) any later version; see `LICENSE`. The components
 below remain under their own licenses.
 
@@ -15,9 +15,9 @@ License: GNU Affero General Public License, version 3; see
 
 The original compiler and Typst template sources, upstream notes template and
 attribution are included under `third-party/cnoi/` in the desktop app.
-Taskweave's integration and English adaptation are included under
+TaskWeave's integration and English adaptation are included under
 `third-party/cnoi-integration/`. The full corresponding application source and
-build scripts are supplied as `Taskweave-<version>-source.zip` alongside the binaries
+build scripts are supplied as `TaskWeave-<version>-source.zip` alongside the binaries
 of every release (https://github.com/GetawayCar1024/taskweave/releases) and in the
 public repository at the release tag.
 
@@ -41,8 +41,8 @@ README in the same folder:
 
 The CNOI template also uses SimSun, SimHei and KaiTi (© Beijing ZhongYi
 Electronics, supplied with Microsoft Windows). Their license does not permit
-redistribution, so Taskweave does not include them: it reads them from the
-user's installed system fonts, or from the `fonts` folder of the Taskweave
+redistribution, so TaskWeave does not include them: it reads them from the
+user's installed system fonts, or from the `fonts` folder of the TaskWeave
 global directory, and warns when they are missing.
 
 The bundled Typst package archives (`mitex` and `oxifmt`) contain their upstream
@@ -57,7 +57,7 @@ MIT license and original notices: `assets/shared/lemon/LICENSE` and `testlib.h`.
 Ordinary testlib is retained separately with its notices in `assets/shared/testlib.h`.
 The six templates in `assets/shared/lemon/checkers/` are adaptations of that
 commit's MIT-licensed checkers (ncmp, wcmp, lcmp, fcmp, rcmp6, yesno), with the
-Lemon six-argument initializer and Taskweave shared-header path. Their origin is
+Lemon six-argument initializer and TaskWeave shared-header path. Their origin is
 noted in each source file; the original license is kept beside them.
 
 ## LemonLime native comparator
@@ -67,7 +67,7 @@ comparison algorithms from Project-LemonLime/Project_LemonLime commit
 `69aa22370706a4f14b394a6e27aa92e7eca4a8f5`, `src/core/casejudger.cpp`.
 Copyright 2011–2018 Project Lemon / Zhipeng Jia, 2018–2019 Project LemonPlus /
 Dust1404, and 2019–2022 Project LemonLime. Licensed GPL-3.0-or-later; the source
-header identifies Taskweave's 2026-10-28 adaptations. The source, build instructions
+header identifies TaskWeave's 2026-10-28 adaptations. The source, build instructions
 and GPL license are included in `assets/shared/lemon-native/`, in the corresponding
 source archive and alongside the desktop's shared resources.
 

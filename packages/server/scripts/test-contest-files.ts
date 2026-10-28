@@ -16,7 +16,7 @@ import { buildApp } from '../src/app.js';
 import { ContestSandbox, type ContestPart } from '../src/ai/sandbox.js';
 import { runContestTool, type ContestToolEnv } from '../src/ai/tools.js';
 import { renderLatex } from '../../web/src/lib/latex.js';
-import { commonContestLanguages } from '@polyforge/shared';
+import { commonContestLanguages } from '@taskweave/shared';
 
 test('contest files migrate without overwrites, protect paths and reject linked folders', async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'pf-contest-files-'));
@@ -41,7 +41,7 @@ test('contest file API, snapshots, notes exports, authenticated images and save 
   const hub = new WsHub(), files = new FileService(new SelfWrites());
   const watcher = new ProblemWatcher(registry, files, hub), judge = new Judge(global, registry, hub);
   const app = await buildApp({ global, registry, contests, hub, files, watcher, judge, jobs: new JobManager(hub), token: 'test-only' });
-  const call = (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, payload?: object) => app.inject({ method, url, payload, headers: { host: 'localhost', 'x-polyforge-token': 'test-only' } });
+  const call = (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, payload?: object) => app.inject({ method, url, payload, headers: { host: 'localhost', 'x-taskweave-token': 'test-only' } });
   try {
     const p = await registry.create({ name: 'test-a', title: { zh: '加法' } });
     await fs.writeFile(path.join(p.dir, 'statement/zh/legend.tex'), '**原题面** $a+b$\n\n\\includegraphics{test.png}');
@@ -80,7 +80,7 @@ test('contest file API, snapshots, notes exports, authenticated images and save 
       assert.equal(r.statusCode, 200, r.body);
       const rel = r.json().path; paths.push(rel);
       const source = await fs.readFile(path.join(c.dir, 'files', rel), 'utf8');
-      assert.ok(source.startsWith('% polyforge-language: zh\n'));
+      assert.ok(source.startsWith('% taskweave-language: zh\n'));
       const rendered = renderLatex(source, { macros: new Map(), imageUrl: n => n });
       assert.deepEqual(rendered.unknown, []);
       assert.ok(source.includes('请仔细阅读'));

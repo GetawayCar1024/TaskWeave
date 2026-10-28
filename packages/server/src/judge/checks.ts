@@ -12,7 +12,7 @@ import {
   type CheckCode,
   type CheckParams,
   type LocalCheck,
-} from '@polyforge/shared';
+} from '@taskweave/shared';
 import { exists, safeJoin } from '../util/fs.js';
 import type { Judge, ProblemCtx } from './index.js';
 import { readManifest } from './tests.js';

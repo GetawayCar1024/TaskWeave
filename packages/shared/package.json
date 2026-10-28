@@ -1,6 +1,6 @@
 {
-  "name": "@polyforge/shared",
-  "version": "0.4.1",
+  "name": "@taskweave/shared",
+  "version": "0.4.2-dev",
   "license": "AGPL-3.0-or-later",
   "private": true,
   "type": "module",

@@ -1,7 +1,7 @@
 import type { DefsToml } from './latex';
-import type { PackageCandidate, PackageImportOptions, PackageImportResult, PackageUpload, PackageSelection, PackageBatchResult } from '@polyforge/shared';
-import type { CreateLibraryFolderRequest, LibraryDirectory, LibraryLocation } from '@polyforge/shared';
-import type { AnswerBackupInfo, RegenerateAnswersRequest, ProblemExportRequest, TrashEntry } from '@polyforge/shared';
+import type { PackageCandidate, PackageImportOptions, PackageImportResult, PackageUpload, PackageSelection, PackageBatchResult } from '@taskweave/shared';
+import type { CreateLibraryFolderRequest, LibraryDirectory, LibraryLocation } from '@taskweave/shared';
+import type { AnswerBackupInfo, RegenerateAnswersRequest, ProblemExportRequest, TrashEntry } from '@taskweave/shared';
 import { serverText } from './serverText';
 import {
   TOKEN_HEADER,
@@ -54,9 +54,9 @@ import {
   type SharedListResponse,
   type ToolProbe,
   type WriteFileResponse,
-} from '@polyforge/shared';
+} from '@taskweave/shared';
 
-const TOKEN_KEY = 'polyforge-token';
+const TOKEN_KEY = 'taskweave-token';
 
 /** The server prints `/?token=...`; keep it and strip it from the address bar. */
 function initToken(): string {
@@ -134,7 +134,7 @@ export const api = {
   originalAnswers: (id: string, testset?: string) => request<AnswerBackupInfo>('GET', `/problems/${pid(id)}/answers/original${tsq(testset)}`),
   regenerateAnswers: (id: string, options: RegenerateAnswersRequest) => request<JobInfo>('POST', `/problems/${pid(id)}/answers/regenerate`, options),
   restoreAnswers: (id: string, testset?: string) => request<JobInfo>('POST', `/problems/${pid(id)}/answers/restore`, { testset }),
-  statementSamples: (id: string, lang?: string) => request<import('@polyforge/shared').StatementSample[]>('GET', `/problems/${pid(id)}/statement-samples${lang ? `?lang=${encodeURIComponent(lang)}` : ''}`),
+  statementSamples: (id: string, lang?: string) => request<import('@taskweave/shared').StatementSample[]>('GET', `/problems/${pid(id)}/statement-samples${lang ? `?lang=${encodeURIComponent(lang)}` : ''}`),
   contestDown: async (id: string, lang: string, pdf: Blob, statements: ContestStatement[], notes: string, single = false) => {
     const base64 = await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1]); r.onerror = reject; r.readAsDataURL(pdf); });
     const res = await fetch(`/api/${single ? 'problems' : 'contests'}/${pid(id)}/down`, { method: 'POST', headers: { [TOKEN_HEADER]: token, 'Content-Type': 'application/json' }, body: JSON.stringify({ lang, pdf: base64, statements, notes }) });
@@ -162,7 +162,7 @@ export const api = {
   clearAiScratch: (owner: string, sid: string) => request('DELETE', `${aiBase(owner)}/ai/sessions/${encodeURIComponent(sid)}/scratch`),
   clearCache: (id: string) => request('DELETE', `/problems/${pid(id)}/cache`),
   convertLemonChecker: (id: string) => request<{ source: string }>('POST', `/problems/${pid(id)}/lemon-checker`),
-  contestLastResult: (id: string) => request<import('@polyforge/shared').ContestBatchResult | null>('GET', `/contests/${pid(id)}/batch/latest`),
+  contestLastResult: (id: string) => request<import('@taskweave/shared').ContestBatchResult | null>('GET', `/contests/${pid(id)}/batch/latest`),
   settings: () => request<SettingsResponse>('GET', '/settings'),
   saveSettings: (config: GlobalConfig) => request<SettingsResponse>('PUT', '/settings', config),
   languages: () => request<LanguagesResponse>('GET', '/languages'),
@@ -213,7 +213,7 @@ export const api = {
   testFile: (id: string, n: number, kind: 'in' | 'ans' | 'overview' | 'statement-in' | 'statement-out', testset?: string) =>
     request<TestFileResponse>('GET', `/problems/${pid(id)}/tests/${n}/${kind}${tsq(testset)}`),
   run: (id: string, req: QuickRunRequest) => request<QuickRunResponse>('POST', `/problems/${pid(id)}/run`, req),
-  startInvocation: (id: string, sources: string[], tests?: number[], testset?: string, selection?: import('@polyforge/shared').InvocationSelection) =>
+  startInvocation: (id: string, sources: string[], tests?: number[], testset?: string, selection?: import('@taskweave/shared').InvocationSelection) =>
     request<{ job: JobInfo; invocationId: string }>('POST', `/problems/${pid(id)}/invocations`, { sources, tests, testset, selection }),
   invocations: (id: string) => request<InvocationSummary[]>('GET', `/problems/${pid(id)}/invocations`),
   invocation: (id: string, inv: string) => request<Invocation>('GET', `/problems/${pid(id)}/invocations/${encodeURIComponent(inv)}`),
@@ -257,7 +257,7 @@ export const api = {
   updateContest: (id: string, req: UpdateContestRequest) => request<ContestDetail>('PUT', `/contests/${pid(id)}`, req),
   deleteContest: (id: string) => request<{ ok: true }>('DELETE', `/contests/${pid(id)}`),
   contestStatements: (id: string, lang: string) => request<ContestStatement[]>('GET', `/contests/${pid(id)}/statements?lang=${encodeURIComponent(lang)}`),
-  contestFiles: (id: string) => request<import('@polyforge/shared').FileNode[]>('GET', `/contests/${pid(id)}/files`),
+  contestFiles: (id: string) => request<import('@taskweave/shared').FileNode[]>('GET', `/contests/${pid(id)}/files`),
   contestFile: (id: string, path: string) => request<FileContent>('GET', `/contests/${pid(id)}/file?path=${encodeURIComponent(path)}`),
   saveContestFile: (id: string, path: string, content: string, hash?: string) => request<{ hash: string }>('PUT', `/contests/${pid(id)}/file?path=${encodeURIComponent(path)}`, { content, hash }),
   uploadContestFile: (id: string, path: string, base64: string) => request('POST', `/contests/${pid(id)}/file?path=${encodeURIComponent(path)}`, { base64 }),

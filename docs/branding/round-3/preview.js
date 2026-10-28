@@ -14,7 +14,7 @@
     byId('reveal').textContent = reveal ? '收起 T 的提示' : '显示隐藏 T';
     byId('mono').setAttribute('aria-pressed', String(mono));
     byId('download').textContent = `下载 ${selected.id} SVG`;
-    byId('selection-text').textContent = `Taskweave + ${selected.id} / Porcelain`;
+    byId('selection-text').textContent = `TaskWeave + ${selected.id} / Porcelain`;
     document.querySelectorAll('[data-select]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.select === selected.id)));
     byId('sizes').innerHTML = [16, 24, 32, 48].map(size => `<figure><div>${svg(selected, { size })}</div><figcaption>${size} px</figcaption></figure>`).join('');
     byId('dark-art').innerHTML = [24, 40, 56].map(size => svg(selected, { size })).join('');
@@ -48,7 +48,7 @@
   const dialog = byId('zoom');
   byId('hero-art').addEventListener('click', () => {
     byId('zoom-art').innerHTML = svg(selected, { size: 440, tile: !mono, mono, reveal });
-    byId('zoom-title').textContent = `Taskweave / ${selected.id} / Porcelain`;
+    byId('zoom-title').textContent = `TaskWeave / ${selected.id} / Porcelain`;
     byId('zoom-description').textContent = reveal ? selected.reveal : selected.description;
     dialog.showModal();
   });

@@ -1,4 +1,4 @@
-import type { ProblemSummary } from '@polyforge/shared';
+import type { ProblemSummary } from '@taskweave/shared';
 
 /** Completion checklist shown on problem cards and the contest table. */
 export function checklist(p: ProblemSummary) {

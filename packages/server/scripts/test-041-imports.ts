@@ -22,7 +22,7 @@ async function fixture(run: (ctx: { home: string; registry: ProblemRegistry; cal
   const registry = new ProblemRegistry(global), contests = new ContestRegistry(registry, global), hub = new WsHub();
   const files = new FileService(new SelfWrites()), watcher = new ProblemWatcher(registry, files, hub), judge = new Judge(global, registry, hub);
   const app = await buildApp({ global, registry, contests, hub, files, watcher, judge, jobs: new JobManager(hub), token: 'fixture' });
-  const call: Call = (method, url, payload) => app.inject({ method, url, payload, headers: { host: 'localhost', 'x-polyforge-token': 'fixture', ...(Buffer.isBuffer(payload) ? { 'content-type': 'application/zip' } : {}) } });
+  const call: Call = (method, url, payload) => app.inject({ method, url, payload, headers: { host: 'localhost', 'x-taskweave-token': 'fixture', ...(Buffer.isBuffer(payload) ? { 'content-type': 'application/zip' } : {}) } });
   try { await run({ home, registry, call }); }
   finally { await watcher.stop(); await app.close(); await fs.rm(home, { recursive: true, force: true }); }
 }
@@ -45,10 +45,10 @@ test('an unpacked folder imports like a ZIP and the compatibility manifest is re
   const response = await call('POST', '/api/packages/import', { items: [{ uploadId: upload.id, format: upload.format, entry: '', name: 'folder-import' }] });
   assert.equal(response.statusCode, 200, response.body);
   const result = response.json().items[0].result; assert.ok(result, response.body);
-  const manifest = JSON.parse(await fs.readFile(path.join(result.problem.dir, '.polyforge/tests/manifest.json'), 'utf8'));
+  const manifest = JSON.parse(await fs.readFile(path.join(result.problem.dir, '.taskweave/tests/manifest.json'), 'utf8'));
   assert.equal(manifest.ok, true); assert.equal(manifest.tests.length, 1);
   assert.equal(manifest.tests[0].originalInput, '01.in');
-  assert.equal(await fs.readFile(path.join(result.problem.dir, '.polyforge/tests/1.ans'), 'utf8'), 'answer\r\n');
+  assert.equal(await fs.readFile(path.join(result.problem.dir, '.taskweave/tests/1.ans'), 'utf8'), 'answer\r\n');
   assert.equal(await fs.readFile(path.join(directory, '01.out'), 'utf8'), 'answer\r\n');
 }));
 
@@ -56,6 +56,6 @@ test('compatibility ZIP imports materialize the initial scan before returning', 
   const response = await call('POST', '/api/problems/import/package?format=data&name=scanned', zip({ '1.in': '3', '1.out': '6' }));
   assert.equal(response.statusCode, 200, response.body);
   const result = response.json();
-  const manifest = JSON.parse(await fs.readFile(path.join(result.problem.dir, '.polyforge/tests/manifest.json'), 'utf8'));
+  const manifest = JSON.parse(await fs.readFile(path.join(result.problem.dir, '.taskweave/tests/manifest.json'), 'utf8'));
   assert.equal(manifest.ok, true); assert.equal(manifest.tests.length, 1);
 }));

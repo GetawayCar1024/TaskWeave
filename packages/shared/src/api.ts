@@ -6,7 +6,7 @@ export const UI_LOCALES = ['zh-CN', 'en'] as const;
 export type UiLocale = (typeof UI_LOCALES)[number];
 
 /** Header carrying the per-launch access token (see DESIGN §8). */
-export const TOKEN_HEADER = 'x-polyforge-token';
+export const TOKEN_HEADER = 'x-taskweave-token';
 
 /** Non-redistributable OI template fonts, loaded from the user's system (GET /api/system-fonts). */
 export interface SystemFontStatus {

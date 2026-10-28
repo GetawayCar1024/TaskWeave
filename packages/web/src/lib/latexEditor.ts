@@ -1,6 +1,6 @@
 import { i18n } from '../i18n';
 import { lintMessage } from './serverText';
-import { lintStatement } from '@polyforge/shared';
+import { lintStatement } from '@taskweave/shared';
 import { getDefs } from './defs';
 import { buildMacros, macroPreview, type MacroTable } from './latex';
 import { CF_TEX } from './cfTex';
@@ -129,7 +129,7 @@ export function attachStatementLint(model: monaco.editor.ITextModel, lang: strin
     const { issues } = lintStatement(model.getValue(), { lang, allowMarkdown: true });
     monaco.editor.setModelMarkers(
       model,
-      'polyforge-lint',
+      'taskweave-lint',
       issues.map((i) => ({
         severity: i.fixable ? monaco.MarkerSeverity.Info : monaco.MarkerSeverity.Warning,
         message: lintMessage(i) + (i.fixable ? (i18n.global.locale.value.startsWith('zh') ? '（可自动修复）' : ' (auto-fixable)') : ''),

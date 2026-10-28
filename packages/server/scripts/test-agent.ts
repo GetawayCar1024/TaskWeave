@@ -1,14 +1,14 @@
 /**
  * End-to-end check of the AI agent against scripts/mock-llm.ts, for both protocols.
  * Needs: `npx tsx scripts/mock-llm.ts scripts/mock-llm-demo.json` on :4800 and a
- * PolyForge server on :4600 (POLYFORGE_TOKEN=tok, problem root <home>/probs).
+ * TaskWeave server on :4600 (TASKWEAVE_TOKEN=tok, problem root <home>/probs).
  *   npx tsx scripts/test-agent.ts <home>
  */
 import { existsSync, promises as fsp } from 'node:fs';
 import path from 'node:path';
 
 const HOME = process.argv[2];
-const H = { 'x-polyforge-token': process.env.POLYFORGE_TOKEN ?? 'tok', 'content-type': 'application/json' };
+const H = { 'x-taskweave-token': process.env.TASKWEAVE_TOKEN ?? 'tok', 'content-type': 'application/json' };
 const api = async (method: string, p: string, body?: unknown): Promise<any> => {
   const res = await fetch(`http://127.0.0.1:4600/api${p}`, { method, headers: H, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = await res.json();

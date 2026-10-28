@@ -1,4 +1,4 @@
-// Taskweave Linux runner. Same result contract as runner.cpp; argv is transported
+// TaskWeave Linux runner. Same result contract as runner.cpp; argv is transported
 // as repeated arg= lines and passed directly to execvp, without a shell.
 // CPU and resident-memory accounting cover the observed process tree. Limits are
 // checked every 5 ms; rlimits additionally bound CPU seconds and regular-file output.

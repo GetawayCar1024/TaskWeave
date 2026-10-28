@@ -6,9 +6,9 @@ import type {
   ContestSyncRow,
   ContestSyncStatus,
   PolygonProblem,
-} from '@polyforge/shared';
+} from '@taskweave/shared';
 import type { JobCtx } from '../jobs.js';
-import { judgeMode, polygonFeatureWarnings } from '@polyforge/shared';
+import { judgeMode, polygonFeatureWarnings } from '@taskweave/shared';
 import type { Judge } from '../judge/index.js';
 import { HttpError } from '../util/fs.js';
 import type { ContestRegistry } from '../workspace/contests.js';

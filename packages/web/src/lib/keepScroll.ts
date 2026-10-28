@@ -9,7 +9,7 @@ import type { Directive } from 'vue';
  * scrollbar (.n-scrollbar-container) or virtual list (.v-vl); the outermost wins.
  */
 
-const STORE = 'polyforge-scroll';
+const STORE = 'taskweave-scroll';
 const positions = new Map<string, { top: number; left: number }>(
   (() => {
     try {

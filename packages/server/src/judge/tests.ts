@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_TESTSET, TESTSET_NAME_RE, compressRanges, parseIndexList, testsetOf, testMetadata, type TestInfo, type TestsManifest, type TestsetConfig } from '@polyforge/shared';
+import { DEFAULT_TESTSET, TESTSET_NAME_RE, compressRanges, parseIndexList, testsetOf, testMetadata, type TestInfo, type TestsManifest, type TestsetConfig } from '@taskweave/shared';
 import { randomBytes } from 'node:crypto';
 import { recoverAnswerTransaction } from '../workspace/answerBackups.js';
 import { HttpError } from '../util/fs.js';

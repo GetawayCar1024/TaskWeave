@@ -20,7 +20,7 @@ import {
   type ContestSummary,
   type PolygonProblem,
   type ContestDetail,
-} from '@polyforge/shared';
+} from '@taskweave/shared';
 import type { JobCtx } from '../jobs.js';
 import type { PolygonSync } from '../polygon/sync.js';
 import { atomicWrite, exists, safeJoin, HttpError } from '../util/fs.js';
@@ -38,7 +38,7 @@ import { fpsDocument, fpsItem } from './fps.js';
 import { generateTests, readManifest } from './tests.js';
 import { readStatementSections } from '../workspace/statements.js';
 
-export const contestExportDir = (ref: ContestRef) => path.join(ref.dir, '.polyforge', 'export');
+export const contestExportDir = (ref: ContestRef) => path.join(ref.dir, '.taskweave', 'export');
 
 const x = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
@@ -252,7 +252,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
       addLemonBuildScripts(zip, lemonBuilds);
       zip.add('README.txt', lemonReadme(lemonTarget, req.lemon?.subfolders === true));
     }
-    else if (joi) zip.add('README.txt', 'Each problem folder contains an in/out ZIP. polyforge.yaml is an optional Taskweave companion for scoring and limits.\n');
+    else if (joi) zip.add('README.txt', 'Each problem folder contains an in/out ZIP. taskweave.yaml is an optional TaskWeave companion for scoring and limits.\n');
     else zip.add('contest.xml', contestXml(config.contest.title, config.contest.name, exported));
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
     const file = `${config.contest.name}${lemon ? '-lemonlime' : luogu ? '-luogu' : hydro ? '-hydro' : joi ? '-joi' : ''}-${stamp}-${randomBytes(4).toString('hex')}.zip`;
@@ -262,7 +262,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
     result.size = data.length;
   }
   job.progress(list.length, list.length, 'done');
-  const history = path.join(ref.dir, '.polyforge', 'batches');
+  const history = path.join(ref.dir, '.taskweave', 'batches');
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   await atomicWrite(path.join(history, `${stamp}-${req.action}.json`), JSON.stringify(result, null, 2));
   await atomicWrite(path.join(history, 'latest.json'), JSON.stringify(result, null, 2));

@@ -22,7 +22,7 @@ import {
   Trash2,
   Wrench,
 } from 'lucide-vue-next';
-import type { FileRole } from '@polyforge/shared';
+import type { FileRole } from '@taskweave/shared';
 
 /** One icon per file role (sidebar groups). */
 export const ROLE_ICONS: Record<FileRole, Component> = {

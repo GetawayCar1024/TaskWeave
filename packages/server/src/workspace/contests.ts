@@ -14,13 +14,14 @@ import {
   type ContestToml,
   type CreateContestRequest,
   type UpdateContestRequest,
-} from '@polyforge/shared';
+} from '@taskweave/shared';
 import { samePath } from '../global.js';
 import { ensureContestFiles } from './contestFiles.js';
 import { atomicWrite, exists, HttpError } from '../util/fs.js';
 import type { GlobalStore } from '../global.js';
 import type { ProblemRegistry } from './problems.js';
 import { libraryParent, parentFolder, workspaceDirectories } from './library.js';
+import { migrateWorkspaceState } from './migrateNames.js';
 
 export interface ContestRef {
   id: string;
@@ -48,14 +49,15 @@ export class ContestRegistry {
   async scan(): Promise<ContestRef[]> {
     const next = new Map<string, ContestRef>();
     const root = this.dir;
-    const found = await Promise.all((await workspaceDirectories(root, CONTEST_FILE)).map(async ref => ({ ...ref,
-      identity: (await fsp.readFile(path.join(ref.dir, '.polyforge/identity'), 'utf8').catch(() => '')).trim(),
-    })));
+    const found = await Promise.all((await workspaceDirectories(root, CONTEST_FILE)).map(async ref => {
+      await migrateWorkspaceState(ref.dir);
+      return { ...ref, identity: (await fsp.readFile(path.join(ref.dir, '.taskweave/identity'), 'utf8').catch(() => '')).trim() };
+    }));
     const reserved = new Set(found.map(ref => ref.identity).filter(Boolean));
     for (const ref of found) {
       let id = /^[a-zA-Z0-9_-]+(?:~\d+)?$/.test(ref.identity) ? ref.identity : '';
       if (!id || next.has(id)) { id = ref.name; for (let i = 2; next.has(id) || reserved.has(id); i++) id = `${ref.name}~${i}`; }
-      if (id !== ref.identity) await atomicWrite(path.join(ref.dir, '.polyforge/identity'), id);
+      if (id !== ref.identity) await atomicWrite(path.join(ref.dir, '.taskweave/identity'), id);
       next.set(id, { id, dir: ref.dir, root });
     }
     this.byId = next;
@@ -215,7 +217,7 @@ export class ContestRegistry {
   }
 
   /**
-   * Delete the contest's own folder (contest.toml, files/, .polyforge/) so the name can
+   * Delete the contest's own folder (contest.toml, files/, .taskweave/) so the name can
    * be used again. Referenced problems live elsewhere and are never touched; a folder
    * that is (or contains) a problem only loses the contest's own entries.
    */
@@ -231,7 +233,7 @@ export class ContestRegistry {
     if ((await fsp.lstat(ref.dir)).isSymbolicLink()) {
       await fsp.unlink(ref.dir);
     } else if (sharesProblem || !samePath(path.dirname(ref.dir), this.dir)) {
-      for (const entry of [CONTEST_FILE, 'files', '.polyforge']) await fsp.rm(path.join(ref.dir, entry), { recursive: true, force: true });
+      for (const entry of [CONTEST_FILE, 'files', '.taskweave']) await fsp.rm(path.join(ref.dir, entry), { recursive: true, force: true });
       const left = await fsp.readdir(ref.dir).catch(() => ['?']);
       if (!left.length) await fsp.rmdir(ref.dir).catch(() => {});
     } else {

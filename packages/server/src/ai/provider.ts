@@ -1,4 +1,4 @@
-import type { AiTestResult } from '@polyforge/shared';
+import type { AiTestResult } from '@taskweave/shared';
 import type { RawAiEndpoint } from '../global.js';
 
 /** Protocol-neutral conversation blocks stored in agent sessions. */

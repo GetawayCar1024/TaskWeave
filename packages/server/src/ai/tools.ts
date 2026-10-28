@@ -2,7 +2,7 @@ import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { parse as parseToml } from 'smol-toml';
 import { z } from 'zod';
-import { classifyFile, FINDING_CATEGORIES, problemTomlSchema, type AiFinding, type AiPlanStep, type AiSessionMode } from '@polyforge/shared';
+import { classifyFile, FINDING_CATEGORIES, problemTomlSchema, type AiFinding, type AiPlanStep, type AiSessionMode } from '@taskweave/shared';
 import type { JobCtx } from '../jobs.js';
 import type { Judge, ProblemCtx } from '../judge/index.js';
 import { readInvocation, runInvocation } from '../judge/invocation.js';
@@ -91,7 +91,7 @@ const TOOLS = [
       // Statements: spell out the defs.toml macros used, with their arguments.
       const st = i.path.match(/^statement\/([a-z]+)\/[^/]+\.tex$/);
       const expanded = st ? await macroExpansions(env.judge.global.sharedDir, text, st[1]) : [];
-      const note = expanded.length ? `\n\n[Taskweave] Macros in this file and what they expand to (this text is part of the statement):\n${expanded.join('\n')}` : '';
+      const note = expanded.length ? `\n\n[TaskWeave] Macros in this file and what they expand to (this text is part of the statement):\n${expanded.join('\n')}` : '';
       if (!i.start_line && !i.end_line) return (clip(text, 100_000) || '(empty file)') + note;
       const a = (i.start_line ?? 1) - 1;
       const b = Math.min(i.end_line ?? lines.length, lines.length);

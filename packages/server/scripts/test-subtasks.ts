@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { groupLayout, inferFilenameGroups, problemTomlSchema, pruneForwardDependencies, testsetOf } from '@polyforge/shared';
+import { groupLayout, inferFilenameGroups, problemTomlSchema, pruneForwardDependencies, testsetOf } from '@taskweave/shared';
 import { lemonTestCases } from '../src/judge/lemonlime.js';
 import { groupScore, scoringInput } from '../src/judge/scoring.js';
 import { checkGroups, ProblemRegistry } from '../src/workspace/problems.js';

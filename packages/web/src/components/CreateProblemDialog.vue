@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NForm, NFormItem, NInput, NInputNumber, NSelect, NButton } from 'naive-ui';
-import { PROBLEM_NAME_RE, type JudgeMode, type ProblemSummary, type StatementMode } from '@polyforge/shared';
+import { PROBLEM_NAME_RE, type JudgeMode, type ProblemSummary, type StatementMode } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import ToolWindow from './ToolWindow.vue';
 import LibraryFolderSelect from './LibraryFolderSelect.vue';

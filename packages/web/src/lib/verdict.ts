@@ -1,4 +1,4 @@
-import type { Verdict } from '@polyforge/shared';
+import type { Verdict } from '@taskweave/shared';
 
 type TagType = 'success' | 'info' | 'warning' | 'error' | 'default';
 

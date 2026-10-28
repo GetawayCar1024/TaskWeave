@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { legacyEnv } from '@taskweave/shared';
 
 /**
  * Locations of bundled files. Two layouts are supported:
@@ -11,13 +12,13 @@ import { fileURLToPath } from 'node:url';
  * The root is the nearest ancestor of this module that contains assets/templates.
  */
 function findRoot(): string {
-  const override = process.env.TASKWEAVE_ROOT || process.env.POLYFORGE_ROOT;
+  const override = process.env.TASKWEAVE_ROOT || process.env[legacyEnv('ROOT')];
   if (override) return path.resolve(override);
   let dir = path.dirname(fileURLToPath(import.meta.url));
   for (;;) {
     if (existsSync(path.join(dir, 'assets', 'templates'))) return dir;
     const parent = path.dirname(dir);
-    if (parent === dir) throw new Error('Taskweave: cannot find the assets directory');
+    if (parent === dir) throw new Error('TaskWeave: cannot find the assets directory');
     dir = parent;
   }
 }

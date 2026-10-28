@@ -1,6 +1,6 @@
 {
-  "name": "@polyforge/web",
-  "version": "0.4.1",
+  "name": "@taskweave/web",
+  "version": "0.4.2-dev",
   "license": "AGPL-3.0-or-later",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
     "@myriaddreamin/typst-ts-renderer": "0.7.0-rc2",
     "@myriaddreamin/typst-ts-web-compiler": "0.7.0-rc2",
     "@myriaddreamin/typst.ts": "0.7.0-rc2",
-    "@polyforge/shared": "workspace:*",
+    "@taskweave/shared": "workspace:*",
     "decode-named-character-reference": "^1.3.0",
     "highlight.js": "11.12.0",
     "katex": "^0.18.9",

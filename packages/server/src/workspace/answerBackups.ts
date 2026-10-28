@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { parse, stringify } from 'smol-toml';
-import type { AnswerBackupInfo, TestsetConfig } from '@polyforge/shared';
+import type { AnswerBackupInfo, TestsetConfig } from '@taskweave/shared';
 import { atomicWrite, exists, HttpError, safeJoin, sha1, TMP_MARKER, validateFileName } from '../util/fs.js';
 
 interface OriginalAnswer { input: string; output: string; backup: string | null; hash?: string }
@@ -10,9 +10,9 @@ interface Baseline { version: 1; origin: 'import' | 'existing'; createdAt: strin
 export interface AnswerPair { input: string; output: string }
 const baselineDir = (dir: string, id: string) => {
   if (!/^[a-f0-9]{24}$/.test(id)) throw new HttpError(400, 'answer_backup', 'Invalid original-answer backup id.');
-  return path.join(dir, '.polyforge', 'answers-original', id);
+  return path.join(dir, '.taskweave', 'answers-original', id);
 };
-const targetPath = (dir: string, relative: string) => { validateFileName(relative); if (!/\.(in|out|ans)$/i.test(relative) || relative.startsWith('.polyforge/')) throw new HttpError(400, 'answer_backup', 'Invalid input/answer path.'); return safeJoin(dir, relative); };
+const targetPath = (dir: string, relative: string) => { validateFileName(relative); if (!/\.(in|out|ans)$/i.test(relative) || relative.startsWith('.taskweave/')) throw new HttpError(400, 'answer_backup', 'Invalid input/answer path.'); return safeJoin(dir, relative); };
 
 /** Import has all bytes already: save the one immutable baseline as part of its publication. */
 export function snapshotImportedAnswers(files: Map<string, Buffer>, doc: Record<string, any>) {
@@ -22,7 +22,7 @@ export function snapshotImportedAnswers(files: Map<string, Buffer>, doc: Record<
     const manual = ts.manual ?? (name === 'tests' ? 'tests/manual' : `tests/${name}`);
     const inputs = [...files.keys()].filter(file => file.startsWith(manual + '/') && !file.slice(manual.length + 1).includes('/') && /\.in$/i.test(file) && !/\.statement\.in$/i.test(file));
     if (!inputs.length) continue;
-    const id = randomBytes(12).toString('hex'), base = `.polyforge/answers-original/${id}`;
+    const id = randomBytes(12).toString('hex'), base = `.taskweave/answers-original/${id}`;
     const baseline: Baseline = { version: 1, origin: 'import', createdAt: new Date().toISOString(), manual, entries: inputs.map((input, i) => {
       const stem = input.replace(/\.in$/i, ''), output = files.has(stem + '.ans') ? stem + '.ans' : files.has(stem + '.out') ? stem + '.out' : stem + '.ans';
       const bytes = files.get(output), backup = bytes ? `${i + 1}.ans` : null;
@@ -84,7 +84,7 @@ async function copyAtomic(from: string, to: string) {
 interface Journal { version: 1; committed: boolean; files: { output: string; previous: string | null }[] }
 const transactions = new Map<string, Promise<void>>();
 const recoveries = new Map<string, Promise<void>>();
-const transactionDir = (dir: string) => path.join(dir, '.polyforge', 'answer-transaction');
+const transactionDir = (dir: string) => path.join(dir, '.taskweave', 'answer-transaction');
 async function rollback(dir: string, journal: Journal) {
   if (journal.version !== 1 || !Array.isArray(journal.files)) throw new HttpError(400, 'answer_transaction', 'Invalid answer transaction.');
   for (const row of journal.files) {

@@ -3,7 +3,7 @@ import { computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { NButton, NButtonGroup, NCard, NEmpty, NInput, NProgress, NSelect, NRadioButton, NRadioGroup, NSpin, NTag, NResult, useMessage } from 'naive-ui';
-import type { ContestSummary, LibraryDirectory, ProblemSummary } from '@polyforge/shared';
+import type { ContestSummary, LibraryDirectory, ProblemSummary } from '@taskweave/shared';
 import AppHeader from '../components/AppHeader.vue';
 import ContestDialog from '../components/ContestDialog.vue';
 import CreateProblemDialog from '../components/CreateProblemDialog.vue';
@@ -91,10 +91,10 @@ onUnmounted(() => {
   clearTimeout(timer);
 });
 
-const view = ref<'grid' | 'list'>((localStorage.getItem('polyforge-list-view') as 'grid' | 'list') || 'grid');
-const sort = ref<'name' | 'progress'>((localStorage.getItem('polyforge-list-sort') as 'name' | 'progress') || 'name');
-watch(view, (v) => localStorage.setItem('polyforge-list-view', v));
-watch(sort, (v) => localStorage.setItem('polyforge-list-sort', v));
+const view = ref<'grid' | 'list'>((localStorage.getItem('taskweave-list-view') as 'grid' | 'list') || 'grid');
+const sort = ref<'name' | 'progress'>((localStorage.getItem('taskweave-list-sort') as 'name' | 'progress') || 'name');
+watch(view, (v) => localStorage.setItem('taskweave-list-view', v));
+watch(sort, (v) => localStorage.setItem('taskweave-list-sort', v));
 
 const shown = computed(() => {
   const q = filter.value.trim().toLowerCase();
@@ -172,7 +172,7 @@ function openContest(c: ContestSummary) {
 <template>
   <div class="page">
     <app-header>
-      <template #left><strong class="brand"><img src="/taskweave.svg" alt="" width="26" height="26" /> Taskweave</strong></template>
+      <template #left><strong class="brand"><img src="/taskweave.svg" alt="" width="26" height="26" /> TaskWeave</strong></template>
       <n-radio-group v-model:value="tab" size="small">
         <n-radio-button value="problems">{{ t('list.problems') }} {{ problems.length || '' }}</n-radio-button>
         <n-radio-button value="contests">{{ t('list.contests') }} {{ contests.length || '' }}</n-radio-button>

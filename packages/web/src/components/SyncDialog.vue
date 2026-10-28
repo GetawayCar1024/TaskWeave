@@ -18,7 +18,7 @@ import {
   NTag,
   useMessage,
 } from 'naive-ui';
-import { judgeMode, type ItemContent, type JobInfo, type PullItem, type PullPreview, type PushItem, type PushPreview } from '@polyforge/shared';
+import { judgeMode, type ItemContent, type JobInfo, type PullItem, type PullPreview, type PushItem, type PushPreview } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import { waitJob } from '../lib/jobs';
 import type { Workspace } from '../lib/workspace';

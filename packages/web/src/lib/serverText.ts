@@ -1,4 +1,4 @@
-import type { LintIssue, LocalCheck } from '@polyforge/shared';
+import type { LintIssue, LocalCheck } from '@taskweave/shared';
 import { i18n } from '../i18n';
 
 /**
@@ -69,7 +69,7 @@ const RULES: Rule[] = [
   [/^Polygon requires integer memory limits from 4 to 1024 MiB\.$/, () => 'Polygon 内存限制必须是 4～1024 MiB 的整数。'],
   [/^(.+): Polygon supports one time\/memory limit per testset\..*$/, m => `${m[1]}：Polygon 每个测试集只能设置一组时空限制，请统一子任务与测试点限制后导出。`],
   [/^(.+): shared tests were copied for each Polygon group membership\.$/, m => `${m[1]}：已为 Polygon 的每个子任务复制共享测试点。`],
-  [/^JOI \/ AtCoder in\/out ZIPs have no universal scoring configuration\..*$/, () => 'polyforge.yaml 用于保留本地设置；JOI / AtCoder 没有统一的题包评分配置标准。'],
+  [/^JOI \/ AtCoder in\/out ZIPs have no universal scoring configuration\..*$/, () => 'taskweave.yaml 用于保留本地设置；JOI / AtCoder 没有统一的题包评分配置标准。'],
   [/^No Polygon problem.xml in this archive\.$/, () => '题包中没有 Polygon problem.xml。'],
   [/^The import selection expired\..*$/, () => '导入选择已过期，请重新选择 ZIP。'],
   [/^Input and output filenames must be different\.$/, () => '输入文件和输出文件必须不同。'],

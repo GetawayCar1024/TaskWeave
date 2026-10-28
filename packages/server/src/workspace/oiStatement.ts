@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { parseIndexList, STATEMENT_SECTIONS, type ProblemToml, type TestsManifest } from '@polyforge/shared';
+import { parseIndexList, STATEMENT_SECTIONS, type ProblemToml, type TestsManifest } from '@taskweave/shared';
 import { exists, HttpError, safeJoin } from '../util/fs.js';
 import { sampleStatementPaths, scriptStatementPaths, statementPaths } from '../judge/tests.js';
 
@@ -22,7 +22,7 @@ export async function cfToOi(dir: string, config: ProblemToml, lang: string): Pr
   const sections: Record<string, string> = {};
   for (const key of STATEMENT_SECTIONS) sections[key] = await fsp.readFile(safeJoin(dir, `statement/${lang}/${key}.tex`), 'utf8').catch(() => '');
   for (const key of ['legend', 'input', 'output', 'interaction'] as const) add(h[key], sections[key]);
-  const manifest = await fsp.readFile(path.join(dir, '.polyforge/tests/manifest.json'), 'utf8').then(x => JSON.parse(x) as TestsManifest).catch(() => null);
+  const manifest = await fsp.readFile(path.join(dir, '.taskweave/tests/manifest.json'), 'utf8').then(x => JSON.parse(x) as TestsManifest).catch(() => null);
   const manual = config.tests.manual ?? 'tests/manual';
   const files = await fsp.readdir(safeJoin(dir, manual)).catch(() => [] as string[]);
   for (const [n, index] of parseIndexList(config.tests.samples ?? '').entries()) {
@@ -37,8 +37,8 @@ export async function cfToOi(dir: string, config: ProblemToml, lang: string): Pr
       }
       throw new HttpError(400, 'sample_unavailable', `Sample ${index} is incomplete. Generate tests and answers before converting to OI.`);
     };
-    const input = await read([overrides.input, source ?? '', `.polyforge/tests/${index}.in`]);
-    const output = await read([overrides.output, `.polyforge/tests/${index}.ans`, ...(source ? [source.replace(/\.in$/, '.ans'), source.replace(/\.in$/, '.out')] : [])]);
+    const input = await read([overrides.input, source ?? '', `.taskweave/tests/${index}.in`]);
+    const output = await read([overrides.output, `.taskweave/tests/${index}.ans`, ...(source ? [source.replace(/\.in$/, '.ans'), source.replace(/\.in$/, '.out')] : [])]);
     for (const [label, text] of [[lang === 'zh' ? '输入' : 'Input', input], [lang === 'zh' ? '输出' : 'Output', output]]) {
       // A sample containing a TeX environment terminator needs manual handling.
       if (text.includes('\\end{verbatim}')) throw new HttpError(400, 'sample_format', 'Sample contains a LaTeX verbatim terminator');

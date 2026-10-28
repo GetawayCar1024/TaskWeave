@@ -17,7 +17,7 @@ import {
   type TestFileResponse,
   type TestInfo,
   type Verdict,
-} from '@polyforge/shared';
+} from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import type { Judge } from '../lib/judge';
 import { vKeepScroll } from '../lib/keepScroll';
@@ -194,11 +194,11 @@ const historyOptions = computed(() =>
 const shortName = (s: string) => s.split('/').pop()!;
 
 // ---- setup area (collapsible to give the matrix room) ----
-const SETUP_KEY = 'polyforge-inv-setup-collapsed';
+const SETUP_KEY = 'taskweave-inv-setup-collapsed';
 const setupCollapsed = ref(localStorage.getItem(SETUP_KEY) === '1');
 watch(setupCollapsed, (v) => localStorage.setItem(SETUP_KEY, v ? '1' : '0'));
 /** Height of the test chips, set by dragging their bottom border. */
-const chipsSize = useResizable('polyforge-inv-chips-height', { edge: 'bottom', initial: 120, min: 40, max: () => window.innerHeight * 0.4 });
+const chipsSize = useResizable('taskweave-inv-chips-height', { edge: 'bottom', initial: 120, min: 40, max: () => window.innerHeight * 0.4 });
 
 // ---- matrix ----
 const refs = computed<InvocationTestRef[]>(() => (inv.value ? invocationRefs(inv.value) : []));

@@ -92,10 +92,10 @@ test('whole statements warn in preview and automatically become legend when push
 test('samples and their statement input / output are pulled from Polygon (manual and generated tests)', async () => {
   const p = await registry.create({ name: 'psync-samples', title: { en: 'Samples' } });
   // A stale base of an earlier binding is dropped when the problem is created on Polygon.
-  await fs.mkdir(path.join(p.dir, '.polyforge', 'sync-base'), { recursive: true });
-  await fs.writeFile(path.join(p.dir, '.polyforge', 'sync-base', 'stale.json'), '{}');
+  await fs.mkdir(path.join(p.dir, '.taskweave', 'sync-base'), { recursive: true });
+  await fs.writeFile(path.join(p.dir, '.taskweave', 'sync-base', 'stale.json'), '{}');
   const { result } = await pushAll(p.id);
-  await assert.rejects(fs.access(path.join(p.dir, '.polyforge', 'sync-base', 'stale.json')));
+  await assert.rejects(fs.access(path.join(p.dir, '.taskweave', 'sync-base', 'stale.json')));
   const pid = result.polygonId;
   assert.equal(mockState.get(pid)!.tests[1].useInStatements, true);
 
@@ -227,7 +227,7 @@ test('an untaken conflict keeps its base; a contest pull refuses it; re-pull tak
   const p = await registry.create({ name: 'psync-conflict' });
   const { result } = await pushAll(p.id);
   const pid = result.polygonId;
-  const syncFile = path.join(p.dir, '.polyforge', 'sync.json');
+  const syncFile = path.join(p.dir, '.taskweave', 'sync.json');
   const synced = JSON.parse(await fs.readFile(syncFile, 'utf8'));
   const baseHash = synced.items['solution:std.cpp'];
   await fs.writeFile(path.join(p.dir, 'solutions/std.cpp'), '// local\n');

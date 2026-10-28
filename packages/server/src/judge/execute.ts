@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import type { CheckerOutcome, RunStats, Verdict } from '@polyforge/shared';
+import type { CheckerOutcome, RunStats, Verdict } from '@taskweave/shared';
 import type { Program } from './compiler.js';
 import type { Runner } from './runner.js';
 
@@ -50,9 +50,9 @@ export async function copyNormalized(src: string, dest: string): Promise<void> {
   await fsp.writeFile(dest, out.subarray(0, n));
 }
 
-/** Per-run scratch directory inside the problem's .polyforge (avoids non-ASCII temp paths). */
+/** Per-run scratch directory inside the problem's .taskweave (avoids non-ASCII temp paths). */
 export async function withTmp<T>(problemDir: string, fn: (dir: string) => Promise<T>): Promise<T> {
-  const dir = path.join(problemDir, '.polyforge', 'tmp', randomBytes(6).toString('hex'));
+  const dir = path.join(problemDir, '.taskweave', 'tmp', randomBytes(6).toString('hex'));
   await fsp.mkdir(dir, { recursive: true });
   try {
     return await fn(dir);

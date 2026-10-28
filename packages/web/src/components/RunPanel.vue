@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NInput, NRadioButton, NRadioGroup, NSelect, NSpace, NTag, useMessage } from 'naive-ui';
-import { isSourceFile, type QuickRunResponse } from '@polyforge/shared';
+import { isSourceFile, type QuickRunResponse } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import type { Judge } from '../lib/judge';
 import { fmtMem, verdictType } from '../lib/verdict';
@@ -34,8 +34,8 @@ watch(sources, (s) => {
 }, { immediate: true });
 
 /** Output boxes: height limits set by dragging their bottom border. */
-const outSize = useResizable('polyforge-run-stdout-height', { edge: 'bottom', initial: 240, min: 60 });
-const errSize = useResizable('polyforge-run-stderr-height', { edge: 'bottom', initial: 240, min: 60 });
+const outSize = useResizable('taskweave-run-stdout-height', { edge: 'bottom', initial: 240, min: 60 });
+const errSize = useResizable('taskweave-run-stderr-height', { edge: 'bottom', initial: 240, min: 60 });
 
 const testOptions = computed(() => (props.judge.state.manifest?.tests ?? []).map((x) => ({ label: `#${x.index}  ${x.source}`, value: x.index })));
 

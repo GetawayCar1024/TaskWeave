@@ -1,4 +1,4 @@
-import type { SolutionTag } from '@polyforge/shared';
+import type { SolutionTag } from '@taskweave/shared';
 
 type TagType = 'success' | 'info' | 'warning' | 'error' | 'default';
 

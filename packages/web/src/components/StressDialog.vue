@@ -3,7 +3,7 @@ import FreeSelect from './FreeSelect.vue';
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NForm, NFormItem, NInput, NInputNumber, NSelect, NSpace, useMessage } from 'naive-ui';
-import type { JobInfo, StressResult } from '@polyforge/shared';
+import type { JobInfo, StressResult } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import type { Judge } from '../lib/judge';
 import { waitJob } from '../lib/jobs';
@@ -31,7 +31,7 @@ const generators = computed(() => {
 const solutions = computed(() => (config.value?.solutions ?? []).map((s) => ({ label: `${s.source} (${s.tag})`, value: s.source })));
 
 // The last settings of the problem are kept.
-const FORM_KEY = `polyforge-stress-${props.problemId}`;
+const FORM_KEY = `taskweave-stress-${props.problemId}`;
 const form = reactive({ generator: '', args: '10 1000', solution: '', reference: '', maxIterations: 1000, timeLimitSec: 60 });
 try {
   Object.assign(form, JSON.parse(localStorage.getItem(FORM_KEY) ?? '{}'));

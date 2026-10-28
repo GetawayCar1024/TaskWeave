@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NProgress, NTooltip, NSelect, useMessage } from 'naive-ui';
 import { errorMessage } from '../lib/api';
-import { isSourceFile } from '@polyforge/shared';
+import { isSourceFile } from '@taskweave/shared';
 import type { Ai } from '../lib/ai';
 import type { Judge } from '../lib/judge';
 import { wsConnected } from '../lib/ws';

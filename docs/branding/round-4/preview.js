@@ -6,7 +6,7 @@
     for (const kind of ['original', 'refined']) el(`${kind}-art`).innerHTML = svg(kind, { size: 272, mono });
     el('details').innerHTML = details.map(detail => `<article class="detail"><h3>${detail.title}</h3><div class="detail-pair">${['original', 'refined'].map(kind => `<figure>${svg(kind, { size: 126, tile: false, mono, viewBox: detail.box })}<figcaption>${kind === 'original' ? '原稿' : '精修'}</figcaption></figure>`).join('')}</div><p>${detail.description}</p></article>`).join('');
     el('sizes').innerHTML = ['original', 'refined'].map(kind => `<div class="size-row"><span>${kind === 'original' ? '原稿' : '精修'}</span>${[16, 24, 32, 48].map(size => `<figure>${svg(kind, { size, mono })}<figcaption>${size} px</figcaption></figure>`).join('')}</div>`).join('');
-    el('dark-art').innerHTML = svg('refined', { size: 48, mono }) + '<span>Taskweave</span>';
+    el('dark-art').innerHTML = svg('refined', { size: 48, mono }) + '<span>TaskWeave</span>';
     el('bare-art').innerHTML = svg('refined', { size: 64, tile: false, mono });
     el('mono').setAttribute('aria-pressed', String(mono));
   }

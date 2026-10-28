@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { compressRanges, problemTomlSchema, type PackageCandidate, type PackageImportOptions, type PackageImportResult, type TestGroup } from '@polyforge/shared';
+import { compressRanges, problemTomlSchema, type PackageCandidate, type PackageImportOptions, type PackageImportResult, type TestGroup } from '@taskweave/shared';
 import type { Judge } from '../judge/index.js';
 import { HttpError, validateFileName } from '../util/fs.js';
 import { readCdf } from './cdf.js';

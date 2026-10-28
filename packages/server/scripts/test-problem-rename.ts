@@ -22,15 +22,15 @@ async function fixture(run: (ctx: { home: string; registry: ProblemRegistry; con
   const registry = new ProblemRegistry(global), contests = new ContestRegistry(registry, global), hub = new WsHub();
   const files = new FileService(new SelfWrites()), watcher = new ProblemWatcher(registry, files, hub), judge = new Judge(global, registry, hub);
   const app = await buildApp({ global, registry, contests, hub, files, watcher, judge, jobs: new JobManager(hub), token: 'test-only' });
-  try { await run({ home, registry, contests, watcher, call: (method, url, payload) => app.inject({ method, url, payload, headers: { host: 'localhost', 'x-polyforge-token': 'test-only' } }) }); }
+  try { await run({ home, registry, contests, watcher, call: (method, url, payload) => app.inject({ method, url, payload, headers: { host: 'localhost', 'x-taskweave-token': 'test-only' } }) }); }
   finally { await watcher.stop(); await app.close(); await fs.rm(home, { recursive: true, force: true }); }
 }
 
 test('short-name edits rename the folder and preserve contest references, files, history and answer backups', async () => fixture(async ({ registry, contests, watcher, call }) => {
   const p = await registry.create({ name: 'old-folder', dataOnly: true });
   await atomicWrite(path.join(p.dir, 'tests/manual/1.in'), 'input');
-  await atomicWrite(path.join(p.dir, '.polyforge/answers-original/original.bin'), Buffer.from([0, 255, 10]));
-  await atomicWrite(path.join(p.dir, '.polyforge/ai/history.json'), '{"keep":true}');
+  await atomicWrite(path.join(p.dir, '.taskweave/answers-original/original.bin'), Buffer.from([0, 255, 10]));
+  await atomicWrite(path.join(p.dir, '.taskweave/ai/history.json'), '{"keep":true}');
   const contest = await contests.create({ name: 'round', problems: [{ index: 'A', problem: p.id }] });
   await watcher.start();
   const response = await call('PATCH', `/api/problems/${p.id}`, { name: 'new-folder', title: { en: 'Renamed' } });
@@ -40,8 +40,8 @@ test('short-name edits rename the folder and preserve contest references, files,
   assert.equal(detail.summary.name, 'new-folder'); assert.equal(detail.summary.id, p.id);
   assert.equal(await exists(p.dir), false);
   assert.equal((await call('GET', `/api/problems/${p.id}/files/tests/manual/1.in`)).json().content, 'input');
-  assert.deepEqual(await fs.readFile(path.join(detail.summary.dir, '.polyforge/answers-original/original.bin')), Buffer.from([0, 255, 10]));
-  assert.equal(await fs.readFile(path.join(detail.summary.dir, '.polyforge/ai/history.json'), 'utf8'), '{"keep":true}');
+  assert.deepEqual(await fs.readFile(path.join(detail.summary.dir, '.taskweave/answers-original/original.bin')), Buffer.from([0, 255, 10]));
+  assert.equal(await fs.readFile(path.join(detail.summary.dir, '.taskweave/ai/history.json'), 'utf8'), '{"keep":true}');
   assert.equal((await contests.detail(contest.id)).problems[0].summary?.dir, detail.summary.dir);
   assert.equal(watcher.running, true);
   assert.equal((await registry.scan()).find(ref => ref.id === p.id)?.dir, detail.summary.dir);

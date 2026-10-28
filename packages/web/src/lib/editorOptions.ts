@@ -1,4 +1,4 @@
-import { isSourceFile } from '@polyforge/shared';
+import { isSourceFile } from '@taskweave/shared';
 import type { monaco } from './monaco';
 import { settings } from './settings';
 

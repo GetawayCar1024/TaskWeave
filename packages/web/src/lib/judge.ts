@@ -10,12 +10,12 @@ import type {
   ValidatorTestResult,
   WsEvent,
   ProblemToml,
-} from '@polyforge/shared';
+} from '@taskweave/shared';
 import { api } from './api';
 import { monaco } from './monaco';
 import type { Workspace } from './workspace';
 
-const MARKER_OWNER = 'polyforge-compile';
+const MARKER_OWNER = 'taskweave-compile';
 
 /**
  * Per-problem judge state: running jobs, the tests manifest, compile results (shown

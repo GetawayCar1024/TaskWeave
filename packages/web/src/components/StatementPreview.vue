@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vu
 import { useI18n } from 'vue-i18n';
 import { NButton, NDropdown, NTag, NTooltip, useMessage } from 'naive-ui';
 import 'katex/dist/katex.min.css';
-import { STATEMENT_SECTIONS, sampleNotePath, statementLanguages, type StatementSection, type StatementSample } from '@polyforge/shared';
+import { STATEMENT_SECTIONS, sampleNotePath, statementLanguages, type StatementSection, type StatementSample } from '@taskweave/shared';
 import { exportMarkdown } from '../lib/markdownExport';
 import { api, rawUrl } from '../lib/api';
 import type { Judge } from '../lib/judge';

@@ -8,7 +8,7 @@ import { ArrowLeft, FileDown, Printer } from 'lucide-vue-next';
 import katex from 'katex';
 import { exportMarkdown } from '../lib/markdownExport';
 import { fitPrintMath } from '../lib/printMath';
-import { STATEMENT_SECTIONS, testsetsOf, type ContestDetail, type ContestStatement, type StatementSection } from '@polyforge/shared';
+import { STATEMENT_SECTIONS, testsetsOf, type ContestDetail, type ContestStatement, type StatementSection } from '@taskweave/shared';
 import StatementDoc from '../components/StatementDoc.vue';
 import OiContestPreview from '../components/OiContestPreview.vue';
 import { api, errorMessage, rawUrl, token } from '../lib/api';
@@ -51,17 +51,17 @@ async function prepareDown() {
     const done = await waitJob(job, () => {});
     if (done.status !== 'done') throw new Error(done.error ?? 'Sample generation cancelled.');
     if (props.single) {
-      const result = done.result as import('@polyforge/shared').TestsManifest;
+      const result = done.result as import('@taskweave/shared').TestsManifest;
       if (!result.ok) throw new Error(result.errors.join('\n'));
       const config = (await api.problem(props.id)).config;
       for (const ts of config ? testsetsOf(config).filter(ts => ts.name !== 'tests' && ts.samples?.trim()) : []) {
         const extra = await waitJob(await api.generateTests(props.id, ts.name));
         if (extra.status !== 'done') throw new Error(extra.error ?? extra.status);
-        const manifest = extra.result as import('@polyforge/shared').TestsManifest;
+        const manifest = extra.result as import('@taskweave/shared').TestsManifest;
         if (!manifest.ok) throw new Error(manifest.errors.join('\n'));
       }
     } else {
-      const result = done.result as import('@polyforge/shared').ContestBatchResult;
+      const result = done.result as import('@taskweave/shared').ContestBatchResult;
       const errors = result.items.filter(item => !item.ok);
       if (errors.length) throw new Error(errors.map(item => `${item.index}: ${item.message}\n${(item.details ?? []).join('\n')}`).join('\n'));
     }
@@ -72,14 +72,14 @@ async function prepareDown() {
   } catch (e) { if (alive) message.error(errorMessage(e)); }
   finally { preparingDown.value = false; }
 }
-const lang = ref((typeof route.query.lang === 'string' && route.query.lang) || localStorage.getItem('polyforge-print-lang') || 'zh');
+const lang = ref((typeof route.query.lang === 'string' && route.query.lang) || localStorage.getItem('taskweave-print-lang') || 'zh');
 /** Which document: the problem statements or the tutorials (kept in the URL). */
 const doc = ref<'statements' | 'tutorials'>(route.query.doc === 'tutorials' ? 'tutorials' : 'statements');
 watch(doc, (d) => router.replace({ query: { ...route.query, doc: d === 'tutorials' ? d : undefined } }));
 const pageBreaks = ref(true);
 /** Contents page: contest title and the list of problems, before the first problem. */
-const withToc = ref(!props.single && localStorage.getItem('polyforge-print-toc') !== '0');
-watch(withToc, (v) => localStorage.setItem('polyforge-print-toc', v ? '1' : '0'));
+const withToc = ref(!props.single && localStorage.getItem('taskweave-print-toc') !== '0');
+watch(withToc, (v) => localStorage.setItem('taskweave-print-toc', v ? '1' : '0'));
 
 const langs = computed(() => {
   const set = new Set<string>();
@@ -114,7 +114,7 @@ async function load() {
 }
 onMounted(async () => { await load(); if (route.query.down) await prepareDown(); });
 watch(lang, (l) => {
-  localStorage.setItem('polyforge-print-lang', l);
+  localStorage.setItem('taskweave-print-lang', l);
   load();
 });
 
@@ -305,7 +305,7 @@ watch(
   { immediate: true },
 );
 onBeforeUnmount(() => {
-  document.title = 'Taskweave';
+  document.title = 'TaskWeave';
   pageStyle.remove();
 });
 </script>

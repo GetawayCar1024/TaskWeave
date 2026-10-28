@@ -23,7 +23,7 @@ import {
   type SolutionTag,
   type SyncItem,
   type SyncItemKind,
-} from '@polyforge/shared';
+} from '@taskweave/shared';
 import { pickLanguage } from '../judge/compiler.js';
 import type { Judge, ProblemCtx } from '../judge/index.js';
 import { planTests, scriptStatementPaths, statementPaths } from '../judge/tests.js';

@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { NButton, NDataTable, NInput, type DataTableColumns } from 'naive-ui';
-import { compressRanges, originalTestName, parseIndexList, type TestInfo } from '@polyforge/shared';
+import { compressRanges, originalTestName, parseIndexList, type TestInfo } from '@taskweave/shared';
 import ToolWindow from './ToolWindow.vue';
 
 const props = defineProps<{ show: boolean; name: string; value: string; tests: TestInfo[]; groups: { name: string; tests: string }[] }>();

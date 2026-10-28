@@ -1,7 +1,7 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { isSourceFile, parseIndexList, type CompileResult, type InvocationSelection, type QuickRunRequest, type StressRequest, type TestFileResponse } from '@polyforge/shared';
+import { isSourceFile, parseIndexList, type CompileResult, type InvocationSelection, type QuickRunRequest, type StressRequest, type TestFileResponse } from '@taskweave/shared';
 import type { JobManager } from '../jobs.js';
 import type { Judge } from '../judge/index.js';
 import { listInvocations, readInvocation, refOutputPath, runInvocation } from '../judge/invocation.js';
@@ -15,8 +15,8 @@ import { HttpError, safeJoin, exists, atomicWrite } from '../util/fs.js';
 import { readSamples } from '../judge/samples.js';
 import { buildProblemDataPackage, requireLuoguOptions } from '../judge/problemExport.js';
 import { requireFullProblem } from '../judge/index.js';
-import type { ProblemExportRequest } from '@polyforge/shared';
-import type { RegenerateAnswersRequest } from '@polyforge/shared';
+import type { ProblemExportRequest } from '@taskweave/shared';
+import type { RegenerateAnswersRequest } from '@taskweave/shared';
 import { answerBackupInfo, recoverAnswerTransaction } from '../workspace/answerBackups.js';
 import { regenerateAnswers, restoreOriginalAnswers } from '../judge/answers.js';
 

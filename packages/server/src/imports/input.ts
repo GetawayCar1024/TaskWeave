@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import type { DetectedPackageFormat, ImportPackageFormat } from '@polyforge/shared';
+import type { DetectedPackageFormat, ImportPackageFormat } from '@taskweave/shared';
 import { HttpError, validateFileName } from '../util/fs.js';
 import { readZip, ZipWriter } from '../util/zip.js';
 import { CDF_MAGIC } from './cdf.js';
