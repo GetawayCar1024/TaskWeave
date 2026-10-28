@@ -41,12 +41,12 @@ jobs:
           git archive --format=zip --prefix="TaskWeave-${version}/" --output="packages/desktop/dist/TaskWeave-${version}-source.zip" HEAD
       - name: Checksums
         working-directory: packages/desktop/dist
-        run: sha256sum TaskWeave-*-linux-x64.AppImage TaskWeave-*-linux-x64.tar.gz TaskWeave-*-source.zip > SHA256SUMS.txt
+        run: sha256sum TaskWeave-*-linux-*.AppImage TaskWeave-*-linux-x64.tar.gz TaskWeave-*-source.zip > SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: TaskWeave-linux-x64
           path: |
-            packages/desktop/dist/TaskWeave-*-linux-x64.AppImage
+            packages/desktop/dist/TaskWeave-*-linux-*.AppImage
             packages/desktop/dist/TaskWeave-*-linux-x64.tar.gz
             packages/desktop/dist/TaskWeave-*-source.zip
             packages/desktop/dist/SHA256SUMS.txt

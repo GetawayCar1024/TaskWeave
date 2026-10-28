@@ -6,7 +6,7 @@
 
 CI 在原生运行测试、完整回归和打包应用验证通过后，上传 `TaskWeave-linux-x64`：
 
-- `TaskWeave-<版本>-linux-x64.AppImage`
+- `TaskWeave-<版本>-linux-x86_64.AppImage`
 - `TaskWeave-<版本>-linux-x64.tar.gz`
 - `TaskWeave-<版本>-source.zip`，与该次 CI 提交逐文件对应
 - `SHA256SUMS.txt`
@@ -14,8 +14,8 @@ CI 在原生运行测试、完整回归和打包应用验证通过后，上传 `
 使用 AppImage：
 
 ```bash
-chmod +x TaskWeave-*-linux-x64.AppImage
-./TaskWeave-*-linux-x64.AppImage
+chmod +x TaskWeave-*-linux-x86_64.AppImage
+./TaskWeave-*-linux-x86_64.AppImage
 ```
 
 tar.gz 解压后运行其中的 `taskweave`。运行环境需提供 GTK 3、NSS、GBM 和 ALSA；本地评测需要 g++。AppImage 使用系统 FUSE；无 FUSE 环境可用其 `--appimage-extract` 功能解压后运行 `AppRun`。
