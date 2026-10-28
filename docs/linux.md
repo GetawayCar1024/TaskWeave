@@ -2,6 +2,8 @@
 
 当前开发版本为 **0.4.2-dev**。Linux x64 试制流程位于 [Linux preview CI](https://github.com/GetawayCar1024/TaskWeave/actions/workflows/linux-preview.yml)，使用 Ubuntu 22.04、Node.js 24 和系统 g++。
 
+已验证构建：[`6ba8705`](https://github.com/GetawayCar1024/TaskWeave/commit/6ba87058eab3de979d863654caecc76759419e31)，[CI 全部通过](https://github.com/GetawayCar1024/TaskWeave/actions/runs/40654274961)。[下载 Linux 试制包、对应源码与校验文件](https://github.com/GetawayCar1024/TaskWeave/actions/runs/40654274961/artifacts/12801775424)（GitHub Actions 附件需要登录）。
+
 ## 产物
 
 CI 在原生运行测试、完整回归和打包应用验证通过后，上传 `TaskWeave-linux-x64`：
