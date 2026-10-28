@@ -20,6 +20,7 @@ export interface Program {
   /** Identifies source + language + toolchain; used as a cache key for derived results. */
   hash: string;
   build?: BuildIdentity;
+  checkerProtocol?: 'lemon-native';
 }
 
 export interface CompileOutcome {

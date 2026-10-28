@@ -72,9 +72,9 @@ const activeLang = computed(() => {
         style="width: 80px"
       />
     </span>
-    <span v-if="ai.running.value || ai.state.changes.length" class="item link" @click="emit('open', 'ai')">
+    <span v-if="ai.anyRunning.value || ai.state.changes.length" class="item link" @click="emit('open', 'ai')">
       AI
-      <template v-if="ai.running.value">· {{ t('ai.working') }}</template>
+      <template v-if="ai.anyRunning.value">· {{ t('ai.working') }}</template>
       <template v-if="ai.state.changes.length"> · {{ t('status.aiChanges', { n: ai.state.changes.length }) }}</template>
     </span>
     <span class="spacer" />

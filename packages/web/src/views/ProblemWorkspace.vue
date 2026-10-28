@@ -79,7 +79,7 @@ const summary = computed(() => ws.state.detail?.summary);
 const dataOnly = computed(() => !!summary.value?.dataOnly);
 const showDataOnlyWarning = ref(true);
 const showDataImport = ref(false), showExport = ref(false);
-const restrictedCommands = new Set(['invocation', 'stress', 'run', 'selftest', 'sync', 'ai', 'ai-review']);
+const restrictedCommands = new Set(['invocation', 'stress', 'run', 'selftest', 'sync']);
 function openExport() {
   if (!ws.state.detail) return;
   if (ws.hasDirty.value) return message.warning(t('tree.saveFirst'));
@@ -109,7 +109,7 @@ const rightTab = ref<'info' | 'tests' | 'run' | 'selftest' | 'ai'>('info');
 const infoPanel = ref<InstanceType<typeof InfoPanel>>();
 const rightSplitSize = ref(0.76);
 async function showTools(tab: typeof rightTab.value): Promise<boolean> {
-  if (dataOnly.value && ['run', 'selftest', 'ai'].includes(tab)) return false;
+  if (dataOnly.value && ['run', 'selftest'].includes(tab)) return false;
   if (rightTab.value === 'info' && tab !== 'info' && infoPanel.value && !await infoPanel.value.canLeave()) return false;
   rightTab.value = tab;
   return true;
@@ -496,7 +496,7 @@ onMounted(async () => {
   window.addEventListener('keydown', onKeydown);
   window.addEventListener('beforeunload', onBeforeUnload);
   registerLatexMacros();
-  await Promise.all([ws.init(), judge.init()]);
+  await Promise.all([ws.init(), judge.init(), ai.init().catch(() => {})]);
   // Open the most useful file first.
   const cfg = ws.state.detail?.config;
   const asked = typeof route.query.file === 'string' ? route.query.file : undefined;
@@ -613,7 +613,7 @@ onBeforeUnmount(() => {
               <n-tab-pane key="selftest" name="selftest" :disabled="dataOnly" :tab="t('panel.selftest')">
                 <n-scrollbar v-keep-scroll="`selftest:${id}`" style="height: 100%"><self-test-panel :ws="ws" :judge="judge" /></n-scrollbar>
               </n-tab-pane>
-              <n-tab-pane key="ai" name="ai" :disabled="dataOnly" tab="AI" display-directive="show">
+              <n-tab-pane key="ai" name="ai" tab="AI" display-directive="show">
                 <aside class="ai-sidebar" :aria-label="t('palette.aiChat')">
                   <ai-drawer ref="aiDrawer" embedded :show="showAi" :ai="ai" :problem-id="id" :ws="ws" />
                 </aside>

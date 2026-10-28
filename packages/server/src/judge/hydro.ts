@@ -17,6 +17,7 @@ import type { Judge, ProblemCtx } from './index.js';
 import { exportedTests, splitScore, testFileStem } from './lemonlime.js';
 import { readSamples } from './samples.js';
 import { answerPath, generateTests, inputPath } from './tests.js';
+import { lemonNativeSource } from './lemonNative.js';
 
 const fail = (message: string): never => { throw new HttpError(400, 'hydro_export', message); };
 interface HydroCase { input: string; output: string; score: number; time: string; memory: string }
@@ -150,7 +151,12 @@ export async function hydroPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, t
     zip.add(`testdata/${name}`, text); return name;
   };
   const dataConfig: Record<string, unknown> = { type: mode === 'io' ? 'interactive' : 'default', time: `${p.time_limit}ms`, memory: `${p.memory_limit}m`, checker_type: 'default', subtasks };
-  if (config.checker?.source.startsWith('std:')) { dataConfig.checker_type = 'testlib'; dataConfig.checker = config.checker.source.slice(4); }
+  if (config.lemon_comparison) {
+    dataConfig.checker_type = 'testlib'; dataConfig.checker = 'taskweave-lemon.cpp';
+    zip.add('testdata/taskweave-lemon.cpp', await lemonNativeSource(judge.global.sharedDir, config.lemon_comparison));
+    zip.add('testdata/taskweave-lemon-LICENSE', await fs.readFile(path.join(judge.global.sharedDir, 'lemon-native/LICENSE')));
+  }
+  else if (config.checker?.source.startsWith('std:')) { dataConfig.checker_type = 'testlib'; dataConfig.checker = config.checker.source.slice(4); }
   else if (config.checker) { dataConfig.checker_type = 'testlib'; dataConfig.checker = await addSource(safeJoin(ctx.ref.dir, config.checker.source)); }
   else if (config.lemon_checker) { dataConfig.checker_type = 'lemon'; dataConfig.checker = await addSource(judge.compiler.resolveSource(ctx.ref.dir, config.lemon_checker.source).srcPath); }
   if (config.validator) dataConfig.validator = await addSource(judge.compiler.resolveSource(ctx.ref.dir, config.validator.source).srcPath);

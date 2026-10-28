@@ -125,7 +125,7 @@ export async function runChecker(
   );
   const message = (await readHead(stderr, 2000)).trim();
   if (r.status !== 'OK' && r.status !== 'RE') return { verdict: 'FAIL', message: `checker: ${describeRun(r)}` };
-  const verdict = checkerVerdict(r.exitCode);
+  const verdict = checker.checkerProtocol === 'lemon-native' && r.exitCode === 4 ? 'OL' : checkerVerdict(r.exitCode);
   const outcome: CheckerOutcome = { verdict, message: message || (verdict === 'FAIL' ? `checker exit code ${r.exitCode}` : '') };
   const points = message.match(/^points\s+([\d.]+)/i);
   if (points) outcome.points = Number(points[1]);

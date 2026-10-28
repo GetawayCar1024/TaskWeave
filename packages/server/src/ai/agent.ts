@@ -18,7 +18,7 @@ import { addUsage, emptyUsage } from '@polyforge/shared';
 import { recordCost, UsageLog } from './usage.js';
 import type { RawAiEndpoint } from '../global.js';
 import type { Judge } from '../judge/index.js';
-import { atomicWrite, HttpError } from '../util/fs.js';
+import { atomicWrite, HttpError, safeJoin } from '../util/fs.js';
 import type { ProblemRef } from '../workspace/problems.js';
 import type { ContestRegistry } from '../workspace/contests.js';
 import type { WsHub } from '../ws.js';
@@ -166,6 +166,7 @@ export class AgentService {
               forProblem: (part, sandbox) => ({
                 ...base,
                 sandbox,
+                authoring: async () => part.kind === 'files' || !(await this.judge.ctx(part.id === '_problem_files' ? 'files' : part.id)).config.problem.data_only,
                 ctx: async () => {
                   const ref = await this.judge.registry.get(part.id === '_problem_files' ? 'files' : part.id);
                   return this.judge.ctxFor({ id: `${part.id}@ai`, dir: sandbox.dir, root: ref.root }, path.join(ref.dir, '.polyforge', 'build'));
@@ -186,15 +187,17 @@ export class AgentService {
       };
     }
     const ref = await this.judge.registry.get(owner);
+    const compatibility = !!(await this.judge.registry.readConfig(ref)).config?.problem.data_only;
     return {
       sessionsDir: sessionsDir(ref),
       sandbox: (work, touched) => new Sandbox(ref.dir, work, new Set(touched)),
-      prompt: (mode) => (mode === 'review' ? reviewSystemPrompt(shared) : systemPrompt(shared)),
-      tools: toolsFor,
+      prompt: async (mode) => (await (mode === 'review' ? reviewSystemPrompt(shared) : systemPrompt(shared))) + (compatibility ? '\nThis is a compatibility-mode workspace. You can inspect/edit files and rescan existing data, but compilation, running programs, batch judging and program self-tests are unavailable. Keep data_only unchanged; only the user can change authoring mode in the Info panel.' : ''),
+      tools: mode => toolsFor(mode, compatibility),
       run: (name, input, base, sb, mode) => {
         const sandbox = sb as Sandbox;
         const sandboxRef: ProblemRef = { id: `${owner}@ai`, dir: sandbox.dir, root: ref.root };
-        const env: ToolEnv = { ...base, sandbox, ctx: () => this.judge.ctxFor(sandboxRef, path.join(ref.dir, '.polyforge', 'build')) };
+        const env: ToolEnv = { ...base, sandbox, ctx: () => this.judge.ctxFor(sandboxRef, path.join(ref.dir, '.polyforge', 'build')),
+          authoring: async () => !(await this.judge.ctx(owner)).config.problem.data_only };
         return runTool(name, input, env, mode);
       },
       kickoff: async () => reviewKickoff(await localChecks(this.judge, await this.judge.ctx(owner))),
@@ -550,7 +553,19 @@ export class AgentService {
   async accept(problemId: string, sid: string, paths: string[]): Promise<AiChange[]> {
     const l = await this.load(problemId, sid);
     if (l.state === 'running') throw new HttpError(409, 'busy', 'Wait for the agent to finish');
-    await l.sandbox.accept(paths);
+    const accepted = await l.sandbox.accept(paths);
+    for (const path of accepted) {
+      const contest = problemId.startsWith('contest:');
+      const [prefix, ...parts] = path.split('/');
+      if (contest && prefix === 'files') { this.hub.broadcast({ type: 'contests:changed' }); continue; }
+      const owner = contest ? prefix === '_problem_files' ? 'files' : prefix : problemId;
+      const relative = contest ? parts.join('/') : path;
+      const ref = await this.judge.registry.get(owner);
+      const present = await fsp.stat(safeJoin(ref.dir, relative)).then(() => true, () => false);
+      await this.judge.registry.fileChanged(owner, relative, undefined, !present);
+      this.hub.broadcast({ type: 'file:changed', problemId: owner, path: relative, kind: present ? 'change' : 'unlink' });
+      this.hub.broadcast({ type: 'problem:changed', problemId: owner });
+    }
     await this.save(l);
     const ch = await l.sandbox.changes();
     this.emit(l, { type: 'changes', changes: ch });

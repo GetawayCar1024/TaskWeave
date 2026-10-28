@@ -1,4 +1,5 @@
 {
+  "library": { "root": "Root folder", "folder": "Folder", "new": "New folder", "name": "Folder name", "created": "Folder created", "move": "Move to folder", "moved": "Moved" },
   "answers": {
     "title": "Manage outputs", "generate": "Regenerate outputs", "restore": "Restore initial outputs", "generated": "Regenerated {n} outputs", "restored": "Restored {n} initial outputs",
     "noSolution": "Add and register a solution to regenerate outputs.",
@@ -36,6 +37,14 @@
     "splitHint": "All statement text will be placed in legend.tex; other body sections start empty. You can split them manually afterward. Polygon sync also performs this conversion automatically."
   },
   "packages": {
+    "auto": "Auto detect",
+    "fps": "Hydro FPS (XML)",
+    "lemonlime": "LemonLime (CDF + data)",
+    "warnings": "Import notices ({n})",
+    "chooseFile": "Choose ZIP / XML / CDF files",
+    "chooseDirectory": "Choose unpacked folder",
+    "invalidInput": "Choose a ZIP, FPS XML or LemonLime CDF file.",
+    "detected": "Detected format: {format}",
     "polygon-package": "Polygon problem package",
     "data": "Data package",
     "joi": "JOI / AtCoder",
@@ -204,6 +213,8 @@
     "choose": "Choose this folder"
   },
   "settings": {
+    "autoSave": "Changes save automatically",
+    "autoSaving": "Saving automatically…",
     "general": "General",
     "globalDir": "Global directory",
     "roots": "Problem roots",
@@ -342,6 +353,11 @@
     "images": "Images"
   },
   "info": {
+    "lemonBuiltins": "LemonLime built-in comparisons",
+    "lemonNativeSource": "View local comparator source",
+    "lemonMode": { "lines": "Line by line", "ignore-spaces": "Line by line (ignore extra spaces and tabs)", "real": "Real numbers" },
+    "lemonPrecision": "Error exponent",
+    "lemonNativeHint": "Local judging uses the matching C++ comparator. LemonLime exports select its built-in mode without a special judge. Real tolerance is absolute or relative error up to 10⁻ᵖ.",
     "lemonTemplates": "LemonLime checker templates",
     "unsaved": "Problem information has unsaved changes. Save them?",
     "file": "Current file",
@@ -573,6 +589,10 @@
     "selectAll": "Select all / none"
   },
   "ai": {
+    "unsavedApplyTitle": "Unsaved editor changes",
+    "unsavedApplyBody": "These files have unsaved edits: {files}. Applying AI changes updates the disk files. Your editor drafts will be kept and marked as changed on disk.",
+    "applyKeepDraft": "Apply and keep drafts",
+    "unsavedKept": "Kept unsaved edits in {files}. Compare the changes or use the disk version.",
     "noEndpoint": "No AI endpoint configured yet",
     "configure": "Open settings",
     "noSession": "Pick a session",

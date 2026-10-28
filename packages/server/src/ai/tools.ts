@@ -20,6 +20,8 @@ export interface ToolEnv {
   judge: Judge;
   /** Judge context for the sandbox copy (re-read after problem.toml edits). */
   ctx: () => Promise<ProblemCtx>;
+  /** Permission from the real workspace, never from an AI-editable sandbox config. */
+  authoring?: () => Promise<boolean>;
   signal: AbortSignal;
   setPlan: (plan: AiPlanStep[]) => void;
   /** A file in the sandbox changed. */
@@ -57,6 +59,7 @@ async function guardedWrite(env: ToolEnv, rel: string, content: string): Promise
   if (clean === 'problem.toml') {
     const err = checkProblemToml(content);
     if (err) throw new Error(`problem.toml would be invalid, not written: ${err}`);
+    if (env.authoring && problemTomlSchema.parse(parseToml(content)).problem.data_only === await env.authoring()) throw new Error('Change compatibility/full authoring mode in the Info panel, not through an AI file edit.');
   }
   await env.sandbox.write(clean, content);
   env.changed();
@@ -176,7 +179,9 @@ const TOOLS = [
     description: 'Generate all tests: manual tests + tests/script.txt, run the validator on each, and produce answers with the main (MA) solution. Returns per-test status and errors.',
     schema: z.object({ testset: z.string().optional().describe('Testset name (default "tests"; others are [testsets.NAME] in problem.toml)') }),
     async run(i, env) {
-      const m = await generateTests(env.judge, await env.ctx(), job(env), i.testset);
+      const ctx = await env.ctx();
+      if (env.authoring && !await env.authoring()) ctx.config.problem.data_only = true;
+      const m = await generateTests(env.judge, ctx, job(env), i.testset);
       const lines = m.tests.map(
         (t) =>
           `#${t.index} ${t.origin === 'manual' ? t.source : `[${t.source}]`} in=${t.inputSize ?? '-'}B ans=${t.answerSize ?? '-'}B ${t.valid === false ? `INVALID: ${t.validatorMessage}` : t.valid ? 'valid' : 'no validator'}${t.error ? ` ERROR: ${t.error}` : ''}`,
@@ -284,6 +289,7 @@ const TOOLS = [
 
 /** Tools whose calls change files (shown with a distinct style in the UI). */
 export const WRITE_TOOLS = new Set(['write_file', 'edit_file', 'delete_file']);
+const AUTHORING_TOOLS = new Set(['compile', 'run', 'run_invocation', 'run_validator_tests', 'run_checker_tests']);
 
 const defs = new Map(
   TOOLS.map((t) => {
@@ -293,8 +299,9 @@ const defs = new Map(
 );
 
 /** The agent edits files; the review (AI check) only reads, judges and reports. */
-export function toolsFor(mode: AiSessionMode): ToolDef[] {
-  return [...defs.values()].filter((d) => (mode === 'review' ? !WRITE_TOOLS.has(d.name) : d.name !== 'report_issue'));
+export function toolsFor(mode: AiSessionMode, compatibility = false): ToolDef[] {
+  return [...defs.values()].filter(d => (!compatibility || !AUTHORING_TOOLS.has(d.name)) && (mode === 'review' ? !WRITE_TOOLS.has(d.name) : d.name !== 'report_issue'))
+    .map(def => compatibility && def.name === 'generate_tests' ? { ...def, description: 'Rescan existing input/answer files and refresh their metadata. Compatibility mode never executes generators or solutions through this tool.' } : def);
 }
 
 // ---- contest sessions: the same tools over several problems ----
@@ -384,6 +391,7 @@ export async function runTool(name: string, input: unknown, env: ToolEnv, mode: 
     return { content: `Invalid input for ${name}: ${parsed.error.issues.map((i) => `${i.path.join('.') || '(input)'}: ${i.message}`).join('; ')}`, isError: true };
   }
   try {
+    if (AUTHORING_TOOLS.has(name) && env.authoring && !await env.authoring()) return { content: 'Compatibility mode does not support judging tools. Complete the authoring files and switch modes in the Info panel.', isError: true };
     return { content: await (t.run as (i: unknown, e: ToolEnv) => Promise<string>)(parsed.data, env), isError: false };
   } catch (e) {
     if (env.signal.aborted) throw e;

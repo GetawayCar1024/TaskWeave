@@ -152,7 +152,6 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps & { aiRunn
   });
   app.get<P>('/api/contests/:id/attachments', async (req, reply) => {
     const { config } = await contests.config(req.params.id);
-    if (config.contest.type !== 'oi') throw new HttpError(400, 'oi_only', 'Attachments are only available for OI contests');
     const { ZipWriter } = await import('../util/zip.js');
     const { addAttachments } = await import('../workspace/attachments.js');
     const zip = new ZipWriter();
@@ -257,11 +256,11 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps & { aiRunn
 
   app.get<{ Params: { id: string; file: string } }>('/api/contests/:id/export/:file', async (req, reply) => {
     const ref = await contests.get(req.params.id);
-    if (!/^[\w.-]+\.zip$/.test(req.params.file)) throw new HttpError(400, 'bad_file', 'Invalid file name');
+    if (!/^[\w.-]+\.(zip|xml)$/.test(req.params.file)) throw new HttpError(400, 'bad_file', 'Invalid file name');
     const data = await fsp.readFile(path.join(contestExportDir(ref), req.params.file)).catch(() => {
       throw new HttpError(404, 'file_not_found', 'Export not found');
     });
-    return reply.type('application/zip').header('content-disposition', `attachment; filename="${req.params.file}"`).send(data);
+    return reply.type(req.params.file.endsWith('.xml') ? 'application/xml; charset=utf-8' : 'application/zip').header('content-disposition', `attachment; filename="${req.params.file}"`).send(data);
   });
 
   app.post<{ Body: ContestImportRequest }>('/api/contests/import/polygon', async (req) => {

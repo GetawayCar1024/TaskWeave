@@ -3,8 +3,8 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { PackageImportOptions, PackageUpload } from '@polyforge/shared';
 import { HttpError } from '../util/fs.js';
-import { readZip } from '../util/zip.js';
 import { inspectPackage } from './packages.js';
+import { detectPackageFormat, directoryPackage, readPackageArchive } from './input.js';
 
 /** Short-lived compressed uploads: preview once, upload once, unpack once per batch archive. */
 export class PackageUploads {
@@ -15,18 +15,20 @@ export class PackageUploads {
     this.directory = fs.mkdir(parent, { recursive: true }).then(() => fs.mkdtemp(path.join(parent, 'package-import-')));
   }
   async stage(bytes: Buffer, options: PackageImportOptions): Promise<PackageUpload> {
-    if (!Buffer.isBuffer(bytes)) throw new HttpError(400, 'bad_request', 'Upload a ZIP file.');
+    if (!Buffer.isBuffer(bytes)) throw new HttpError(400, 'bad_request', 'Upload a ZIP or FPS XML file.');
     await this.expire();
     if (this.entries.size >= 64 || [...this.entries.values()].reduce((sum, item) => sum + item.size, bytes.length) > 1024 * 1024 * 1024) throw new HttpError(400, 'import_limit', 'Import or close existing selections before adding more archives (1 GiB per session).');
-    const candidates = inspectPackage(readZip(bytes), options);
+    const archive = readPackageArchive(bytes), format = detectPackageFormat(archive, options.format);
+    const candidates = inspectPackage(archive, { ...options, format });
     const directory = await this.directory;
     // Cache maintenance or a temporary-directory cleaner may remove an idle empty folder.
     await fs.mkdir(directory, { recursive: true });
     const id = randomBytes(16).toString('hex'), file = path.join(directory, `${id}.zip`);
     await fs.writeFile(file, bytes, { flag: 'wx' });
-    this.entries.set(id, { file, size: bytes.length, format: options.format, expires: Date.now() + 60 * 60 * 1000 });
-    return { id, candidates };
+    this.entries.set(id, { file, size: bytes.length, format, expires: Date.now() + 60 * 60 * 1000 });
+    return { id, candidates, format };
   }
+  async stageDirectory(directory: string, options: PackageImportOptions): Promise<PackageUpload> { return this.stage(await directoryPackage(directory), options); }
   async read(id: string, format: PackageImportOptions['format']) {
     const item = this.entries.get(id);
     if (!item || item.expires < Date.now()) throw new HttpError(410, 'import_expired', 'The import selection expired. Select the ZIP again.');
@@ -37,7 +39,7 @@ export class PackageUploads {
       this.entries.delete(id);
       throw new HttpError(410, 'import_expired', 'The import selection expired. Select the ZIP again.');
     });
-    return readZip(bytes);
+    return readPackageArchive(bytes);
   }
   async discard(id: string) {
     const entry = this.entries.get(id); if (!entry) return;

@@ -1,5 +1,6 @@
 import type { DefsToml } from './latex';
 import type { PackageCandidate, PackageImportOptions, PackageImportResult, PackageUpload, PackageSelection, PackageBatchResult } from '@polyforge/shared';
+import type { CreateLibraryFolderRequest, LibraryDirectory, LibraryLocation } from '@polyforge/shared';
 import type { AnswerBackupInfo, RegenerateAnswersRequest, ProblemExportRequest, TrashEntry } from '@polyforge/shared';
 import { serverText } from './serverText';
 import {
@@ -110,13 +111,16 @@ const tsq = (ts?: string) => (ts && ts !== 'tests' ? `?testset=${encodeURICompon
 async function uploadPackage<T>(url: string, file: File, options: PackageImportOptions, preview = false): Promise<T> {
   const query = new URLSearchParams(Object.entries(options).filter((entry): entry is [string, string] => entry[1] !== undefined));
   if (preview) query.set('preview', '1');
-  const res = await fetch(`/api${url}?${query}`, { method: 'POST', headers: { [TOKEN_HEADER]: token, 'Content-Type': 'application/zip' }, body: file });
+  const res = await fetch(`/api${url}?${query}`, { method: 'POST', headers: { [TOKEN_HEADER]: token, 'Content-Type': /\.xml$/i.test(file.name) ? 'application/xml' : 'application/zip' }, body: file });
   const data = await res.json();
   if (!res.ok) throw new ApiError(res.status, data.error ?? 'import_failed', data.message ?? res.statusText);
   return data;
 }
 
 export const api = {
+  libraryFolders: (location: LibraryLocation) => request<LibraryDirectory>('GET', '/library/folders?' + new URLSearchParams(Object.entries(location).filter(([, value]) => value !== undefined).map(([key, value]) => [key, value === true ? '1' : String(value)]))),
+  createLibraryFolder: (requestBody: CreateLibraryFolderRequest) => request<LibraryDirectory>('POST', '/library/folders', requestBody),
+  moveContest: (id: string, folder: string) => request<ContestDetail>('POST', `/contests/${pid(id)}/relocate`, { folder }),
   trash: () => request<{ entries: TrashEntry[]; roots: string[] }>('GET', '/trash'),
   restoreTrash: (key: string, root?: string) => request<{ kind: 'problem' | 'contest'; id: string }>('POST', `/trash/${encodeURIComponent(key)}/restore`, { root }),
   deleteTrash: (key: string) => request('DELETE', `/trash/${encodeURIComponent(key)}`),
@@ -124,6 +128,7 @@ export const api = {
   packageCandidates: (file: File, options: PackageImportOptions) => uploadPackage<PackageCandidate[]>('/problems/import/package', file, options, true),
   importPackage: (file: File, options: PackageImportOptions, id?: string) => uploadPackage<PackageImportResult>(id ? `/problems/${pid(id)}/import/data` : '/problems/import/package', file, options),
   stagePackage: (file: File, format: PackageImportOptions['format']) => uploadPackage<PackageUpload>('/packages/uploads', file, { format }),
+  stageDirectory: (path: string, format: PackageImportOptions['format']) => request<PackageUpload>('POST', '/packages/directories', { path, format }),
   discardPackage: (id: string) => request('DELETE', `/packages/uploads/${encodeURIComponent(id)}`),
   importPackages: (items: PackageSelection[], problemId?: string) => request<PackageBatchResult>('POST', '/packages/import', { items, problemId }),
   originalAnswers: (id: string, testset?: string) => request<AnswerBackupInfo>('GET', `/problems/${pid(id)}/answers/original${tsq(testset)}`),
@@ -152,7 +157,7 @@ export const api = {
     return a.download;
   },
   shutdownStatus: () => request<{ runningAi: boolean }>('GET', '/shutdown/status'),
-  moveProblem: (id: string, root: string) => request<ProblemSummary>('POST', `/problems/${pid(id)}/relocate`, { root }),
+  moveProblem: (id: string, root: string, folder?: string) => request<ProblemSummary>('POST', `/problems/${pid(id)}/relocate`, { root, folder }),
   stopAllAi: () => request<{ ok: boolean }>('POST', '/shutdown/stop-ai'),
   clearAiScratch: (owner: string, sid: string) => request('DELETE', `${aiBase(owner)}/ai/sessions/${encodeURIComponent(sid)}/scratch`),
   clearCache: (id: string) => request('DELETE', `/problems/${pid(id)}/cache`),
@@ -172,12 +177,11 @@ export const api = {
 
   problems: async () => {
     const result = await request<{ roots: string[]; problems: ProblemSummary[] }>('GET', '/problems');
-    return { ...result, problems: result.problems.filter(p => (p.type ?? 'cf') === 'cf') };
+    return result;
   },
   createProblem: (req: CreateProblemRequest) => request<ProblemSummary>('POST', '/problems', req),
   problem: async (id: string) => {
     const detail = await request<ProblemDetail>('GET', `/problems/${pid(id)}`);
-    if ((detail.summary.type ?? 'cf') !== 'cf') throw new ApiError(404, 'problem_not_found', 'Problem not available in this version');
     return detail;
   },
   patchProblem: (id: string, req: PatchProblemRequest) => request<ProblemDetail>('PATCH', `/problems/${pid(id)}`, req),
@@ -244,11 +248,10 @@ export const api = {
   downloadExport: (id: string, file: string) => download(`/api/problems/${pid(id)}/export/${encodeURIComponent(file)}`, file),
 
   // ---- contests ----
-  contests: async () => (await request<ContestSummary[]>('GET', '/contests')).filter(c => (c.type ?? 'cf') === 'cf'),
+  contests: () => request<ContestSummary[]>('GET', '/contests'),
   createContest: (req: CreateContestRequest) => request<ContestSummary>('POST', '/contests', req),
   contest: async (id: string) => {
     const detail = await request<ContestDetail>('GET', `/contests/${pid(id)}`);
-    if ((detail.summary.type ?? 'cf') !== 'cf') throw new ApiError(404, 'contest_not_found', 'Contest not available in this version');
     return detail;
   },
   updateContest: (id: string, req: UpdateContestRequest) => request<ContestDetail>('PUT', `/contests/${pid(id)}`, req),

@@ -5,12 +5,13 @@ import { NAlert, NForm, NFormItem, NInput, NInputNumber, NSelect, NButton } from
 import { PROBLEM_NAME_RE, type JudgeMode, type ProblemSummary, type StatementMode } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
 import ToolWindow from './ToolWindow.vue';
+import LibraryFolderSelect from './LibraryFolderSelect.vue';
 
-const props = defineProps<{ show: boolean; roots: string[] }>();
+const props = defineProps<{ show: boolean; roots: string[]; root?: string; folder?: string }>();
 const emit = defineEmits<{ 'update:show': [boolean]; created: [ProblemSummary] }>();
 const { t } = useI18n();
 
-const blank = () => ({ name: '', titleZh: '', titleEn: '', timeLimit: 1000, memoryLimit: 256, judgeMode: 'batch' as JudgeMode, statementMode: 'sections' as StatementMode, dataOnly: false, root: props.roots[0] ?? '' });
+const blank = () => ({ name: '', titleZh: '', titleEn: '', timeLimit: 1000, memoryLimit: 256, judgeMode: 'batch' as JudgeMode, statementMode: 'sections' as StatementMode, dataOnly: false, root: props.root || props.roots[0] || '', folder: props.folder ?? '' });
 const form = reactive(blank());
 const busy = ref(false);
 const error = ref('');
@@ -35,6 +36,7 @@ async function submit() {
     const p = await api.createProblem({
       name: form.name,
       root: form.root || undefined,
+      folder: form.folder,
       title: { zh: form.titleZh, en: form.titleEn },
       timeLimit: form.timeLimit,
       memoryLimit: form.memoryLimit,
@@ -80,8 +82,9 @@ async function submit() {
       <n-form-item v-if="!form.dataOnly" :label="t('oiFeatures.mode')"><n-select v-model:value="form.judgeMode" :options="['batch', 'io', 'grader'].map(value => ({ value, label: t(`oiFeatures.${value}`) }))" /></n-form-item>
       <n-alert v-if="form.judgeMode === 'grader'" type="warning" :show-icon="false" class="pf-dialog-note">{{ t('oiFeatures.graderWarning') }}</n-alert>
       <n-form-item v-if="roots.length > 1" :label="t('create.root')">
-        <n-select v-model:value="form.root" :options="rootOptions" />
+        <n-select v-model:value="form.root" :options="rootOptions" @update:value="form.folder = ''" />
       </n-form-item>
+      <n-form-item :label="t('library.folder')"><library-folder-select v-model:value="form.folder" kind="problems" :root="form.root" :disabled="busy" /></n-form-item>
     </n-form>
     <template #footer>
       <n-button @click="emit('update:show', false)">{{ t('common.cancel') }}</n-button>

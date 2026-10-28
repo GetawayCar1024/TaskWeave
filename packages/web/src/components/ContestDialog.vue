@@ -12,13 +12,14 @@ import FreeSelect from './FreeSelect.vue';
 import { Plus } from 'lucide-vue-next';
 import { loadSettings } from '../lib/settings';
 import { waitJob } from '../lib/jobs';
+import LibraryFolderSelect from './LibraryFolderSelect.vue';
 
-const props = defineProps<{ show: boolean; mode: 'create' | 'import'; roots: string[]; polygonReady: boolean; problems: ProblemSummary[] }>();
+const props = defineProps<{ show: boolean; mode: 'create' | 'import'; roots: string[]; polygonReady: boolean; problems: ProblemSummary[]; folder?: string }>();
 const emit = defineEmits<{ 'update:show': [boolean]; created: [ContestSummary] }>();
 const { t, locale } = useI18n();
 const message = useMessage();
 
-const blank = () => ({ name: '', titleZh: '', titleEn: '', root: props.roots[0] ?? '', problems: [] as string[], contestId: null as number | null });
+const blank = () => ({ name: '', titleZh: '', titleEn: '', root: props.roots[0] ?? '', folder: props.folder ?? '', problems: [] as string[], contestId: null as number | null });
 const form = reactive(blank());
 const busy = ref(false);
 const showRootPicker = ref(false);
@@ -38,14 +39,14 @@ watch(
 );
 
 const nameValid = computed(() => PROBLEM_NAME_RE.test(form.name));
-const canSubmit = computed(() => !busy.value && nameValid.value && props.roots.length > 0 && (props.mode === 'create' || (props.polygonReady && !!form.contestId && !!form.root.trim())));
+const canSubmit = computed(() => !busy.value && nameValid.value && (props.mode === 'create' || (props.roots.length > 0 && props.polygonReady && !!form.contestId && !!form.root.trim())));
 const pickedRoots = ref<string[]>([]);
 const rootOptions = computed(() => [...new Set([...props.roots, ...pickedRoots.value])].map((r) => ({ label: r, value: r })));
 function pickRoot(p: string) {
   if (!pickedRoots.value.includes(p)) pickedRoots.value.push(p);
   form.root = p;
 }
-const problemOptions = computed(() => props.problems.map((p) => ({ label: `${problemTitle(p.title, locale.value) || p.name} (${p.id})`, value: p.id })));
+const problemOptions = computed(() => props.problems.map((p) => ({ label: `${problemTitle(p.title, locale.value) || p.name} (${p.name})`, value: p.id })));
 const letter = (i: number) => String.fromCharCode(65 + i);
 
 async function submit() {
@@ -56,6 +57,7 @@ async function submit() {
     if (props.mode === 'create') {
       const c = await api.createContest({
         name: form.name,
+        folder: form.folder,
         title: { zh: form.titleZh, en: form.titleEn },
         problems: form.problems.map((problem, i) => ({ index: letter(i), problem })),
       });
@@ -63,7 +65,7 @@ async function submit() {
       emit('created', c);
       return;
     }
-    const started = await api.importContest({ contestId: form.contestId!, name: form.name, root: form.root || undefined });
+    const started = await api.importContest({ contestId: form.contestId!, name: form.name, root: form.root || undefined, folder: form.folder });
     job.value = started;
     const done = await waitJob(started, (j) => (job.value = j));
     job.value = done;
@@ -114,9 +116,10 @@ async function submit() {
           <n-select v-model:value="form.problems" multiple filterable :options="problemOptions" />
         </n-form-item>
         <div v-if="form.problems.length" class="letters">
-          <span v-for="(p, i) in form.problems" :key="p" class="mono">{{ letter(i) }}: {{ p }}</span>
+          <span v-for="(p, i) in form.problems" :key="p" class="mono">{{ letter(i) }}: {{ problems.find(problem => problem.id === p)?.name ?? p }}</span>
         </div>
       </template>
+      <n-form-item :label="t('library.folder')"><library-folder-select v-model:value="form.folder" kind="contests" :disabled="busy" /></n-form-item>
       <n-form-item v-if="mode === 'import'" :label="t('contest.problemsRoot')">
         <div class="root-field">
           <free-select v-model:value="form.root" :options="rootOptions" :disabled="busy" />

@@ -6,6 +6,7 @@ import { exportTestsets } from './lemonlime.js';
 import { luoguData } from './luogu.js';
 import { hydroPackage } from './hydro.js';
 import { joiPackage } from './joi.js';
+import { fpsPackage } from './fps.js';
 
 export function requireLuoguOptions(value: unknown): LuoguExportOptions {
   const options = value as LuoguExportOptions | undefined;
@@ -14,9 +15,10 @@ export function requireLuoguOptions(value: unknown): LuoguExportOptions {
 }
 
 /** Both single and contest export use exactly this single-problem package boundary. */
-export async function buildProblemDataPackage(judge: Judge, ctx: ProblemCtx, format: 'hydro' | 'luogu' | 'joi', job: JobCtx, options: { testsets?: string[]; luogu?: LuoguExportOptions } = {}) {
+export async function buildProblemDataPackage(judge: Judge, ctx: ProblemCtx, format: 'hydro' | 'fps' | 'luogu' | 'joi', job: JobCtx, options: { testsets?: string[]; luogu?: LuoguExportOptions; lang?: string } = {}) {
   const sets = exportTestsets(ctx, ctx.config.problem.name, options.testsets);
   if (format === 'hydro') return { ...await hydroPackage(judge, ctx, job, sets), filename: `${ctx.config.problem.name}-hydro.zip`, readme: undefined };
+  if (format === 'fps') return { ...await fpsPackage(judge, ctx, job, { testsets: sets, lang: options.lang }), filename: `${ctx.config.problem.name}-fps.xml`, readme: undefined };
   if (format === 'joi') return { ...await joiPackage(judge, ctx, job, sets), filename: `${ctx.config.problem.name}-joi.zip`, readme: undefined };
   const aggregation = requireLuoguOptions(options.luogu ?? luoguExportOptions(ctx.config));
   if (options.luogu) await judge.registry.patch(ctx.ref.id, { luogu: aggregation });

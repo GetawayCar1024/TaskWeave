@@ -28,7 +28,6 @@ interface Deps {
 export async function contestSyncStatus(deps: Deps, contestId: string): Promise<ContestSyncStatus> {
   const { judge, contests, sync } = deps;
   const { config } = await contests.config(contestId);
-  if (config.contest.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI contests cannot sync with Polygon');
   const detail = await contests.detail(contestId);
   const polygonContest = detail.summary.polygonId;
   const client = await sync.client();
@@ -112,7 +111,6 @@ export async function contestSyncStatus(deps: Deps, contestId: string): Promise<
 export async function contestPullPreview(deps: Deps, contestId: string, problems: string[], job: JobCtx): Promise<ContestPullPreview> {
   const { judge, contests, sync } = deps;
   const { config } = await contests.config(contestId);
-  if (config.contest.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI contests cannot sync with Polygon');
   const list = config.problems.filter((p) => problems.includes(p.problem));
   const out: ContestPullPreview = { problems: [] };
   for (const [i, p] of list.entries()) {
@@ -141,7 +139,6 @@ export async function contestPullPreview(deps: Deps, contestId: string, problems
 export async function contestPull(deps: Deps, contestId: string, req: ContestPullRequest, job: JobCtx): Promise<ContestPullResult> {
   const { judge, contests, sync } = deps;
   const { config } = await contests.config(contestId);
-  if (config.contest.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI contests cannot sync with Polygon');
   const out: ContestPullResult = { problems: [] };
   const todo = req.problems.filter((x) => config.problems.some((p) => p.problem === x.problem));
   if (!todo.length) throw new HttpError(400, 'bad_request', 'No problems of this contest to pull');
@@ -171,7 +168,6 @@ export async function contestPull(deps: Deps, contestId: string, req: ContestPul
 export async function contestRepull(deps: Deps, contestId: string, req: ContestRepullRequest, job: JobCtx): Promise<ContestPullResult> {
   const { judge, contests, sync } = deps;
   const { config } = await contests.config(contestId);
-  if (config.contest.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI contests cannot sync with Polygon');
   const list = config.problems.filter((p) => !req.problems?.length || req.problems.includes(p.problem));
   const out: ContestPullResult = { problems: [] };
   for (const [i, p] of list.entries()) {

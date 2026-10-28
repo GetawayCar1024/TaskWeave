@@ -134,16 +134,18 @@ export function useJudge(problemId: string, ws: Workspace) {
 
   /*
    * Keep the tests in step with their sources: after a manual test or script is added,
-   * changed or deleted (or problem.toml changes samples / groups), regenerate the
+   * changed or deleted (or problem.toml changes generation inputs), regenerate the
    * testsets that were generated before. Generation is incremental, so this is cheap.
    */
   let regenTimer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
   onBeforeUnmount(() => { disposed = true; clearTimeout(regenTimer); });
+  const generationSet = (ts: ProblemToml['tests']) => ({ script: ts.script, manual: ts.manual, answers: ts.answers,
+    cases: Object.fromEntries(Object.entries(ts.cases ?? {}).filter(([, value]) => value.provided_answer !== undefined).map(([index, value]) => [index, value.provided_answer])) });
   const generationConfig = (c: ProblemToml | null | undefined) => c ? JSON.stringify({
-    problem: { ...c.problem, title: undefined }, tests: { ...c.tests, samples: undefined, large_samples: undefined },
-    // The tests API marks samples itself: changing them needs no regeneration.
-    testsets: Object.fromEntries(Object.entries(c.testsets ?? {}).map(([k, v]) => [k, { ...v, samples: undefined, large_samples: undefined }])), solutions: c.solutions, validator: c.validator, interactor: c.interactor,
+    problem: { ...c.problem, name: undefined, title: undefined, type: undefined }, tests: generationSet(c.tests),
+    // Scoring, dependencies, limits per subtask and sample labels are live metadata.
+    testsets: Object.fromEntries(Object.entries(c.testsets ?? {}).map(([k, v]) => [k, generationSet(v)])), solutions: c.solutions, validator: c.validator, interactor: c.interactor,
     generators: c.generators, source_languages: c.source_languages,
   }) : '';
   watch(() => ws.state.detail?.config, (next, prev) => {

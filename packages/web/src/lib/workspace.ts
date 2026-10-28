@@ -233,6 +233,24 @@ export function useWorkspace(problemId: string) {
     await loadDetail();
   }
 
+  /** Explicit refresh after an external transaction; edits made during the fetch survive. */
+  async function refreshFiles(paths?: string[]): Promise<string[]> {
+    await loadDetail();
+    const kept: string[] = [];
+    await Promise.all(state.tabs.filter(tab => !tab.path.startsWith(SHARED_TAB) && (!paths || paths.some(path => affected(tab.path, path)))).map(async tab => {
+      try {
+        const file = await api.readFile(problemId, tab.path);
+        if (findTab(tab.path) !== tab) return;
+        if (tab.dirty) { tab.disk = file.hash === tab.savedHash ? 'ok' : 'changed'; kept.push(tab.path); }
+        else applyDisk(tab, file.content, file.hash);
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) { tab.disk = 'deleted'; if (tab.dirty) kept.push(tab.path); }
+        else throw e;
+      }
+    }));
+    return kept;
+  }
+
   async function onWsEvent(e: WsEvent) {
     if (e.type === 'problems:changed' || (e.type === 'problem:changed' && e.problemId === problemId)) {
       scheduleDetail();
@@ -286,6 +304,7 @@ export function useWorkspace(problemId: string) {
     openFile,
     closeTab,
     reloadFromDisk,
+    refreshFiles,
     save,
     createFile,
     createDir,

@@ -218,11 +218,11 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     const ctx = await judge.ctx(req.params.id);
     const format = req.body?.format;
     if (jobs.running(ctx.ref.id, 'export')) throw new HttpError(409, 'busy', 'Another export is running for this problem');
-    if (format === 'luogu' || format === 'hydro' || format === 'joi') {
+    if (format === 'luogu' || format === 'hydro' || format === 'joi' || format === 'fps') {
       if (format === 'luogu' && req.body.luogu) requireLuoguOptions(req.body.luogu);
       return jobs.start('export', ctx.ref.id, async job => {
         const result = await buildProblemDataPackage(judge, ctx, format, job, req.body);
-        const file = format === 'luogu' ? `data-${Date.now()}.zip` : `${ctx.config.problem.name}-${format}-${Date.now()}.zip`;
+        const file = format === 'luogu' ? `data-${Date.now()}.zip` : `${ctx.config.problem.name}-${format}-${Date.now()}.${format === 'fps' ? 'xml' : 'zip'}`;
         await atomicWrite(path.join(exportDir(ctx), file), result.data);
         return { file, size: result.data.length, tests: result.tests, warnings: result.warnings };
       });
@@ -232,11 +232,11 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
   });
   app.get<{ Params: { id: string; file: string } }>('/api/problems/:id/export/:file', async (req, reply) => {
     const ctx = await judge.ctx(req.params.id);
-    if (!/^[\w.-]+\.zip$/.test(req.params.file)) throw new HttpError(400, 'bad_file', 'Invalid file name');
+    if (!/^[\w.-]+\.(zip|xml)$/.test(req.params.file)) throw new HttpError(400, 'bad_file', 'Invalid file name');
     const data = await fsp.readFile(path.join(exportDir(ctx), req.params.file)).catch(() => {
       throw new HttpError(404, 'file_not_found', 'Export not found');
     });
-    return reply.type('application/zip').header('content-disposition', `attachment; filename="${/^data-\d+\.zip$/.test(req.params.file) ? 'data.zip' : req.params.file}"`).send(data);
+    return reply.type(req.params.file.endsWith('.xml') ? 'application/xml; charset=utf-8' : 'application/zip').header('content-disposition', `attachment; filename="${/^data-\d+\.zip$/.test(req.params.file) ? 'data.zip' : req.params.file}"`).send(data);
   });
 
   app.get<{ Querystring: { problem?: string } }>('/api/jobs', async (req) => jobs.list(req.query.problem));

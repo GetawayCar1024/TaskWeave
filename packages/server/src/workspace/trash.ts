@@ -7,6 +7,7 @@ import { samePath, type GlobalStore } from '../global.js';
 import { atomicWrite, exists, HttpError, safeJoin, validateFileName } from '../util/fs.js';
 import type { ProblemRef, ProblemRegistry } from './problems.js';
 import type { ContestRegistry } from './contests.js';
+import { libraryParent } from './library.js';
 
 const META = '.polyforge-trash.json';
 type Metadata = Omit<TrashEntry, 'key' | 'size' | 'legacy' | 'error'> & { version: 1 | 2; folder: string; size?: number };
@@ -63,7 +64,7 @@ export class TrashStore {
     }
     if (!await exists(path.join(dir, META))) throw new HttpError(404, 'trash_not_found', 'Trash entry not found');
     const meta: Metadata = JSON.parse(await fs.readFile(path.join(dir, META), 'utf8'));
-    if (![1, 2].includes(meta.version) || !['problem', 'contest'].includes(meta.kind) || typeof meta.folder !== 'string' || /[\\/]/.test(meta.folder)) throw new HttpError(400, 'bad_trash_entry', 'Invalid trash metadata');
+    if (![1, 2].includes(meta.version) || !['problem', 'contest'].includes(meta.kind) || typeof meta.folder !== 'string') throw new HttpError(400, 'bad_trash_entry', 'Invalid trash metadata');
     validateFileName(meta.folder);
     if (meta.version === 2 && (!meta.originalRoot || !path.isAbsolute(meta.originalRoot))) throw new HttpError(400, 'bad_trash_entry', 'Invalid trash metadata');
     if (meta.version === 2 && (await fs.lstat(path.join(meta.originalRoot!, LOCAL_TRASH)).catch(() => null))?.isSymbolicLink()) throw new HttpError(400, 'bad_trash_entry', 'Cannot read a linked trash folder');
@@ -98,7 +99,7 @@ export class TrashStore {
     if ((await fs.lstat(local)).isSymbolicLink()) throw new HttpError(400, 'bad_trash_entry', 'Cannot recycle into a linked trash folder');
     await fs.mkdir(envelope);
     // The index is global; the complete payload stays on its original filesystem.
-    const meta: Metadata = { version: 2, kind, name, title, deletedAt, originalDir: ref.dir, originalRoot: ref.root, originalId: ref.id, folder: path.basename(ref.dir) };
+    const meta: Metadata = { version: 2, kind, name, title, deletedAt, originalDir: ref.dir, originalRoot: ref.root, originalId: ref.id, folder: path.relative(ref.root, ref.dir).replace(/\\/g, '/') };
     try { await atomicWrite(path.join(dir, META), JSON.stringify(meta, null, 2)); await moveDirectory(ref.dir, payload); }
     catch (e) {
       // A cross-drive cleanup error must not discard the only complete remaining copy.
@@ -131,6 +132,14 @@ export class TrashStore {
     if (entry.kind === 'problem' && (await this.problems.scan()).some(p => p.id === entry.originalId)) throw new HttpError(409, 'exists', 'A problem with this identity already exists.');
     if (entry.kind === 'contest' && (await this.contests.list()).some(c => c.id === entry.originalId || c.name === entry.name)) throw new HttpError(409, 'exists', 'A contest with this identity or name already exists.');
     await fs.mkdir(root, { recursive: true });
+    const relativeParent = path.posix.dirname(folder);
+    let parent = '';
+    if (relativeParent !== '.') for (const segment of relativeParent.split('/')) {
+      await libraryParent(root, parent);
+      parent = parent ? `${parent}/${segment}` : segment;
+      await fs.mkdir(safeJoin(root, parent), { recursive: true });
+      await libraryParent(root, parent);
+    }
     await moveDirectory(payload, target);
     if (!entry.legacy) {
       const dir = await this.entryDir(key);

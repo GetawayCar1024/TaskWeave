@@ -41,6 +41,8 @@ import { convertStatementMode } from './workspace/statements.js';
 import { importPackage, inspectPackage } from './imports/packages.js';
 import { PackageUploads } from './imports/uploads.js';
 import { TrashStore } from './workspace/trash.js';
+import { LibraryFolders } from './workspace/library.js';
+import type { CreateLibraryFolderRequest, LibraryLocation } from '@polyforge/shared';
 import type { PackageImportOptions, PackageSelection, PackageBatchResult } from '@polyforge/shared';
 
 export interface AppDeps {
@@ -64,6 +66,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false, bodyLimit: 64 * 1024 * 1024 });
   const agent = new AgentService(deps.judge, hub, deps.contests);
   const trash = new TrashStore(global, registry, deps.contests);
+  const library = new LibraryFolders(registry, global);
   let requests = 0;
   let clearingCache = false;
   let relocating = false;
@@ -111,6 +114,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     }
   });
   app.addContentTypeParser('application/zip', { parseAs: 'buffer', bodyLimit: 256 * 1024 * 1024 }, (_req, body, done) => done(null, body));
+  app.addContentTypeParser(['application/xml', 'text/xml'], { parseAs: 'buffer', bodyLimit: 256 * 1024 * 1024 }, (_req, body, done) => done(null, body));
 
   // DESIGN §8: reject DNS-rebinding hosts and require the launch token on API/WS.
   app.addHook('onRequest', async (req, reply) => {
@@ -161,14 +165,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return reply.type('application/zip').send(zip.finish());
   });
   app.get('/api/shutdown/status', async () => ({ runningAi: agent.running }));
-  app.post<{ Params: { id: string }; Body: { root: string } }>('/api/problems/:id/relocate', async req => {
+  app.post<{ Params: { id: string }; Body: { root: string; folder?: string } }>('/api/problems/:id/relocate', async req => {
     if (!idle()) throw new HttpError(409, 'busy', 'Wait for running tasks before moving a problem');
     if (typeof req.body?.root !== 'string') throw new HttpError(400, 'invalid_root', 'Destination root required');
     if (relocating || clearingCache) throw new HttpError(409, 'busy', 'Another maintenance operation is running');
     relocating = true;
     await watcher.stop();
     try {
-      const result = await moveProblem(registry, req.params.id, req.body.root);
+      const result = await moveProblem(registry, req.params.id, req.body.root, req.body.folder);
       agent.forgetIdle();
       hub.broadcast({ type: 'problems:changed' });
       return result;
@@ -244,18 +248,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get<{ Params: { id: string } }>('/api/problems/:id/attachments', async (req, reply) => {
     const ref = await registry.get(req.params.id);
     const { config } = await registry.readConfig(ref);
-    if (config?.problem.type !== 'oi') throw new HttpError(400, 'oi_only', 'Attachments are only available for OI problems');
     const { ZipWriter } = await import('./util/zip.js');
     const { addAttachments } = await import('./workspace/attachments.js');
     const zip = new ZipWriter();
     await addAttachments(zip, ref.dir);
-    return reply.type('application/zip').header('content-disposition', `attachment; filename="${config.problem.name}-attachments.zip"`).send(zip.finish());
+    return reply.type('application/zip').header('content-disposition', `attachment; filename="${config?.problem.name ?? ref.id}-attachments.zip"`).send(zip.finish());
   });
 
   app.post<{ Params: { id: string }; Body: { name: string; base64: string } }>('/api/problems/:id/attachments', { bodyLimit: 32 * 1024 * 1024 }, async (req) => {
     const ref = await registry.get(req.params.id);
     const { config } = await registry.readConfig(ref);
-    if (config?.problem.type !== 'oi') throw new HttpError(400, 'oi_only', 'Attachments are only available for OI problems');
     const { name, base64 } = req.body ?? {};
     if (typeof name !== 'string' || !/^[^\\/<>:"|?*\x00-\x1f]+$/.test(name) || name.startsWith('.') || /[. ]$/.test(name) || typeof base64 !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(base64)) throw new HttpError(400, 'bad_request', 'Invalid attachment');
     const dest = safeJoin(ref.dir, `attachments/${name}`);
@@ -268,6 +270,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     return { ok: true };
   });
   app.get('/api/problems', async () => ({ roots: registry.roots, problems: await registry.list() }));
+  app.get<{ Querystring: Omit<LibraryLocation, 'recursive'> & { recursive?: string } }>('/api/library/folders', async req => library.list({ ...req.query, recursive: req.query.recursive === '1' }));
+  app.post<{ Body: CreateLibraryFolderRequest }>('/api/library/folders', async req => {
+    const result = await library.create(req.body);
+    hub.broadcast({ type: 'problems:changed' }); hub.broadcast({ type: 'contests:changed' });
+    return result;
+  });
+  app.post<{ Params: { id: string }; Body: { folder?: string } }>('/api/contests/:id/relocate', async req => {
+    if (!idle()) throw new HttpError(409, 'busy', 'Wait for running tasks before moving a contest');
+    return workspaceChange(() => deps.contests.move(req.params.id, req.body?.folder));
+  });
   app.get('/api/trash', async () => ({ entries: await trash.list(), roots: registry.roots }));
   app.post<{ Params: { key: string }; Body: { root?: string } }>('/api/trash/:key/restore', async req => workspaceChange(() => trash.restore(req.params.key, req.body ?? {})));
   app.delete<{ Params: { key: string } }>('/api/trash/:key', async req => workspaceChange(async () => { await trash.remove(req.params.key); return { ok: true }; }));
@@ -291,6 +303,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const packageUploads = new PackageUploads(global.dir);
   app.addHook('onClose', () => packageUploads.dispose());
   app.post<{ Body: Buffer; Querystring: PackageImportOptions }>('/api/packages/uploads', { bodyLimit: 256 * 1024 * 1024 }, async req => packageUploads.stage(req.body, req.query));
+  app.post<{ Body: PackageImportOptions & { path: string } }>('/api/packages/directories', async req => packageUploads.stageDirectory(req.body?.path, { ...req.body, format: req.body?.format ?? 'auto' }));
   app.delete<{ Params: { id: string } }>('/api/packages/uploads/:id', async req => { await packageUploads.discard(req.params.id); return { ok: true }; });
   app.post<{ Body: { items: PackageSelection[]; problemId?: string } }>('/api/packages/import', async req => {
     const { items, problemId } = req.body ?? {};

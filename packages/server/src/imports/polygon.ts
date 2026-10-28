@@ -303,5 +303,5 @@ export function readPolygonPackage(archive: Map<string, Buffer>, options: Packag
 
 export async function importPolygonPackage(judge: Judge, archive: Map<string, Buffer>, options: PackageImportOptions): Promise<PackageImportResult> {
   const result = readPolygonPackage(archive, options);
-  return { problem: await publishProblem(judge, result.local, result.doc, options.root), tests: result.tests, extras: result.extras, warnings: result.warnings };
+  return { problem: await publishProblem(judge, result.local, result.doc, options.root, options.folder), tests: result.tests, extras: result.extras, warnings: result.warnings };
 }

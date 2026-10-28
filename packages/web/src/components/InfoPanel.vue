@@ -20,8 +20,9 @@ import {
   useDialog,
   type SelectOption,
 } from 'naive-ui';
-import { distinctIoFiles, PROBLEM_NAME_RE, SOLUTION_TAGS, isSourceFile, judgeMode, type JudgeMode, type PatchProblemRequest, type SolutionTag } from '@polyforge/shared';
+import { distinctIoFiles, PROBLEM_NAME_RE, SOLUTION_TAGS, isSourceFile, judgeMode, type JudgeMode, type LemonComparison, type PatchProblemRequest, type SolutionTag } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
+import { serverText } from '../lib/serverText';
 import { formatSize } from '../lib/format';
 import type { Judge } from '../lib/judge';
 import { tagType } from '../lib/tags';
@@ -64,6 +65,7 @@ const form = reactive({
   output: 'stdout',
   checker: null as string | null,
   lemonChecker: null as string | null,
+  lemonPrecision: 3,
   validator: null as string | null,
   interactor: null as string | null,
 });
@@ -89,7 +91,8 @@ function reset() {
     input: c.problem.input,
     output: c.problem.output,
     checker: c.checker?.source ?? null,
-    lemonChecker: c.lemon_checker?.source ?? null,
+    lemonChecker: c.lemon_comparison ? `native:${c.lemon_comparison.mode}` : c.lemon_checker?.source ?? null,
+    lemonPrecision: c.lemon_comparison?.precision ?? 3,
     validator: c.validator?.source ?? null,
     interactor: c.interactor?.source ?? null,
   });
@@ -125,6 +128,7 @@ const checkerOptions = computed<SelectOption[]>(() => [
 ]);
 const sourceOptions = computed<SelectOption[]>(() => localSources.value.map((p) => ({ label: p, value: p })));
 const lemonOptions = computed<SelectOption[]>(() => [
+  { type: 'group', key: 'native', label: t('info.lemonBuiltins'), children: ['lines', 'ignore-spaces', 'real'].map(mode => ({ value: `native:${mode}`, label: t(`info.lemonMode.${mode}`) })) },
   { type: 'group', key: 'lemon-templates', label: t('info.lemonTemplates'), children: (props.ws.state.shared?.lemonCheckers ?? []).map(checker => ({
     value: checker.ref!, label: `${checker.ref} — ${stdCheckerDescription('std:' + checker.name.replace(/\.cpp$/, ''), checker.description, locale.value)}`,
   })) },
@@ -162,7 +166,8 @@ async function save(): Promise<boolean> {
     input: form.input || 'stdin',
     output: form.output || 'stdout',
     checker: form.checker,
-    lemonChecker: form.lemonChecker,
+    lemonChecker: form.lemonChecker?.startsWith('native:') ? null : form.lemonChecker,
+    lemonComparison: form.lemonChecker?.startsWith('native:') ? { mode: form.lemonChecker.slice(7) as LemonComparison['mode'], precision: form.lemonPrecision } : null,
     validator: form.validator,
     interactor: form.interactor,
   };
@@ -210,6 +215,7 @@ const activeInfo = computed(() => {
   <n-scrollbar style="height: 100%">
     <div class="panel">
       <n-card v-if="cfg?.problem.data_only" size="small" :title="t('dataOnly.title')">
+        <n-alert v-if="cfg.problem.unresolved_judge" type="warning">{{ serverText(cfg.problem.unresolved_judge) }}</n-alert>
         <p class="small">{{ t('dataOnly.completeHint') }}</p>
         <p v-if="completion.length" class="small">{{ t('dataOnly.missing') }} {{ completion.map(key => t(`check.${key}`)).join(' / ') }}</p>
         <n-button size="small" type="primary" :disabled="!!completion.length || dirty || ws.hasDirty.value" @click="completeProblem">{{ t('dataOnly.enable') }}</n-button>
@@ -261,7 +267,7 @@ const activeInfo = computed(() => {
             <p class="small dim">{{ t('oiFeatures.graderHint') }}</p>
           </template>
           <n-form-item :label="t('roles.checker')">
-            <n-select v-model:value="form.checker" :options="checkerOptions" filterable clearable />
+            <n-select v-model:value="form.checker" :options="checkerOptions" :disabled="form.lemonChecker?.startsWith('native:')" filterable clearable />
           </n-form-item>
           <n-form-item :label="t('roles.validator')">
             <n-select v-model:value="form.validator" :options="sourceOptions" filterable clearable />
@@ -269,7 +275,10 @@ const activeInfo = computed(() => {
           <n-form-item :label="t('oiFeatures.lemonChecker')">
             <n-select v-model:value="form.lemonChecker" :options="lemonOptions" filterable clearable />
           </n-form-item>
-          <p class="small dim">{{ t('oiFeatures.lemonCheckerHint') }}</p>
+          <n-form-item v-if="form.lemonChecker === 'native:real'" :label="t('info.lemonPrecision')"><n-input-number v-model:value="form.lemonPrecision" :min="0" :max="18" /></n-form-item>
+          <p v-if="form.lemonChecker?.startsWith('native:')" class="small dim">{{ t('info.lemonNativeHint') }}</p>
+          <n-button v-if="form.lemonChecker?.startsWith('native:')" size="tiny" quaternary @click="ws.openFile('@shared/lemon-native/comparator.cpp')">{{ t('info.lemonNativeSource') }}</n-button>
+          <p v-else class="small dim">{{ t('oiFeatures.lemonCheckerHint') }}</p>
           <n-button size="small" :loading="converting" :disabled="dirty || converting || !cfg.checker" :title="dirty ? t('oiFeatures.saveCheckerFirst') : undefined" @click="convertChecker">{{ t('oiFeatures.convertChecker') }}</n-button>
           <p class="small dim">{{ t('oiFeatures.convertCheckerHint') }}</p>
           <n-form-item v-if="form.judgeMode === 'io'" :label="t('roles.interactor')">

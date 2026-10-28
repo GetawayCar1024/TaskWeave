@@ -34,6 +34,7 @@ import { readSamples } from './samples.js';
 import { addLemonBuildScripts, addLemonProblem, exportTestsets, lemonHost, lemonReadme, preflightLemonChecker, type LemonCheckerBuild } from './lemonlime.js';
 import { luoguContestReadme } from './luogu.js';
 import { buildProblemDataPackage, requireLuoguOptions } from './problemExport.js';
+import { fpsDocument, fpsItem } from './fps.js';
 import { generateTests, readManifest } from './tests.js';
 import { readStatementSections } from '../workspace/statements.js';
 
@@ -53,12 +54,14 @@ export interface ContestDeps {
 export async function runContestBatch(deps: ContestDeps, contestId: string, req: ContestBatchRequest, job: JobCtx): Promise<ContestBatchResult> {
   const { judge, contests, sync } = deps;
   const { ref, config } = await contests.config(contestId);
-  if (req.exportFormat && !['polygon', 'hydro', 'luogu', 'joi', 'lemonlime'].includes(req.exportFormat)) throw new HttpError(400, 'bad_request', 'Unknown export format');
+  if (req.exportFormat && !['polygon', 'hydro', 'fps', 'luogu', 'joi', 'lemonlime'].includes(req.exportFormat)) throw new HttpError(400, 'bad_request', 'Unknown export format');
   const lemon = req.action === 'export' && req.exportFormat === 'lemonlime';
   const lemonTarget = req.lemon?.target ?? lemonHost();
   if (!['windows', 'linux'].includes(lemonTarget)) throw new HttpError(400, 'bad_request', 'Lemon target must be windows or linux.');
   const luogu = req.action === 'export' && req.exportFormat === 'luogu';
   const hydro = req.action === 'export' && req.exportFormat === 'hydro';
+  const fps = req.action === 'export' && req.exportFormat === 'fps';
+  const fpsItems: string[] = [];
   const joi = req.action === 'export' && req.exportFormat === 'joi';
   if (luogu) {
     if (req.luogu) requireLuoguOptions(req.luogu);
@@ -68,7 +71,6 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
   if (req.testsets !== undefined && (typeof req.testsets !== 'object' || Object.values(req.testsets).some(v => !Array.isArray(v) || v.some(s => typeof s !== 'string')))) throw new HttpError(400, 'bad_request', 'testsets must map problem ids to testset names');
   if (luogu && !PROBLEM_NAME_RE.test(config.contest.name)) throw new HttpError(400, 'invalid_name', 'Invalid contest name.');
   if (lemon && !PROBLEM_NAME_RE.test(config.contest.name)) throw new HttpError(400, 'invalid_name', 'Invalid contest name.');
-  if (req.action === 'polygon-push' && config.contest.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI contests cannot sync with Polygon');
   const want = req.indices?.length ? new Set(req.indices) : null;
   const list = config.problems.filter((p) => !want || want.has(p.index));
   const items: ContestBatchItem[] = [];
@@ -76,7 +78,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
   const exported: { index: string; name: string }[] = [];
   const lemonTasks: Awaited<ReturnType<typeof addLemonProblem>>['task'][] = [];
   const lemonBuilds: LemonCheckerBuild[] = [];
-  if ((lemon || luogu || hydro || joi) && !list.length) throw new HttpError(400, 'empty_contest', 'No problems to export.');
+  if ((lemon || luogu || hydro || joi || fps) && !list.length) throw new HttpError(400, 'empty_contest', 'No problems to export.');
   if (luogu || hydro || joi) {
     const names = new Set<string>();
     for (const p of list) {
@@ -116,7 +118,6 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
     let ctx: ProblemCtx;
     try {
       ctx = await judge.ctx(p.problem);
-      if (config.contest.type === 'cf' && ctx.config.problem.type === 'oi') throw new HttpError(400, 'incompatible_problem_type', `CF contests cannot import OI problem: ${p.problem}`);
     } catch (e) {
       item.message = (e as Error).message;
       continue;
@@ -171,6 +172,11 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
           break;
         }
         case 'export': {
+          if (fps) {
+            const result = await fpsItem(judge, ctx, sub, { testsets: req.testsets?.[p.problem], lang: req.lang });
+            fpsItems.push(result.xml); item.ok = true; item.message = plural(result.tests, 'test'); item.details = result.warnings;
+            break;
+          }
           if (lemon) {
             const r = await addLemonProblem(judge, ctx, p.index, zip!, sub, exportTestsets(ctx, p.index, req.testsets?.[p.problem]), req.lemon?.subfolders === true, lemonTarget);
             lemonTasks.push(r.task);
@@ -231,6 +237,12 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
     if (luogu && items.some(item => !item.ok)) throw new HttpError(400, 'luogu_export', `Luogu export failed; no incomplete archive was produced.\n${failed()}`);
     if (joi && items.some(item => !item.ok)) throw new HttpError(400, 'joi_export', `JOI / AtCoder export failed.\n${failed()}`);
     if (hydro && items.some(item => !item.ok)) throw new HttpError(400, 'hydro_export', `Hydro export failed; no incomplete archive was produced.\n${failed()}`);
+    if (fps) {
+      if (items.some(item => !item.ok)) throw new HttpError(400, 'fps_export', `FPS export failed.\n${failed()}`);
+      const data = fpsDocument(fpsItems), file = `${config.contest.name}-fps-${Date.now()}.xml`;
+      await atomicWrite(path.join(contestExportDir(ref), file), data);
+      return { ...result, file, size: data.length };
+    }
     job.progress(list.length, list.length, 'writing');
     if (luogu) zip.add('README.txt', luoguContestReadme(config.contest.title.zh || config.contest.title.en || config.contest.name, list.map(p => p.index)));
     else if (hydro) zip.add('README.txt', 'Each problem folder contains one standalone Hydro problem ZIP. Import those ZIPs individually in Hydro.\n每个题目目录内有一个独立 Hydro 整题 ZIP，请逐题导入 Hydro。\n');
@@ -241,8 +253,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
       zip.add('README.txt', lemonReadme(lemonTarget, req.lemon?.subfolders === true));
     }
     else if (joi) zip.add('README.txt', 'Each problem folder contains an in/out ZIP. polyforge.yaml is an optional Taskweave companion for scoring and limits.\n');
-    else if (config.contest.type === 'cf') zip.add('contest.xml', contestXml(config.contest.title, config.contest.name, exported));
-    else zip.add('contest.toml', await fsp.readFile(path.join(ref.dir, 'contest.toml')));
+    else zip.add('contest.xml', contestXml(config.contest.title, config.contest.name, exported));
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '').replace('T', '-');
     const file = `${config.contest.name}${lemon ? '-lemonlime' : luogu ? '-luogu' : hydro ? '-hydro' : joi ? '-joi' : ''}-${stamp}-${randomBytes(4).toString('hex')}.zip`;
     const data = await zip.finishAsync();
@@ -312,12 +323,10 @@ export async function contestStatements(judge: Judge, contests: ContestRegistry,
       continue;
     }
     const c = ctx.config;
-    if (config.contest.type === 'cf' && c.problem.type === 'oi') throw new HttpError(400, 'incompatible_problem_type', `CF contests cannot import OI problem: ${p.problem}`);
-    if (config.contest.type === 'oi' && c.problem.type === 'cf') throw new HttpError(400, 'conversion_required', 'Convert CF problems to OI before exporting this contest');
     const sections = await readStatementSections(ctx.ref.dir, lang);
     const manifest = await readManifest(ctx);
     const samples = (await readSamples(ctx, false, lang)).map(row => row.sample);
-    const body = c.problem.type === 'oi' ? await fsp.readFile(safeJoin(ctx.ref.dir, `statement/${lang}/statement.tex`), 'utf8').catch(() => '') : undefined;
+    const body = await fsp.readFile(safeJoin(ctx.ref.dir, `statement/${lang}/statement.tex`), 'utf8').catch(() => undefined);
     out.push({
       ...(await exists(path.join(ctx.ref.dir, 'statement', lang, 'statement.tex')) ? { statementMode: 'whole' as const } : {}),
       index: p.index,
@@ -335,7 +344,7 @@ export async function contestStatements(judge: Judge, contests: ContestRegistry,
       body,
       sections,
       // A statement.tex document prints its own samples; the section files get the generated ones.
-      samples: body ? [] : samples,
+      samples: body && /\\(?:section|subsection)\*?\{[^}]*(?:样例[^}]*输入|Sample[^}]*Input)|\\begin\{example\}/i.test(body) ? [] : samples,
     });
   }
   return out;
@@ -349,7 +358,7 @@ export async function importContest(deps: ContestDeps, req: ContestImportRequest
   const { judge, contests, sync } = deps;
   const name = req.name?.trim() ?? '';
   judge.registry.requireRoot();
-  await contests.checkNew(name);
+  await contests.checkNew(name, req.folder);
   const client = await sync.client();
   job.progress(0, 0, 'contest.problems');
   const map = await client.call<Record<string, PolygonProblem>>('contest.problems', { contestId: req.contestId });
@@ -362,7 +371,7 @@ export async function importContest(deps: ContestDeps, req: ContestImportRequest
     job.signal.throwIfAborted();
     const letter = index.toUpperCase();
     job.progress(i, entries.length, `${letter} · ${p.name}`);
-    const bound = local.find((l) => l.type === 'cf' && l.status.polygonId === p.id && path.resolve(l.root).toLowerCase() === root.toLowerCase());
+    const bound = local.find((l) => l.status.polygonId === p.id && path.resolve(l.root).toLowerCase() === root.toLowerCase());
     if (bound) {
       problems.push({ index: letter, problem: bound.id });
       continue;
@@ -381,8 +390,8 @@ export async function importContest(deps: ContestDeps, req: ContestImportRequest
     }
   }
   if (warnings.length) throw new HttpError(502, 'incomplete_import', `Imported ${problems.length}/${entries.length} problems. The contest was not created. Retry to reuse successful imports.\n${warnings.join('\n')}`);
-  const contest = await contests.create({ name, problems, type: req.type });
-  if (contest.type === 'cf') await contests.update(contest.id, { polygonId: req.contestId });
+  const contest = await contests.create({ name, problems, folder: req.folder, type: req.type });
+  await contests.update(contest.id, { polygonId: req.contestId });
   job.progress(entries.length, entries.length, 'done');
-  return { contest: { ...contest, polygonId: contest.type === 'cf' ? req.contestId : undefined }, warnings };
+  return { contest: { ...contest, polygonId: req.contestId }, warnings };
 }

@@ -4,14 +4,18 @@ import { randomBytes } from 'node:crypto';
 import { parse, stringify } from 'smol-toml';
 import { compressRanges, PROBLEM_NAME_RE, problemTomlSchema, TESTSET_NAME_RE, testsetsOf, type PackageCandidate, type PackageImportOptions, type PackageImportResult } from '@polyforge/shared';
 import { atomicWrite, exists, HttpError, safeJoin, validateFileName } from '../util/fs.js';
-import { readZip } from '../util/zip.js';
+import { detectPackageFormat, readPackageArchive } from './input.js';
+import { prepareProvidedTests } from '../judge/tests.js';
 import type { Judge } from '../judge/index.js';
 import { badPackage, hydroLimit, parseData, yamlObject, type DataPlan } from './data.js';
 import { publishProblem } from './publish.js';
 import { snapshotImportedAnswers } from '../workspace/answerBackups.js';
 import { polygonCandidates, readPolygonPackage, importPolygonPackage } from './polygon.js';
+import { fpsCandidates, importFps } from './fps.js';
+import { PackageReferences } from './references.js';
+import { importLemon, lemonCandidates } from './lemon.js';
 
-const formats = ['polygon-package', 'hydro-problem', 'data', 'joi', 'luogu-data', 'hydro-data'];
+const formats = ['polygon-package', 'hydro-problem', 'lemonlime', 'fps', 'data', 'joi', 'luogu-data', 'hydro-data'];
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 64) || 'imported-problem';
 const subtree = (files: Map<string, Buffer>, prefix: string) => new Map([...files].filter(([name]) => name.startsWith(prefix)).map(([name, data]) => [name.slice(prefix.length), data]));
 const language = (name: string) => {
@@ -21,6 +25,8 @@ const language = (name: string) => {
 
 export function packageCandidates(files: Map<string, Buffer>, options: PackageImportOptions): PackageCandidate[] {
   if (!formats.includes(options.format)) return badPackage('Unknown import format.');
+  if (options.format === 'fps') return fpsCandidates(files, options);
+  if (options.format === 'lemonlime') return lemonCandidates(files, options);
   if (options.format === 'polygon-package') return polygonCandidates(files);
   if (options.format === 'joi' || options.format === 'data') {
     const prefixes = new Set<string>();
@@ -147,6 +153,7 @@ function readPackageInput(archive: Map<string, Buffer>, options: PackageImportOp
     plan = parseData(data, 'hydro');
     hydroStatements(files, metadata, language(options.lang ?? 'zh'), []);
     const cfg = plan.sourceConfig;
+    const references = new PackageReferences(data, plan.warnings);
     if (cfg.filename !== undefined) {
       if (typeof cfg.filename !== 'string' || /[\\/]/.test(cfg.filename)) return badPackage('Invalid Hydro file-IO name.');
       validateFileName(cfg.filename);
@@ -157,15 +164,16 @@ function readPackageInput(archive: Map<string, Buffer>, options: PackageImportOp
       if (typeof file !== 'string' || !file) return badPackage(`Invalid Hydro ${role} reference.`);
       if (role === 'checker' && !file.includes('.')) continue;
       validateFileName(file);
-      if (!data.has(file)) return badPackage(`Missing Hydro program: ${file}`);
+      const actual = references.find(file) ?? badPackage(`Missing Hydro program: ${file}`);
+      cfg[role] = typeof cfg[role] === 'string' ? actual : { ...cfg[role], file: actual };
     }
     for (const key of ['user_extra_files', 'judge_extra_files']) {
       if (cfg[key] === undefined) continue;
       if (!Array.isArray(cfg[key])) return badPackage(`Hydro ${key} must be a list.`);
-      for (const file of cfg[key]) {
+      cfg[key] = cfg[key].map((file: string) => {
         validateFileName(file);
-        if (!data.has(file)) return badPackage(`Missing file referenced by configuration: ${file}`);
-      }
+        return references.require(file);
+      });
     }
   } else {
     if (options.entry) {
@@ -180,9 +188,11 @@ function readPackageInput(archive: Map<string, Buffer>, options: PackageImportOp
 
 /** Validate archive integrity and each candidate's configuration before enabling Import. */
 export function inspectPackage(bytes: Buffer | Map<string, Buffer>, options: PackageImportOptions): PackageCandidate[] {
-  const archive = bytes instanceof Map ? bytes : readZip(bytes);
+  const archive = bytes instanceof Map ? bytes : readPackageArchive(bytes);
+  options = { ...options, format: detectPackageFormat(archive, options.format) };
   if (!archive.size) return badPackage('The ZIP archive contains no files.');
   const candidates = packageCandidates(archive, options);
+  if (options.format === 'fps' || options.format === 'lemonlime') return candidates;
   if (!candidates.length) return badPackage('No problem.yaml in this Hydro package.');
   const size = [...archive.values()].reduce((sum, bytes) => sum + bytes.length, 0);
   return candidates.map(candidate => {
@@ -204,9 +214,13 @@ export function inspectPackage(bytes: Buffer | Map<string, Buffer>, options: Pac
 }
 
 export async function importPackage(judge: Judge, bytes: Buffer | Map<string, Buffer>, options: PackageImportOptions, problemId?: string): Promise<PackageImportResult> {
+  const archive = bytes instanceof Map ? bytes : readPackageArchive(bytes);
+  options = { ...options, format: detectPackageFormat(archive, options.format) };
   if (!formats.includes(options.format)) return badPackage('Unknown import format.');
-  if (problemId && options.format === 'hydro-problem') return badPackage('Whole Hydro problem import creates a new problem. Use Hydro data import for an existing problem.');
-  const archive = bytes instanceof Map ? bytes : readZip(bytes);
+  if (options.format === 'fps') {
+    return importFps(judge, archive, options, problemId);
+  }
+  if (options.format === 'lemonlime') return importLemon(judge, archive, options, problemId);
   if (options.format === 'polygon-package') {
     if (problemId) return badPackage('Polygon packages create new problems.');
     return importPolygonPackage(judge, archive, options);
@@ -261,7 +275,7 @@ export async function importPackage(judge: Judge, bytes: Buffer | Map<string, Bu
       if (p?.output) doc.problem.output = p.output;
     }
   }
-  if (full) {
+  if (full && !problemId) {
     const sources = hydroStatements(files, metadata, fallbackLang, warnings);
     const byLang = new Map<string, Statement[]>();
     for (const s of sources) byLang.set(s.lang, [...(byLang.get(s.lang) ?? []), s]);
@@ -330,7 +344,7 @@ export async function importPackage(judge: Judge, bytes: Buffer | Map<string, Bu
   local.set(`${other}/IMPORT.md`, Buffer.from(`# ${options.format}\n\n${warnings.map(w => '- ' + w).join('\n')}\n\n## Source files / 原始文件\n\n${extras.map(p => '- ' + p).join('\n')}\n`));
   const parsed = problemTomlSchema.safeParse(doc);
   if (!parsed.success) return badPackage(`Imported configuration is invalid: ${parsed.error.message}`);
-  if (!problemId) return { problem: await publishProblem(judge, local, doc, options.root), tests: plan.pairs.length, extras, warnings };
+  if (!problemId) return { problem: await publishProblem(judge, local, doc, options.root, options.folder), tests: plan.pairs.length, extras, warnings };
   snapshotImportedAnswers(local, doc);
   const written: string[] = [];
   try {
@@ -349,5 +363,9 @@ export async function importPackage(judge: Judge, bytes: Buffer | Map<string, Bu
   }
   await registry.scan();
   const ref = await registry.get(problemId);
+  const ctx = await judge.ctx(problemId);
+  if (ctx.config.problem.data_only || testsetOfProvided(ctx.config, testset)) await prepareProvidedTests(ctx, testset);
   return { problem: await registry.summary(ref), tests: plan.pairs.length, extras, warnings };
 }
+
+const testsetOfProvided = (config: import('@polyforge/shared').ProblemToml, name: string) => testsetsOf(config).find(testset => testset.name === name)?.answers === 'provided';

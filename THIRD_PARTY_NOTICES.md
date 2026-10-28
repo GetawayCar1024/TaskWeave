@@ -60,6 +60,17 @@ commit's MIT-licensed checkers (ncmp, wcmp, lcmp, fcmp, rcmp6, yesno), with the
 Lemon six-argument initializer and Taskweave shared-header path. Their origin is
 noted in each source file; the original license is kept beside them.
 
+## LemonLime native comparator
+
+`assets/shared/lemon-native/comparator.cpp` adapts the text reader and native
+comparison algorithms from Project-LemonLime/Project_LemonLime commit
+`69aa22370706a4f14b394a6e27aa92e7eca4a8f5`, `src/core/casejudger.cpp`.
+Copyright 2011–2018 Project Lemon / Zhipeng Jia, 2018–2019 Project LemonPlus /
+Dust1404, and 2019–2022 Project LemonLime. Licensed GPL-3.0-or-later; the source
+header identifies Taskweave's 2026-10-28 adaptations. The source, build instructions
+and GPL license are included in `assets/shared/lemon-native/`, in the corresponding
+source archive and alongside the desktop's shared resources.
+
 ## JavaScript dependencies
 
 The desktop build includes license and notice files found in the installed

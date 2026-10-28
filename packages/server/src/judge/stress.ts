@@ -23,7 +23,7 @@ export async function runStress(judge: Judge, ctx: ProblemCtx, req: StressReques
   const deadline = Date.now() + Math.min(Math.max(req.timeLimitSec ?? 60, 1), 3600) * 1000;
   const referenceSrc = req.reference || judge.mainSolution(ctx.config);
   if (!referenceSrc) throw new HttpError(400, 'no_reference', 'No reference solution: tag one solution MA or pick one');
-  if (!ctx.config.checker) throw new HttpError(400, 'no_checker', 'No checker configured');
+  if (!judge.hasChecker(ctx.config)) throw new HttpError(400, 'no_checker', 'No checker configured');
 
   const gens = await judge.generators(ctx);
   const genSrc = gens.get(req.generator) ?? req.generator;
@@ -31,7 +31,7 @@ export async function runStress(judge: Judge, ctx: ProblemCtx, req: StressReques
     judge.require(ctx, genSrc, 'Generator'),
     judge.require(ctx, referenceSrc, 'Reference solution'),
     judge.require(ctx, req.solution, 'Solution'),
-    judge.require(ctx, ctx.config.checker.source, 'Checker'),
+    judge.checker(ctx),
     ctx.config.validator ? judge.require(ctx, ctx.config.validator.source, 'Validator') : undefined,
     ctx.config.problem.interactive && ctx.config.interactor ? judge.require(ctx, ctx.config.interactor.source, 'Interactor') : undefined,
   ]);

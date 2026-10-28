@@ -130,10 +130,8 @@ export async function runInvocation(
     await save();
     job.progress(0, sources.length, 'compiling solutions');
 
-    const checkerSrc = ctx.config.checker?.source;
-    if (!checkerSrc) throw new HttpError(400, 'no_checker', 'No checker configured');
     const [checker, interactor] = await Promise.all([
-      judge.require(ctx, checkerSrc, 'Checker'),
+      judge.checker(ctx),
       ctx.config.problem.interactive && ctx.config.interactor ? judge.require(ctx, ctx.config.interactor.source, 'Interactor') : undefined,
     ]);
     if (ctx.config.problem.interactive && !interactor) throw new HttpError(400, 'no_interactor', 'Interactive problem without an interactor');

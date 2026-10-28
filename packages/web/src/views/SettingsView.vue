@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import FreeSelect from '../components/FreeSelect.vue';
-import { computed, h, onMounted, ref, watch } from 'vue';
+import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ArrowLeft, Check, Plus, X } from 'lucide-vue-next';
 import { useI18n } from 'vue-i18n';
-import { useRoute, useRouter } from 'vue-router';
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 import {
   NAlert,
   NButton,
@@ -27,15 +27,15 @@ import {
   useDialog,
   type DataTableColumns,
 } from 'naive-ui';
-import { AI_PROTOCOLS, CURRENCIES, type AiProtocol, type Currency, type EndpointPricing, type GlobalConfig, type LanguagesConfig, type SecretsResponse, type ToolProbe, type UsageGroup, type UsageStats } from '@polyforge/shared';
+import { AI_PROTOCOLS, CURRENCIES, globalConfigSchema, type AiProtocol, type Currency, type EndpointPricing, type GlobalConfig, type LanguagesConfig, type SecretsResponse, type ToolProbe, type UsageGroup, type UsageStats } from '@polyforge/shared';
 import { LANGUAGE_PRESETS, addLanguageSection, languageSectionText, removeLanguageSection, type LanguagePreset } from '@polyforge/shared';
 import { registerExitGuard } from '../lib/exitGuards';
-import { unsavedChoice } from '../lib/confirmUnsaved';
 import AppHeader from '../components/AppHeader.vue';
 import CodeEditor from '../components/CodeEditor.vue';
 import DirPicker from '../components/DirPicker.vue';
 import { api, errorMessage } from '../lib/api';
-import { settings, saveSettings } from '../lib/settings';
+import { settings, applySettings, saveSettings } from '../lib/settings';
+import { createAutosave } from '../lib/autosave';
 import { serverText } from '../lib/serverText';
 
 const { t } = useI18n();
@@ -44,9 +44,23 @@ const route = useRoute();
 const initialTab = typeof route.query.tab === 'string' ? route.query.tab : 'general';
 const message = useMessage();
 const dialog = useDialog();
+const autoError = ref('');
+const pendingSaves = ref(0);
+let writes: Promise<unknown> = Promise.resolve();
+function queued(write: () => Promise<void>) {
+  const request = writes.then(async () => {
+    pendingSaves.value++;
+    try { await write(); autoError.value = ''; }
+    catch (e) { autoError.value = errorMessage(e); throw e; }
+    finally { pendingSaves.value--; }
+  });
+  writes = request.catch(() => {});
+  return request;
+}
 
 // ---- general ----
 const draft = ref<GlobalConfig>(JSON.parse(JSON.stringify(settings.config)));
+let generalSaved = JSON.stringify(draft.value);
 watch(() => settings.config?.ui.theme, theme => { if (theme) draft.value.ui.theme = theme; });
 watch(() => settings.config?.ui.locale, locale => { if (locale) draft.value.ui.locale = locale; });
 const saving = ref(false);
@@ -56,8 +70,7 @@ const showContestPicker = ref(false);
 async function saveGeneral() {
   saving.value = true;
   try {
-    await saveSettings(draft.value);
-    draft.value = JSON.parse(JSON.stringify(settings.config));
+    generalAuto.schedule(0); await generalAuto.flush();
     message.success(t('common.saved'));
   } catch (e) {
     message.error(errorMessage(e));
@@ -76,20 +89,19 @@ const langSaved = ref('');
 const langParsed = ref<LanguagesConfig>({});
 const langError = ref('');
 const langDirty = computed(() => langText.value !== langSaved.value);
+let languagesReady = false;
 
 async function loadLanguages() {
   const r = await api.languages();
   langText.value = langSaved.value = r.text;
   langParsed.value = r.languages;
   langError.value = r.error ?? '';
+  languagesReady = true;
 }
 
 async function saveLanguages() {
   try {
-    const r = await api.saveLanguages(langText.value);
-    langSaved.value = r.text;
-    langParsed.value = r.languages;
-    langError.value = '';
+    languagesAuto.schedule(0); await languagesAuto.flush();
     message.success(t('common.saved'));
   } catch (e) {
     langError.value = errorMessage(e);
@@ -164,17 +176,18 @@ const polySecret = ref('');
 const polyUrl = ref('');
 const testing = ref(false);
 const testResult = ref<{ ok: boolean; text: string } | null>(null);
+let polygonReady = false, polygonSaved = '';
+const polygonSnapshot = () => ({ key: polyKey.value, secret: polySecret.value, apiUrl: polyUrl.value });
 
 async function loadSecrets() {
   secrets.value = await api.secrets();
   polyUrl.value = secrets.value.polygon.apiUrl;
+  polygonSaved = JSON.stringify(polygonSnapshot()); polygonReady = true;
 }
 
 async function savePolygon() {
   try {
-    secrets.value = await api.saveSecrets({ polygon: { key: polyKey.value, secret: polySecret.value, apiUrl: polyUrl.value } });
-    polyKey.value = '';
-    polySecret.value = '';
+    polygonAuto.schedule(0); await polygonAuto.flush();
     message.success(t('common.saved'));
   } catch (e) {
     message.error(errorMessage(e));
@@ -185,6 +198,7 @@ async function testPolygon() {
   testing.value = true;
   testResult.value = null;
   try {
+    await polygonAuto.flush();
     const r = await api.polygonTest();
     testResult.value = { ok: true, text: t('settings.polygonOk', { n: r.problems, ms: r.ms }) };
   } catch (e) {
@@ -218,6 +232,7 @@ interface PriceRow {
 }
 const endpoints = ref<EditEndpoint[]>([]);
 const aiBusy = ref<string | null>(null);
+let endpointsReady = false, endpointsSaved = '';
 
 async function loadEndpoints() {
   endpoints.value = (await api.aiEndpoints()).map((e) => ({
@@ -232,6 +247,7 @@ async function loadEndpoints() {
     prices: Object.entries(e.pricing?.prices ?? {}).map(([model, p]) => ({ model, input: p.input, output: p.output, cacheRead: p.cacheRead ?? null, cacheWrite: p.cacheWrite ?? null })),
     showPrices: false,
   }));
+  endpointsSaved = JSON.stringify(endpointSnapshot()); endpointsReady = true;
 }
 
 function pricingOf(e: EditEndpoint): EndpointPricing | undefined {
@@ -263,8 +279,8 @@ function addEndpoint(protocol: AiProtocol) {
   });
 }
 
-async function saveEndpoints() {
-  const list = endpoints.value.map((e) => ({
+function endpointSnapshot() {
+  return endpoints.value.map((e) => ({
     name: e.name,
     previousName: e.previousName,
     protocol: e.protocol,
@@ -273,11 +289,9 @@ async function saveEndpoints() {
     models: e.models.split(/[\s,]+/).filter(Boolean),
     pricing: pricingOf(e),
   }));
-  // Keep per-row UI state (status line, open price table) across the reload.
-  const ui = new Map(endpoints.value.map((e) => [e.name, { status: e.status, showPrices: e.showPrices }]));
-  await api.saveAiEndpoints(list);
-  await loadEndpoints();
-  for (const e of endpoints.value) Object.assign(e, ui.get(e.name) ?? {});
+}
+async function saveEndpoints() {
+  endpointsAuto.schedule(0); await endpointsAuto.flush();
 }
 
 /** Saving reloads the list, so look the endpoint up again afterwards. */
@@ -286,7 +300,7 @@ const fresh = (name: string, fallback: EditEndpoint) => endpoints.value.find((x)
 async function saveAi() {
   try {
     await saveEndpoints();
-    await saveSettings(JSON.parse(JSON.stringify({ ...settings.config, ai: draft.value.ai })));
+    await generalAuto.flush();
     message.success(t('common.saved'));
   } catch (e) {
     message.error(errorMessage(e));
@@ -353,23 +367,66 @@ const usageRows = computed(() => (usage.value ? [usage.value.today, usage.value.
 
 const endpointNames = computed(() => endpoints.value.map((e) => ({ label: e.name, value: e.name })));
 
+const generalAuto = createAutosave(() => queued(async () => {
+  const snapshot = JSON.parse(JSON.stringify(draft.value)) as GlobalConfig;
+  const before = JSON.stringify(snapshot);
+  const config = globalConfigSchema.parse(snapshot);
+  const stored = await saveSettings(config, false);
+  generalSaved = JSON.stringify(stored);
+  if (JSON.stringify(draft.value) === before) draft.value = JSON.parse(JSON.stringify(stored));
+}), 0);
+const languagesAuto = createAutosave(() => queued(async () => {
+  const text = langText.value;
+  try {
+    const stored = await api.saveLanguages(text);
+    langSaved.value = stored.text; langParsed.value = stored.languages; langError.value = '';
+  } catch (e) { langError.value = errorMessage(e); throw e; }
+}));
+const polygonAuto = createAutosave(() => queued(async () => {
+  const snapshot = polygonSnapshot();
+  secrets.value = await api.saveSecrets({ polygon: snapshot });
+  polygonSaved = JSON.stringify(snapshot);
+}));
+const endpointsAuto = createAutosave(() => queued(async () => {
+  const rows = [...endpoints.value], snapshot = endpointSnapshot();
+  const stored = await api.saveAiEndpoints(snapshot);
+  endpointsSaved = JSON.stringify(snapshot.map(row => ({ ...row, previousName: row.name })));
+  for (const [index, row] of rows.entries()) if (endpoints.value.includes(row)) {
+    row.previousName = snapshot[index].name;
+    const saved = stored.find(value => value.name === snapshot[index].name);
+    if (saved) row.maskedKey = saved.hasKey ? saved.apiKey : '';
+  }
+}));
+const autosaves = [generalAuto, languagesAuto, polygonAuto, endpointsAuto];
+watch(draft, value => {
+  if (JSON.stringify(value) === generalSaved) return;
+  const parsed = globalConfigSchema.safeParse(value);
+  if (parsed.success) applySettings(parsed.data);
+  generalAuto.schedule();
+}, { deep: true });
+watch(langText, () => { if (languagesReady && langDirty.value) languagesAuto.schedule(); });
+watch([polyKey, polySecret, polyUrl], () => { if (polygonReady && JSON.stringify(polygonSnapshot()) !== polygonSaved) polygonAuto.schedule(); });
+watch(() => JSON.stringify(endpointSnapshot()), value => { if (endpointsReady && value !== endpointsSaved) endpointsAuto.schedule(); });
+
+async function flushSettings(): Promise<boolean> {
+  if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  await nextTick();
+  if (JSON.stringify(draft.value) !== generalSaved) generalAuto.schedule(0);
+  if (languagesReady && langDirty.value) languagesAuto.schedule(0);
+  if (polygonReady && JSON.stringify(polygonSnapshot()) !== polygonSaved) polygonAuto.schedule(0);
+  if (endpointsReady && JSON.stringify(endpointSnapshot()) !== endpointsSaved) endpointsAuto.schedule(0);
+  const results = await Promise.allSettled(autosaves.map(save => save.flush()));
+  return results.every(result => result.status === 'fulfilled');
+}
+onBeforeRouteLeave(flushSettings);
+registerExitGuard(flushSettings);
+onBeforeUnmount(() => autosaves.forEach(save => save.dispose()));
+
 onMounted(() => {
   loadLanguages().catch((e) => message.error(errorMessage(e)));
   loadSecrets().catch((e) => message.error(errorMessage(e)));
   loadEndpoints().catch((e) => message.error(errorMessage(e)));
   loadUsage();
-});
-registerExitGuard(async () => {
-  for (const item of [
-    { dirty: () => JSON.stringify(draft.value) !== JSON.stringify(settings.config), name: t('improve.unsavedSettings'), save: saveGeneral },
-    { dirty: () => langDirty.value, name: 'languages.toml', save: saveLanguages },
-  ]) {
-    if (!item.dirty()) continue;
-    const choice = await unsavedChoice(dialog, t('editor.unsavedTitle'), item.name, { save: t('common.save'), discard: t('editor.discard'), cancel: t('improve.cancelExit') });
-    if (choice === 'cancel') return false;
-    if (choice === 'save') { await item.save(); if (item.dirty()) return false; }
-  }
-  return true;
 });
 </script>
 
@@ -380,9 +437,11 @@ registerExitGuard(async () => {
         <n-button size="small" quaternary @click="router.push({ name: 'problems' })"><template #icon><arrow-left /></template>{{ t('nav.problems') }}</n-button>
       </template>
       <strong>{{ t('nav.settings') }}</strong>
+      <span class="small dim" role="status">{{ pendingSaves ? t('settings.autoSaving') : t('settings.autoSave') }}</span>
     </app-header>
 
     <main class="body">
+      <n-alert v-if="autoError" type="error" closable @close="autoError = ''">{{ autoError }}</n-alert>
       <n-tabs type="line" animated :default-value="initialTab">
         <n-tab-pane name="general" :tab="t('settings.general')">
           <n-card size="small">

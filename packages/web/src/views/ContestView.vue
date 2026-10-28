@@ -185,7 +185,7 @@ async function saveNumbering() {
 const adding = ref<string[]>([]);
 const addOptions = computed(() => {
   const inContest = new Set(ids());
-  return allProblems.value.filter((p) => !inContest.has(p.id)).map((p) => ({ label: `${problemTitle(p.title, locale.value) || p.name} (${p.id})`, value: p.id }));
+  return allProblems.value.filter((p) => !inContest.has(p.id)).map((p) => ({ label: `${problemTitle(p.title, locale.value) || p.name} (${p.name})`, value: p.id }));
 });
 async function addProblems() {
   const list = entries();
@@ -250,7 +250,7 @@ function closeExportBeforeNotice() {
   return new Promise<void>(resolve => { exportClosed = resolve; showExport.value = false; });
 }
 onUnmounted(afterExportClose);
-const exportFormat = ref<'polygon' | 'hydro' | 'luogu' | 'joi' | 'lemonlime'>('polygon');
+const exportFormat = ref<'polygon' | 'hydro' | 'fps' | 'luogu' | 'joi' | 'lemonlime'>('polygon');
 // LemonLime / Luogu: testsets per problem (default "tests"), and Luogu's time / memory aggregation.
 const exportTestsets = ref<Record<string, { all: string[]; chosen: string[]; luogu: LuoguExportOptions }>>({});
 const loadingExportOptions = ref(false);
@@ -533,7 +533,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
     >
       <n-form label-placement="left" label-width="auto" size="small" :show-feedback="false" :disabled="busy" class="export-form">
         <n-form-item :label="t('contest.exportFormat')">
-          <n-select v-model:value="exportFormat" :disabled="busy" :options="[{ value: 'polygon', label: t('oiFeatures.polygon') }, { value: 'hydro', label: t('packages.hydroExport') }, { value: 'luogu', label: t('contest.luoguFormat') }, { value: 'joi', label: t('packages.joiExport') }, { value: 'lemonlime', label: 'LemonLime' }]" />
+          <n-select v-model:value="exportFormat" :disabled="busy" :options="[{ value: 'polygon', label: t('oiFeatures.polygon') }, { value: 'hydro', label: t('packages.hydroExport') }, { value: 'fps', label: t('packages.fps') }, { value: 'luogu', label: t('contest.luoguFormat') }, { value: 'joi', label: t('packages.joiExport') }, { value: 'lemonlime', label: 'LemonLime' }]" />
         </n-form-item>
         <n-checkbox v-if="exportFormat === 'lemonlime'" v-model:checked="lemonSubfolders" :disabled="busy" class="pf-dialog-note">{{ t('contest.lemonSubfolders') }}</n-checkbox>
         <n-form-item v-if="exportFormat === 'lemonlime'" :label="t('contest.lemonTarget')"><n-select v-model:value="lemonTarget" :disabled="busy" :options="[{ value: 'windows', label: 'Windows' }, { value: 'linux', label: 'Linux' }]" /></n-form-item>

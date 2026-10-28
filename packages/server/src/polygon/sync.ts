@@ -178,7 +178,6 @@ export class PolygonSync {
   async localStatus(ctx: ProblemCtx): Promise<{ changes: number; syncedRevision?: number; syncedUncommitted: boolean; tomlChanged: boolean; warnings: string[] }> {
     requireFullProblem(ctx);
     if (judgeMode(ctx.config.problem) === 'grader') throw new HttpError(400, 'grader_polygon', 'Grader problems cannot connect to Polygon.');
-    if (ctx.config.problem.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI problems cannot sync with Polygon');
     const { items, warnings } = await localItems(this.judge, ctx);
     const sync = await readSync(ctx);
     const keys = new Set(items.map((i) => i.key));
@@ -191,7 +190,6 @@ export class PolygonSync {
   async pushPreview(ctx: ProblemCtx): Promise<PushPreview> {
     if (ctx.config.problem.data_only) return { name: ctx.config.problem.name, blocked: true, items: [], warnings: polygonFeatureWarnings(ctx.config) };
     if (judgeMode(ctx.config.problem) === 'grader') return { name: ctx.config.problem.name, blocked: true, items: [], warnings: ['Grader problems cannot connect to Polygon.'] };
-    if (ctx.config.problem.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI problems cannot sync with Polygon');
     const { items, warnings } = await localItems(this.judge, ctx);
     const sync = await readSync(ctx);
     const seen = new Set<string>();
@@ -246,7 +244,6 @@ export class PolygonSync {
     const scoringWarnings = polygonFeatureWarnings(ctx.config);
     if (scoringWarnings.length) throw new HttpError(400, 'polygon_scoring', scoringWarnings.join('\n'));
     if (judgeMode(ctx.config.problem) === 'grader') throw new HttpError(400, 'grader_polygon', 'Grader problems cannot connect to Polygon.');
-    if (ctx.config.problem.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI problems cannot sync with Polygon');
     const client = await this.client(job.signal);
     const warnings = await splitStatementsForPolygon(ctx.ref.dir);
     let polygonId = ctx.config.polygon.id;
@@ -390,7 +387,6 @@ export class PolygonSync {
   async pullPreview(ctx: ProblemCtx, req: PullPreviewRequest = {}, signal?: AbortSignal): Promise<PullPreview> {
     requireFullProblem(ctx);
     if (judgeMode(ctx.config.problem) === 'grader') throw new HttpError(400, 'grader_polygon', 'Grader problems cannot connect to Polygon.');
-    if (ctx.config.problem.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI problems cannot sync with Polygon');
     const polygonId = ctx.config.polygon.id;
     if (polygonId === undefined) throw new HttpError(400, 'not_bound', 'This problem is not bound to a Polygon problem');
     const client = await this.client(signal);
@@ -430,7 +426,6 @@ export class PolygonSync {
   async itemContent(ctx: ProblemCtx, key: string): Promise<ItemContent> {
     requireFullProblem(ctx);
     if (judgeMode(ctx.config.problem) === 'grader') throw new HttpError(400, 'grader_polygon', 'Grader problems cannot connect to Polygon.');
-    if (ctx.config.problem.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI problems cannot sync with Polygon');
     const { items } = key.startsWith('file:') ? await this.pullLocal(ctx) : await localItems(this.judge, ctx);
     const l = items.find((i) => i.key === key);
     const id = ctx.config.polygon.id;
@@ -466,7 +461,6 @@ export class PolygonSync {
   async pull(ctx: ProblemCtx, req: PullRequest, opts: { refuseConflicts?: boolean } = {}): Promise<{ applied: string[]; merged: string[]; conflicts: string[]; warnings: string[] }> {
     requireFullProblem(ctx);
     if (judgeMode(ctx.config.problem) === 'grader') throw new HttpError(400, 'grader_polygon', 'Grader problems cannot connect to Polygon.');
-    if (ctx.config.problem.type === 'oi') throw new HttpError(400, 'oi_polygon', 'OI problems cannot sync with Polygon');
     const cached = this.remoteCache.get(ctx.ref.id);
     if (!cached || cached.polygonId !== ctx.config.polygon.id) throw new HttpError(409, 'stale_preview', 'Fetch the Polygon state first');
     const { items: local } = await this.pullLocal(ctx);

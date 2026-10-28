@@ -108,6 +108,11 @@ const roleTree = computed<Node[]>(() => {
     groups.get('checker')!.unshift({ key: path, label: chk, path, role: 'checker', isLeaf: true });
   }
   const lemon = config.value?.lemon_checker?.source;
+  if (config.value?.lemon_comparison) {
+    const path = `${SHARED_TAB}lemon-native/comparator.cpp`;
+    if (!groups.has('checker')) groups.set('checker', []);
+    groups.get('checker')!.unshift({ key: path, label: `Lemon / ${config.value.lemon_comparison.mode}`, path, role: 'checker', isLeaf: true });
+  }
   if (lemon?.startsWith('lemon:')) {
     const path = `${SHARED_TAB}lemon/checkers/${lemon.slice(6)}.cpp`;
     if (!groups.has('checker')) groups.set('checker', []);

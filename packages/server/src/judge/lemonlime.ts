@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_TESTSET, groupLayout, groupTotal, judgeMode, parseIndexList, PROBLEM_NAME_RE, testsetOf, testsetsOf, testLimitLookup, type ProblemToml, type TestGroup } from '@polyforge/shared';
+import { DEFAULT_TESTSET, groupLayout, groupTotal, judgeMode, LEMON_COMPARISON_MODES, parseIndexList, PROBLEM_NAME_RE, testsetOf, testsetsOf, testLimitLookup, type ProblemToml, type TestGroup } from '@polyforge/shared';
 import type { JobCtx } from '../jobs.js';
 import { exists, HttpError, safeJoin, toPosix } from '../util/fs.js';
 import type { ZipWriter } from '../util/zip.js';
@@ -86,10 +86,11 @@ export function lemonTestCases(config: ProblemToml, indices: number[], folder: s
   return result;
 }
 
-/** Called for every problem before starting any data generation. No fallback to the Polygon checker. */
+/** Native modes need no checker binary; custom Lemon sources are validated before generation. */
 export async function preflightLemonChecker(judge: Judge, ctx: ProblemCtx, index: string, target = lemonHost()) {
   const { config } = ctx;
   const p = config.problem;
+  if (p.unresolved_judge) fail(`${index}: ${p.unresolved_judge}`);
   if (!PROBLEM_NAME_RE.test(p.name) || !/^[A-Z][A-Z0-9]{0,3}$/.test(index)) fail('Invalid problem name or contest index.');
   const mode = judgeMode(p);
   if (mode === 'io') fail(`${index}: LemonLime export does not support pipe-based I/O interactive problems.`);
@@ -97,8 +98,7 @@ export async function preflightLemonChecker(judge: Judge, ctx: ProblemCtx, index
     if (file && file !== standard && (!/^[\w.-]+$/.test(file) || file === '.' || file === '..')) fail(`${index}: input/output file names must be simple file names for LemonLime.`);
   }
   const source = config.lemon_checker?.source;
-  if (p.data_only && !source) return null;
-  if (!source) fail(`${index}: no Lemon checker configured. Select a Testlib for Lemons source in Information > Lemon checker.`);
+  if (config.lemon_comparison || !source) return null;
   const resolved = judge.compiler.resolveSource(ctx.ref.dir, source!).srcPath;
   if (!/\.(cpp|cc|cxx)$/i.test(resolved) || !await exists(resolved)) fail(`${index}: Lemon checker must be an existing C++ source for g++.`);
   if (target === 'windows' ? process.platform !== 'win32' : process.platform !== 'linux') return null;
@@ -121,9 +121,16 @@ async function checkLemonProtocol(judge: Judge, ctx: ProblemCtx, checker: Progra
     await fs.copyFile(answerPath(ctx, test, testset), output);
     await fs.copyFile(answerPath(ctx, test, testset), answer);
     const score = path.join(dir, 'score'), message = path.join(dir, 'message');
-    const stats = await judge.runner.run({ argv: [...checker.argv, input, output, answer, '100', score, message], build: checker.build,
+    const testlib = ctx.config.lemon_checker?.protocol === 'testlib';
+    const stats = await judge.runner.run({ argv: [...checker.argv, input, output, answer, ...(testlib ? [] : ['100', score, message])], build: checker.build,
       cwd: dir, stdout: path.join(dir, 'stdout'), stderr: path.join(dir, 'stderr'), timeLimitMs: 10000, wallLimitMs: 15000,
       memoryLimitBytes: 512 * 1024 * 1024, outputLimitBytes: 1024 * 1024 }, job.signal);
+    if (testlib) {
+      const report = (await fs.readFile(path.join(dir, 'stderr'), 'utf8').catch(() => '')).slice(0, 2000).trim();
+      const full = /^ok(?:\s|$)/i.test(report) || /^points\s+1(?:\.0+)?(?:\s|$)/i.test(report) || /^partially correct \(100\)/i.test(report);
+      if (!['OK', 'RE'].includes(stats.status) || !full) fail(`${index}: Lemon Testlib checker protocol check failed on test ${test}; the standard answer must receive full score.\n${report}`);
+      return;
+    }
     const value = (await fs.readFile(score, 'utf8').catch(() => '')).trim();
     if (stats.status !== 'OK' || stats.exitCode !== 0 || !/^100(?:\.0+)?$/.test(value)) {
       const report = (await fs.readFile(message, 'utf8').catch(() => '')).slice(0, 2000);
@@ -165,6 +172,7 @@ const withinSource = (root: string, file: string) => { const rel = path.relative
 
 /** Selected testsets of a problem ("tests" by default), generated and in problem.toml order. */
 export function exportTestsets(ctx: ProblemCtx, index: string, wanted?: string[]): string[] {
+  if (ctx.config.problem.unresolved_judge) fail(`${index}: ${ctx.config.problem.unresolved_judge}`);
   const all = testsetsOf(ctx.config).map(ts => ts.name);
   const list = wanted?.length ? wanted : [DEFAULT_TESTSET];
   for (const name of list) if (!all.includes(name)) fail(`${index}: unknown testset ${name}.`);
@@ -172,6 +180,7 @@ export function exportTestsets(ctx: ProblemCtx, index: string, wanted?: string[]
 }
 
 export async function exportedTests(judge: Judge, ctx: ProblemCtx, testsets: string[], index: string, job: JobCtx) {
+  if (ctx.config.problem.unresolved_judge) fail(`${index}: ${ctx.config.problem.unresolved_judge}`);
   const out: { name: string; tests: number[] }[] = [];
   for (const name of testsets) {
     if (testsetOf(ctx.config, name)?.unresolvedScoring) fail(`${index}: imported scoring is not representable. Edit the subtask configuration before exporting.`);
@@ -186,7 +195,7 @@ export async function exportedTests(judge: Judge, ctx: ProblemCtx, testsets: str
 export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: string, zip: ZipWriter, job: JobCtx, testsets = [DEFAULT_TESTSET], subfolders = false, target = lemonHost()) {
   const { config } = ctx, p = config.problem, mode = judgeMode(p);
   const checker = await preflightLemonChecker(judge, ctx, index, target);
-  const checkerSource = config.lemon_checker?.source;
+  const checkerSource = config.lemon_comparison ? undefined : config.lemon_checker?.source;
   const hasChecker = !!checkerSource;
   const folder = p.name;
   const testCases: LemonTestCase[] = [];
@@ -229,7 +238,7 @@ export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: stri
     outputFileName: p.output === 'stdout' ? `${p.name}.out` : p.output,
     standardInputCheck: !p.input || p.input === 'stdin', standardOutputCheck: !p.output || p.output === 'stdout',
     taskType: mode === 'grader' ? 3 : 0, subFolderCheck: subfolders,
-    comparisonMode: hasChecker ? 4 : 1, diffArguments: '--ignore-space-change --text --brief', realPrecision: 6,
+    comparisonMode: config.lemon_comparison ? LEMON_COMPARISON_MODES[config.lemon_comparison.mode] : hasChecker ? (config.lemon_checker?.protocol === 'testlib' ? 5 : 4) : 1, diffArguments: '--ignore-space-change --text --brief', realPrecision: config.lemon_comparison?.precision ?? 3,
     specialJudge: hasChecker ? checkerName : '', compilerConfiguration: { 'g++': cppConfiguration }, answerFileExtension: 'ans', testCases,
     ...(mode === 'grader' ? { sourceFilesPath: [`${p.name}.cpp`], sourceFilesName: [`${p.name}.cpp`], graderFilesPath: [] as string[], graderFilesName: [] as string[] } : {}),
   };
@@ -286,7 +295,8 @@ Inputs, answers, checkers and supplied grader files are in data/.
 Each selected testset keeps its own subtasks. Bundled entries take the minimum; sum entries carry per-test points.
 CDF limits are milliseconds and MiB. Shared inputs can be used by several entries with independent limits.
 Target system: ${platform}. CDF specialJudge uses the actual relative executable path: checker.exe on Windows, checker on Linux.
-On the judging computer, install g++ and add it to PATH, then compile every checker from the archive root:
+Native comparison modes 0/1/3 run inside LemonLime and use an empty specialJudge path.
+For custom checkers, install g++ and add it to PATH, then compile them from the archive root:
   Windows (PowerShell or cmd): .\\compile-checkers.cmd
   Linux: bash ./compile-checkers.sh
 Both scripts include the supplied Testlib for Lemons and local headers. No download is needed.

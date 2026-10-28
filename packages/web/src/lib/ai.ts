@@ -25,9 +25,14 @@ export function useAi(problemId: string) {
   }
 
   const running = computed(() => state.current?.state === 'running');
+  const anyRunning = computed(() => running.value || state.sessions.some(session => session.state === 'running'));
   let turnEnded = false;
+  let initializing: Promise<void> | undefined;
 
   async function init() {
+    return initializing ??= initialize().finally(() => { initializing = undefined; });
+  }
+  async function initialize() {
     state.loading = true;
     try {
       const [eps, list, settings] = await Promise.all([api.aiEndpoints().catch(() => []), api.aiSessions(problemId).catch(() => []), api.settings().catch(() => null)]);
@@ -38,7 +43,7 @@ export function useAi(problemId: string) {
         const ep = eps.find((e) => e.name === def?.endpoint) ?? eps[0];
         state.pick = { endpoint: ep.name, model: (ep.name === def?.endpoint && def?.model) || ep.models[0] || '' };
       }
-      const first = state.sessions.find((x) => x.mode === 'agent');
+      const first = state.sessions.find(session => session.state === 'running') ?? state.sessions.find((x) => x.mode === 'agent');
       if (!state.current && first) await open(first.id);
     } finally {
       state.loading = false;
@@ -164,7 +169,13 @@ export function useAi(problemId: string) {
   };
 
   function onWsEvent(e: WsEvent) {
-    if (e.type !== 'ai:event' || e.problemId !== problemId || e.sessionId !== state.current?.id) return;
+    if (e.type !== 'ai:event' || e.problemId !== problemId) return;
+    if (e.event.type === 'state') {
+      const known = state.sessions.find(session => session.id === e.sessionId);
+      if (known) known.state = e.event.state;
+      else void api.aiSessions(problemId).then(sessions => { state.sessions = sessions; }).catch(() => {});
+    }
+    if (e.sessionId !== state.current?.id) return;
     const ev = e.event;
     switch (ev.type) {
       case 'text':
@@ -214,7 +225,7 @@ export function useAi(problemId: string) {
     return [...base, ...state.live.filter((x) => x.kind !== 'tool' || !known.has(x.id))];
   });
 
-  return { state, running, transcript, init, open, openLatest, refresh, create, send, cancel, remove, setModel, accept, reject, startReview, fix, onWsEvent };
+  return { state, running, anyRunning, transcript, init, open, openLatest, refresh, create, send, cancel, remove, setModel, accept, reject, startReview, fix, onWsEvent };
 }
 
 export type Ai = ReturnType<typeof useAi>;

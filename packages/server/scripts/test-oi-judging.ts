@@ -128,8 +128,10 @@ test('grader builds, cache invalidation, real judging, Polygon rejection and com
     const status = await contestSyncStatus({judge,contests,sync:fakeSync},contest.id);
     assert.equal(status.rows[0].blocked,true); assert.equal(status.rows[1].blocked,false);
     assert.ok(status.warnings.some(w=>w.includes('Grader')));
-    await assert.rejects(runContestBatch({judge,contests,sync},contest.id,{action:'export',exportFormat:'lemonlime'},job), /no Lemon checker configured/);
-    await assert.rejects(fs.stat(path.join(traditional.dir,'.polyforge','tests')), /ENOENT/);
+    const builtin = await runContestBatch({judge,contests,sync},contest.id,{action:'export',exportFormat:'lemonlime'},job);
+    const builtinArchive = unzip(await fs.readFile(path.join(contestExportDir(await contests.get(contest.id)), builtin.file!)));
+    assert.ok(JSON.parse(builtinArchive.get('oi-round.cdf')!.toString()).tasks.every((task: any) => task.comparisonMode === 1 && task.specialJudge === ''));
+    assert.equal((await fs.stat(path.join(traditional.dir,'.polyforge','tests'))).isDirectory(), true);
     for (const problem of [p,traditional]) {
       await fs.writeFile(path.join(problem.dir,'lemon-checker.cpp'), '#include "lemon/testlib.h"\nint main(int argc,char**argv){registerLemonChecker(argc,argv);long long a=ans.readLong(),b=ouf.readLong();if(a!=b)quitf(_wa,"mismatch");quitf(_ok,"ok");}\n');
       await registry.patch(problem.id,{lemonChecker:'lemon-checker.cpp'});

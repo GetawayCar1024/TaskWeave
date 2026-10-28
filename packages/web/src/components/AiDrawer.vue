@@ -21,6 +21,7 @@ import {
   NRadioGroup,
   NTag,
   useMessage,
+  useDialog,
 } from 'naive-ui';
 import type { AiChangeContent, AiFinding, AiSessionMode, AiTranscriptItem, LocalCheck } from '@polyforge/shared';
 import { api, errorMessage } from '../lib/api';
@@ -43,6 +44,7 @@ const emit = defineEmits<{ 'update:show': [boolean] }>();
 const { t } = useI18n();
 const router = useRouter();
 const message = useMessage();
+const dialog = useDialog();
 
 const input = ref('');
 const pasted = ref('');
@@ -125,7 +127,13 @@ const modelOptions = computed(() => {
   return list.map((m) => ({ label: m, value: m }));
 });
 
-// Keep the newest output in view while streaming.
+// Follow the live tail only while the reader is already at the bottom.
+const followTail = ref(true);
+function transcriptScrolled(event: Event) {
+  const target = event.target as HTMLElement;
+  followTail.value = target.scrollHeight - target.scrollTop - target.clientHeight < 64;
+}
+watch(() => props.ai.state.current?.id, () => { followTail.value = true; });
 const tail = computed(() => {
   const items = props.ai.transcript.value;
   const last = items[items.length - 1] as { text?: string; result?: string } | undefined;
@@ -135,7 +143,7 @@ watch(
   tail,
   async () => {
     await nextTick();
-    scroller.value?.scrollTo({ top: 1e9 });
+    if (followTail.value && props.show) scroller.value?.scrollTo({ top: 1e9 });
   },
 );
 
@@ -143,6 +151,7 @@ async function send(text = input.value) {
   const msg = text.trim();
   if (!msg || props.ai.running.value) return;
   try {
+    followTail.value = true;
     await props.ai.send(msg);
     if (text === input.value) input.value = '';
   } catch (e) {
@@ -238,8 +247,18 @@ async function openDiff(path: string) {
 async function review(accept: boolean, paths = [...picked.value]) {
   if (!paths.length) return;
   try {
+    const dirty = props.ws?.state.tabs.filter(tab => tab.dirty && paths.some(path => tab.path === path || tab.path.startsWith(path + '/'))) ?? [];
+    if (accept && dirty.length && !await new Promise<boolean>(resolve => dialog.warning({
+      title: t('ai.unsavedApplyTitle'), content: t('ai.unsavedApplyBody', { files: dirty.map(tab => tab.path).join(', ') }),
+      positiveText: t('ai.applyKeepDraft'), negativeText: t('common.cancel'),
+      onPositiveClick: () => resolve(true), onNegativeClick: () => resolve(false), onClose: () => resolve(false), onMaskClick: () => resolve(false),
+    }))) return;
     if (accept) await props.ai.accept(paths);
     else await props.ai.reject(paths);
+    if (accept && props.ws) {
+      const kept = await props.ws.refreshFiles(paths);
+      if (kept.length) message.warning(t('ai.unsavedKept', { files: kept.join(', ') }), { duration: 6000 });
+    }
     message.success(accept ? t('ai.accepted', { n: paths.length }) : t('ai.rejected', { n: paths.length }));
     diff.value = null;
   } catch (e) {
@@ -377,7 +396,7 @@ const usageTitle = computed(() => {
           </div>
             <div class="pf-resize-handle bottom" :class="{ active: findingsSize.dragging.value }" :title="t('improve.resize')" @pointerdown="findingsSize.start" @dblclick="findingsSize.reset" />
           </div>
-          <n-scrollbar ref="scroller" v-keep-scroll="`ai-log:${problemId}:${s.current?.id ?? tab}`" class="log">
+          <n-scrollbar ref="scroller" class="log" @scroll="transcriptScrolled">
             <div v-if="!ai.transcript.value.length" class="hint">{{ tab === 'review' ? t(isContest ? 'ai.contestReviewIntro' : 'ai.reviewIntro') : t(isContest ? 'ai.contestIntro' : 'ai.intro') }}</div>
             <template v-for="(item, i) in ai.transcript.value" :key="i">
               <div v-if="item.kind === 'user'" class="msg user">{{ item.text }}</div>

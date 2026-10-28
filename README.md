@@ -22,11 +22,12 @@
 - **比赛**：一场比赛引用已有题目，整场生成测试、批量评测、检查、同步和导出；比赛文件工作区管理公告与注意事项。
 - **文档与导出**：CF 风格的 PDF / HTML / Markdown / TeX；内置 [CNOI](https://github.com/Mr-Python-in-China/cnoi-statement-generator) 排版引擎生成 tuack 风格的 OI PDF，离线可用，无需安装 TeX；选手下发包 `down.zip`。
 - **题面模式**：按语言选择整体 `statement.tex` 或 Polygon 分段文件，支持双向转换；整体题面同步 Polygon 时自动放入 `legend.tex` 并警告。
-- **数据包交换**：洛谷 `data.zip`（数据、`config.yml`、`score.txt`）导入导出，Hydro 整题包导入导出及仅数据导入；导入前校验 ZIP，额外文件保留在“其他文件”。单题可导出文档、Polygon 包、洛谷／Hydro 包及 `down.zip`；比赛可组合各题独立包，洛谷汇总方式逐题设置。
-- **文件管理**：题目短名称与文件夹同步重命名，比赛与导出自动更新；回收站采用原盘移动，可恢复或永久删除题目、比赛及其历史记录。
+- **数据包交换**：自动识别 ZIP、已解压目录、LemonLime CDF 和 Hydro FPS XML；支持 Polygon、Hydro、洛谷与 JOI / AtCoder 工作流，导入前核对配置与实际文件，修复说明可预览，额外文件和原配置保留。导入完成即扫描数据；单题及比赛可导出各平台题包。
+- **文件管理**：题目／比赛支持与磁盘对应的嵌套文件夹，短名称与题目文件夹同步重命名；持久身份保留比赛引用与历史，回收站采用原盘移动。
 - **兼容模式**：只有 `.in/.out` 或 `.in/.ans` 与分数配置也能管理样例、编排子任务和导出；可选择解法重造输出，保留唯一的初始备份并一键恢复。
-- **评测包**：Polygon package、LemonLime（Windows / Linux 目标、六种 Lemon checker 模板、附 g++ 编译脚本与 Testlib for Lemons）、洛谷（数据、`config.yml`、处理捆绑与依赖的计分脚本）。
-- **AI 辅助（可选）**：支持 Anthropic、OpenAI Chat Completions、OpenAI Responses 协议及兼容的中转服务；AI 可读写文件、编译、生成测试和评测，所有改动都要经过审阅；记录 token 用量与费用。
+- **评测包**：Polygon package、LemonLime（原生比较模式与等效本地实现、六种 Lemon checker 模板、Windows / Linux 目标及 g++ 编译脚本）、洛谷（数据、`config.yml`、处理捆绑与依赖的计分脚本）。
+- **AI 辅助（可选）**：支持 Anthropic、OpenAI Chat Completions、OpenAI Responses 协议及兼容服务；AI 可读写文件、编译、生成测试和评测，改动经过审阅后应用。兼容模式支持文件／数据整理，转为完整造题保留会话；接受修改时保护编辑器草稿。
+- **统一工作区与自动设置**：CF／OI 为文档样式选择，题库与比赛共同管理；设置修改自动应用并保存，设置编辑器持续保存，离开时等待写入完成。
 - **中英文界面**，深色 / 浅色主题。
 
 ## 安装
@@ -120,7 +121,7 @@ Taskweave 以 [GNU Affero General Public License v3.0 或更高版本](LICENSE)�
 内置的第三方组件保留各自的许可证，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)：
 
 - [CNOI Statement Generator](https://github.com/Mr-Python-in-China/cnoi-statement-generator)（AGPL-3.0）提供 OI 排版的编译模块与模板；
-- [testlib](https://github.com/MikeMirzayanov/testlib) 与 [Testlib for Lemons](https://github.com/GitPinkRabbit/Testlib-for-Lemons)（MIT）；
+- [testlib](https://github.com/MikeMirzayanov/testlib) 与 [Testlib for Lemons](https://github.com/GitPinkRabbit/Testlib-for-Lemons)（MIT）；[LemonLime](https://github.com/Project-LemonLime/Project_LemonLime) 原生比较适配（GPL-3.0-or-later）；
 - Fira Mono（SIL OFL 1.1）、Latin Modern 与 New Computer Modern（GUST Font License）字体；
 - [typst.ts](https://github.com/Myriad-Dreamin/typst.ts)、Monaco Editor、KaTeX、Vue、Naive UI、Fastify 等开源依赖。
 

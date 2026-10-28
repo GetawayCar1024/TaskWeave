@@ -26,7 +26,7 @@ test('old TOML defaults to CF; unknown types are rejected', () => {
   assert.equal(problemTomlSchema.safeParse({ problem: { name: 'bad', type: 'other' } }).success, false);
 });
 
-test('CF → OI preserves sources, samples and originals; contests enforce type and export one body', async () => {
+test('legacy whole-file conversion preserves sources; unified contests reference the original workspaces', async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'pf-types-'));
   try {
     const global = new GlobalStore(home);
@@ -68,14 +68,15 @@ test('CF → OI preserves sources, samples and originals; contests enforce type 
     assert.ok(!checks.some(c => c.code === 'missingSection' && c.params?.section !== 'statement'));
     const sync = new PolygonSync(judge);
     const ctx = await judge.ctx(oi.id);
-    await assert.rejects(sync.pushPreview(ctx), /cannot sync/);
-    await assert.rejects(sync.pullPreview(ctx), /cannot sync/);
-    await assert.rejects(registry.patch(oi.id, { polygonId: 999 }), /cannot sync/);
-    await assert.rejects(contests.create({ name: 'bad-cf', problems: [{ index: 'A', problem: oi.id }] }), /cannot import OI/);
-    const contest = await contests.create({ name: 'oi-round', type: 'oi', problems: [{ index: 'A', problem: cf.id }] });
-    assert.notEqual(contest.problems[0].problem, cf.id);
+    assert.equal((await registry.patch(oi.id, { polygonId: 999 })).config?.polygon.id, 999);
+    await registry.patch(oi.id, { polygonId: null });
+    const mixed = await contests.create({ name: 'mixed', problems: [{ index: 'A', problem: oi.id }, { index: 'B', problem: cf.id }] });
+    assert.deepEqual(mixed.problems.map(problem => problem.problem), [oi.id, cf.id]);
+    const contest = await contests.create({ name: 'oi-round', type: 'oi', problems: [{ index: 'A', problem: oi.id }] });
+    assert.equal(contest.problems[0].problem, oi.id);
     assert.equal((await registry.detail(contest.problems[0].problem)).summary.type, 'oi');
-    await assert.rejects(contests.update(contest.id, { type: 'cf' }), /cannot import OI/);
+    await contests.update(contest.id, { type: 'cf' });
+    await contests.update(contest.id, { type: 'oi' });
     assert.equal((await contests.detail(contest.id)).summary.type, 'oi');
     const statements = await contestStatements(judge, contests, contest.id, 'zh');
     assert.equal(statements[0].body, body);
@@ -85,12 +86,12 @@ test('CF → OI preserves sources, samples and originals; contests enforce type 
     assert.match(tex, /样例 1 输入/);
     assert.match(tex, /RecustomVerbatimEnvironment\{verbatim\}/);
     assert.equal(tex.split('给定 $a,b$').length, 2, 'single-file description must not be duplicated');
-    // Direct TOML edits must not bypass the read/export boundary.
+    // Legacy type metadata does not split the problem list or the source files.
     const cfile = path.join(contest.dir, 'contest.toml');
     const doc = parse(await fs.readFile(cfile, 'utf8')) as any;
     doc.contest.type = 'cf';
     await fs.writeFile(cfile, stringify(doc));
-    await assert.rejects(contestStatements(judge, contests, contest.id, 'zh'), /cannot import OI/);
+    assert.equal((await contestStatements(judge, contests, contest.id, 'zh'))[0].body, body);
     await registry.patch(cf.id, { samples: '1-2' });
     const before = (await registry.list()).map(p => p.id);
     await assert.rejects(registry.convertToOi(cf.id), /Sample 2 is incomplete/);
@@ -103,7 +104,7 @@ test('CF → OI preserves sources, samples and originals; contests enforce type 
   } finally { await fs.rm(home, { recursive: true, force: true }); }
 });
 
-test('OI attachments API preserves bytes, prevents overwrite/path escapes, and excludes private files', async () => {
+test('unified attachments API preserves bytes, prevents overwrite/path escapes, and excludes private files', async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'pf-attachments-'));
   const global = new GlobalStore(home);
   await global.init();
@@ -130,7 +131,7 @@ test('OI attachments API preserves bytes, prevents overwrite/path escapes, and e
     for (const name of ['../problem.toml', 'a/b', 'a\\b', '.secret', 'con.txt', 'bad:stream']) {
       assert.equal((await app.inject({ method: 'POST', url, headers, payload: { ...payload, name } })).statusCode, 400);
     }
-    assert.equal((await app.inject({ method: 'POST', url: `/api/problems/${cf.id}/attachments`, headers, payload })).statusCode, 400);
+    assert.equal((await app.inject({ method: 'POST', url: `/api/problems/${cf.id}/attachments`, headers, payload })).statusCode, 200);
     const response = await app.inject({ method: 'GET', url, headers });
     assert.equal(response.statusCode, 200);
     assert.match(response.rawPayload.toString('latin1'), /sample.bin/);
@@ -140,17 +141,15 @@ test('OI attachments API preserves bytes, prevents overwrite/path escapes, and e
     const contestZip = await app.inject({ method: 'GET', url: `/api/contests/${contest.id}/attachments`, headers });
     assert.equal(contestZip.statusCode, 200);
     assert.ok(contestZip.rawPayload.includes(Buffer.from('A/handout/sample.bin')));
-    assert.equal((await app.inject({ method: 'GET', url: `/api/contests/${contest.id}/polygon/status`, headers })).statusCode, 400);
-    // An author package retains OI sources and handouts, and is not labelled a Polygon package.
+    // Unified Polygon packages have native XML for legacy whole-file statements too.
     const ctx = await judge.ctx(oi.id);
     ctx.config.solutions = [];
     ctx.config.generators = [];
     delete ctx.config.validator;
-    ctx.config.tests = {};
+    ctx.config.tests = { answers: 'provided' };
+    for (const file of await fs.readdir(path.join(oi.dir, 'tests/manual'))) if (file.endsWith('.in')) await fs.writeFile(path.join(oi.dir, 'tests/manual', file.replace(/\.in$/, '.ans')), '3\n');
     const pack = await exportPackage(judge, ctx, { signal: new AbortController().signal, progress() {} });
     const packed = await fs.readFile(path.join(ctx.work, 'export', pack.file));
-    for (const name of ['problem.toml', 'statement/zh/statement.tex', 'attachments/sample.bin', 'solutions/std.cpp']) assert.ok(packed.includes(Buffer.from(name)), name);
-    assert.ok(!packed.includes(Buffer.from('problem.xml')));
-    assert.ok(!packed.includes(Buffer.from('statement-sections/')));
+    for (const name of ['problem.xml', 'statement-sections/chinese/legend.tex', 'attachments/sample.bin']) assert.ok(packed.includes(Buffer.from(name)), name);
   } finally { await app.close(); await fs.rm(home, { recursive: true, force: true }); }
 });

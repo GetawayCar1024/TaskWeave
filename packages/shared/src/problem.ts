@@ -25,6 +25,7 @@ export function sampleNotePath(lang: string, index: number, testset = 'tests'): 
   return `statement/${lang}/samples/${testset === 'tests' ? '' : `${testset}-`}${index}.tex`;
 }
 
+/** Legacy layout metadata, accepted for old TOML; it no longer restricts a workspace. */
 export const problemTypeSchema = z.enum(['cf', 'oi']);
 export type ProblemType = z.infer<typeof problemTypeSchema>;
 export const judgeModeSchema = z.enum(['batch', 'io', 'grader']);
@@ -37,6 +38,9 @@ export function judgeMode(problem: { judge_mode?: JudgeMode; interactive?: boole
 /** Prefix for references to files in the global `shared/` directory, e.g. `std:ncmp`. */
 export const STD_PREFIX = 'std:';
 export const LEMON_PREFIX = 'lemon:';
+export const lemonComparisonSchema = z.object({ mode: z.enum(['lines', 'ignore-spaces', 'real']), precision: z.number().int().min(0).max(18).default(3) });
+export type LemonComparison = z.infer<typeof lemonComparisonSchema>;
+export const LEMON_COMPARISON_MODES = { lines: 0, 'ignore-spaces': 1, real: 3 } as const;
 
 /** Polygon problem names: lowercase latin letters, digits and dashes. */
 export const PROBLEM_NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -121,14 +125,18 @@ export const problemTomlSchema = z.object({
       output: z.string().default('stdout'),
       interactive: z.boolean().default(false),
       judge_mode: judgeModeSchema.optional(),
-      /** A deliberately limited workspace for existing input/answer pairs and scoring only. */
+      /** Existing input/answer workspace: files and AI are available, authoring-only judging is gated. */
       data_only: z.boolean().default(false),
+      /** A native imported checker/runtime that needs an explicit local replacement. */
+      unresolved_judge: z.string().optional(),
     })
     .loose().refine(p => distinctIoFiles(p.input, p.output), { message: 'Input and output filenames must be different.', path: ['output'] }),
   polygon: z.object({ id: z.number().int().optional() }).loose().default({}),
   checker: sourceEntry.optional(),
-  /** Independent checker using the Lemon score/report-file protocol. */
-  lemon_checker: sourceEntry.optional(),
+  /** Independent Lemon export checker; imported ordinary Testlib sources retain CDF mode 5. */
+  lemon_checker: sourceEntry.extend({ protocol: z.enum(['lemon', 'testlib']).optional() }).optional(),
+  /** Native Lemon mode; also used by the local C++ comparator. */
+  lemon_comparison: lemonComparisonSchema.optional(),
   validator: sourceEntry.optional(),
   interactor: sourceEntry.optional(),
   /** C++ translation units linked with each submission, plus supplied headers. */
@@ -165,6 +173,7 @@ export function polygonPointsOk(points: number): boolean {
 export function polygonFeatureWarnings(config: ProblemToml, target: 'sync' | 'package' = 'sync'): string[] {
   const warnings = testsetsOf(config).some(ts => ts.largeSamples?.trim()) ? ['Polygon does not support downloadable large samples. Show all samples in the statement before syncing.'] : [];
   if (target === 'sync' && config.problem.data_only) warnings.push('Compatibility-mode problems cannot sync with Polygon. Complete the statement, validator, checker and main solution, then enable full authoring.');
+  if (config.problem.unresolved_judge) warnings.push(config.problem.unresolved_judge);
   if (testsetsOf(config).some(ts => ts.unresolvedScoring)) warnings.push('Imported scoring is not representable. Edit the subtask configuration before judging or exporting.');
   if (target === 'sync') {
     if (config.problem.time_limit < 250 || config.problem.time_limit > 15000 || config.problem.time_limit % 50 !== 0) warnings.push('Polygon requires 250–15000 ms in steps of 50 ms.');
@@ -243,6 +252,7 @@ export interface ProblemSummary {
   title: Record<string, string>;
   dir: string;
   root: string;
+  folder?: string;
   timeLimit: number;
   memoryLimit: number;
   /** "stdin" or the input file name; likewise output. */
@@ -272,6 +282,7 @@ export interface ProblemDetail {
 }
 
 export interface CreateProblemRequest {
+  folder?: string;
   dataOnly?: boolean;
   statementMode?: StatementMode;
   judgeMode?: JudgeMode;
@@ -302,6 +313,7 @@ export interface PatchProblemRequest {
   output?: string;
   checker?: string | null;
   lemonChecker?: string | null;
+  lemonComparison?: LemonComparison | null;
   validator?: string | null;
   interactor?: string | null;
   /** Set (or with tag null, remove) the tag of one solution. */

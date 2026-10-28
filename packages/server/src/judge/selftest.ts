@@ -68,11 +68,10 @@ const VERDICT_WORDS: Record<string, Verdict> = { ok: 'OK', wa: 'WA', pe: 'PE', f
  * expected verdict is in NAME.verdict, or an ok/wa/pe/fail part of NAME (e.g. `02.wa`).
  */
 export async function runCheckerTests(judge: Judge, ctx: ProblemCtx, job: JobCtx): Promise<SelfTestReport<CheckerTestResult>> {
-  const src = ctx.config.checker?.source;
-  if (!src) return { results: [], error: 'No checker configured' };
+  if (!judge.hasChecker(ctx.config)) return { results: [], error: 'No checker configured' };
   let checker;
   try {
-    checker = await judge.require(ctx, src, 'Checker');
+    checker = await judge.checker(ctx);
   } catch (e) {
     if (e instanceof CompileFailure) return { compile: e.result, results: [], error: 'Checker failed to compile' };
     throw e;

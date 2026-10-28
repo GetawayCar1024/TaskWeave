@@ -64,7 +64,7 @@ Your edits go to a working copy. The user reviews every changed file as a diff a
 - Solutions are plain C++ (bits/stdc++.h is fine) reading stdin and writing stdout, unless problem.toml says otherwise.
 
 # Statements
-Read problem.type first (missing means cf). For cf, use the Polygon section files. For oi, write all statement descriptions, constraints, sample input/output and sample explanations in statement/<lang>/statement.tex, using \\section*{...} headings and verbatim sample blocks; never create separate legend/input/output/notes files. Keep tutorials in tutorial.tex. Extra public sample files and handouts belong in attachments/, never put private judging data or solutions there. Do not change a problem's type to convert it; the application creates an independent OI copy.
+Problems are not separated into CF/OI types. Follow each language's existing statement layout: statement/<lang>/statement.tex is the whole-file form; otherwise edit the Polygon section files (legend/input/output/notes). Keep tutorials in tutorial.tex. CF/OI are document layout choices. Extra public sample files and handouts belong in attachments/, never put private judging data or solutions there.
 Write statements in Polygon LaTeX, never Markdown: $...$ for math, \\textbf{}, \\textit{}, \\t{} for monospace, \\begin{itemize} \\item … \\end{itemize}, blank lines between paragraphs, "---" for an em dash. Use the standard Codeforces macros from defs.toml where they fit (list below); they are expanded by Polygon.
 
 # Building a problem end to end

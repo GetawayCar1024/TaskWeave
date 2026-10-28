@@ -2,6 +2,12 @@
 
 每个版本的使用说明位于 [docs/releases/](docs/releases/)，详细改动位于 [docs/changes/](docs/changes/)。下载见 [GitHub Releases](https://github.com/GetawayCar1024/taskweave/releases)。
 
+## 0.4.1 — 2026-10-28
+
+新增题库／比赛文件夹、导入格式自动识别与已解压目录导入、LemonLime CDF 题包导入和 Hydro FPS XML 导入导出。导入时核对配置与实际文件，提示唯一可修复的路径差异，拒绝缺失或含糊的数据引用；导入完成即扫描数据。Lemon 原生比较方式直接写入 CDF，并提供等效本地实现。设置自动保存，兼容模式开放受限 AI，统一 CF／OI 工作区，修复 AI 状态、滚动、编辑器刷新及子任务编辑触发重造数据的问题。
+
+[发布说明](docs/releases/0.4.1.md) · [改动明细](docs/changes/0.4.1.md)
+
 ## 0.4.0 — 2026-10-27
 
 正式更名为 **Taskweave**，采用 D 折带精修与 Porcelain 图标。兼容模式支持解法重造输出、唯一初始备份与恢复；子任务按拖动顺序保存，仅保留对前置任务的依赖。新增六种 Lemon checker 模板、Windows／Linux 导出目标与 g++ 编译脚本。删除题目采用原盘移动；短名称同步重命名文件夹，题面、题解及其他导出补齐成功提示。升级自动接续旧版配置。

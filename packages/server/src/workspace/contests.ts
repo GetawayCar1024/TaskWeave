@@ -20,6 +20,7 @@ import { ensureContestFiles } from './contestFiles.js';
 import { atomicWrite, exists, HttpError } from '../util/fs.js';
 import type { GlobalStore } from '../global.js';
 import type { ProblemRegistry } from './problems.js';
+import { libraryParent, parentFolder, workspaceDirectories } from './library.js';
 
 export interface ContestRef {
   id: string;
@@ -47,13 +48,15 @@ export class ContestRegistry {
   async scan(): Promise<ContestRef[]> {
     const next = new Map<string, ContestRef>();
     const root = this.dir;
-    const entries = await fsp.readdir(root, { withFileTypes: true }).catch(() => []);
-    entries.sort((a, b) => a.name.localeCompare(b.name));
-    for (const ent of entries) {
-      if (!ent.isDirectory() || ent.name.startsWith('.')) continue;
-      const dir = path.join(root, ent.name);
-      if (!(await exists(path.join(dir, CONTEST_FILE)))) continue;
-      next.set(ent.name, { id: ent.name, dir, root });
+    const found = await Promise.all((await workspaceDirectories(root, CONTEST_FILE)).map(async ref => ({ ...ref,
+      identity: (await fsp.readFile(path.join(ref.dir, '.polyforge/identity'), 'utf8').catch(() => '')).trim(),
+    })));
+    const reserved = new Set(found.map(ref => ref.identity).filter(Boolean));
+    for (const ref of found) {
+      let id = /^[a-zA-Z0-9_-]+(?:~\d+)?$/.test(ref.identity) ? ref.identity : '';
+      if (!id || next.has(id)) { id = ref.name; for (let i = 2; next.has(id) || reserved.has(id); i++) id = `${ref.name}~${i}`; }
+      if (id !== ref.identity) await atomicWrite(path.join(ref.dir, '.polyforge/identity'), id);
+      next.set(id, { id, dir: ref.dir, root });
     }
     this.byId = next;
     return [...next.values()];
@@ -132,6 +135,7 @@ export class ContestRegistry {
       title: config?.contest.title ?? {},
       dir: ref.dir,
       root: ref.root,
+      folder: parentFolder(ref.root, ref.dir),
       polygonId: config?.polygon.id,
       statement: config?.statement,
       problems: (config?.problems ?? []).map((p) => ({ index: p.index, problem: p.problem, found: problemIds.has(p.problem) })),
@@ -154,9 +158,9 @@ export class ContestRegistry {
   }
 
   /** Validate a new contest name; returns the folder to create. */
-  async checkNew(name: string): Promise<string> {
+  async checkNew(name: string, folder = ''): Promise<string> {
     if (!PROBLEM_NAME_RE.test(name)) throw new HttpError(400, 'invalid_name', 'Name must be lowercase letters, digits and dashes');
-    const dir = path.join(this.dir, name);
+    const dir = path.join(await libraryParent(this.dir, folder), name);
     if (await exists(dir)) throw new HttpError(409, 'exists', `Folder already exists: ${dir}`);
     if ((await this.list()).some(c => c.name === name)) throw new HttpError(409, 'exists', `Contest name already exists: ${name}`);
     return dir;
@@ -167,8 +171,8 @@ export class ContestRegistry {
     if (!parsedType.success) throw new HttpError(400, 'invalid_type', 'Contest type must be cf or oi');
     const type = parsedType.data;
     const name = req.name?.trim() ?? '';
-    const dir = await this.checkNew(name);
-    const problems = await this.prepareProblems(req.problems ?? [], type);
+    const dir = await this.checkNew(name, req.folder);
+    const problems = await this.prepareProblems(req.problems ?? []);
     await fsp.mkdir(dir, { recursive: true });
     await ensureContestFiles(dir);
     await this.write(dir, { contest: { name, type, title: req.title ?? {} }, problems });
@@ -205,11 +209,7 @@ export class ContestRegistry {
     }
     const check = contestTomlSchema.safeParse(doc);
     if (!check.success) throw new HttpError(400, 'invalid_patch', check.error.message);
-    if (check.data.contest.type === 'oi' && check.data.polygon.id !== undefined) {
-      if (req.polygonId != null) throw new HttpError(400, 'oi_polygon', 'OI contests cannot sync with Polygon');
-      delete doc.polygon;
-    }
-    if (req.problems || req.type !== undefined) doc.problems = await this.prepareProblems(check.data.problems, check.data.contest.type);
+    if (req.problems) doc.problems = await this.prepareProblems(check.data.problems);
     await this.write(ref.dir, doc);
     return this.detail(id);
   }
@@ -244,21 +244,24 @@ export class ContestRegistry {
     return atomicWrite(path.join(dir, CONTEST_FILE), stringify(doc) + '\n');
   }
 
-  private async prepareProblems(list: ContestProblemRef[], type: ProblemType): Promise<ContestProblemRef[]> {
+  async move(id: string, folder = ''): Promise<ContestDetail> {
+    const ref = await this.get(id), parent = await libraryParent(this.dir, folder);
+    const destination = path.join(parent, path.basename(ref.dir));
+    if (samePath(destination, ref.dir)) return this.detail(id);
+    if (await fsp.lstat(destination).catch(error => { if (error.code === 'ENOENT') return null; throw error; })) throw new HttpError(409, 'exists', 'Destination folder already exists');
+    await fsp.rename(ref.dir, destination);
+    this.byId.set(id, { ...ref, dir: destination });
+    await this.scan(); return this.detail(id);
+  }
+
+  private async prepareProblems(list: ContestProblemRef[]): Promise<ContestProblemRef[]> {
     const checked = checkProblems(list);
-    // Validate the whole list before creating any converted copies.
-    const configs = await Promise.all(checked.map(async p => {
+    await Promise.all(checked.map(async p => {
       const ref = await this.problems.get(p.problem);
       const { config, error } = await this.problems.readConfig(ref);
       if (!config) throw new HttpError(400, 'invalid_problem_toml', error ?? p.problem);
-      if (type === 'cf' && config.problem.type === 'oi') throw new HttpError(400, 'incompatible_problem_type', `CF contests cannot import OI problem: ${p.problem}`);
-      return config;
     }));
-    const out: ContestProblemRef[] = [];
-    for (const [i, p] of checked.entries()) {
-      out.push(type === 'oi' && configs[i].problem.type === 'cf' ? { ...p, problem: (await this.problems.convertToOi(p.problem)).id } : p);
-    }
-    return out;
+    return checked;
   }
 }
 

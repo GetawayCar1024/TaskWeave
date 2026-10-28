@@ -30,6 +30,7 @@ import { atomicWrite, exists, HttpError, isDir, safeJoin, toPosix } from '../uti
 import { buildTree } from './files.js';
 import { cfToOi, oiTemplate } from './oiStatement.js';
 import { convertStatementMode } from './statements.js';
+import { libraryParent, parentFolder, workspaceDirectories } from './library.js';
 
 export interface ProblemRef {
   id: string;
@@ -62,13 +63,9 @@ export class ProblemRegistry {
   private async scanRoots(): Promise<ProblemRef[]> {
     const found: { dir: string; root: string; name: string; identity?: string }[] = [];
     for (const root of this.roots) {
-      const entries = await fsp.readdir(root, { withFileTypes: true }).catch(() => []);
-      for (const ent of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-        if (!ent.isDirectory() || ent.name.startsWith('.')) continue;
-        const dir = path.join(root, ent.name);
-        if (!(await exists(path.join(dir, PROBLEM_FILE)))) continue;
+      for (const { dir, name } of await workspaceDirectories(root, PROBLEM_FILE)) {
         const identity = await fsp.readFile(path.join(dir, '.polyforge', 'identity'), 'utf8').catch(() => '');
-        found.push({ dir, root, name: ent.name, identity: /^[a-zA-Z0-9_-]+(?:~[0-9]+)?$/.test(identity.trim()) ? identity.trim() : undefined });
+        found.push({ dir, root, name, identity: /^[a-zA-Z0-9_-]+(?:~[0-9]+)?$/.test(identity.trim()) ? identity.trim() : undefined });
       }
     }
     const next = new Map<string, ProblemRef>();
@@ -220,6 +217,7 @@ export class ProblemRegistry {
       title: config?.problem.title ?? {},
       dir: ref.dir,
       root: ref.root,
+      folder: parentFolder(ref.root, ref.dir),
       timeLimit: config?.problem.time_limit ?? 0,
       memoryLimit: config?.problem.memory_limit ?? 0,
       input: config?.problem.input ?? 'stdin',
@@ -231,7 +229,7 @@ export class ProblemRegistry {
         statementLangs: langs.statement,
         tutorialLangs: langs.tutorial,
         validator,
-        checker,
+        checker: checker || !!config?.lemon_comparison,
         std: stdOk,
         manualTests,
         hasScript,
@@ -284,7 +282,7 @@ export class ProblemRegistry {
     }
     const root = this.requireRoot(req.root);
     await fsp.mkdir(root, { recursive: true });
-    const dir = path.join(root, name);
+    const dir = path.join(await libraryParent(root, req.folder), name);
     if (await exists(dir)) throw new HttpError(409, 'exists', `Folder already exists: ${dir}`);
 
     const tl = req.timeLimit ?? 1000;
@@ -413,6 +411,11 @@ export class ProblemRegistry {
           ...(doc.source_languages?.[req.lemonChecker] ? { lang: doc.source_languages[req.lemonChecker] } : {}) };
       }
     }
+    if (req.lemonComparison !== undefined) {
+      if (req.lemonComparison === null) delete doc.lemon_comparison;
+      else { doc.lemon_comparison = req.lemonComparison; delete doc.lemon_checker; }
+    } else if (req.lemonChecker) delete doc.lemon_comparison;
+    if (req.lemonComparison || req.lemonChecker || req.checker) delete p.unresolved_judge;
     if (req.output !== undefined) p.output = req.output;
     for (const key of ['checker', 'validator', 'interactor'] as const) {
       const v = req[key];
@@ -439,7 +442,6 @@ export class ProblemRegistry {
     }
     if (req.polygonId !== undefined) {
       if (judgeMode(p) === 'grader' && req.polygonId !== null) throw new HttpError(400, 'grader_polygon', 'Grader problems cannot connect to Polygon.');
-      if (p.type === 'oi' && req.polygonId !== null) throw new HttpError(400, 'oi_polygon', 'OI problems cannot sync with Polygon');
       doc.polygon ??= {};
       if (req.polygonId === null) delete doc.polygon.id;
       else doc.polygon.id = req.polygonId;
@@ -529,7 +531,7 @@ export class ProblemRegistry {
       const requirements: [string, boolean][] = [
         ['statement', (await this.statementLangs(ref)).statement.length > 0],
         ['validator', !!c.validator && await this.sourceExists(ref, c.validator.source)],
-        ['checker', !!c.checker && await this.sourceExists(ref, c.checker.source)],
+        ['checker', !!c.lemon_comparison || !!c.checker && await this.sourceExists(ref, c.checker.source)],
         ['main solution (MA)', !!c.solutions.find(s => s.tag === 'MA') && await this.sourceExists(ref, c.solutions.find(s => s.tag === 'MA')!.source)],
       ];
       if (judgeMode(c.problem) === 'io') requirements.push(['interactor', !!c.interactor && await this.sourceExists(ref, c.interactor.source)]);
@@ -538,7 +540,7 @@ export class ProblemRegistry {
       if (missing.length) throw new HttpError(400, 'incomplete_problem', `Complete these files before enabling full authoring: ${missing.join(', ')}`);
     }
     const configFile = path.join(ref.dir, PROBLEM_FILE);
-    const destination = req.name !== undefined ? path.join(ref.root, p.name) : ref.dir;
+    const destination = req.name !== undefined ? path.join(path.dirname(ref.dir), p.name) : ref.dir;
     if (destination !== ref.dir) {
       if ((await fsp.lstat(ref.dir)).isSymbolicLink()) throw new HttpError(400, 'linked_problem', 'Cannot rename a linked problem folder.');
       if (!samePath(destination, ref.dir) && await fsp.lstat(destination).catch(error => { if (error.code === 'ENOENT') return null; throw error; })) throw new HttpError(409, 'exists', `Destination folder already exists: ${destination}`);

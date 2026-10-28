@@ -1,4 +1,5 @@
 {
+  "library": { "root": "根目录", "folder": "文件夹", "new": "新建文件夹", "name": "文件夹名称", "created": "文件夹已创建", "move": "移动到文件夹", "moved": "已移动" },
   "answers": {
     "title": "输出管理", "generate": "重造输出", "restore": "恢复初始输出", "generated": "已重造 {n} 个输出", "restored": "已恢复 {n} 个初始输出",
     "noSolution": "添加 solution 并登记为解法后，可重造输出。",
@@ -36,6 +37,14 @@
     "splitHint": "整体内容将全部放入 legend.tex，其他正文段落为空。你可以随后手动拆分。同步到 Polygon 时也会自动执行此转换。"
   },
   "packages": {
+    "auto": "自动检测",
+    "fps": "Hydro FPS（XML）",
+    "lemonlime": "LemonLime（CDF + data）",
+    "warnings": "导入处理说明（{n}）",
+    "chooseFile": "选择 ZIP / XML / CDF 文件",
+    "chooseDirectory": "选择已解压文件夹",
+    "invalidInput": "请选择 ZIP、FPS XML 或 LemonLime CDF 文件。",
+    "detected": "识别格式：{format}",
     "polygon-package": "Polygon 题目包",
     "data": "数据包",
     "joi": "JOI / AtCoder",
@@ -204,6 +213,8 @@
     "choose": "选择此文件夹"
   },
   "settings": {
+    "autoSave": "修改自动保存",
+    "autoSaving": "正在自动保存…",
     "general": "通用",
     "globalDir": "全局目录",
     "roots": "题目根目录",
@@ -342,6 +353,11 @@
     "images": "图片"
   },
   "info": {
+    "lemonBuiltins": "LemonLime 内置比较方式",
+    "lemonNativeSource": "查看本地比较器源码",
+    "lemonMode": { "lines": "逐行比较", "ignore-spaces": "逐行比较（忽略多余空格与制表符）", "real": "实数比较" },
+    "lemonPrecision": "误差指数",
+    "lemonNativeHint": "本地使用配套 C++ 比较器；LemonLime 包直接配置内置模式，无需 special judge。实数误差为绝对或相对误差不超过 10⁻ᵖ。",
     "lemonTemplates": "LemonLime 检查器模板",
     "unsaved": "题目信息有未保存的更改，是否保存？",
     "file": "当前文件",
@@ -573,6 +589,10 @@
     "selectAll": "全选 / 全不选"
   },
   "ai": {
+    "unsavedApplyTitle": "编辑器有未保存的修改",
+    "unsavedApplyBody": "这些文件尚未保存：{files}。应用 AI 修改将更新磁盘文件；编辑器中的草稿会保留，并提示磁盘变化。",
+    "applyKeepDraft": "应用并保留编辑草稿",
+    "unsavedKept": "已保留未保存的编辑：{files}。可通过差异比较合并，或使用磁盘版本。",
     "noEndpoint": "还没有配置 AI 端点",
     "configure": "去设置",
     "noSession": "选择会话",

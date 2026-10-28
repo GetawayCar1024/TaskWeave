@@ -6,9 +6,9 @@ import type { LuoguExportOptions } from './packages.js';
 import { problemTypeSchema, type ProblemType } from './problem.js';
 
 /**
- * A contest is a folder in a problem root holding `contest.toml`: a title and an
- * ordered list of problems (by problem id, i.e. folder name). Problems stay in their
- * own folders and can belong to several contests.
+ * A contest is a folder under the contest library holding `contest.toml`: a title
+ * and an ordered list of persistent problem identities. Library containers may
+ * nest, and a problem can belong to several contests.
  */
 export const CONTEST_FILE = 'contest.toml';
 
@@ -51,6 +51,7 @@ export interface ContestSummary {
   title: Record<string, string>;
   dir: string;
   root: string;
+  folder?: string;
   polygonId?: number;
   problems: (ContestProblemRef & { found: boolean })[];
   error?: string;
@@ -71,6 +72,7 @@ export function commonContestLanguages(problems: ContestDetail['problems'], doc:
 }
 
 export interface CreateContestRequest {
+  folder?: string;
   type?: ProblemType;
   name: string;
   title?: Record<string, string>;
@@ -94,7 +96,8 @@ export type ContestAction = (typeof CONTEST_ACTIONS)[number];
 export type LuoguAggregate = 'sum' | 'min' | 'max';
 
 export interface ContestBatchRequest {
-  exportFormat?: 'polygon' | 'hydro' | 'luogu' | 'joi' | 'lemonlime';
+  exportFormat?: 'polygon' | 'hydro' | 'fps' | 'luogu' | 'joi' | 'lemonlime';
+  lang?: string;
   /** lemonlime / luogu: testsets to export per problem id (default: ["tests"]). */
   testsets?: Record<string, string[]>;
   /** luogu: how the scoring script combines the time / memory of the subtasks. */
@@ -133,6 +136,7 @@ export interface ContestBatchResult {
 }
 
 export interface ContestImportRequest {
+  folder?: string;
   type?: ProblemType;
   contestId: number;
   name: string;

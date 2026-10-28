@@ -19,10 +19,23 @@ export async function loadSettings() {
   setLocale(r.config.ui.locale);
 }
 
-export async function saveSettings(next: GlobalConfig) {
-  const r = await api.saveSettings(next);
-  settings.config = r.config;
-  setLocale(r.config.ui.locale);
+let revision = 0;
+let writes: Promise<unknown> = Promise.resolve();
+export function applySettings(next: GlobalConfig) {
+  revision++;
+  settings.config = JSON.parse(JSON.stringify(next));
+  setLocale(next.ui.locale);
+}
+
+export async function saveSettings(next: GlobalConfig, apply = true) {
+  const snapshot = JSON.parse(JSON.stringify(next)) as GlobalConfig;
+  if (apply) applySettings(snapshot);
+  const version = revision;
+  const request = writes.then(() => api.saveSettings(snapshot));
+  writes = request.catch(() => {});
+  const r = await request;
+  if (version === revision) applySettings(r.config);
+  return r.config;
 }
 
 export async function patchSettings(fn: (c: GlobalConfig) => void) {

@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { judgeMode, type CompileResult, type ProblemToml } from '@polyforge/shared';
+import { judgeMode, LEMON_COMPARISON_MODES, type CompileResult, type ProblemToml } from '@polyforge/shared';
 import type { GlobalStore } from '../global.js';
 import { HttpError, isDir } from '../util/fs.js';
 import type { ProblemRef, ProblemRegistry } from '../workspace/problems.js';
@@ -20,6 +20,7 @@ export interface ProblemCtx {
 }
 
 export function requireFullProblem(ctx: ProblemCtx) {
+  if (ctx.config.problem.unresolved_judge) throw new HttpError(400, 'unresolved_judge', ctx.config.problem.unresolved_judge);
   if (ctx.config.problem.data_only) throw new HttpError(400, 'data_only', 'This feature requires full authoring. Complete the statement, validator, checker and main solution, then leave compatibility mode.');
 }
 
@@ -83,6 +84,20 @@ export class Judge {
 
   mainSolution(config: ProblemToml): string | undefined {
     return config.solutions.find((s) => s.tag === 'MA')?.source;
+  }
+
+  hasChecker(config: ProblemToml) { return !!config.checker || !!config.lemon_comparison; }
+  async checker(ctx: ProblemCtx): Promise<Program> {
+    requireFullProblem(ctx);
+    const native = ctx.config.lemon_comparison;
+    if (native) {
+      const compiled = await this.compiler.compile(this.global.sharedDir, 'lemon-native/comparator.cpp', undefined, path.join(this.global.cacheDir, 'bin'));
+      if (!compiled.program) throw new CompileFailure('Lemon native comparator', compiled.result);
+      const mode = LEMON_COMPARISON_MODES[native.mode];
+      return { ...compiled.program, argv: [...compiled.program.argv, String(mode), String(native.precision)], hash: `${compiled.program.hash}:${mode}:${native.precision}`, checkerProtocol: 'lemon-native' };
+    }
+    if (!ctx.config.checker) throw new HttpError(400, 'no_checker', 'No checker configured');
+    return this.require(ctx, ctx.config.checker.source, 'Checker');
   }
 
   /**

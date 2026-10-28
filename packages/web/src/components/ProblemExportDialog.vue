@@ -20,6 +20,7 @@ const sets = computed(() => props.detail?.config ? testsetsOf(props.detail.confi
 const formats = computed(() => [
   { value: 'polygon', label: t('oiFeatures.polygon') },
   { value: 'hydro', label: t('packages.hydroExport') },
+  { value: 'fps', label: t('packages.fps') },
   { value: 'luogu', label: t('packages.luoguExport') },
   { value: 'joi', label: t('packages.joiExport') },
   { value: 'documents', label: t('packages.documents'), disabled: !props.detail?.summary.status.statementLangs.length && !props.detail?.summary.status.tutorialLangs.length },
@@ -82,11 +83,11 @@ async function submit() {
         <n-form-item :label="t('contest.luoguTime')"><n-select v-model:value="time" :options="aggregations" :disabled="busy" /></n-form-item>
         <n-form-item :label="t('contest.luoguMemory')"><n-select v-model:value="memory" :options="aggregations" :disabled="busy" /></n-form-item>
       </template>
-      <template v-if="format === 'hydro' || format === 'joi'">
+      <template v-if="format === 'hydro' || format === 'joi' || format === 'fps'">
         <n-form-item :label="t('testsets.title')"><n-select v-model:value="testsets" multiple :disabled="busy" :options="sets" /></n-form-item>
       </template>
       <n-alert v-if="detail?.summary.dataOnly && format === 'down'" type="info" :show-icon="false">{{ t('dataOnly.downSamples') }}</n-alert>
     </n-form>
-    <template #footer><n-button :disabled="busy" @click="emit('update:show', false)">{{ t('common.cancel') }}</n-button><n-button type="primary" :disabled="!detail || ['luogu', 'hydro', 'joi'].includes(format) && !testsets.length" :loading="busy" @click="submit">{{ t('contest.export') }}</n-button></template>
+    <template #footer><n-button :disabled="busy" @click="emit('update:show', false)">{{ t('common.cancel') }}</n-button><n-button type="primary" :disabled="!detail || ['luogu', 'hydro', 'joi', 'fps'].includes(format) && !testsets.length" :loading="busy" @click="submit">{{ t('contest.export') }}</n-button></template>
   </tool-window>
 </template>

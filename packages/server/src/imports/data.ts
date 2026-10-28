@@ -6,6 +6,7 @@ import { HttpError, validateFileName } from '../util/fs.js';
 import { splitScore } from '../judge/lemonlime.js';
 import { luoguScript, type LuoguSubtask } from '../judge/luogu.js';
 import { checkGroups } from '../workspace/problems.js';
+import { PackageReferences } from './references.js';
 
 export type DataFormat = 'luogu' | 'hydro' | 'auto' | 'joi';
 export interface DataPair { input: string; output: string; inputData: Buffer; outputData: Buffer }
@@ -60,28 +61,28 @@ export function hydroLimit(value: unknown, kind: 'time' | 'memory', fallback: nu
 }
 
 const natural = (a: string, b: string) => a.localeCompare(b, 'en', { numeric: true });
-export function dataReader(files: Map<string, Buffer>, used: Set<string>) {
+export function dataReader(files: Map<string, Buffer>, used: Set<string>, warnings: string[] = []) {
   const byName = new Map([...files.keys()].map(k => [k.toLowerCase(), k]));
+  const references = new PackageReferences(files, warnings);
   const find = (name: string) => byName.get(name.toLowerCase());
-  const read = (name: unknown, nullable = false): [string, Buffer] => {
+  const read = (name: unknown, nullable = false, answer = false): [string, Buffer] => {
     if (nullable && (name === undefined || name === '' || name === '/dev/null')) return ['', Buffer.alloc(0)];
     if (typeof name !== 'string') return badPackage('A test case has no filename.');
-    name = name.replace(/\\/g, '/').replace(/^\.\//, '');
-    validateFileName(name as string);
-    const key = find(name as string);
-    if (!key) return badPackage(`Missing file referenced by configuration: ${name}`);
+    const key = references.require(name, answer);
     used.add(key);
     return [key, files.get(key)!];
   };
   const pair = (input: unknown, output: unknown, nullable = false): DataPair => {
-    const [inName, inputData] = read(input, nullable), [outName, outputData] = read(output, nullable);
+    const [inName, inputData] = read(input, nullable), [outName, outputData] = read(output, nullable, true);
     if (inName && inName === outName) return badPackage(`Input and answer refer to the same file: ${inName}`);
     return { input: inName, output: outName, inputData, outputData };
   };
   const pairedOutput = (input: string) => {
     const stem = input.replace(/\.(?:in|txt)(?:\.txt)?$/i, '');
     const candidates = ['out', 'ans', 'out.txt', 'ans.txt'].flatMap(ext => [`${stem}.${ext}`, `${stem}.${ext}`.replace(/input/gi, 'output')]);
-    return candidates.map(find).find(Boolean);
+    const found = [...new Set(candidates.map(find).filter((value): value is string => !!value))];
+    if (found.length > 1 && found.some(name => !files.get(name)!.equals(files.get(found[0])!))) return badPackage(`Ambiguous answers for ${input}: ${found.join(', ')}. Specify the intended answer in the configuration.`);
+    return found[0];
   };
   return { find, pair, pairedOutput };
 }
@@ -111,10 +112,16 @@ function scoringScript(script: string, initial: LuoguSubtask[]): LuoguSubtask[] 
 }
 
 export function parseLuoguData(files: Map<string, Buffer>): DataPlan {
-  const used = new Set<string>(), r = reader(files, used), warnings: string[] = [];
+  const used = new Set<string>(), warnings: string[] = [], r = reader(files, used, warnings);
   const configName = r.find('config.yml') ?? r.find('config.yaml');
   const source = configName ? files.get(configName) : undefined;
-  const cfg = yamlObject(source, configName ?? 'config.yml');
+  const originalConfig = yamlObject(source, configName ?? 'config.yml'), cfg: Record<string, any> = { ...originalConfig };
+  const references = new PackageReferences(files, warnings), configured = new Map<string, unknown>();
+  for (const [file, value] of Object.entries(originalConfig)) if (/\.(in|out|ans)$/i.test(file)) {
+    const actual = references.require(file, /\.(out|ans)$/i.test(file));
+    if (configured.has(actual) && JSON.stringify(configured.get(actual)) !== JSON.stringify(value)) return badPackage(`Conflicting configuration entries resolve to ${actual}.`);
+    configured.set(actual, value); delete cfg[file]; cfg[actual] = value;
+  }
   const inputs = [...files.keys()].filter(f => /\.in$/i.test(f)).sort(natural);
   if (!inputs.length) return badPackage('No .in/.out or .in/.ans pairs in this data package.');
   const pairs = inputs.map(input => r.pair(input, r.pairedOutput(input) ?? badPackage(`Missing answer for ${input}`)));
@@ -161,11 +168,11 @@ export function parseLuoguData(files: Map<string, Buffer>): DataPlan {
   }
   const names = new Map(subtasks.map(s => [s.id, s.label]));
   const localGroups = subtasks.map(s => ({ name: s.label, points: s.points, policy: s.policy, tests: compressRanges(groups.get(s.id)!), dependencies: s.dependencies.map(d => names.get(d) ?? badPackage(`Unknown subtask dependency: ${d}`)) }));
-  return { pairs, groups: checkGroups('tests', localGroups), cases, samples, used, warnings, sourceConfig: cfg, timeLimit: cases[1].time_limit!, memoryLimit: Math.ceil(cases[1].memory_limit!), unresolvedScoring };
+  return { pairs, groups: checkGroups('tests', localGroups), cases, samples, used, warnings, sourceConfig: originalConfig, timeLimit: cases[1].time_limit!, memoryLimit: Math.ceil(cases[1].memory_limit!), unresolvedScoring };
 }
 
 export function parseHydroData(files: Map<string, Buffer>): DataPlan {
-  const used = new Set<string>(), r = reader(files, used), warnings: string[] = [];
+  const used = new Set<string>(), warnings: string[] = [], r = reader(files, used, warnings);
   const configName = r.find('config.yaml') ?? r.find('config.yml');
   let cfg = yamlObject(configName ? files.get(configName) : undefined, configName ?? 'config.yaml');
   if (!configName && r.find('config.ini')) {
@@ -240,7 +247,7 @@ export function parseHydroData(files: Map<string, Buffer>): DataPlan {
 }
 
 function companionData(files: Map<string, Buffer>, cfg: Record<string, any>): DataPlan {
-  const used = new Set<string>(), r = reader(files, used), cases: DataPlan['cases'] = {}, pairs: DataPair[] = [];
+  const used = new Set<string>(), warnings: string[] = [], r = reader(files, used, warnings), cases: DataPlan['cases'] = {}, pairs: DataPair[] = [];
   if (!Array.isArray(cfg.cases) || cfg.cases.length > 10000) return badPackage('Companion cases must be a list of at most 10000 tests.');
   if (cfg.subtasks !== undefined && !Array.isArray(cfg.subtasks)) return badPackage('Companion subtasks must be a list.');
   for (const group of cfg.subtasks ?? []) {
@@ -259,7 +266,7 @@ function companionData(files: Map<string, Buffer>, cfg: Record<string, any>): Da
     points: group.points, test_points: group.test_points, time_limit: group.time_ms, memory_limit: group.memory_mib,
     cases: group.overrides && Object.fromEntries(Object.entries(group.overrides).map(([id, value]) => [ids.get(id) ?? badPackage(`Unknown case id: ${id}`), value])),
     tests: compressRanges((group.cases ?? []).map((id: unknown) => ids.get(String(id)) ?? badPackage(`Unknown case id: ${id}`))), dependencies: group.dependencies ?? [] }));
-  return { pairs, cases, groups: checkGroups('tests', groups), samples, used, warnings: [], timeLimit: cfg.problem?.time_ms ?? 1000, memoryLimit: cfg.problem?.memory_mib ?? 256,
+  return { pairs, cases, groups: checkGroups('tests', groups), samples, used, warnings, timeLimit: cfg.problem?.time_ms ?? 1000, memoryLimit: cfg.problem?.memory_mib ?? 256,
     sourceConfig: cfg, pointsEnabled: cfg.points_enabled ?? groups.length > 0 };
 }
 

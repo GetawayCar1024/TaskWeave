@@ -50,7 +50,7 @@ export async function quickRun(judge: Judge, ctx: ProblemCtx, req: QuickRunReque
     };
     if (r.message && r.verdict !== 'OK') res.checker = { verdict: r.verdict, message: r.message };
     let ans = req.test !== undefined ? answerPath(ctx, req.test, req.testset) : null;
-    if (!options.experiment && req.test === undefined && !interactive && r.verdict === 'OK' && ctx.config.checker) {
+    if (!options.experiment && req.test === undefined && !interactive && r.verdict === 'OK' && judge.hasChecker(ctx.config)) {
       const main = judge.mainSolution(ctx.config);
       if (main) {
         const reference = await judge.require(ctx, main, 'Main solution');
@@ -61,8 +61,8 @@ export async function quickRun(judge: Judge, ctx: ProblemCtx, req: QuickRunReque
         ans = expected.outputFile;
       }
     }
-    if (r.verdict === 'OK' && ans && (await exists(ans)) && ctx.config.checker) {
-      const checker = await judge.require(ctx, ctx.config.checker.source, 'Checker');
+    if (r.verdict === 'OK' && ans && (await exists(ans)) && judge.hasChecker(ctx.config)) {
+      const checker = await judge.checker(ctx);
       res.checker = await runChecker(judge.runner, checker, { input: inFile, output: r.outputFile, answer: ans }, tmp);
       res.verdict = res.checker.verdict;
     }

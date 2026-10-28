@@ -3,6 +3,8 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { HttpError, exists } from '../util/fs.js';
 import type { ProblemRegistry } from './problems.js';
+import { libraryParent } from './library.js';
+import { samePath } from '../global.js';
 
 async function manifest(root: string, base = ''): Promise<string[]> {
   const result: string[] = [];
@@ -15,18 +17,19 @@ async function manifest(root: string, base = ''): Promise<string[]> {
   return result.sort();
 }
 
-export async function moveProblem(registry: ProblemRegistry, id: string, targetRoot: string) {
+export async function moveProblem(registry: ProblemRegistry, id: string, targetRoot: string, folder = '') {
   const ref = await registry.get(id);
   const root = await registry.ensureRoot(targetRoot);
-  const destination = path.join(root, path.basename(ref.dir));
-  if (path.resolve(destination).toLowerCase() === path.resolve(ref.dir).toLowerCase()) return registry.summary(await registry.get(id));
+  const parent = await libraryParent(root, folder);
+  const destination = path.join(parent, path.basename(ref.dir));
+  if (samePath(destination, ref.dir)) return registry.summary(await registry.get(id));
   if (await exists(destination)) throw new HttpError(409, 'exists', 'Destination folder already exists');
   const before = await manifest(ref.dir);
   try { await fs.rename(ref.dir, destination); }
   catch (e) {
     if ((e as NodeJS.ErrnoException).code !== 'EXDEV') throw e;
     // A hidden staging directory never appears as a partially moved problem.
-    const staging = path.join(root, `.polyforge-move-${randomUUID()}`);
+    const staging = path.join(parent, `.polyforge-move-${randomUUID()}`);
     const backup = path.join(path.dirname(ref.dir), `.polyforge-moved-${randomUUID()}`);
     try {
       await fs.cp(ref.dir, staging, { recursive: true, errorOnExist: true, force: false });

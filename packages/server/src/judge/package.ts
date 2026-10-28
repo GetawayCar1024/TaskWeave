@@ -11,6 +11,7 @@ import type { Judge, ProblemCtx } from './index.js';
 import { parseScript } from './script.js';
 import { answerPath, generateTests, inputPath } from './tests.js';
 import { flattenFiles } from '@polyforge/shared';
+import { lemonNativeSource } from './lemonNative.js';
 import { buildTree } from '../workspace/files.js';
 import { addAttachments } from '../workspace/attachments.js';
 import { readStatementSections, wholeStatementLanguages, wholeStatementWarning } from '../workspace/statements.js';
@@ -52,21 +53,17 @@ export const exportDir = (ctx: ProblemCtx) => path.join(ctx.work, 'export');
 export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, into?: { zip: ZipWriter; prefix: string }, nativePolygon = false): Promise<PackageResult> {
   const warnings: string[] = [];
   const { config, ref } = ctx;
-  const legacyOi = config.problem.type === 'oi' && !nativePolygon;
-  if (!legacyOi) warnings.push(...polygonLossWarnings(config));
+  warnings.push(...polygonLossWarnings(config));
   warnings.push(...wholeStatementWarning(await wholeStatementLanguages(ref.dir)));
   const unsupported = polygonFeatureWarnings(config, 'package');
-  if (!legacyOi && unsupported.length) throw new HttpError(400, 'polygon_features', unsupported.join('\n'));
-  if (judgeMode(config.problem) === 'grader' && !legacyOi) throw new HttpError(400, 'grader_polygon', 'Grader problems cannot use Polygon packages. Export the contest to LemonLime instead.');
+  if (unsupported.length) throw new HttpError(400, 'polygon_features', unsupported.join('\n'));
+  if (judgeMode(config.problem) === 'grader') throw new HttpError(400, 'grader_polygon', 'Grader problems cannot use Polygon packages. Export the contest to LemonLime instead.');
   const sets = testsetsOf(config);
   const manifests = new Map<string, TestsManifest>();
   for (const ts of sets) {
     job.progress(0, 3, `generating ${ts.name}`);
     const m = await generateTests(judge, ctx, { signal: job.signal, progress: (d, t) => job.progress(0, 3, `generating ${ts.name} ${d}/${t}`) }, ts.name);
-    if (!m.ok) {
-      if (legacyOi) warnings.push(...m.errors.map(error => `${ts.name}: ${error}`));
-      else throw new HttpError(400, 'polygon_export', `${ts.name}: ${m.errors.join('\n')}`);
-    }
+    if (!m.ok) throw new HttpError(400, 'polygon_export', `${ts.name}: ${m.errors.join('\n')}`);
     manifests.set(ts.name, m);
     if (ts.groups) for (const group of checkGroups(ts.name, ts.group)) {
       const indices = parseIndexList(group.tests ?? '');
@@ -85,27 +82,6 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
     if (old) { if (!old.equals(bytes)) throw new HttpError(400, 'polygon_export', `Package file collision: ${name}`); return; }
     entries.set(name, bytes); writer.add((into?.prefix ?? '') + name, bytes);
   } };
-  if (legacyOi) {
-    for (const f of flattenFiles(await buildTree(ref.dir))) {
-      if (f.path.startsWith('attachments/') || f.path === 'files/testlib.h') continue;
-      zip.add(f.path, await fsp.readFile(safeJoin(ref.dir, f.path)));
-    }
-    await addAttachments(zip, ref.dir, 'attachments/');
-    zip.add('files/testlib.h', await fsp.readFile(path.join(judge.global.sharedDir, 'testlib.h')));
-    if (!(await exists(path.join(ref.dir, 'files/defs.toml')))) zip.add('files/defs.toml', await readSharedDefs(judge.global.sharedDir));
-    let count = 0;
-    for (const [name, m] of manifests) for (const test of m.tests) {
-      count++;
-      for (const [ext, file] of [['in', inputPath(ctx, test.index, name)], ['ans', answerPath(ctx, test.index, name)]]) {
-        if (await exists(file)) zip.add(`data/${name}/${test.index}.${ext}`, await fsp.readFile(file));
-      }
-    }
-    if (into) return { file: '', size: 0, tests: count, warnings };
-    const file = `${config.problem.name}-oi-${Date.now()}.zip`;
-    const data = await writer.finishAsync();
-    await atomicWrite(path.join(exportDir(ctx), file), data);
-    return { file, size: data.length, tests: count, warnings };
-  }
   const languages = (await judge.global.readLanguages()).languages;
   const typeOf = (rel: string) => {
     try {
@@ -153,7 +129,12 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
     zip.add(name, await read(rel));
     return src(name, typeOf(rel));
   };
-  if (config.checker) {
+  if (config.lemon_comparison) {
+    const code = await lemonNativeSource(judge.global.sharedDir, config.lemon_comparison);
+    zip.add('files/check.cpp', code); zip.add('check.cpp', code);
+    zip.add('files/lemon-native-LICENSE', await fsp.readFile(path.join(judge.global.sharedDir, 'lemon-native/LICENSE')));
+    assets.push(`<checker type="testlib">${src('files/check.cpp', 'cpp.g++17')}<copy path="check.cpp"/></checker>`);
+  } else if (config.checker) {
     const c = config.checker.source;
     if (c.startsWith(STD_PREFIX)) {
       const rel = stdRefToPath(c)!;

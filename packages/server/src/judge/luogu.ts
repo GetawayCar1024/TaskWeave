@@ -1,8 +1,10 @@
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { DEFAULT_TESTSET, groupLayout, groupTotal, judgeMode, parseIndexList, PROBLEM_NAME_RE, STD_PREFIX, testLimitLookup, testsetOf, type LuoguAggregate, type ProblemToml, type TestGroup } from '@polyforge/shared';
 import type { JobCtx } from '../jobs.js';
 import { HttpError, safeJoin } from '../util/fs.js';
 import { ZipWriter } from '../util/zip.js';
+import { lemonNativeSource } from './lemonNative.js';
 import { checkGroups } from '../workspace/problems.js';
 import type { Judge, ProblemCtx } from './index.js';
 import { exportedTests, splitScore } from './lemonlime.js';
@@ -145,6 +147,9 @@ export async function luoguData(judge: Judge, ctx: ProblemCtx, index: string, jo
     checker = await read(config.interactor!.source);
     zip.add('interactive_lib.cpp', '');
     warnings.push(`${index}: I/O interactive: the interactor is packaged as checker.cpp; on Luogu it must decide the verdict itself (the Polygon checker is not run).`);
+  } else if (config.lemon_comparison) {
+    checker = await lemonNativeSource(judge.global.sharedDir, config.lemon_comparison);
+    zip.add('lemon-native-LICENSE', await fs.readFile(path.join(judge.global.sharedDir, 'lemon-native/LICENSE')));
   } else if (config.checker) checker = await read(config.checker.source);
   if (mode === 'grader') {
     const sources = config.grader?.sources ?? [];

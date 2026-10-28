@@ -64,6 +64,7 @@ export class ProblemWatcher {
       return this.scheduleRescan();
     }
     let loc = this.registry.locate(abs);
+    if ((kind === 'addDir' || kind === 'unlinkDir') && (!loc || !loc.rel)) this.scheduleRescan();
     // A problem.toml appearing in a new folder creates a new problem.
     if (path.basename(abs) === PROBLEM_FILE && (kind === 'add' || kind === 'unlink')) {
       this.scheduleRescan();
