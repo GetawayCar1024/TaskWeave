@@ -28,14 +28,15 @@ pnpm build
 node scripts/build-desktop.mjs --app-only
 ```
 
-Running local judging additionally requires g++ (MinGW-w64) on PATH. No TeX
+Running local judging additionally requires g++ on PATH (MinGW-w64 on Windows). No TeX
 installation is needed for the bundled OI renderer. Dependency installation
 requires network access; the installed renderer's fonts and WASM are local.
 
 The OI template also uses SimSun, SimHei and KaiTi. Their license does not permit
 redistribution, so they are not part of the source or the binaries: at run time
 TaskWeave reads them from the system fonts (Windows includes them) or from the
-`fonts` folder of the TaskWeave global directory. The desktop build refuses to
+`fonts` folder of the TaskWeave global directory, which is the only location
+searched on Linux. The desktop build refuses to
 package them if copies are placed in `packages/web/public/cnoi/fonts/`.
 
 See `THIRD_PARTY_NOTICES.md` and the license files included with the source for

@@ -6,7 +6,7 @@
 
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/GetawayCar1024/taskweave)](https://github.com/GetawayCar1024/taskweave/releases/latest)
-![Platform](https://img.shields.io/badge/platform-Windows%20x64-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Windows%20x64%20%7C%20Linux%20x64-lightgrey)
 
 题面、程序和测试数据都保存在本地文件夹里。TaskWeave 在一个窗口中完成编写、生成数据、评测、对拍、比赛管理与 Polygon 双向同步，并能导出 Polygon package、LemonLime、Hydro、洛谷与 JOI / AtCoder 数据包及 OI 风格的 PDF；也可以让 AI 在独立副本中协助修改，再逐个文件审阅后接受。
 
@@ -22,8 +22,8 @@
 - **比赛**：一场比赛引用已有题目，整场生成测试、批量评测、检查、同步和导出；比赛文件工作区管理公告与注意事项。
 - **文档与导出**：CF 风格的 PDF / HTML / Markdown / TeX；内置 [CNOI](https://github.com/Mr-Python-in-China/cnoi-statement-generator) 排版引擎生成 tuack 风格的 OI PDF，离线可用，无需安装 TeX；选手下发包 `down.zip`。
 - **题面模式**：按语言选择整体 `statement.tex` 或 Polygon 分段文件，支持双向转换；整体题面同步 Polygon 时自动放入 `legend.tex` 并警告。
-- **数据包交换**：自动识别 ZIP、已解压目录、LemonLime CDF 和 Hydro FPS XML；支持 Polygon、Hydro、洛谷与 JOI / AtCoder 工作流，导入前核对配置与实际文件，修复说明可预览，额外文件和原配置保留。导入完成即扫描数据；单题及比赛可导出各平台题包。
-- **文件管理**：题目／比赛支持与磁盘对应的嵌套文件夹，短名称与题目文件夹同步重命名；持久身份保留比赛引用与历史，回收站采用原盘移动。
+- **数据包交换**：ZIP、已解压目录和 Hydro FPS XML 中的每道题独立识别格式；LemonLime 比赛在比赛页整场导入；支持 Polygon、Hydro、洛谷与 JOI / AtCoder 工作流，导入前整批核对配置、实际文件与重名，修复说明可预览，额外文件和原配置保留。导入完成即扫描数据；单题及比赛可导出各平台题包。
+- **文件管理**：题目／比赛支持与磁盘对应的嵌套文件夹，短名称在所在文件夹内唯一并与题目文件夹同步重命名；持久身份保留比赛引用与历史，回收站采用原盘移动。
 - **兼容模式**：只有 `.in/.out` 或 `.in/.ans` 与分数配置也能管理样例、编排子任务和导出；可选择解法重造输出，保留唯一的初始备份并一键恢复。
 - **评测包**：Polygon package、LemonLime（原生比较模式与等效本地实现、六种 Lemon checker 模板、Windows / Linux 目标及 g++ 编译脚本）、洛谷（数据、`config.yml`、处理捆绑与依赖的计分脚本）。
 - **AI 辅助（可选）**：支持 Anthropic、OpenAI Chat Completions、OpenAI Responses 协议及兼容服务；AI 可读写文件、编译、生成测试和评测，改动经过审阅后应用。兼容模式支持文件／数据整理，转为完整造题保留会话；接受修改时保护编辑器草稿。
@@ -32,15 +32,23 @@
 
 ## 安装
 
-目前提供 **Windows x64** 桌面版。
+提供 **Windows x64** 与 **Linux x64** 桌面版，使用发行版不需要 Node.js。
 
-Linux x64 试制说明与 CI 产物见 [Linux 构建与验证](docs/linux.md)。
+### Windows
 
 1. 从 [Releases](https://github.com/GetawayCar1024/taskweave/releases/latest) 下载 `TaskWeave-<版本>-setup.exe`（安装版）或 `TaskWeave-<版本>-portable.exe`（免安装版）。
 2. 安装 [MinGW-w64](https://www.mingw-w64.org/)（例如 [WinLibs](https://winlibs.com/) 或 MSYS2），把 `g++` 所在目录加入 `PATH`，在终端运行 `g++ --version` 确认。首次评测时会自动编译自带的 runner。
 3. 可选：Python、Java、Kotlin、Rust、Go 等其他语言的编译器或解释器。
 
-使用发行版不需要 Node.js。安装版会创建桌面和开始菜单快捷方式。全局目录为 `%USERPROFILE%\.taskweave`；升级自动迁移旧版配置、题库身份、密钥、会话与答案备份。
+安装版会创建桌面和开始菜单快捷方式。全局目录为 `%USERPROFILE%\.taskweave`；升级自动迁移旧版配置、题库身份、密钥、会话与答案备份。
+
+### Linux
+
+1. 从 [Releases](https://github.com/GetawayCar1024/taskweave/releases/latest) 下载 `TaskWeave-<版本>-linux-x86_64.AppImage`（`chmod +x` 后直接运行）或 `TaskWeave-<版本>-linux-x64.tar.gz`（解压后运行 `taskweave`）。
+2. 安装 g++（例如 `sudo apt install g++`）。运行环境需提供 GTK 3、NSS、GBM 和 ALSA；AppImage 需要 FUSE。
+3. 可选：其他语言的编译器或解释器。
+
+全局目录为 `~/.taskweave`。更多说明见 [Linux 版](docs/linux.md)。
 
 ## 快速上手
 
@@ -58,22 +66,22 @@ Linux x64 试制说明与 CI 产物见 [Linux 构建与验证](docs/linux.md)。
 | 位置 | 内容 |
 | --- | --- |
 | 题目根目录 | 每道题一个文件夹，`problem.toml` 记录题目信息，其余是题面、程序和测试（结构见[使用指南](docs/guide.md#题目文件夹)）。 |
-| `%USERPROFILE%\.taskweave\` | 全局目录（用环境变量 `TASKWEAVE_HOME` 指定）：`config.toml`、`languages.toml`、`secrets.toml`（Polygon 与 AI 密钥）、共享的 testlib / checker / 宏、题目模板、默认比赛目录 `contests/`、回收站索引 `trash/`、可选的字体目录 `fonts/`。 |
+| `%USERPROFILE%\.taskweave\`（Linux：`~/.taskweave/`） | 全局目录（用环境变量 `TASKWEAVE_HOME` 指定）：`config.toml`、`languages.toml`、`secrets.toml`（Polygon 与 AI 密钥）、共享的 testlib / checker / 宏、题目模板、默认比赛目录 `contests/`、回收站索引 `trash/`、可选的字体目录 `fonts/`。 |
 | 题目中的 `.taskweave/` | 编译与测试缓存、评测记录、同步基线和 AI 会话；请用应用中的“清除缓存”清理。 |
 
 密钥只保存在全局目录的 `secrets.toml` 中，不会写入题目文件夹，题目可以放心提交到 Git。
 
 ## 注意事项与限制
 
-- 本地评测使用 Windows Job Object 限制时间与内存；计时受系统粒度和负载影响，结果不保证与 Polygon 一致。本地编译通过也不代表 Polygon 的编译器一定通过。
-- OI 排版所用的宋体、黑体、楷体版权不允许随应用分发，排版时读取本机字体（Windows 自带）。缺少时预览上方会提示，也可以把 `simsun.ttc`、`simhei.ttf`、`simkai.ttf` 放到全局目录的 `fonts/` 中。
+- 本地评测在 Windows 上使用 Job Object、在 Linux 上使用原生监督程序限制时间与内存（Linux 按常驻内存统计）；计时受系统粒度和负载影响，结果不保证与 Polygon 一致。本地编译通过也不代表 Polygon 的编译器一定通过。
+- OI 排版所用的宋体、黑体、楷体版权不允许随应用分发，排版时读取本机字体（Windows 自带）。缺少时预览上方会提示，也可以把 `simsun.ttc`、`simhei.ttf`、`simkai.ttf` 放到全局目录的 `fonts/` 中；Linux 上只从该目录读取。
 - Polygon API 不能新建或列出额外测试集，额外测试集需先在 Polygon 上创建；grader 题、以文件下发的大样例、子任务单独的 validator 等 Polygon 不支持的功能会在同步前提示。
 - Polygon 同步、LemonLime 与洛谷导出主要通过模拟接口和本地检查验证，欢迎反馈实际使用中的问题。
 - 启用 AI 时，请求会发送到你配置的服务，可能包含题面、程序、测试和工具输出；不配置 AI 不影响其他功能。
 
 ## 从源码构建
 
-需要 Node.js 20+ 与 [pnpm](https://pnpm.io/)；本地评测与 Windows 打包需要 Windows 和 g++。
+需要 Node.js 20+ 与 [pnpm](https://pnpm.io/)；本地评测需要 g++。在 Windows 上打包得到安装版与免安装版，在 Linux 上得到 AppImage 与 tar.gz（见 [docs/linux.md](docs/linux.md)）。
 
 ```bash
 git clone https://github.com/GetawayCar1024/taskweave.git
@@ -87,7 +95,7 @@ pnpm typecheck      # 全部工作区的类型检查
 pnpm test           # 自动回归测试（部分用例需要 g++）
 pnpm build          # 构建前端
 pnpm desktop:run    # 构建并运行 Electron 桌面版
-pnpm desktop        # 构建安装版和免安装版，输出到 packages/desktop/dist/
+pnpm desktop        # 构建当前系统的发行包（Windows 安装版／免安装版，Linux AppImage／tar.gz），输出到 packages/desktop/dist/
 ```
 
 回归测试（使用临时数据目录，部分用例需要 g++）：

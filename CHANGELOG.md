@@ -2,6 +2,12 @@
 
 每个版本的使用说明位于 [docs/releases/](docs/releases/)，详细改动位于 [docs/changes/](docs/changes/)。下载见 [GitHub Releases](https://github.com/GetawayCar1024/taskweave/releases)。
 
+## 0.4.2 — 2026-10-29
+
+新增 Linux x64 版本（AppImage、tar.gz），使用原生评测监督程序。LemonLime 改为在比赛页整场导入；批量导入逐题识别格式并在写入前整批检查，短名称只需在所在文件夹内唯一，移动与恢复时检查目标文件夹。新增可单独设置的源文件名，统一用于 OI 题面、down.zip 与 LemonLime。产品名称统一为 TaskWeave 并自动迁移旧数据；修复导入窗口字段错位，精简冗余提示。
+
+[发布说明](docs/releases/0.4.2.md) · [改动明细](docs/changes/0.4.2.md)
+
 ## 0.4.1 — 2026-10-28
 
 新增题库／比赛文件夹、导入格式自动识别与已解压目录导入、LemonLime CDF 题包导入和 Hydro FPS XML 导入导出。导入时核对配置与实际文件，提示唯一可修复的路径差异，拒绝缺失或含糊的数据引用；导入完成即扫描数据。Lemon 原生比较方式直接写入 CDF，并提供等效本地实现。设置自动保存，兼容模式开放受限 AI，统一 CF／OI 工作区，修复 AI 状态、滚动、编辑器刷新及子任务编辑触发重造数据的问题。

@@ -1,26 +1,24 @@
-# TaskWeave Linux 试制版
+# TaskWeave Linux 版
 
-当前开发版本为 **0.4.2-dev**。Linux x64 试制流程位于 [Linux preview CI](https://github.com/GetawayCar1024/TaskWeave/actions/workflows/linux-preview.yml)，使用 Ubuntu 22.04、Node.js 24 和系统 g++。
+从 0.4.2 起，发行版包含 Linux x64 桌面应用。构建与验证流程位于 [Linux CI](https://github.com/GetawayCar1024/TaskWeave/actions/workflows/linux-preview.yml)，使用 Ubuntu 22.04、Node.js 24 和系统 g++。
 
-已验证构建：[`6ba8705`](https://github.com/GetawayCar1024/TaskWeave/commit/6ba87058eab3de979d863654caecc76759419e31)，[CI 全部通过](https://github.com/GetawayCar1024/TaskWeave/actions/runs/40654274961)。[下载 Linux 试制包、对应源码与校验文件](https://github.com/GetawayCar1024/TaskWeave/actions/runs/40654274961/artifacts/12801775424)（GitHub Actions 附件需要登录）。
+## 下载与运行
 
-## 产物
-
-CI 在原生运行测试、完整回归和打包应用验证通过后，上传 `TaskWeave-linux-x64`：
+从 [Releases](https://github.com/GetawayCar1024/TaskWeave/releases/latest) 下载：
 
 - `TaskWeave-<版本>-linux-x86_64.AppImage`
 - `TaskWeave-<版本>-linux-x64.tar.gz`
-- `TaskWeave-<版本>-source.zip`，与该次 CI 提交逐文件对应
-- `SHA256SUMS.txt`
 
-使用 AppImage：
+`SHA256SUMS.txt` 列出全部发行附件的校验值。使用 AppImage：
 
 ```bash
 chmod +x TaskWeave-*-linux-x86_64.AppImage
 ./TaskWeave-*-linux-x86_64.AppImage
 ```
 
-tar.gz 解压后运行其中的 `taskweave`。运行环境需提供 GTK 3、NSS、GBM 和 ALSA；本地评测需要 g++。AppImage 使用系统 FUSE；无 FUSE 环境可用其 `--appimage-extract` 功能解压后运行 `AppRun`。
+tar.gz 解压后运行其中的 `taskweave`。运行环境需提供 GTK 3、NSS、GBM 和 ALSA；本地评测需要 g++（例如 `sudo apt install g++`）。AppImage 使用系统 FUSE；无 FUSE 环境可用其 `--appimage-extract` 功能解压后运行 `AppRun`。
+
+全局目录为 `~/.taskweave`，可用 `TASKWEAVE_HOME` 指定。OI 排版所需的宋体、黑体、楷体不随应用分发，Linux 上只从全局目录读取：请把 `simsun.ttc`、`simhei.ttf`、`simkai.ttf` 放到 `~/.taskweave/fonts/`。
 
 ## 从源码构建
 
@@ -33,7 +31,7 @@ pnpm build
 node scripts/build-desktop.mjs --linux
 ```
 
-产物位于 `packages/desktop/dist/`。`--dir` 仅构建可直接运行的应用目录。CI 使用 Xvfb 启动打包后的 Electron，实际生成测试、导入 CDF、导出 Lemon/FPS 并恢复初始答案。
+产物位于 `packages/desktop/dist/`。`--dir` 仅构建可直接运行的应用目录。CI 使用 Xvfb 启动打包后的 Electron，实际生成测试、整场导入 LemonLime 比赛、导出 Lemon／FPS 并恢复初始答案；通过后上传 `TaskWeave-linux-x64`（AppImage、tar.gz、对应源码与 `SHA256SUMS.txt`），发行版使用其中的 Linux 包。
 
 ## 评测内核
 
