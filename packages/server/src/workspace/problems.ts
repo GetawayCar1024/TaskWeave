@@ -26,7 +26,7 @@ import {
   type ProblemToml,
 } from '@taskweave/shared';
 import type { GlobalStore } from '../global.js';
-import { samePath } from '../global.js';
+import { pathKey, samePath } from '../global.js';
 import { atomicWrite, exists, HttpError, isDir, safeJoin, toPosix } from '../util/fs.js';
 import { buildTree } from './files.js';
 import { cfToOi, oiTemplate } from './oiStatement.js';
@@ -140,16 +140,31 @@ export class ProblemRegistry {
     return Promise.all(refs.map((r) => this.summary(r)));
   }
 
-  /** Short names of all problems, without building summaries (import validation runs while typing). */
-  async names(): Promise<Set<string>> {
-    const refs = await this.scan();
-    return new Set(await Promise.all(refs.map(async ref => {
-      try {
-        const name = (parse(await fsp.readFile(path.join(ref.dir, PROBLEM_FILE), 'utf8')) as { problem?: { name?: unknown } }).problem?.name;
-        if (typeof name === 'string') return name;
-      } catch { /* invalid problem.toml: the summary uses the folder name too */ }
-      return path.basename(ref.dir);
-    })));
+  /** The short name without building a summary; an invalid problem.toml falls back to the folder name, as in the summary. */
+  async shortName(ref: ProblemRef): Promise<string> {
+    try {
+      const name = (parse(await fsp.readFile(path.join(ref.dir, PROBLEM_FILE), 'utf8')) as { problem?: { name?: unknown } }).problem?.name;
+      if (typeof name === 'string') return name;
+    } catch { /* invalid problem.toml */ }
+    return path.basename(ref.dir);
+  }
+
+  /**
+   * Short name → problem ids, per library folder (keyed by `pathKey`). A short name is unique
+   * within its folder; the same name may be used in other folders.
+   */
+  async namesByFolder(): Promise<Map<string, Map<string, string[]>>> {
+    const folders = new Map<string, Map<string, string[]>>();
+    for (const [ref, name] of await Promise.all((await this.scan()).map(async ref => [ref, await this.shortName(ref)] as const))) {
+      const key = pathKey(path.dirname(ref.dir)), names = folders.get(key) ?? new Map<string, string[]>();
+      names.set(name, [...(names.get(name) ?? []), ref.id]); folders.set(key, names);
+    }
+    return folders;
+  }
+
+  /** Ids of the problems in library folder `parent` that use `name`. */
+  async problemsNamed(parent: string, name: string): Promise<string[]> {
+    return (await this.namesByFolder()).get(pathKey(parent))?.get(name) ?? [];
   }
 
   async readConfig(ref: ProblemRef): Promise<{ config: ProblemToml | null; raw: Record<string, unknown>; error?: string }> {
@@ -298,8 +313,9 @@ export class ProblemRegistry {
     }
     const root = this.requireRoot(req.root);
     await fsp.mkdir(root, { recursive: true });
-    const dir = path.join(await libraryParent(root, req.folder), name);
+    const parent = await libraryParent(root, req.folder), dir = path.join(parent, name);
     if (await exists(dir)) throw new HttpError(409, 'exists', `Folder already exists: ${dir}`);
+    if ((await this.problemsNamed(parent, name)).length) throw new HttpError(409, 'exists', `Problem name already exists in this folder: ${name}`);
 
     const tl = req.timeLimit ?? 1000;
     const ml = req.memoryLimit ?? 256;
@@ -385,7 +401,7 @@ export class ProblemRegistry {
     if (req.name !== undefined) {
       const name = typeof req.name === 'string' ? req.name.trim() : '';
       if (!PROBLEM_NAME_RE.test(name)) throw new HttpError(400, 'invalid_name', 'Name must be lowercase letters, digits and dashes');
-      if (name !== p.name && (await this.list()).some(problem => problem.id !== id && problem.name === name)) throw new HttpError(409, 'exists', `Problem name already exists: ${name}`);
+      if (name !== p.name && (await this.problemsNamed(path.dirname(ref.dir), name)).some(other => other !== id)) throw new HttpError(409, 'exists', `Problem name already exists in this folder: ${name}`);
       p.name = name;
     }
     if (req.sourceName !== undefined) {

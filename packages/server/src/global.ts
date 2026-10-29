@@ -262,9 +262,13 @@ function parseLanguages(text: string): LanguagesConfig {
 }
 
 export function samePath(a: string, b: string): boolean {
-  const na = path.resolve(a);
-  const nb = path.resolve(b);
-  return process.platform === 'win32' ? na.toLowerCase() === nb.toLowerCase() : na === nb;
+  return pathKey(a) === pathKey(b);
+}
+
+/** Map key for a directory: equal for paths that `samePath` treats as the same. */
+export function pathKey(p: string): string {
+  const resolved = path.resolve(p);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
 
 /** [[ai.endpoints]] currency = "USD" and [ai.endpoints.prices."<model>"] input / output / cache_read / cache_write per 1M tokens. */

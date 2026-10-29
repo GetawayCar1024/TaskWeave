@@ -6,6 +6,7 @@ import type { Judge } from '../judge/index.js';
 import type { ContestRegistry } from '../workspace/contests.js';
 import { contestFile } from '../workspace/contestFiles.js';
 import { libraryParent } from '../workspace/library.js';
+import { pathKey } from '../global.js';
 import { atomicWrite, exists, HttpError, validateFileName } from '../util/fs.js';
 import { readCdf } from './cdf.js';
 import { PackageReferences } from './references.js';
@@ -219,13 +220,14 @@ export async function validateLemonContest(judge: Judge, contests: ContestRegist
   if (!included.length) errors.push('Select at least one problem to import.');
   let parent: string | undefined;
   try { parent = await libraryParent(judge.registry.requireRoot(req.root), req.problemFolder); } catch (e) { errors.push((e as Error).message); }
-  const taken = await judge.registry.names(), counts = new Map<string, number>();
+  // All problems go to one folder; short names only conflict within it.
+  const taken = parent ? (await judge.registry.namesByFolder()).get(pathKey(parent)) : undefined, counts = new Map<string, number>();
   for (const task of included) counts.set(String(task.name ?? '').trim(), (counts.get(String(task.name ?? '').trim()) ?? 0) + 1);
   await Promise.all(included.map(async task => {
     const name = String(task.name ?? '').trim();
     if (!PROBLEM_NAME_RE.test(name)) tasks[task.key] = 'Name must be lowercase letters, digits and dashes (up to 64 characters).';
-    else if (counts.get(name)! > 1) tasks[task.key] = `Duplicate problem name in this import: ${name}`;
-    else if (taken.has(name)) tasks[task.key] = `Problem name already exists: ${name}`;
+    else if (counts.get(name)! > 1) tasks[task.key] = `Duplicate problem name in the same folder: ${name}`;
+    else if (taken?.has(name)) tasks[task.key] = `Problem name already exists in this folder: ${name}`;
     else if (parent && await exists(path.join(parent, name))) tasks[task.key] = `Folder already exists: ${path.join(parent, name)}`;
   }));
   return { errors, tasks };

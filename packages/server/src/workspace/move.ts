@@ -23,6 +23,9 @@ export async function moveProblem(registry: ProblemRegistry, id: string, targetR
   const parent = await libraryParent(root, folder);
   const destination = path.join(parent, path.basename(ref.dir));
   if (samePath(destination, ref.dir)) return registry.summary(await registry.get(id));
+  // Short names are unique per folder; the folder name may differ from the short name.
+  const name = await registry.shortName(ref);
+  if ((await registry.problemsNamed(parent, name)).some(other => other !== id)) throw new HttpError(409, 'exists', `Problem name already exists in this folder: ${name}`);
   if (await exists(destination)) throw new HttpError(409, 'exists', 'Destination folder already exists');
   const before = await manifest(ref.dir);
   try { await fs.rename(ref.dir, destination); }

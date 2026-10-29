@@ -98,10 +98,13 @@ test('the whole contest is validated before anything is written, and later failu
   await registry.create({ name: 'road' });
   const archive = readPackageArchive(zip(packageFiles([task(), sum()])));
   const check = await validateLemonContest(judge, contests, request(archive));
-  assert.deepEqual(check, { errors: [], tasks: { 1: 'Problem name already exists: road' } });
-  assert.deepEqual((await validateLemonContest(judge, contests, request(archive, { tasks: request(archive).tasks.map(item => ({ ...item, name: 'same' })) }))).tasks, { 1: 'Duplicate problem name in this import: same', 2: 'Duplicate problem name in this import: same' });
+  assert.deepEqual(check, { errors: [], tasks: { 1: 'Problem name already exists in this folder: road' } });
+  assert.deepEqual((await validateLemonContest(judge, contests, request(archive, { tasks: request(archive).tasks.map(item => ({ ...item, name: 'same' })) }))).tasks, { 1: 'Duplicate problem name in the same folder: same', 2: 'Duplicate problem name in the same folder: same' });
+  // Another problem folder may reuse the name.
+  await fs.mkdir(path.join(judge.registry.roots[0], 'NOIP'));
+  assert.deepEqual(await validateLemonContest(judge, contests, request(archive, { problemFolder: 'NOIP' })), { errors: [], tasks: {} });
   assert.match((await validateLemonContest(judge, contests, request(archive, { name: 'Bad Name' }))).errors[0], /lowercase/);
-  await assert.rejects(importLemonContest(judge, contests, archive, request(archive)), /Problem name already exists: road/);
+  await assert.rejects(importLemonContest(judge, contests, archive, request(archive)), /Problem name already exists in this folder: road/);
   assert.deepEqual((await registry.list()).map(p => p.name), ['road']); assert.equal((await contests.list()).length, 0);
   const create = contests.create.bind(contests);
   contests.create = async () => { throw new Error('disk full'); };

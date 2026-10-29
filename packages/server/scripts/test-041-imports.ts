@@ -16,7 +16,7 @@ import { WsHub } from '../src/ws.js';
 import { buildApp } from '../src/app.js';
 import { ZipWriter } from '../src/util/zip.js';
 
-type Call = (method: 'GET' | 'POST' | 'PATCH', url: string, payload?: object | Buffer) => Promise<LightMyRequestResponse>;
+type Call = (method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: object | Buffer) => Promise<LightMyRequestResponse>;
 async function fixture(run: (ctx: { home: string; registry: ProblemRegistry; call: Call }) => Promise<void>) {
   const home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'tw041-import-')));
   const global = new GlobalStore(home); await global.init(); global.config.problems.roots = [path.join(home, 'problems')];
@@ -78,13 +78,49 @@ test('a batch is validated as a whole and one conflict imports nothing', async (
   const upload = (await call('POST', '/api/packages/uploads', mixed())).json();
   const selection = upload.items.map((item: PackageItem, i: number) => ({ uploadId: upload.id, unit: item.unit, format: item.format, entry: item.entry, name: ['taken', 'twin', 'twin', 'Bad', 'fine'][i], timeLimit: i === 4 ? 0.5 : 1000 }));
   const validation = (await call('POST', '/api/packages/validate', { items: selection })).json();
-  assert.deepEqual(validation.items.map((item: { error?: string }) => item.error), ['Problem name already exists: taken', 'Duplicate problem name in this import: twin', 'Duplicate problem name in this import: twin',
+  assert.deepEqual(validation.items.map((item: { error?: string }) => item.error), ['Problem name already exists in this folder: taken', 'Duplicate problem name in the same folder: twin', 'Duplicate problem name in the same folder: twin',
     'Name must be lowercase letters, digits and dashes (up to 64 characters).', 'Time limit must be a positive whole number of milliseconds.']);
   const response = (await call('POST', '/api/packages/import', { items: selection })).json();
-  assert.equal(response.rejected, true); assert.equal(response.items[0].error, 'Problem name already exists: taken');
+  assert.equal(response.rejected, true); assert.equal(response.items[0].error, 'Problem name already exists in this folder: taken');
   assert.deepEqual((await registry.list()).map(p => p.name), ['taken']);
   const lemon = (await call('POST', '/api/packages/validate', { items: [{ uploadId: upload.id, format: 'lemonlime', name: 'x' }] })).json();
   assert.match(lemon.items[0].error, /whole contests/);
+}));
+
+test('short names are unique per folder: imports, renames, moves and restores check the target folder', async () => fixture(async ({ home, registry, call }) => {
+  const root = path.join(home, 'problems');
+  await registry.create({ name: 'taken' }); await fs.mkdir(path.join(root, 'Other'));
+  const upload = (await call('POST', '/api/packages/uploads', mixed())).json();
+  const selection = upload.items.slice(0, 3).map((item: PackageItem, i: number) => ({ uploadId: upload.id, unit: item.unit, format: item.format, entry: item.entry,
+    name: ['taken', 'twin', 'twin'][i], folder: ['Other', '', 'Other'][i] }));
+  assert.deepEqual((await call('POST', '/api/packages/validate', { items: selection })).json().items, [{}, {}, {}]);
+  const imported: PackageBatchResult = (await call('POST', '/api/packages/import', { items: selection })).json();
+  assert.deepEqual(imported.items.map(item => [item.result?.problem.name, item.result?.problem.folder]), [['taken', 'Other'], ['twin', ''], ['twin', 'Other']]);
+  const [otherTaken, , otherTwin] = imported.items.map(item => item.result!.problem);
+  // Moving into a folder that already has the name is rejected, also when the folder names differ.
+  let response = await call('POST', `/api/problems/${otherTwin.id}/relocate`, { root, folder: '' });
+  assert.equal(response.statusCode, 409); assert.equal(response.json().message, 'Problem name already exists in this folder: twin');
+  const legacy = await registry.create({ name: 'legacy-folder', folder: 'Other' });
+  await fs.writeFile(path.join(legacy.dir, 'problem.toml'), (await fs.readFile(path.join(legacy.dir, 'problem.toml'), 'utf8')).replace('name = "legacy-folder"', 'name = "taken"'));
+  response = await call('POST', `/api/problems/${legacy.id}/relocate`, { root, folder: '' });
+  assert.equal(response.statusCode, 409); assert.equal(response.json().message, 'Problem name already exists in this folder: taken');
+  await fs.access(legacy.dir);
+  await assert.rejects(registry.create({ name: 'taken', folder: 'Other' }), /Folder already exists/);
+  // Renames check only the problem's own folder.
+  response = await call('PATCH', `/api/problems/${otherTwin.id}`, { name: 'fresh' });
+  assert.equal(response.statusCode, 200, response.body);
+  response = await call('PATCH', `/api/problems/${(await registry.list()).find(p => p.name === 'twin' && p.folder === '')!.id}`, { name: 'fresh' });
+  assert.equal(response.statusCode, 200, response.body);
+  response = await call('PATCH', `/api/problems/${otherTaken.id}`, { name: 'fresh' });
+  assert.equal(response.statusCode, 409);
+  // Restoring a deleted problem also checks its folder.
+  const recycled = (await registry.list()).find(p => p.name === 'fresh' && p.folder === 'Other')!;
+  assert.equal((await call('DELETE', `/api/problems/${recycled.id}`)).statusCode, 200);
+  const blocker = await registry.create({ name: 'blocker', folder: 'Other' });
+  await fs.writeFile(path.join(blocker.dir, 'problem.toml'), (await fs.readFile(path.join(blocker.dir, 'problem.toml'), 'utf8')).replace('name = "blocker"', 'name = "fresh"'));
+  const entry = (await call('GET', '/api/trash')).json().entries.find((item: { name: string }) => item.name === 'fresh');
+  response = await call('POST', `/api/trash/${encodeURIComponent(entry.key)}/restore`, {});
+  assert.equal(response.statusCode, 409); assert.equal(response.json().message, 'Problem name already exists in this folder: fresh');
 }));
 
 test('contest packages stage, validate and import through the API', async () => fixture(async ({ registry, call }) => {

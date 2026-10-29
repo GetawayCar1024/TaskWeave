@@ -133,6 +133,7 @@ export class TrashStore {
     const target = safeJoin(root, folder);
     if (await exists(target)) throw new HttpError(409, 'exists', `Restore destination already exists: ${target}`);
     if (entry.kind === 'problem' && (await this.problems.scan()).some(p => p.id === entry.originalId)) throw new HttpError(409, 'exists', 'A problem with this identity already exists.');
+    if (entry.kind === 'problem' && (await this.problems.problemsNamed(path.dirname(target), entry.name)).length) throw new HttpError(409, 'exists', `Problem name already exists in this folder: ${entry.name}`);
     if (entry.kind === 'contest' && (await this.contests.list()).some(c => c.id === entry.originalId || c.name === entry.name)) throw new HttpError(409, 'exists', 'A contest with this identity or name already exists.');
     await fs.mkdir(root, { recursive: true });
     const relativeParent = path.posix.dirname(folder);
