@@ -9,6 +9,7 @@ import {
   OI_SECTIONS,
   parseIndexList,
   PROBLEM_NAME_RE,
+  sourceName,
   STATEMENT_SECTIONS,
   testsetsOf,
   type ProblemToml,
@@ -96,9 +97,10 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
       job.progress(0, list.length, `${p.index} · checking Lemon checker`);
       try {
         const ctx = await judge.ctx(p.problem);
-        const name = ctx.config.problem.name.toLowerCase();
-        if (names.has(name)) throw new Error(`${p.index}: duplicate problem English name: ${name}`);
-        names.add(name);
+        // Data folders and contestant files are case-insensitive on Windows.
+        const name = sourceName(ctx.config.problem);
+        if (names.has(name.toLowerCase())) throw new Error(`${p.index}: duplicate source file name: ${name}`);
+        names.add(name.toLowerCase());
         exportTestsets(ctx, p.index, req.testsets?.[p.problem]);
         await preflightLemonChecker(judge, ctx, p.index, lemonTarget);
       } catch (e) { errors.push((e as Error).message); }
@@ -332,7 +334,8 @@ export async function contestStatements(judge: Judge, contests: ContestRegistry,
       index: p.index,
       problem: p.problem,
       title: c.problem.title[lang] || c.problem.title.en || c.problem.name,
-      name: c.problem.name,
+      // OI directory, executable and source file names.
+      name: sourceName(c.problem),
       testCount: manifest?.tests.length,
       equalPoints: manifest?.tests.length ? equalTestPoints(c, manifest.tests.map(t => t.index)) : undefined,
       timeLimit: c.problem.time_limit,

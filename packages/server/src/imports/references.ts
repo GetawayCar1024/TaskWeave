@@ -5,12 +5,20 @@ import { HttpError, validateFileName } from '../util/fs.js';
 export class PackageReferences {
   private full = new Map<string, string[]>();
   private basenames = new Map<string, string[]>();
+  private folders = new Set<string>();
   private notes: Set<string>;
-  constructor(private files: Map<string, Buffer>, private warnings: string[]) {
+  /** `scoped`: a reference into an existing top-level folder is only repaired inside that folder (one contest, many task folders). */
+  constructor(private files: Map<string, Buffer>, private warnings: string[], private scoped = false) {
     this.notes = new Set(warnings);
     for (const name of files.keys()) {
       for (const [map, key] of [[this.full, name.toLowerCase()], [this.basenames, path.posix.basename(name).toLowerCase()]] as const) map.set(key, [...(map.get(key) ?? []), name]);
+      if (name.includes('/')) this.folders.add(name.slice(0, name.indexOf('/') + 1).toLowerCase());
     }
+  }
+  private byBasename(reference: string, basenames: string[]) {
+    const found = basenames.flatMap(name => this.basenames.get(name) ?? []);
+    const folder = reference.includes('/') ? reference.slice(0, reference.indexOf('/') + 1).toLowerCase() : '';
+    return this.scoped && folder && this.folders.has(folder) ? found.filter(name => name.toLowerCase().startsWith(folder)) : found;
   }
   find(value: string, answer = false): string | undefined {
     const normalized = value.replace(/\\/g, '/').split('/').filter(part => part !== '.').join('/');
@@ -26,11 +34,8 @@ export class PackageReferences {
     }
     let candidates = this.full.get(normalized.toLowerCase()) ?? [];
     if (!candidates.length) candidates = [...variants].flatMap(name => this.full.get(name) ?? []);
-    if (!candidates.length) candidates = this.basenames.get(path.posix.basename(normalized).toLowerCase()) ?? [];
-    if (!candidates.length) {
-      const basenames = new Set([...variants].map(name => path.posix.basename(name)));
-      candidates = [...basenames].flatMap(name => this.basenames.get(name) ?? []);
-    }
+    if (!candidates.length) candidates = this.byBasename(normalized, [path.posix.basename(normalized).toLowerCase()]);
+    if (!candidates.length) candidates = this.byBasename(normalized, [...new Set([...variants].map(name => path.posix.basename(name)))]);
     if (candidates.length > 1) throw new HttpError(400, 'ambiguous_package_reference', `Ambiguous file reference ${value}: ${candidates.join(', ')}. Correct the package configuration.`);
     if (!candidates.length) return undefined;
     this.note(value, candidates[0]); return candidates[0];

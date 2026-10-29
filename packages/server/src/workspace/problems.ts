@@ -10,6 +10,7 @@ import {
   STATEMENT_SECTIONS,
   PROBLEM_NAME_RE,
   TESTSET_NAME_RE,
+  validSourceName,
   parseIndexList,
   compressRanges,
   type TestGroup,
@@ -137,6 +138,18 @@ export class ProblemRegistry {
   async list(): Promise<ProblemSummary[]> {
     const refs = await this.scan();
     return Promise.all(refs.map((r) => this.summary(r)));
+  }
+
+  /** Short names of all problems, without building summaries (import validation runs while typing). */
+  async names(): Promise<Set<string>> {
+    const refs = await this.scan();
+    return new Set(await Promise.all(refs.map(async ref => {
+      try {
+        const name = (parse(await fsp.readFile(path.join(ref.dir, PROBLEM_FILE), 'utf8')) as { problem?: { name?: unknown } }).problem?.name;
+        if (typeof name === 'string') return name;
+      } catch { /* invalid problem.toml: the summary uses the folder name too */ }
+      return path.basename(ref.dir);
+    })));
   }
 
   async readConfig(ref: ProblemRef): Promise<{ config: ProblemToml | null; raw: Record<string, unknown>; error?: string }> {
@@ -375,6 +388,14 @@ export class ProblemRegistry {
       if (name !== p.name && (await this.list()).some(problem => problem.id !== id && problem.name === name)) throw new HttpError(409, 'exists', `Problem name already exists: ${name}`);
       p.name = name;
     }
+    if (req.sourceName !== undefined) {
+      if (req.sourceName !== null && typeof req.sourceName !== 'string') throw new HttpError(400, 'invalid_source_name', 'Invalid source file name.');
+      const value = req.sourceName?.trim() ?? '';
+      if (value && !validSourceName(value)) throw new HttpError(400, 'invalid_source_name', 'Source file names use letters, digits, underscores and dashes (up to 64 characters).');
+      if (value) p.source_name = value; else delete p.source_name;
+    }
+    // The default follows later renames of the short name.
+    if ((req.name !== undefined || req.sourceName !== undefined) && p.source_name === p.name) delete p.source_name;
     if (req.luogu !== undefined) { doc.exports ??= {}; doc.exports.luogu = req.luogu; }
     if (req.language) {
       const { source, lang } = req.language;

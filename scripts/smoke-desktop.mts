@@ -44,11 +44,13 @@ try {
 
   const zip = new ZipWriter(); zip.add('data/01.IN', '7\n'); zip.add('data/01.out', '700\r\n');
   zip.add('contest.cdf', JSON.stringify({ tasks: [{ sourceFileName: 'imported', problemTitle: 'Packaged CDF', comparisonMode: 3, realPrecision: 18, taskType: 0, testCases: [{ fullScore: 100, timeLimit: 1000, memoryLimit: 256, inputFiles: ['01.in'], outputFiles: ['01.ans'] }] }] }));
-  const uploaded = await json('POST', '/packages/uploads?format=auto', zip.finish()); assert.equal(uploaded.format, 'lemonlime');
-  const batch = await json('POST', '/packages/import', { items: [{ uploadId: uploaded.id, format: uploaded.format, name: 'imported', folder: 'Training' }] });
-  assert.ok(batch.items[0].result, JSON.stringify(batch)); const p = batch.items[0].result.problem;
+  // LemonLime packages are whole contests: the contest and its problems are created together.
+  const uploaded = await json('POST', '/contest-packages/uploads', zip.finish()), [candidate] = uploaded.contests;
+  assert.deepEqual(candidate.tasks.map((task: { name: string; error?: string }) => [task.name, task.error]), [['imported', undefined]]);
+  const imported = await json('POST', '/contest-packages/import', { uploadId: uploaded.id, entry: candidate.entry, name: 'smoke-round', title: { en: 'Smoke' }, problemFolder: 'Training',
+    tasks: candidate.tasks.map((task: { key: string; name: string; title: string }) => ({ key: task.key, include: true, name: task.name, title: task.title })) });
+  const p = imported.problems[0], contest = imported.contest;
   assert.equal(p.folder, 'Training'); assert.equal(JSON.parse(await fs.readFile(path.join(p.dir, '.taskweave/tests/manifest.json'), 'utf8')).tests.length, 1);
-  const contest = await json('POST', '/contests', { name: 'smoke-round', problems: [{ index: 'A', problem: p.id }] });
   const lemon = await finish(await json('POST', `/contests/${contest.id}/batch`, { action: 'export', exportFormat: 'lemonlime' }));
   const packed = readZip(Buffer.from(await (await api('GET', `/contests/${contest.id}/export/${lemon.file}`)).arrayBuffer()));
   const task = JSON.parse(packed.get('smoke-round.cdf')!.toString()).tasks[0]; assert.equal(task.comparisonMode, 3); assert.equal(task.realPrecision, 18);

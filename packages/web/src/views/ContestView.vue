@@ -63,9 +63,11 @@ import { checklist, progress } from '../lib/progress';
 import { onWs } from '../lib/ws';
 import { desktop } from '../lib/desktop';
 import { vKeepScroll } from '../lib/keepScroll';
+import { labelWidth } from '../lib/labelWidth';
 
 const props = defineProps<{ id: string }>();
 const { t, locale } = useI18n();
+const exportLabelWidth = labelWidth(80, 112), editLabelWidth = labelWidth(124, 156);
 const router = useRouter();
 const route = useRoute();
 const showFiles = ref(!!route.query.contestFile);
@@ -531,7 +533,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
       :progress="exportJob?.progress ?? null"
       :error="exportError"
     >
-      <n-form label-placement="left" label-width="auto" size="small" :show-feedback="false" :disabled="busy" class="export-form">
+      <n-form label-placement="left" :label-width="exportLabelWidth" size="small" :show-feedback="false" :disabled="busy" class="export-form">
         <n-form-item :label="t('contest.exportFormat')">
           <n-select v-model:value="exportFormat" :disabled="busy" :options="[{ value: 'polygon', label: t('oiFeatures.polygon') }, { value: 'hydro', label: t('packages.hydroExport') }, { value: 'fps', label: t('packages.fps') }, { value: 'luogu', label: t('contest.luoguFormat') }, { value: 'joi', label: t('packages.joiExport') }, { value: 'lemonlime', label: 'LemonLime' }]" />
         </n-form-item>
@@ -577,7 +579,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
       </template>
     </tool-window>
     <tool-window v-model:show="showEdit" :title="t('contest.edit')" size="sm" :error="editError">
-      <n-form label-placement="left" label-width="auto">
+      <n-form label-placement="left" :label-width="editLabelWidth">
         <n-form-item :label="t('create.name')" :feedback="editNameValid ? undefined : t('create.nameRule')" :validation-status="editNameValid ? undefined : 'error'"><n-input v-model:value="edit.name" :disabled="savingEdit" /></n-form-item>
         <n-form-item :label="t('create.titleZh')"><n-input v-model:value="edit.zh" /></n-form-item>
         <n-form-item :label="t('create.titleEn')"><n-input v-model:value="edit.en" /></n-form-item>

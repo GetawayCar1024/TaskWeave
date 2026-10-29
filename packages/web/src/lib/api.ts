@@ -1,5 +1,6 @@
 import type { DefsToml } from './latex';
-import type { PackageCandidate, PackageImportOptions, PackageImportResult, PackageUpload, PackageSelection, PackageBatchResult } from '@taskweave/shared';
+import type { PackageCandidate, PackageImportOptions, PackageImportResult, PackageItem, PackageUpload, PackageSelection, PackageBatchResult, PackageValidation } from '@taskweave/shared';
+import type { ContestPackageImportRequest, ContestPackageImportResult, ContestPackageUpload, ContestPackageValidation, ImportPackageFormat } from '@taskweave/shared';
 import type { CreateLibraryFolderRequest, LibraryDirectory, LibraryLocation } from '@taskweave/shared';
 import type { AnswerBackupInfo, RegenerateAnswersRequest, ProblemExportRequest, TrashEntry } from '@taskweave/shared';
 import { serverText } from './serverText';
@@ -108,7 +109,7 @@ const aiBase = (owner: string) => (owner.startsWith('contest:') ? `/contests/${p
 /** ?testset= for anything but the default testset. */
 const tsq = (ts?: string) => (ts && ts !== 'tests' ? `?testset=${encodeURIComponent(ts)}` : '');
 
-async function uploadPackage<T>(url: string, file: File, options: PackageImportOptions, preview = false): Promise<T> {
+async function uploadPackage<T>(url: string, file: File, options: Partial<PackageImportOptions>, preview = false): Promise<T> {
   const query = new URLSearchParams(Object.entries(options).filter((entry): entry is [string, string] => entry[1] !== undefined));
   if (preview) query.set('preview', '1');
   const res = await fetch(`/api${url}?${query}`, { method: 'POST', headers: { [TOKEN_HEADER]: token, 'Content-Type': /\.xml$/i.test(file.name) ? 'application/xml' : 'application/zip' }, body: file });
@@ -127,10 +128,16 @@ export const api = {
   emptyTrash: (entries: string[]) => request('DELETE', '/trash', { entries }),
   packageCandidates: (file: File, options: PackageImportOptions) => uploadPackage<PackageCandidate[]>('/problems/import/package', file, options, true),
   importPackage: (file: File, options: PackageImportOptions, id?: string) => uploadPackage<PackageImportResult>(id ? `/problems/${pid(id)}/import/data` : '/problems/import/package', file, options),
-  stagePackage: (file: File, format: PackageImportOptions['format']) => uploadPackage<PackageUpload>('/packages/uploads', file, { format }),
-  stageDirectory: (path: string, format: PackageImportOptions['format']) => request<PackageUpload>('POST', '/packages/directories', { path, format }),
+  stagePackage: (file: File) => uploadPackage<PackageUpload>('/packages/uploads', file, { format: 'auto' }),
+  stageDirectory: (path: string) => request<PackageUpload>('POST', '/packages/directories', { path, format: 'auto' }),
+  inspectPackageUnit: (id: string, unit: string, format: ImportPackageFormat) => request<PackageItem[]>('POST', `/packages/uploads/${encodeURIComponent(id)}/inspect`, { unit, format }),
   discardPackage: (id: string) => request('DELETE', `/packages/uploads/${encodeURIComponent(id)}`),
+  validatePackages: (items: PackageSelection[], problemId?: string) => request<PackageValidation>('POST', '/packages/validate', { items, problemId }),
   importPackages: (items: PackageSelection[], problemId?: string) => request<PackageBatchResult>('POST', '/packages/import', { items, problemId }),
+  stageContestPackage: (file: File) => uploadPackage<ContestPackageUpload>('/contest-packages/uploads', file, {}),
+  stageContestDirectory: (path: string) => request<ContestPackageUpload>('POST', '/contest-packages/directories', { path }),
+  validateContestPackage: (req: ContestPackageImportRequest) => request<ContestPackageValidation>('POST', '/contest-packages/validate', req),
+  importContestPackage: (req: ContestPackageImportRequest) => request<ContestPackageImportResult>('POST', '/contest-packages/import', req),
   originalAnswers: (id: string, testset?: string) => request<AnswerBackupInfo>('GET', `/problems/${pid(id)}/answers/original${tsq(testset)}`),
   regenerateAnswers: (id: string, options: RegenerateAnswersRequest) => request<JobInfo>('POST', `/problems/${pid(id)}/answers/regenerate`, options),
   restoreAnswers: (id: string, testset?: string) => request<JobInfo>('POST', `/problems/${pid(id)}/answers/restore`, { testset }),

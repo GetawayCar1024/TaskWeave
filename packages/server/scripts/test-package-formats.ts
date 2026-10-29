@@ -16,6 +16,7 @@ import { readManifest, generateTests, answerPath, inputPath } from '../src/judge
 import { exportPackage } from '../src/judge/package.js';
 import { buildProblemDataPackage } from '../src/judge/problemExport.js';
 import { PackageUploads } from '../src/imports/uploads.js';
+import { packageItems } from '../src/imports/units.js';
 
 const job = () => ({ signal: new AbortController().signal, progress() {} });
 const zip = (files: Record<string, string | Buffer>) => { const writer = new ZipWriter(); for (const [name, value] of Object.entries(files)) writer.add(name, value); return writer.finish(); };
@@ -140,14 +141,14 @@ test('ZIP previews reject invalid Polygon XML references and XML entities before
 test('staged archives are reusable for per-problem settings and are removed when dismissed', async () => fixture(async (judge, home) => {
   const uploads = new PackageUploads(home);
   try {
-    const stage = await uploads.stage(zip({ 'a/in/a.txt': '1', 'a/out/a.txt': '2', 'b/in/b.txt': '3', 'b/out/b.txt': '4' }), { format: 'joi' });
-    assert.equal(stage.candidates.length, 2);
-    const files = await uploads.read(stage.id, 'joi');
-    for (const [index, candidate] of stage.candidates.entries()) {
+    const stage = await uploads.stage(zip({ 'a/in/a.txt': '1', 'a/out/a.txt': '2', 'b/in/b.txt': '3', 'b/out/b.txt': '4' }), archive => ({ items: packageItems(archive, 'joi') }));
+    assert.equal(stage.items.length, 2);
+    const files = await uploads.read(stage.id);
+    for (const [index, candidate] of stage.items.entries()) {
       const result = await importPackage(judge, files, { format: 'joi', entry: candidate.entry, name: `batch-${index}`, timeLimit: 1000 + index, title: { en: `Problem ${index}` } });
       assert.equal(result.problem.timeLimit, 1000 + index); assert.equal(result.problem.title.en, `Problem ${index}`);
     }
-    await uploads.discard(stage.id); await assert.rejects(uploads.read(stage.id, 'joi'), /expired/);
+    await uploads.discard(stage.id); await assert.rejects(uploads.read(stage.id), /expired/);
   } finally { await uploads.dispose(); }
 }));
 
@@ -177,11 +178,12 @@ test('incremental compatibility refresh notices source edits, repairs cache edit
 test('uploads recover from cache-directory removal and report expired selections', async () => fixture(async (_judge, home) => {
   const uploads = new PackageUploads(home), bytes = zip({ '1.in': '1', '1.out': '2' });
   try {
-    const first = await uploads.stage(bytes, { format: 'data' });
+    const inspect = (archive: Map<string, Buffer>) => ({ items: packageItems(archive, 'data') });
+    const first = await uploads.stage(bytes, inspect);
     const parent = path.join(home, 'cache'), directory = (await fs.readdir(parent)).find(name => name.startsWith('package-import-'))!;
     await fs.rm(path.join(parent, directory), { recursive: true });
-    const second = await uploads.stage(bytes, { format: 'data' });
-    assert.equal((await uploads.read(second.id, 'data')).get('1.in')!.toString(), '1');
-    await assert.rejects(uploads.read(first.id, 'data'), /expired/);
+    const second = await uploads.stage(bytes, inspect);
+    assert.equal((await uploads.read(second.id)).get('1.in')!.toString(), '1');
+    await assert.rejects(uploads.read(first.id), /expired/);
   } finally { await uploads.dispose(); }
 }));

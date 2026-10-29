@@ -9,10 +9,12 @@ import { waitJob } from '../lib/jobs';
 import { serverText } from '../lib/serverText';
 import ToolWindow from './ToolWindow.vue';
 import { createJobFollower } from '../lib/jobFollower';
+import { labelWidth } from '../lib/labelWidth';
 
 const props = defineProps<{ show: boolean; detail: ProblemDetail | null }>();
 const emit = defineEmits<{ 'update:show': [boolean] }>();
 const { t, locale } = useI18n(), router = useRouter(), message = useMessage();
+const width = labelWidth(112, 160);
 const format = ref('polygon'), testsets = ref<string[]>(['tests']);
 const time = ref<LuoguAggregate>('sum'), memory = ref<LuoguAggregate>('max');
 const busy = ref(false), error = ref(''), job = ref<JobInfo | null>(null);
@@ -76,7 +78,7 @@ async function submit() {
 </script>
 <template>
   <tool-window :show="show" :title="t('packages.exportProblem')" size="md" :error="error" :status="job?.status" :progress="job?.progress" @after-leave="afterClose" @update:show="value => !busy && emit('update:show', value)">
-    <n-form label-placement="left" label-width="auto">
+    <n-form label-placement="left" :label-width="width">
       <n-form-item :label="t('packages.format')"><n-select v-model:value="format" :disabled="busy" :options="formats" /></n-form-item>
       <template v-if="format === 'luogu'">
         <n-form-item :label="t('testsets.title')"><n-select v-model:value="testsets" multiple :disabled="busy" :options="sets" /></n-form-item>

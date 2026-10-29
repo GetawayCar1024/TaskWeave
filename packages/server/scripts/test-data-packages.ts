@@ -187,3 +187,31 @@ test('API import prerequisites, single exports, data-only down.zip and contest L
   const contestZip = readZip(await fs.readFile(path.join(c.dir, '.taskweave/export', luogu.file!)));
   assert.ok(readZip(contestZip.get('api-data/data.zip')!).has('config.yml'));
 }));
+
+test('the source file name is the contestant-facing name of OI statements, samples, down.zip and LemonLime', async () => fixture(async ({ registry, judge, contests, call }) => {
+  const a = (await importPackage(judge, zip({ '1.in': '1\n', '1.out': '2\n' }), { format: 'data', name: 'library-road' })).problem;
+  let response = await call('PATCH', `/api/problems/${a.id}`, { sourceName: 'Road', samples: '1' });
+  assert.equal(response.statusCode, 200, response.body); assert.equal(response.json().config.problem.source_name, 'Road');
+  // Empty or equal to the short name: the default, which follows later renames.
+  assert.equal((await registry.patch(a.id, { sourceName: 'library-road' })).config?.problem.source_name, undefined);
+  assert.equal((await call('PATCH', `/api/problems/${a.id}`, { sourceName: 'bad name' })).statusCode, 400);
+  assert.equal((await call('PATCH', `/api/problems/${a.id}`, { sourceName: 'nul' })).statusCode, 400);
+  await registry.patch(a.id, { sourceName: 'Road' });
+  const c = await contests.create({ name: 'source-round', type: 'oi', problems: [{ index: 'A', problem: a.id }] });
+  const [statement] = await contestStatements(judge, contests, c.id, 'en');
+  assert.equal(statement.name, 'Road'); assert.equal(statement.samples[0].inputFile, 'Road/Road1.in');
+  assert.equal((await readSamples(await judge.ctx(a.id)))[0].sample.outputFile, 'Road/Road1.out');
+  response = await call('POST', `/api/contests/${c.id}/down`, { lang: 'en', samplesOnly: true });
+  assert.equal(response.statusCode, 200, response.body); assert.equal(readZip(response.rawPayload).get('Road/Road1.in')?.toString(), '1\n');
+  const exported = await runContestBatch({ judge, contests, sync: new PolygonSync(judge) }, c.id, { action: 'export', exportFormat: 'lemonlime' }, job());
+  const lemon = readZip(await fs.readFile(path.join(c.dir, '.taskweave/export', exported.file!)));
+  const task = JSON.parse(lemon.get('source-round.cdf')!.toString()).tasks[0];
+  assert.deepEqual([task.sourceFileName, task.inputFileName, task.testCases[0].inputFiles[0]], ['Road', 'Road.in', 'Road/1.in']); assert.ok(lemon.has('data/Road/1.ans'));
+  // Contestant folders are case-insensitive on Windows.
+  const b = (await importPackage(judge, zip({ '1.in': '3\n', '1.out': '4\n' }), { format: 'data', name: 'other-road' })).problem;
+  await registry.patch(b.id, { sourceName: 'road' });
+  await contests.update(c.id, { problems: [{ index: 'A', problem: a.id }, { index: 'B', problem: b.id }] });
+  await assert.rejects(runContestBatch({ judge, contests, sync: new PolygonSync(judge) }, c.id, { action: 'export', exportFormat: 'lemonlime' }, job()), /B: duplicate source file name: road/);
+  response = await call('POST', `/api/contests/${c.id}/down`, { lang: 'en', samplesOnly: true });
+  assert.equal(response.statusCode, 400); assert.match(response.json().message, /unique source file names: road/);
+}));

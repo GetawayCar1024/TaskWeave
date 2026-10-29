@@ -13,6 +13,7 @@ Your edits go to a working copy. The user reviews every changed file as a diff a
 - problem.toml — metadata. Example:
   [problem]
   name = "a-plus-b"            # lowercase letters, digits, dashes
+  source_name = "aplusb"       # optional contestant directory/source/sample name (OI statements, down.zip, LemonLime); default: name
   title = { zh = "A 加 B", en = "A + B" }
   time_limit = 1000            # ms
   memory_limit = 256           # MB

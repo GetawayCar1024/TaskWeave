@@ -9,6 +9,7 @@ import ContestDialog from '../components/ContestDialog.vue';
 import CreateProblemDialog from '../components/CreateProblemDialog.vue';
 import ImportDialog from '../components/ImportDialog.vue';
 import PackageImportDialog from '../components/PackageImportDialog.vue';
+import ContestPackageDialog from '../components/ContestPackageDialog.vue';
 import { api, errorMessage } from '../lib/api';
 import { onWs } from '../lib/ws';
 import { problemTitle } from '../lib/format';
@@ -34,6 +35,7 @@ const filter = ref('');
 const showCreate = ref(false);
 const showImport = ref(false);
 const showPackageImport = ref(false);
+const showContestPackage = ref(false);
 const contestDialog = ref<'create' | 'import' | null>(null);
 
 const tab = ref<'problems' | 'contests'>(route.query.tab === 'contests' ? 'contests' : 'problems');
@@ -201,6 +203,7 @@ function openContest(c: ContestSummary) {
         <template v-else>
           <n-button size="small" type="primary" @click="contestDialog = 'create'">{{ t('contest.new') }}</n-button>
           <n-button size="small" :disabled="importDisabled" :title="importHint" @click="contestDialog = 'import'">{{ t('list.import') }}</n-button>
+          <n-button size="small" :disabled="!roots.length" :title="roots.length ? '' : t('list.noRootsHint')" @click="showContestPackage = true">{{ t('packages.importLocal') }}</n-button>
         </template>
         <n-button size="small" @click="router.push({ name: 'settings' })">{{ t('nav.settings') }}</n-button>
         <n-button size="small" @click="router.push({ name: 'trash' })"><template #icon><trash2 :size="14" /></template>{{ t('trash.title') }}</n-button>
@@ -321,6 +324,7 @@ function openContest(c: ContestSummary) {
     <create-problem-dialog v-model:show="showCreate" :roots="roots" :root="locations.problems.root" :folder="locations.problems.folder" @created="open" />
     <import-dialog v-model:show="showImport" :roots="roots" :polygon-ready="polygonReady" @imported="load" />
     <package-import-dialog v-model:show="showPackageImport" :roots="roots" :root="locations.problems.root" :folder="locations.problems.folder" @imported="load" />
+    <contest-package-dialog v-model:show="showContestPackage" :roots="roots" :folder="locations.contests.folder" :problem-root="locations.problems.root" :problem-folder="locations.problems.folder" @imported="openContest" />
     <contest-dialog
       :show="contestDialog !== null"
       :mode="contestDialog ?? 'create'"

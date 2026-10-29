@@ -28,6 +28,8 @@ const props = withDefaults(
     error?: string | null;
     /** The body takes a fixed share of the window height (content scrolls inside). */
     fill?: boolean;
+    /** Holds work that a stray click outside must not discard; the close button and Esc still close it. */
+    persistent?: boolean;
   }>(),
   { size: 'lg', width: undefined, status: null, progress: null, error: null },
 );
@@ -48,6 +50,7 @@ const STATUS_TYPE = { running: 'info', done: 'success', failed: 'error', cancell
     :style="{ width: width ?? WIDTHS[size] }"
     :segmented="{ content: true, footer: 'soft' }"
     :content-style="{ padding: '0' }"
+    :mask-closable="!persistent"
     @update:show="emit('update:show', $event)"
     @after-leave="emit('after-leave')"
   >

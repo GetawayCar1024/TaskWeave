@@ -45,6 +45,12 @@ export const LEMON_COMPARISON_MODES = { lines: 0, 'ignore-spaces': 1, real: 3 } 
 /** Polygon problem names: lowercase latin letters, digits and dashes. */
 export const PROBLEM_NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
+/** Contestant directory / program / sample stem (LemonLime sourceFileName); must also be a portable file name. */
+export const SOURCE_NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$/;
+export const validSourceName = (name: string) => SOURCE_NAME_RE.test(name) && !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(name);
+/** Contestant-facing file name: an explicit source name, otherwise the short name. */
+export const sourceName = (problem: { name: string; source_name?: string }) => problem.source_name || problem.name;
+
 const localized = z.record(z.string(), z.string());
 
 /** A program referenced from problem.toml; `lang` overrides the extension-based language. */
@@ -117,6 +123,8 @@ export const problemTomlSchema = z.object({
   problem: z
     .object({
       name: z.string(),
+      /** Contestant source / directory name when it differs from the short name. */
+      source_name: z.string().optional(),
       type: problemTypeSchema.default('cf'),
       title: localized.default({}),
       time_limit: z.number().int().positive().default(1000),
@@ -299,6 +307,8 @@ export interface CreateProblemRequest {
 export interface PatchProblemRequest {
   /** Short name and folder are renamed together; references use the persistent identity. */
   name?: string;
+  /** Contestant source file name; null or empty follows the short name. */
+  sourceName?: string | null;
   luogu?: { time: 'sum' | 'min' | 'max'; memory: 'sum' | 'min' | 'max' };
   /** Leaving data-only mode requires the full authoring files to exist. */
   dataOnly?: boolean;

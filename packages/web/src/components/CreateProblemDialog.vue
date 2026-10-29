@@ -6,10 +6,12 @@ import { PROBLEM_NAME_RE, type JudgeMode, type ProblemSummary, type StatementMod
 import { api, errorMessage } from '../lib/api';
 import ToolWindow from './ToolWindow.vue';
 import LibraryFolderSelect from './LibraryFolderSelect.vue';
+import { labelWidth } from '../lib/labelWidth';
 
 const props = defineProps<{ show: boolean; roots: string[]; root?: string; folder?: string }>();
 const emit = defineEmits<{ 'update:show': [boolean]; created: [ProblemSummary] }>();
 const { t } = useI18n();
+const width = labelWidth(104, 140);
 
 const blank = () => ({ name: '', titleZh: '', titleEn: '', timeLimit: 1000, memoryLimit: 256, judgeMode: 'batch' as JudgeMode, statementMode: 'sections' as StatementMode, dataOnly: false, root: props.root || props.roots[0] || '', folder: props.folder ?? '' });
 const form = reactive(blank());
@@ -56,7 +58,7 @@ async function submit() {
 
 <template>
   <tool-window :show="show" :title="t('create.title')" size="md" :error="error" @update:show="emit('update:show', $event)">
-    <n-form label-placement="left" label-width="auto" @submit.prevent="submit">
+    <n-form label-placement="left" :label-width="width" @submit.prevent="submit">
       <n-form-item
         :label="t('create.name')"
         :feedback="form.name && !nameValid ? t('create.nameRule') : ''"

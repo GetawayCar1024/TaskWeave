@@ -6,10 +6,12 @@ import { PROBLEM_NAME_RE, type JobInfo, type PolygonProblem, type ProblemSummary
 import { api, errorMessage } from '../lib/api';
 import { waitJob } from '../lib/jobs';
 import ToolWindow from './ToolWindow.vue';
+import { labelWidth } from '../lib/labelWidth';
 
 const props = defineProps<{ show: boolean; roots: string[]; polygonReady: boolean }>();
 const emit = defineEmits<{ 'update:show': [boolean]; imported: [ProblemSummary] }>();
 const { t } = useI18n();
+const width = labelWidth(112, 96);
 
 const list = ref<PolygonProblem[] | null>(null);
 const listError = ref('');
@@ -95,7 +97,7 @@ async function submit() {
         <div v-if="list && !shown.length" class="pf-empty">{{ t('import.none') }}</div>
       </n-scrollbar>
     </template>
-    <n-form label-placement="left" label-width="auto" size="small">
+    <n-form label-placement="left" :label-width="width" size="small">
       <n-form-item :label="t('import.id')">
         <n-input-number v-model:value="polygonId" :show-button="false" style="width: 160px" />
       </n-form-item>

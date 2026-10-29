@@ -13,11 +13,13 @@ import { Plus } from 'lucide-vue-next';
 import { loadSettings } from '../lib/settings';
 import { waitJob } from '../lib/jobs';
 import LibraryFolderSelect from './LibraryFolderSelect.vue';
+import { labelWidth } from '../lib/labelWidth';
 
 const props = defineProps<{ show: boolean; mode: 'create' | 'import'; roots: string[]; polygonReady: boolean; problems: ProblemSummary[]; folder?: string }>();
 const emit = defineEmits<{ 'update:show': [boolean]; created: [ContestSummary] }>();
 const { t, locale } = useI18n();
 const message = useMessage();
+const width = labelWidth(124, 156);
 
 const blank = () => ({ name: '', titleZh: '', titleEn: '', root: props.roots[0] ?? '', folder: props.folder ?? '', problems: [] as string[], contestId: null as number | null });
 const form = reactive(blank());
@@ -98,7 +100,7 @@ async function submit() {
     :error="importError"
     @update:show="emit('update:show', $event)"
   >
-    <n-form label-placement="left" label-width="auto" @submit.prevent="submit">
+    <n-form label-placement="left" :label-width="width" @submit.prevent="submit">
       <n-form-item v-if="mode === 'import'" :label="t('contest.polygonId')">
         <n-input-number v-model:value="form.contestId" :min="1" :show-button="false" placeholder="12345" style="width: 100%" />
       </n-form-item>

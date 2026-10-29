@@ -1,4 +1,4 @@
-import { PROBLEM_NAME_RE, type ContestStatement } from '@taskweave/shared';
+import { sourceName, validSourceName, type ContestStatement } from '@taskweave/shared';
 import { HttpError } from '../util/fs.js';
 import { ZipWriter } from '../util/zip.js';
 import { contestNotes } from '../workspace/contestFiles.js';
@@ -19,8 +19,8 @@ export async function contestDown(judge: Judge, contests: ContestRegistry, id: s
     if (!config.problems.length) throw new HttpError(400, 'empty_contest', 'No problems to export.');
     const zip = new ZipWriter(), names = new Set<string>();
     for (const p of config.problems) {
-      const ctx = await judge.ctx(p.problem), name = ctx.config.problem.name;
-      if (!PROBLEM_NAME_RE.test(name) || names.has(name.toLowerCase())) throw new HttpError(400, 'duplicate_name', `down.zip requires unique English problem names: ${name}`);
+      const ctx = await judge.ctx(p.problem), name = sourceName(ctx.config.problem);
+      if (!validSourceName(name) || names.has(name.toLowerCase())) throw new HttpError(400, 'duplicate_name', `down.zip requires unique source file names: ${name}`);
       names.add(name.toLowerCase()); zip.add(`${name}/`, '');
       for (const ts of testsetsOf(ctx.config).filter(ts => ts.samples?.trim())) {
         const m = await generateTests(judge, ctx, { signal: new AbortController().signal, progress() {} }, ts.name);
@@ -44,8 +44,8 @@ export async function contestDown(judge: Judge, contests: ContestRegistry, id: s
   const names = new Set<string>();
   for (const p of config.problems) {
     const ctx = await judge.ctx(p.problem);
-    const name = ctx.config.problem.name;
-    if (!PROBLEM_NAME_RE.test(name) || names.has(name.toLowerCase())) throw new HttpError(400, 'duplicate_name', `down.zip requires unique English problem names: ${name}`);
+    const name = sourceName(ctx.config.problem);
+    if (!validSourceName(name) || names.has(name.toLowerCase())) throw new HttpError(400, 'duplicate_name', `down.zip requires unique source file names: ${name}`);
     names.add(name.toLowerCase()); zip.add(`${name}/`, '');
     const rows = await readSamples(ctx, true, req.lang);
     const previous = current.find(s => s.problem === p.problem)!;

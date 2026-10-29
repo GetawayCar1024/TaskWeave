@@ -20,7 +20,7 @@ import {
   useDialog,
   type SelectOption,
 } from 'naive-ui';
-import { distinctIoFiles, PROBLEM_NAME_RE, SOLUTION_TAGS, isSourceFile, judgeMode, type JudgeMode, type LemonComparison, type PatchProblemRequest, type SolutionTag } from '@taskweave/shared';
+import { distinctIoFiles, PROBLEM_NAME_RE, SOLUTION_TAGS, isSourceFile, judgeMode, validSourceName, type JudgeMode, type LemonComparison, type PatchProblemRequest, type SolutionTag } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import { serverText } from '../lib/serverText';
 import { formatSize } from '../lib/format';
@@ -54,6 +54,7 @@ async function completeProblem() {
 
 const form = reactive({
   name: '',
+  sourceName: '',
   titleZh: '',
   titleEn: '',
   timeLimit: 1000,
@@ -74,13 +75,15 @@ const inputSelect = ref<InstanceType<typeof FreeSelect>>(), outputSelect = ref<I
 const inputDraft = ref(false), outputDraft = ref(false), saving = ref(false);
 const dirty = computed(() => inputDraft.value || outputDraft.value || !!baseline.value && JSON.stringify(form) !== baseline.value);
 function commitStreams() { inputSelect.value?.commit(); outputSelect.value?.commit(); }
-const valid = computed(() => PROBLEM_NAME_RE.test(form.name.trim()) && distinctIoFiles(form.input, form.output) && form.timeLimit > 0 && form.memoryLimit > 0);
+const sourceNameValid = computed(() => !form.sourceName.trim() || validSourceName(form.sourceName.trim()));
+const valid = computed(() => PROBLEM_NAME_RE.test(form.name.trim()) && sourceNameValid.value && distinctIoFiles(form.input, form.output) && form.timeLimit > 0 && form.memoryLimit > 0);
 
 function reset() {
   const c = cfg.value;
   if (!c) return;
   Object.assign(form, {
     name: c.problem.name,
+    sourceName: c.problem.source_name ?? '',
     titleZh: c.problem.title.zh ?? '',
     titleEn: c.problem.title.en ?? '',
     timeLimit: c.problem.time_limit,
@@ -158,6 +161,7 @@ async function save(): Promise<boolean> {
   const saved = JSON.stringify(form);
   const req: PatchProblemRequest = {
     ...(form.name.trim() !== c.problem.name || props.ws.state.detail?.summary.dir.split(/[\\/]/).pop() !== form.name.trim() ? { name: form.name.trim() } : {}),
+    sourceName: form.sourceName.trim() || null,
     title: { ...c.problem.title, zh: form.titleZh, en: form.titleEn },
     timeLimit: form.timeLimit,
     memoryLimit: form.memoryLimit,
@@ -239,6 +243,10 @@ const activeInfo = computed(() => {
         <n-form size="small" label-placement="left" label-width="100" :show-feedback="false" class="form">
           <n-form-item :label="t('create.name')"><n-input v-model:value="form.name" :aria-label="t('create.name')" :status="PROBLEM_NAME_RE.test(form.name.trim()) ? undefined : 'error'" /></n-form-item>
           <p class="small dim">{{ t('problem.renameHint') }}</p>
+          <n-form-item :label="t('problem.sourceName')">
+            <n-input v-model:value="form.sourceName" class="mono" :placeholder="form.name.trim()" :aria-label="t('problem.sourceName')" :status="sourceNameValid ? undefined : 'error'" />
+          </n-form-item>
+          <p class="small dim">{{ sourceNameValid ? t('problem.sourceNameHint') : t('problem.sourceNameRule') }}</p>
           <n-form-item :label="t('create.titleZh')"><n-input v-model:value="form.titleZh" /></n-form-item>
           <n-form-item :label="t('create.titleEn')"><n-input v-model:value="form.titleEn" /></n-form-item>
           <n-form-item :label="t('problem.timeLimit')">

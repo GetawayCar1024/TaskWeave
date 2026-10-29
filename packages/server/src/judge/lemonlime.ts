@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_TESTSET, groupLayout, groupTotal, judgeMode, LEMON_COMPARISON_MODES, parseIndexList, PROBLEM_NAME_RE, testsetOf, testsetsOf, testLimitLookup, type ProblemToml, type TestGroup } from '@taskweave/shared';
+import { DEFAULT_TESTSET, groupLayout, groupTotal, judgeMode, LEMON_COMPARISON_MODES, parseIndexList, sourceName, testsetOf, testsetsOf, testLimitLookup, validSourceName, type ProblemToml, type TestGroup } from '@taskweave/shared';
 import type { JobCtx } from '../jobs.js';
 import { exists, HttpError, safeJoin, toPosix } from '../util/fs.js';
 import type { ZipWriter } from '../util/zip.js';
@@ -91,7 +91,7 @@ export async function preflightLemonChecker(judge: Judge, ctx: ProblemCtx, index
   const { config } = ctx;
   const p = config.problem;
   if (p.unresolved_judge) fail(`${index}: ${p.unresolved_judge}`);
-  if (!PROBLEM_NAME_RE.test(p.name) || !/^[A-Z][A-Z0-9]{0,3}$/.test(index)) fail('Invalid problem name or contest index.');
+  if (!validSourceName(sourceName(p)) || !/^[A-Z][A-Z0-9]{0,3}$/.test(index)) fail(`${index}: invalid source file name or contest index.`);
   const mode = judgeMode(p);
   if (mode === 'io') fail(`${index}: LemonLime export does not support pipe-based I/O interactive problems.`);
   for (const [file, standard] of [[p.input, 'stdin'], [p.output, 'stdout']]) {
@@ -197,7 +197,8 @@ export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: stri
   const checker = await preflightLemonChecker(judge, ctx, index, target);
   const checkerSource = config.lemon_comparison ? undefined : config.lemon_checker?.source;
   const hasChecker = !!checkerSource;
-  const folder = p.name;
+  // Contestant source, data folder and default runtime files share the source file name.
+  const folder = sourceName(p);
   const testCases: LemonTestCase[] = [];
   let count = 0;
   for (const { name, tests } of await exportedTests(judge, ctx, testsets, index, job)) {
@@ -227,24 +228,24 @@ export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: stri
     const standard = command.match(/-std=((?:gnu|c)\+\+(?:98|03|11|14|17|20|23|26|2a|2b|2c))\b/)?.[1] ?? 'c++17';
     checkerBuild = { source, include: `data/${folder}/checker-sources`, output: `data/${folder}/checker`, standard };
   }
-  const main = judge.mainSolution(config) ?? `${p.name}.cpp`;
+  const main = judge.mainSolution(config) ?? `${folder}.cpp`;
   const compile = pickLanguage((await judge.global.readLanguages()).languages, main, judge.langOf(config, main))?.lang.compile ?? '';
   const standard = compile.match(/-std=(?:c|gnu)\+\+(98|03|11|14|17|20)\b/)?.[1];
   const optimization = compile.match(/(?:^|\s)-O([23])(?:\s|$)/)?.[1];
   const cppConfiguration = standard ? `C++${standard}${optimization ? ` O${optimization}` : ''}` : 'default';
   const task = {
-    problemTitle: `${index}. ${p.title.zh || p.title.en || p.name}`, sourceFileName: p.name,
-    inputFileName: p.input === 'stdin' ? `${p.name}.in` : p.input,
-    outputFileName: p.output === 'stdout' ? `${p.name}.out` : p.output,
+    problemTitle: `${index}. ${p.title.zh || p.title.en || p.name}`, sourceFileName: folder,
+    inputFileName: p.input === 'stdin' ? `${folder}.in` : p.input,
+    outputFileName: p.output === 'stdout' ? `${folder}.out` : p.output,
     standardInputCheck: !p.input || p.input === 'stdin', standardOutputCheck: !p.output || p.output === 'stdout',
     taskType: mode === 'grader' ? 3 : 0, subFolderCheck: subfolders,
     comparisonMode: config.lemon_comparison ? LEMON_COMPARISON_MODES[config.lemon_comparison.mode] : hasChecker ? (config.lemon_checker?.protocol === 'testlib' ? 5 : 4) : 1, diffArguments: '--ignore-space-change --text --brief', realPrecision: config.lemon_comparison?.precision ?? 3,
     specialJudge: hasChecker ? checkerName : '', compilerConfiguration: { 'g++': cppConfiguration }, answerFileExtension: 'ans', testCases,
-    ...(mode === 'grader' ? { sourceFilesPath: [`${p.name}.cpp`], sourceFilesName: [`${p.name}.cpp`], graderFilesPath: [] as string[], graderFilesName: [] as string[] } : {}),
+    ...(mode === 'grader' ? { sourceFilesPath: [`${folder}.cpp`], sourceFilesName: [`${folder}.cpp`], graderFilesPath: [] as string[], graderFilesName: [] as string[] } : {}),
   };
   if (mode === 'grader') {
     if (!config.grader?.sources.length) fail(`${index}: grader sources are not configured.`);
-    const names = new Set([`${p.name}.cpp`.toLowerCase()]);
+    const names = new Set([`${folder}.cpp`.toLowerCase()]);
     for (const file of [...config.grader!.sources, ...config.grader!.headers]) {
       const name = path.basename(file);
       if (names.has(name.toLowerCase())) fail(`${index}: grader file name collision: ${name}.`);

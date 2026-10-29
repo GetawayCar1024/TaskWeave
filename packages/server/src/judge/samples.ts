@@ -1,5 +1,5 @@
 import { promises as fs } from 'node:fs';
-import { parseIndexList, sampleFileNames, sampleNotePath, testsetsOf, type StatementSample } from '@taskweave/shared';
+import { parseIndexList, sampleFileNames, sampleNotePath, sourceName, testsetsOf, type StatementSample } from '@taskweave/shared';
 import { exists, HttpError, safeJoin, sha1 } from '../util/fs.js';
 import type { ProblemCtx } from './index.js';
 import { answerPath, inputPath, readManifest, sampleStatementPaths } from './tests.js';
@@ -38,7 +38,7 @@ export async function readSamples(ctx: ProblemCtx, strict = false, lang?: string
       const number = rows.length + 1;
       const note = lang ? (await fs.readFile(safeJoin(ctx.ref.dir, sampleNotePath(lang, index, ts.name)), 'utf8').catch(() => '')) : '';
       rows.push({ input, output, sample: { testset: ts.name, index, number, large: large.has(index),
-        ...sampleFileNames(ctx.config.problem.name, number), inputHash: sha1(input), outputHash: sha1(output),
+        ...sampleFileNames(sourceName(ctx.config.problem), number), inputHash: sha1(input), outputHash: sha1(output),
         input: large.has(index) ? '' : input.toString('utf8'), output: large.has(index) ? '' : output.toString('utf8'),
         inputCases: customInput ? undefined : test.inputCases, ...(note.trim() ? { note } : {}) } });
     }

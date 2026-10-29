@@ -41,10 +41,13 @@ import type { WsHub } from './ws.js';
 import { convertStatementMode } from './workspace/statements.js';
 import { importPackage, inspectPackage } from './imports/packages.js';
 import { PackageUploads } from './imports/uploads.js';
+import { inspectUnit, packageItems, packageUnits } from './imports/units.js';
+import { validatePackageSelections } from './imports/selections.js';
+import { importLemonContest, lemonContests, validateLemonContest } from './imports/lemon.js';
 import { TrashStore } from './workspace/trash.js';
 import { LibraryFolders } from './workspace/library.js';
 import type { CreateLibraryFolderRequest, LibraryLocation } from '@taskweave/shared';
-import type { PackageImportOptions, PackageSelection, PackageBatchResult } from '@taskweave/shared';
+import type { ContestPackageImportRequest, ContestPackageUpload, ImportPackageFormat, PackageImportOptions, PackageSelection, PackageBatchResult, PackageValidation } from '@taskweave/shared';
 
 export interface AppDeps {
   global: GlobalStore;
@@ -303,33 +306,57 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   };
   const packageUploads = new PackageUploads(global.dir);
   app.addHook('onClose', () => packageUploads.dispose());
-  app.post<{ Body: Buffer; Querystring: PackageImportOptions }>('/api/packages/uploads', { bodyLimit: 256 * 1024 * 1024 }, async req => packageUploads.stage(req.body, req.query));
-  app.post<{ Body: PackageImportOptions & { path: string } }>('/api/packages/directories', async req => packageUploads.stageDirectory(req.body?.path, { ...req.body, format: req.body?.format ?? 'auto' }));
+  const problemItems = (format: ImportPackageFormat | undefined) => (archive: Map<string, Buffer>) => ({ items: packageItems(archive, format ?? 'auto') });
+  app.post<{ Body: Buffer; Querystring: { format?: ImportPackageFormat } }>('/api/packages/uploads', { bodyLimit: 256 * 1024 * 1024 }, async req => packageUploads.stage(req.body, problemItems(req.query.format)));
+  app.post<{ Body: { path: string; format?: ImportPackageFormat } }>('/api/packages/directories', async req => packageUploads.stageDirectory(req.body?.path, problemItems(req.body?.format)));
+  app.post<{ Params: { id: string }; Body: { unit: string; format: ImportPackageFormat } }>('/api/packages/uploads/:id/inspect', async req => inspectUnit(await packageUploads.read(req.params.id), req.body?.unit, req.body?.format));
   app.delete<{ Params: { id: string } }>('/api/packages/uploads/:id', async req => { await packageUploads.discard(req.params.id); return { ok: true }; });
+  const selections = (body: { items?: PackageSelection[]; problemId?: string } | undefined) => {
+    const { items, problemId } = body ?? {};
+    if (!Array.isArray(items) || !items.length || items.length > 1000 || items.some(item => !item || typeof item !== 'object' || typeof item.uploadId !== 'string') || problemId !== undefined && (typeof problemId !== 'string' || items.length !== 1)) throw new HttpError(400, 'bad_request', 'Select problems to import.');
+    return { items, problemId };
+  };
+  app.post<{ Body: { items: PackageSelection[]; problemId?: string } }>('/api/packages/validate', async req => {
+    const { items, problemId } = selections(req.body);
+    return { items: (await validatePackageSelections(registry, items, problemId)).map(error => error ? { error } : {}) } satisfies PackageValidation;
+  });
   app.post<{ Body: { items: PackageSelection[]; problemId?: string } }>('/api/packages/import', async req => {
-    const { items, problemId } = req.body ?? {};
-    if (!Array.isArray(items) || !items.length || items.length > 1000 || items.some(item => !item || typeof item.uploadId !== 'string') || problemId && items.length !== 1) throw new HttpError(400, 'bad_request', 'Select problems to import.');
+    const { items, problemId } = selections(req.body);
     if (!idle() || importing) throw new HttpError(409, 'busy', 'Wait for running tasks before importing data');
-    if (!problemId) for (const item of items) registry.requireRoot(item.root);
     importing = true;
     const results = new Map<PackageSelection, PackageBatchResult['items'][number]>();
     try {
+      const errors = await validatePackageSelections(registry, items, problemId);
+      if (errors.some(Boolean)) return { rejected: true, items: items.map((item, i) => ({ name: item.name ?? '', error: errors[i] })) } satisfies PackageBatchResult;
       // Group by upload: one decompression even when a contest archive contains many problems.
       for (const uploadId of new Set(items.map(item => item.uploadId))) {
-        const selections = items.filter(item => item.uploadId === uploadId);
+        const group = items.filter(item => item.uploadId === uploadId);
         let archive: Map<string, Buffer>;
-        try { archive = await packageUploads.read(uploadId, selections[0].format); }
-        catch (e) { for (const item of selections) results.set(item, { name: item.name ?? '', error: (e as Error).message }); continue; }
-        for (const item of selections) {
-          try {
-            if (item.format !== selections[0].format) throw new HttpError(400, 'bad_request', 'Mixed formats for one uploaded archive.');
-            results.set(item, { name: item.name ?? '', result: await importPackage(deps.judge, archive, item, problemId) });
-          } catch (e) { results.set(item, { name: item.name ?? '', error: (e as Error).message }); }
+        try { archive = await packageUploads.read(uploadId); }
+        catch (e) { for (const item of group) results.set(item, { name: item.name ?? '', error: (e as Error).message }); continue; }
+        const units = packageUnits(archive);
+        for (const item of group) {
+          try { results.set(item, { name: item.name ?? '', result: await importPackage(deps.judge, item.unit === undefined ? archive : units.files(item.unit), item, problemId) }); }
+          catch (e) { results.set(item, { name: item.name ?? '', error: (e as Error).message }); }
         }
       }
       hub.broadcast({ type: 'problems:changed' });
       if (problemId) hub.broadcast({ type: 'problem:changed', problemId });
       return { items: items.map(item => results.get(item)!) } satisfies PackageBatchResult;
+    } finally { importing = false; }
+  });
+  const contestCandidates = (archive: Map<string, Buffer>) => ({ contests: lemonContests(archive) });
+  app.post<{ Body: Buffer }>('/api/contest-packages/uploads', { bodyLimit: 256 * 1024 * 1024 }, async req => packageUploads.stage(req.body, contestCandidates) satisfies Promise<ContestPackageUpload>);
+  app.post<{ Body: { path: string } }>('/api/contest-packages/directories', async req => packageUploads.stageDirectory(req.body?.path, contestCandidates) satisfies Promise<ContestPackageUpload>);
+  app.post<{ Body: ContestPackageImportRequest }>('/api/contest-packages/validate', async req => validateLemonContest(deps.judge, deps.contests, req.body));
+  app.post<{ Body: ContestPackageImportRequest }>('/api/contest-packages/import', async req => {
+    if (!idle() || importing) throw new HttpError(409, 'busy', 'Wait for running tasks before importing data');
+    importing = true;
+    try {
+      const result = await importLemonContest(deps.judge, deps.contests, await packageUploads.read(req.body?.uploadId), req.body);
+      hub.broadcast({ type: 'problems:changed' });
+      hub.broadcast({ type: 'contests:changed' });
+      return result;
     } finally { importing = false; }
   });
   app.post<{ Body: Buffer; Querystring: PackageImportOptions & { preview?: string } }>('/api/problems/import/package', { bodyLimit: 256 * 1024 * 1024 }, async req => {

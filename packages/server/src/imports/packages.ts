@@ -13,11 +13,14 @@ import { snapshotImportedAnswers } from '../workspace/answerBackups.js';
 import { polygonCandidates, readPolygonPackage, importPolygonPackage } from './polygon.js';
 import { fpsCandidates, importFps } from './fps.js';
 import { PackageReferences } from './references.js';
-import { importLemon, lemonCandidates } from './lemon.js';
+import { LEMON_CONTEST_ONLY } from './lemon.js';
 import { packageMetadata } from '../workspace/migrateNames.js';
 
 const formats = ['polygon-package', 'hydro-problem', 'lemonlime', 'fps', 'data', 'joi', 'luogu-data', 'hydro-data'];
 const slug = (name: string) => name.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '').slice(0, 64) || 'imported-problem';
+/** Data folders are often called data/ or tests/; name the problem after the folder around them. */
+const GENERIC_FOLDERS = new Set(['data', 'testdata', 'tests', 'test', 'testcases', 'cases']);
+const folderName = (entry: string) => entry.split('/').filter(Boolean).reverse().find(part => !GENERIC_FOLDERS.has(part.toLowerCase())) || 'imported-problem';
 const subtree = (files: Map<string, Buffer>, prefix: string) => new Map([...files].filter(([name]) => name.startsWith(prefix)).map(([name, data]) => [name.slice(prefix.length), data]));
 const language = (name: string) => {
   const lang = name.toLowerCase().replace(/_/g, '-').split('-')[0];
@@ -27,7 +30,7 @@ const language = (name: string) => {
 export function packageCandidates(files: Map<string, Buffer>, options: PackageImportOptions): PackageCandidate[] {
   if (!formats.includes(options.format)) return badPackage('Unknown import format.');
   if (options.format === 'fps') return fpsCandidates(files, options);
-  if (options.format === 'lemonlime') return lemonCandidates(files, options);
+  if (options.format === 'lemonlime') return badPackage(LEMON_CONTEST_ONLY);
   if (options.format === 'polygon-package') return polygonCandidates(files);
   if (options.format === 'joi' || options.format === 'data') {
     const prefixes = new Set<string>();
@@ -35,7 +38,7 @@ export function packageCandidates(files: Map<string, Buffer>, options: PackageIm
     for (const file of files.keys()) { const match = /^(.*\/)?in\/.+$/i.exec(file); if (match && outputs.has((match[1] ?? '').toLowerCase())) prefixes.add(match[1] ?? ''); }
     if (!prefixes.size) for (const file of files.keys()) if (/\.in$/i.test(file)) prefixes.add(file.slice(0, file.lastIndexOf('/') + 1));
     const roots = [...prefixes].filter(prefix => ![...prefixes].some(other => other !== prefix && prefix.startsWith(other)));
-    return (roots.length ? roots : ['']).map(entry => ({ entry, title: '', name: options.name || slug(entry.split('/').filter(Boolean).pop() || 'imported-problem') }));
+    return (roots.length ? roots : ['']).map(entry => ({ entry, title: '', name: options.name || slug(folderName(entry)) }));
   }
   if (options.format !== 'hydro-problem') return [{ entry: '', title: '', name: options.name || 'imported-problem' }];
   return [...files.keys()].filter(p => /(?:^|\/)problem\.ya?ml$/i.test(p)).sort().map(file => {
@@ -193,7 +196,7 @@ export function inspectPackage(bytes: Buffer | Map<string, Buffer>, options: Pac
   options = { ...options, format: detectPackageFormat(archive, options.format) };
   if (!archive.size) return badPackage('The ZIP archive contains no files.');
   const candidates = packageCandidates(archive, options);
-  if (options.format === 'fps' || options.format === 'lemonlime') return candidates;
+  if (options.format === 'fps') return candidates;
   if (!candidates.length) return badPackage('No problem.yaml in this Hydro package.');
   const size = [...archive.values()].reduce((sum, bytes) => sum + bytes.length, 0);
   return candidates.map(candidate => {
@@ -221,7 +224,7 @@ export async function importPackage(judge: Judge, bytes: Buffer | Map<string, Bu
   if (options.format === 'fps') {
     return importFps(judge, archive, options, problemId);
   }
-  if (options.format === 'lemonlime') return importLemon(judge, archive, options, problemId);
+  if (options.format === 'lemonlime') return badPackage(LEMON_CONTEST_ONLY);
   if (options.format === 'polygon-package') {
     if (problemId) return badPackage('Polygon packages create new problems.');
     return importPolygonPackage(judge, archive, options);
