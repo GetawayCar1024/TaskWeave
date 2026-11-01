@@ -2,6 +2,12 @@
 
 每个版本的使用说明位于 [docs/releases/](docs/releases/)，详细改动位于 [docs/changes/](docs/changes/)。下载见 [GitHub Releases](https://github.com/GetawayCar1024/taskweave/releases)。
 
+## 0.4.4 — 2026-11-01
+
+修复推送到 LemonServer 时错误的 API Key 显示“未授权”页面，界面统一称 LemonServer；每道题都有题面即可使用 OI 题面 PDF 版 down.zip（含纯数据题）。LemonLime 包数据文件按“源文件名 + 编号”命名，down.zip 样例答案改为 `.ans`。CNOI 题面：`###` 小节标题按原项目显示为【…】，表格中含 `|` 的公式不再拆乱表格。
+
+[发布说明](docs/releases/0.4.4.md) · [改动明细](docs/changes/0.4.4.md)
+
 ## 0.4.3 — 2026-11-01
 
 比赛一键推送到 LemonServer：按服务器系统生成评测包并导入，推送后在服务器上编译检查器，可同时推送 down.zip（样例或 OI 题面 PDF + 样例），替换同名比赛时可保留选手程序、比赛时间与 down.zip。Linux 版在 Chromium 沙箱不可用时自动关闭沙箱以正常启动，缺少宋体等字体时改用已安装的中文字体排版。

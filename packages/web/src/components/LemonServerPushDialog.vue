@@ -69,7 +69,15 @@ const downLangs = computed(() => (props.detail ? commonContestLanguages(props.de
 const downLang = ref('');
 const downToc = ref(localStorage.getItem('taskweave-print-toc') !== '0');
 watch(downLangs, list => { if (!list.includes(downLang.value)) downLang.value = list.includes(locale.value.startsWith('zh') ? 'zh' : 'en') ? (locale.value.startsWith('zh') ? 'zh' : 'en') : list[0] ?? ''; }, { immediate: true });
-watch(dataOnly, v => { if (v && downMode.value === 'pdf') downMode.value = 'samples'; });
+/** Why the statement PDF is not available: problems without a statement in a language all of them share. */
+const pdfBlocked = computed(() => {
+  if (!props.detail || downLangs.value.length) return '';
+  const problems = props.detail.problems;
+  if (!problems.length) return t('contest.lemonServerPdfEmpty');
+  const missing = problems.filter(p => !p.summary?.status.statementLangs.length).map(p => p.index);
+  return missing.length ? t('contest.lemonServerPdfMissing', { list: missing.join(', ') }) : t('contest.lemonServerPdfNoCommon');
+});
+watch(pdfBlocked, v => { if (v && downMode.value === 'pdf') downMode.value = 'samples'; });
 
 const multiTestsets = computed(() => (props.detail?.problems ?? []).filter(p => (props.testsets[p.problem]?.all.length ?? 0) > 1));
 
@@ -182,14 +190,14 @@ function close() {
         <n-radio-group v-model:value="downMode" size="small" :disabled="running">
           <n-radio-button value="none">{{ t('contest.lemonServerDownNone') }}</n-radio-button>
           <n-radio-button value="samples">{{ t('contest.lemonServerDownSamples') }}</n-radio-button>
-          <n-radio-button value="pdf" :disabled="dataOnly || !downLangs.length">{{ t('contest.lemonServerDownPdf') }}</n-radio-button>
+          <n-radio-button value="pdf" :disabled="!!pdfBlocked" :title="pdfBlocked">{{ t('contest.lemonServerDownPdf') }}</n-radio-button>
         </n-radio-group>
         <div v-if="downMode === 'pdf'" class="down-options">
           <label class="inline">{{ t('contest.lemonServerDownLang') }}<n-select v-model:value="downLang" size="small" :options="downLangs.map(l => ({ value: l, label: l }))" :disabled="running" class="lang" /></label>
           <label class="inline"><n-switch v-model:value="downToc" size="small" :disabled="running" />{{ t('contest.toc') }}</label>
         </div>
         <div class="field-hint">{{ downMode === 'none' ? (exists && overwrite ? t('contest.lemonServerDownKeep') : t('contest.lemonServerDownNoneHint')) : downMode === 'samples' ? t('contest.lemonServerDownSamplesHint') : t('contest.lemonServerDownPdfHint') }}</div>
-        <div v-if="dataOnly" class="field-hint">{{ t('dataOnly.downSamples') }}</div>
+        <div v-if="pdfBlocked" class="field-hint">{{ pdfBlocked }}</div>
       </section>
 
       <!-- testsets -->

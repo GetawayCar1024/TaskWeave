@@ -29,6 +29,9 @@ export function splitScore(total: number, n: number): number[] {
 /** Data file stem of a test: "tests" keeps the plain index, other testsets are prefixed. */
 export const testFileStem = (testset: string, index: number) => (testset === DEFAULT_TESTSET ? `${index}` : `${testset}-${index}`);
 
+/** LemonLime data file stem: source file name + number (maze1), like the down.zip samples; other testsets maze-<testset>-1. */
+export const lemonFileStem = (folder: string, testset: string, index: number) => (testset === DEFAULT_TESTSET ? `${folder}${index}` : `${folder}-${testset}-${index}`);
+
 /**
  * Test cases of one testset. `offset` is the number of test cases before it (dependency
  * flags refer to 1-based test case numbers of the whole task).
@@ -46,8 +49,8 @@ export function lemonTestCases(config: ProblemToml, indices: number[], folder: s
     if (![timeLimit, memoryLimit].every(value => Number.isSafeInteger(value) && value > 0 && value <= 2147483647)) fail(`${where}LemonLime requires integer time (ms) and memory (MiB), from 1 to 2147483647.`);
     if (tests.some(i => limits(i, group).timeLimit !== timeLimit || limits(i, group).memoryLimit !== memoryLimit)) fail(`${where}LemonLime bundled tests must use the same time and memory limits.`);
     result.push({ fullScore: score, timeLimit, memoryLimit,
-      inputFiles: [...tests.map(i => `${folder}/${testFileStem(testset, i)}.in`), ...dependencies.map(i => `${i}_lemon_SUbtaskDEPENDENCE_fLAg`)],
-      outputFiles: tests.map(i => `${folder}/${testFileStem(testset, i)}.ans`) });
+      inputFiles: [...tests.map(i => `${folder}/${lemonFileStem(folder, testset, i)}.in`), ...dependencies.map(i => `${i}_lemon_SUbtaskDEPENDENCE_fLAg`)],
+      outputFiles: tests.map(i => `${folder}/${lemonFileStem(folder, testset, i)}.ans`) });
   };
   if (!indices.length) fail(`${where}No tests to export.`);
   if (!ts.groups) {
@@ -209,7 +212,7 @@ export async function addLemonProblem(judge: Judge, ctx: ProblemCtx, index: stri
       job.signal.throwIfAborted();
       for (const [extension, file] of [['in', inputPath(ctx, test, name)], ['ans', answerPath(ctx, test, name)]]) {
         const bytes = await fs.readFile(file).catch(() => fail(`${index}: missing ${extension} for test ${test}${name === DEFAULT_TESTSET ? '' : ` (${name})`}.`));
-        zip.add(`data/${folder}/${testFileStem(name, test)}.${extension}`, bytes);
+        zip.add(`data/${folder}/${lemonFileStem(folder, name, test)}.${extension}`, bytes);
       }
     }
   }

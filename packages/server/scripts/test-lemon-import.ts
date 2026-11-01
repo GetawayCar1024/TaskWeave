@@ -118,7 +118,7 @@ test('the whole contest is validated before anything is written, and later failu
   assert.equal(ctx.config.problem.name, 'noip-road'); assert.equal(ctx.config.problem.source_name, 'road');
   const output = new ZipWriter(), exported = await addLemonProblem(judge, ctx, 'A', output, job());
   assert.equal(exported.task.sourceFileName, 'road'); assert.equal(exported.task.inputFileName, 'road.in');
-  assert.ok(readZip(output.finish()).has('data/road/1.in'));
+  assert.ok(readZip(output.finish()).has('data/road/road1.in'));
 }));
 
 test('problem imports reject LemonLime packages and point to contest import', async () => fixture(async ({ judge, registry }) => {

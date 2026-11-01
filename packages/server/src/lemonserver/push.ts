@@ -10,7 +10,7 @@ import { readZip } from '../util/zip.js';
 import { contestPath, LemonServerClient, LemonServerError, query, validLemonContestName } from './client.js';
 
 /**
- * Push a contest to LemonLime Server: build the LemonLime package for the server's system,
+ * Push a contest to LemonServer: build the LemonLime package for the server's system,
  * import it there (optionally replacing a contest of the same name and keeping its contestant
  * programs), and compile custom checkers on the server when they could not be built here.
  */
@@ -18,25 +18,25 @@ export async function pushContestToLemonServer(deps: ContestDeps, contestId: str
   const { ref, config } = await deps.contests.config(contestId);
   const options = req.lemonServer ?? {};
   const name = (options.name ?? '').trim() || config.contest.name;
-  if (!validLemonContestName(name)) throw new HttpError(400, 'invalid_name', `Invalid LemonLime Server contest name: ${name}`);
+  if (!validLemonContestName(name)) throw new HttpError(400, 'invalid_name', `Invalid LemonServer contest name: ${name}`);
 
-  job.progress(0, 0, 'connecting to LemonLime Server');
+  job.progress(0, 0, 'connecting to LemonServer');
   const client = await LemonServerClient.fromSettings(deps.judge.global, job.signal);
   await client.login();
-  if (client.status!.setupRequired) throw new HttpError(409, 'lemonserver_setup', 'The default contest folder of LemonLime Server is not set. Set it in the server web page first.');
+  if (client.status!.setupRequired) throw new HttpError(409, 'lemonserver_setup', 'The default contest folder of LemonServer is not set. Set it in the server web page first.');
   const target = client.target;
   const same = (a: string, b: string) => (target === 'windows' ? a.toLowerCase() === b.toLowerCase() : a === b);
   const list = await client.contests();
   const existing = list.contests.find(c => same(c.name, name))?.name;
-  if (existing && !options.overwrite) throw new HttpError(409, 'lemonserver_exists', `Contest ${existing} already exists on LemonLime Server. Choose to replace it, or use another name.`);
+  if (existing && !options.overwrite) throw new HttpError(409, 'lemonserver_exists', `Contest ${existing} already exists on LemonServer. Choose to replace it, or use another name.`);
   const entry = list.contests.find(c => c.name === existing);
   const busy = entry?.busy ?? (entry?.judging || (list.judging && same(list.judgingContest ?? list.current ?? '', existing ?? '')));
-  if (existing && busy) throw new HttpError(409, 'lemonserver_judging', `LemonLime Server is judging ${existing} or has it queued for judging. Wait until it finishes, or remove its judging jobs on the server.`);
+  if (existing && busy) throw new HttpError(409, 'lemonserver_judging', `LemonServer is judging ${existing} or has it queued for judging. Wait until it finishes, or remove its judging jobs on the server.`);
 
   // Contestant programs survive a replacement only if they are saved first.
   let sources: Buffer | undefined, keptSources = 0;
   if (existing && options.keepSources) {
-    job.progress(0, 0, 'saving contestant programs on LemonLime Server');
+    job.progress(0, 0, 'saving contestant programs on LemonServer');
     sources = await client.download(contestPath(existing, `/files/download${query({ root: 'source', path: '' })}`)).catch((e: unknown) => {
       // A contest without a source/ folder has nothing to keep.
       if (e instanceof LemonServerError && [400, 404].includes(e.status)) return undefined;
@@ -67,19 +67,19 @@ export async function pushContestToLemonServer(deps: ContestDeps, contestId: str
   const file = path.join(contestExportDir(ref), exported.file!);
   try {
     const data = await fsp.readFile(file);
-    job.progress(0, 0, `uploading to LemonLime Server (${(data.length / 1048576).toFixed(1)} MiB)`);
+    job.progress(0, 0, `uploading to LemonServer (${(data.length / 1048576).toFixed(1)} MiB)`);
     const imported = await client.call<{ name: string }>('POST', `/api/import-contest${query({ name, overwrite: existing ? 1 : undefined })}`, data);
     const remote = imported.name || name;
 
     if (sources) {
-      job.progress(0, 0, 'restoring contestant programs on LemonLime Server');
+      job.progress(0, 0, 'restoring contestant programs on LemonServer');
       await client.call('POST', contestPath(remote, `/files/unzip${query({ root: 'source', path: '' })}`), sources);
       await client.call('POST', contestPath(remote, '/refresh'));
     }
 
     let downZip: 'uploaded' | 'kept' | undefined, keptTime = false;
     if (down ?? previousDown) {
-      job.progress(0, 0, down ? 'uploading down.zip to LemonLime Server' : 'restoring down.zip on LemonLime Server');
+      job.progress(0, 0, down ? 'uploading down.zip to LemonServer' : 'restoring down.zip on LemonServer');
       await client.call('PUT', contestPath(remote, '/down-zip'), down ?? previousDown);
       downZip = down ? 'uploaded' : 'kept';
     }
@@ -98,7 +98,7 @@ export async function pushContestToLemonServer(deps: ContestDeps, contestId: str
       const dir = String((await client.call<{ directory: string }>('GET', contestPath(remote))).directory).replace(/[\\/]+$/, '');
       for (const [i, build] of builds.entries()) {
         job.signal.throwIfAborted();
-        job.progress(i, builds.length, `${build.index} · compiling the checker on LemonLime Server`);
+        job.progress(i, builds.length, `${build.index} · compiling the checker on LemonServer`);
         const inside = (p: string) => p.replace(/^data\//, '');
         const include = (sub: string) => `"${dir}/${build.include}/${sub}"`;
         const r = await client.call<{ ok: boolean; output: string }>('POST', contestPath(remote, '/files/compile'), {
@@ -113,8 +113,8 @@ export async function pushContestToLemonServer(deps: ContestDeps, contestId: str
         const item = exported.items.find(x => x.index === build.index);
         if (!item) continue;
         const output = String(r.output ?? '').split(/\r?\n/).filter(Boolean).slice(0, 40);
-        if (prebuilt) item.details = [...(item.details ?? []), 'checker compilation failed on LemonLime Server; the checker built by TaskWeave is used', ...output];
-        else { item.ok = false; item.message = 'checker compilation failed on LemonLime Server'; item.details = output; }
+        if (prebuilt) item.details = [...(item.details ?? []), 'checker compilation failed on LemonServer; the checker built by TaskWeave is used', ...output];
+        else { item.ok = false; item.message = 'checker compilation failed on LemonServer'; item.details = output; }
       }
     }
 

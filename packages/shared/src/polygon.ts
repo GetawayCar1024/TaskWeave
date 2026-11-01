@@ -167,7 +167,7 @@ export interface SecretsResponse {
     hasSecret: boolean;
     apiUrl: string;
   };
-  /** LemonLime Server (web version of LemonLime): address and API key or access token. */
+  /** LemonServer (web version of LemonLime): address and API key or access token. */
   lemonServer: { url: string; key: string; hasKey: boolean };
 }
 

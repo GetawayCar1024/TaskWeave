@@ -46,7 +46,7 @@ test('CDF preserves bundles, expands per-test scores and puts dependency targets
   const rows = lemonTestCases(c, [1,2,3,4,5], 'A-test');
   assert.deepEqual(rows.map(r => r.fullScore), [15,12,13,60]);
   // Dependencies are listed transitively (a 0-point dependency could not block otherwise).
-  assert.deepEqual(rows[3].inputFiles, ['A-test/4.in','A-test/5.in','1_lemon_SUbtaskDEPENDENCE_fLAg','2_lemon_SUbtaskDEPENDENCE_fLAg','3_lemon_SUbtaskDEPENDENCE_fLAg']);
+  assert.deepEqual(rows[3].inputFiles, ['A-test/A-test4.in','A-test/A-test5.in','1_lemon_SUbtaskDEPENDENCE_fLAg','2_lemon_SUbtaskDEPENDENCE_fLAg','3_lemon_SUbtaskDEPENDENCE_fLAg']);
   assert.equal(rows[0].timeLimit,1000); assert.equal(rows[0].memoryLimit,256);
   assert.throws(() => lemonTestCases(c,[1,2,3,4,5,6],'A-test'), /do not belong/);
   assert.throws(() => lemonTestCases(c,[1,2,3,4],'A-test'), /missing tests/);
@@ -186,8 +186,8 @@ test('grader builds, cache invalidation, real judging, Polygon rejection and com
     const statements=await contestStatements(judge,contests,contest.id,'en');
     const downReq={lang:'en',pdf:Buffer.from('%PDF-1.7\nfixture').toString('base64'),statements,notes:''};
     const down=unzip(await contestDown(judge,contests,contest.id,downReq));
-    assert.deepEqual([...down.keys()],['statement.pdf','grader-demo/','grader-demo/grader-demo1.in','grader-demo/grader-demo1.out','grader-demo/grader-demo2.in','grader-demo/grader-demo2.out','batch-demo/','batch-demo/batch-demo1.in','batch-demo/batch-demo1.out']);
-    assert.equal(down.get('grader-demo/grader-demo2.in')!.length,300000);assert.equal(down.get('grader-demo/grader-demo2.out')!.toString(),'large sample answer\n');
+    assert.deepEqual([...down.keys()],['statement.pdf','grader-demo/','grader-demo/grader-demo1.in','grader-demo/grader-demo1.ans','grader-demo/grader-demo2.in','grader-demo/grader-demo2.ans','batch-demo/','batch-demo/batch-demo1.in','batch-demo/batch-demo1.ans']);
+    assert.equal(down.get('grader-demo/grader-demo2.in')!.length,300000);assert.equal(down.get('grader-demo/grader-demo2.ans')!.toString(),'large sample answer\n');
     await fs.appendFile(path.join(p.dir,'tests/manual/02.statement.out'),'changed');
     await assert.rejects(contestDown(judge,contests,contest.id,downReq),/changed/);
     await assert.rejects(registry.patch(p.id,{largeSamples:'3'}),/subset/);

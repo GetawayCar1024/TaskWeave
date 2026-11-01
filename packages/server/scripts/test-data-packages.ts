@@ -177,7 +177,7 @@ test('API import prerequisites, single exports, data-only down.zip and contest L
   response = await call('POST', `/api/problems/${p.id}/down`, { lang: 'en', samplesOnly: true });
   assert.equal(response.statusCode, 200, response.body);
   const data = readZip(response.rawPayload);
-  assert.equal(data.get('api-data/api-data1.out')?.toString(), 'y\n'); assert.ok(!data.has('statement.pdf'));
+  assert.equal(data.get('api-data/api-data1.ans')?.toString(), 'y\n'); assert.ok(!data.has('statement.pdf'));
   const c = await contests.create({ name: 'weak-contest', problems: [{ index: 'A', problem: p.id }] });
   response = await call('POST', `/api/contests/${c.id}/down`, { lang: 'zh', samplesOnly: true }); assert.equal(response.statusCode, 200);
   const result = await runContestBatch({ judge, contests, sync: new PolygonSync(judge) }, c.id, { action: 'export', exportFormat: 'lemonlime' }, job());
@@ -200,13 +200,13 @@ test('the source file name is the contestant-facing name of OI statements, sampl
   const c = await contests.create({ name: 'source-round', type: 'oi', problems: [{ index: 'A', problem: a.id }] });
   const [statement] = await contestStatements(judge, contests, c.id, 'en');
   assert.equal(statement.name, 'Road'); assert.equal(statement.samples[0].inputFile, 'Road/Road1.in');
-  assert.equal((await readSamples(await judge.ctx(a.id)))[0].sample.outputFile, 'Road/Road1.out');
+  assert.equal((await readSamples(await judge.ctx(a.id)))[0].sample.outputFile, 'Road/Road1.ans');
   response = await call('POST', `/api/contests/${c.id}/down`, { lang: 'en', samplesOnly: true });
   assert.equal(response.statusCode, 200, response.body); assert.equal(readZip(response.rawPayload).get('Road/Road1.in')?.toString(), '1\n');
   const exported = await runContestBatch({ judge, contests, sync: new PolygonSync(judge) }, c.id, { action: 'export', exportFormat: 'lemonlime' }, job());
   const lemon = readZip(await fs.readFile(path.join(c.dir, '.taskweave/export', exported.file!)));
   const task = JSON.parse(lemon.get('source-round.cdf')!.toString()).tasks[0];
-  assert.deepEqual([task.sourceFileName, task.inputFileName, task.testCases[0].inputFiles[0]], ['Road', 'Road.in', 'Road/1.in']); assert.ok(lemon.has('data/Road/1.ans'));
+  assert.deepEqual([task.sourceFileName, task.inputFileName, task.testCases[0].inputFiles[0]], ['Road', 'Road.in', 'Road/Road1.in']); assert.ok(lemon.has('data/Road/Road1.ans'));
   // Contestant folders are case-insensitive on Windows.
   const b = (await importPackage(judge, zip({ '1.in': '3\n', '1.out': '4\n' }), { format: 'data', name: 'other-road' })).problem;
   await registry.patch(b.id, { sourceName: 'road' });

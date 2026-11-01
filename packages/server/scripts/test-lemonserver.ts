@@ -23,7 +23,7 @@ const zip = (files: Record<string, string | Buffer>) => { const w = new ZipWrite
 const job = () => ({ signal: new AbortController().signal, progress() {} });
 const body = (req: IncomingMessage) => new Promise<Buffer>((resolve) => { const chunks: Buffer[] = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks))); });
 
-/** A LemonLime Server stand-in: API key "llk_test" or access token "123456" (exchanged for a session). */
+/** A LemonServer stand-in: API key "llk_test" or access token "123456" (exchanged for a session). */
 async function mockLemonServer(platform: string) {
   const contests = new Map<string, Map<string, Buffer>>();
   const calls: { method: string; path: string; raw: string; query: Record<string, string>; json?: any }[] = [];
@@ -92,7 +92,7 @@ async function dataContest(f: Parameters<Parameters<typeof fixture>[0]>[0]) {
   return { problem: p.id as string, contest: await f.contests.create({ name: 'push-round', problems: [{ index: 'A', problem: p.id }] }) };
 }
 
-test('LemonLime Server settings: masked key, address validation, test with an API key or an access token', async () => fixture(async ({ global, call }) => {
+test('LemonServer settings: masked key, address validation, test with an API key or an access token', async () => fixture(async ({ global, call }) => {
   const mock = await mockLemonServer('Windows 11 Version 24H2');
   try {
     let r = await call('POST', '/api/lemonserver/test');
@@ -103,12 +103,18 @@ test('LemonLime Server settings: masked key, address validation, test with an AP
     assert.equal(r.statusCode, 200);
     assert.deepEqual(r.json().lemonServer, { url: mock.url, key: 'llk_…id', hasKey: true });
     r = await call('POST', '/api/lemonserver/test');
-    assert.equal(r.statusCode, 401, r.body);
+    // A rejected LemonServer credential must never be a 401: the UI reads that as "TaskWeave's token is wrong".
+    assert.equal(r.statusCode, 400, r.body); assert.equal(r.json().error, 'lemonserver_auth');
+    assert.match(r.json().message, /rejected the API key/);
+    assert.ok(!mock.calls.some(c => c.path === '/api/auth/login'), 'an API key is not tried as an access token');
+    await call('PUT', '/api/secrets', { lemonServer: { key: 'not-the-token' } });
+    r = await call('POST', '/api/lemonserver/test');
+    assert.equal(r.statusCode, 400, r.body); assert.equal(r.json().error, 'lemonserver_auth');
     await call('PUT', '/api/secrets', { lemonServer: { key: '123456' } });
     r = await call('POST', '/api/lemonserver/test');
     assert.equal(r.statusCode, 200, r.body);
     assert.equal(r.json().target, 'windows'); assert.equal(r.json().version, 'LemonServer 2.3');
-    // Saving the Polygon tab keeps the LemonLime Server settings and vice versa.
+    // Saving the Polygon tab keeps the LemonServer settings and vice versa.
     await call('PUT', '/api/secrets', { polygon: { key: 'pk', secret: 'ps' } });
     assert.equal((await global.lemonServerCredentials()).key, '123456');
     await call('PUT', '/api/secrets', { lemonServer: { clearKey: true } });
@@ -130,7 +136,7 @@ test('pushing a contest imports the package built for the server system, refuses
     // Qt reads the query literally: a space must be %20, never '+'.
     assert.ok(mock.calls.some(c => c.raw.includes('name=Round%201')) && !mock.calls.some(c => c.raw.includes('Round+1')));
     const files = mock.contests.get('Round 1')!;
-    assert.ok(files.has('push-round.cdf') && files.has('data/push-data/1.in'));
+    assert.ok(files.has('push-round.cdf') && files.has('data/push-data/push-data1.in'));
     assert.deepEqual(await fs.readdir(path.join(contest.dir, '.taskweave/export')), [], 'the uploaded package is not kept');
 
     await assert.rejects(pushContestToLemonServer(deps, contest.id, { action: 'lemon-push', lemonServer: { name: 'Round 1' } }, job()), /already exists/);
@@ -139,7 +145,7 @@ test('pushing a contest imports the package built for the server system, refuses
     assert.equal(again.lemonServer?.keptSources, 1);
     assert.equal(mock.contests.get('Round 1')!.get('source/alice/push-data.cpp')?.toString(), 'int main(){}');
     assert.ok(mock.calls.some(c => c.path.endsWith('/refresh')));
-    await assert.rejects(pushContestToLemonServer(deps, contest.id, { action: 'lemon-push', lemonServer: { name: 'bad/name' } }, job()), /Invalid LemonLime Server contest name/);
+    await assert.rejects(pushContestToLemonServer(deps, contest.id, { action: 'lemon-push', lemonServer: { name: 'bad/name' } }, job()), /Invalid LemonServer contest name/);
     // LemonServer 0.1.3+: a contest that is judged or queued for judging cannot be replaced.
     mock.state.busy.add('Round 1');
     await assert.rejects(pushContestToLemonServer(deps, contest.id, { action: 'lemon-push', lemonServer: { name: 'Round 1', overwrite: true } }, job()), /queued for judging/);

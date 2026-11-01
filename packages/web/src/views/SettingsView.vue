@@ -187,7 +187,7 @@ async function loadSecrets() {
   lemonSaved = JSON.stringify(lemonSnapshot()); lemonReady = true;
 }
 
-// ---- LemonLime Server ----
+// ---- LemonServer ----
 const lemonUrl = ref('');
 const lemonKey = ref('');
 const lemonTesting = ref(false);
@@ -724,7 +724,7 @@ onMounted(() => {
             </n-space>
           </n-card>
         </n-tab-pane>
-        <n-tab-pane name="lemonserver" tab="LemonLime Server">
+        <n-tab-pane name="lemonserver" tab="LemonServer">
           <n-card size="small">
             <n-form label-placement="left" label-width="160">
               <n-form-item :label="t('settings.lemonServerUrl')">

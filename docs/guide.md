@@ -110,11 +110,11 @@ Markdown 的复杂排版需要阅读器支持 HTML、公式和 MathML，具体�
 
 在测试列表中选中一个样例，关闭“在题面中展示”即可标记为大样例。题目预览及比赛题面将显示“样例 2 见选手目录下的 …”文件提示；小样例继续显示输入输出。任何测试集的测试点都可以设为样例；新设的样例默认不在题面中展示，需要时再打开“在题面中展示”。全部样例先 `tests`、再其他测试集，各自按原测试编号升序连续编号。
 
-“导出 down.zip”会先生成数据并刷新 OI 预览，再打包同一份 PDF。包内是 `statement.pdf` 和按源文件名命名的目录，例如源文件名 `trip` 的样例为 `trip/trip1.in`、`trip/trip1.out`、`trip/trip2.in`、`trip/trip2.out`，小样例也包含在内。设置过题面输入／输出覆盖时，下发同一份覆盖文件；大样例不截断。正式测试、标程和 grader 不进入下发包。比赛中各题的源文件名须唯一；题面或样例在预览后发生修改时，需重新导出。
+“导出 down.zip”会先生成数据并刷新 OI 预览，再打包同一份 PDF。包内是 `statement.pdf` 和按源文件名命名的目录，例如源文件名 `trip` 的样例为 `trip/trip1.in`、`trip/trip1.ans`、`trip/trip2.in`、`trip/trip2.ans`，小样例也包含在内。设置过题面输入／输出覆盖时，下发同一份覆盖文件；大样例不截断。正式测试、标程和 grader 不进入下发包。比赛中各题的源文件名须唯一；题面或样例在预览后发生修改时，需重新导出。
 
 ### LemonLime 统一评测
 
-比赛页“导出比赛包 → LemonLime”默认导出 `tests` 测试集；题目有多个测试集时可逐题勾选，多个测试集按顺序拼接（`tests` 以外的数据文件名带测试集前缀），各自按自己的子任务计分。导出时自动生成输入与答案，设置时空限制、标准流／文件输入输出、checker、子任务分数、捆绑及依赖。没有分值配置的传统测试按总分 100 分分配；启用子任务时须配置整数分值并覆盖全部测试。导出会按依赖顺序排列 LemonLime 子任务，按点计分的组拆成单点子任务。任一题失败时不生成残缺的 ZIP。
+比赛页“导出比赛包 → LemonLime”默认导出 `tests` 测试集；题目有多个测试集时可逐题勾选，多个测试集按顺序拼接（`tests` 以外的数据文件名带测试集名，如 `trip-pretests-1.in`），各自按自己的子任务计分。导出时自动生成输入与答案，设置时空限制、标准流／文件输入输出、checker、子任务分数、捆绑及依赖。没有分值配置的传统测试按总分 100 分分配；启用子任务时须配置整数分值并覆盖全部测试。导出会按依赖顺序排列 LemonLime 子任务，按点计分的组拆成单点子任务。任一题失败时不生成残缺的 ZIP。
 
 在题目“信息 → Lemon 检查器”中单独选择源码，对应 `problem.toml` 的 `[lemon_checker] source = "lemon-checker.cpp"`。普通 checker 仍用于本地评测及 Polygon。Lemon checker 使用内置的 [Testlib for Lemons](../assets/shared/lemon/README.md)：包含 `"lemon/testlib.h"`，用 `registerLemonChecker(argc, argv)` 初始化。需要按比例给部分分时，先设置 `quitpRelativeScoring = true` 再调用 `quitp`。导出前检查所有题的配置和编译结果；生成数据后以首个测试的标准答案验证评分文件及满分结果，普通 testlib 协议不能冒充 Lemon checker。
 
@@ -126,13 +126,13 @@ Markdown 的复杂排版需要阅读器支持 HTML、公式和 MathML，具体�
 
 导出时选择实际评测系统 Windows 或 Linux。根目录包含 `compile-checkers.cmd`、`compile-checkers.sh` 和 `README.txt`，各题源码与 Testlib for Lemons 头文件一并打包。在评测电脑安装 g++，Windows 运行 `.\compile-checkers.cmd`，Linux 运行 `bash ./compile-checkers.sh`，会编译本场全部自定义检查器。跨系统导出携带源码；同系统还会预编译并检查评分协议。CDF 的 `specialJudge` 使用真实相对文件名：Windows 是 `源文件名/checker.exe`，Linux 是 `源文件名/checker`。
 
-解压后用 LemonLime 打开 `.cdf`，数据目录为 `data/源文件名/`。默认关闭“从子文件夹寻找选手代码”，提交放在 `source/选手名/源文件名.cpp`；开启后可放在 `source/选手名/源文件名/源文件名.cpp`。CDF 使用整数毫秒、整数 MiB 和整数分值，同一捆绑条目须统一限制。支持传统题和 grader 题（Communication 模式）。
+解压后用 LemonLime 打开 `.cdf`，数据目录为 `data/源文件名/`，数据文件与 down.zip 样例同样按“源文件名 + 编号”命名，如 `trip1.in`、`trip1.ans`。默认关闭“从子文件夹寻找选手代码”，提交放在 `source/选手名/源文件名.cpp`；开启后可放在 `source/选手名/源文件名/源文件名.cpp`。CDF 使用整数毫秒、整数 MiB 和整数分值，同一捆绑条目须统一限制。支持传统题和 grader 题（Communication 模式）。
 
-### 推送到 LemonLime Server
+### 推送到 LemonServer
 
-LemonLime Server 是 LemonLime 的网页版（无界面服务器 + 浏览器前端）。在“设置 → LemonLime Server”中填写服务器地址（如 `http://192.168.1.10:8080`）和在其网页“设置 → 访问令牌与 API Key”中创建的 API Key；也可以直接填写访问令牌，TaskWeave 会用它登录。点击“测试连接”可查看服务器版本、系统和已有比赛数。密钥只保存在全局目录的 `secrets.toml`。
+LemonServer 是 LemonLime 的网页版（无界面服务器 + 浏览器前端）。在“设置 → LemonServer”中填写服务器地址（如 `http://192.168.1.10:8080`）和在其网页“设置 → 访问令牌与 API Key”中创建的 API Key；也可以直接填写访问令牌，TaskWeave 会用它登录。点击“测试连接”可查看服务器版本、系统和已有比赛数。密钥只保存在全局目录的 `secrets.toml`。
 
-比赛页点击“推送到 LemonLime”：
+比赛页点击“推送到 LemonServer”：
 
 1. 窗口先连接服务器，显示其系统；评测包按该系统生成（`specialJudge` 为 `checker.exe` 或 `checker`）。
 2. 填写服务器上的比赛名（默认为比赛短名称），可勾选“从子文件夹寻找选手代码”并逐题选择测试集，规则与 LemonLime 导出相同。

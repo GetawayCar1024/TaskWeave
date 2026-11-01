@@ -149,7 +149,7 @@ export class GlobalStore {
     return { key: String(p.key ?? '').trim(), secret: String(p.secret ?? '').trim(), apiUrl: String(p.api_url || DEFAULT_POLYGON_API) };
   }
 
-  /** LemonLime Server address and its API key (or access token). */
+  /** LemonServer address and its API key (or access token). */
   async lemonServerCredentials(): Promise<{ url: string; key: string }> {
     const s = (await this.readSecrets()).lemonserver ?? {};
     return { url: String(s.url ?? '').trim(), key: String(s.key ?? '').trim() };
@@ -169,7 +169,7 @@ export class GlobalStore {
       doc.lemonserver ??= {};
       if (l.url !== undefined) {
         const url = l.url.trim().replace(/\/+$/, '');
-        if (url && !/^https?:\/\/[^\s/]+/i.test(url)) throw new HttpError(400, 'bad_lemonserver_url', 'The LemonLime Server address must start with http:// or https://');
+        if (url && !/^https?:\/\/[^\s/]+/i.test(url)) throw new HttpError(400, 'bad_lemonserver_url', 'The LemonServer address must start with http:// or https://');
         if (url) doc.lemonserver.url = url; else delete doc.lemonserver.url;
       }
       if (l.clearKey) delete doc.lemonserver.key;
@@ -177,7 +177,7 @@ export class GlobalStore {
       if (!Object.keys(doc.lemonserver).length) delete doc.lemonserver;
     }
     if (!req.polygon) {
-      await atomicWrite(this.secretsPath, '# 密钥文件：Polygon key/secret、LemonLime Server 与 AI 端点。不要放进题目目录。\n\n' + stringify(doc) + '\n');
+      await atomicWrite(this.secretsPath, '# 密钥文件：Polygon key/secret、LemonServer 与 AI 端点。不要放进题目目录。\n\n' + stringify(doc) + '\n');
       return this.maskedSecrets();
     }
     doc.polygon ??= {};

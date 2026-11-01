@@ -2,10 +2,10 @@ import type { LemonServerStatus } from '@taskweave/shared';
 import type { GlobalStore } from '../global.js';
 import { HttpError } from '../util/fs.js';
 
-/** LemonLime Server error, e.g. a rejected import (its JSON `error`). */
+/** LemonServer error, e.g. a rejected import (its JSON `error`). */
 export class LemonServerError extends HttpError {
   constructor(public status: number, public remote: string) {
-    super(502, 'lemonserver_error', `LemonLime Server: ${remote}`);
+    super(502, 'lemonserver_error', `LemonServer: ${remote}`);
   }
 }
 
@@ -15,7 +15,7 @@ export function validLemonContestName(name: string): boolean {
 }
 
 /**
- * Client for the HTTP API of LemonLime Server. The stored credential may be an API key or the
+ * Client for the HTTP API of LemonServer. The stored credential may be an API key or the
  * server's access token: an access token is exchanged for a session (POST /api/auth/login).
  */
 export class LemonServerClient {
@@ -26,8 +26,8 @@ export class LemonServerClient {
 
   static async fromSettings(global: GlobalStore, signal?: AbortSignal) {
     const c = await global.lemonServerCredentials();
-    if (!c.url) throw new HttpError(400, 'no_lemonserver', 'LemonLime Server is not configured (Settings → LemonLime Server).');
-    if (!c.key) throw new HttpError(400, 'no_lemonserver', 'The LemonLime Server API key or access token is not set (Settings → LemonLime Server).');
+    if (!c.url) throw new HttpError(400, 'no_lemonserver', 'LemonServer is not configured (Settings → LemonServer).');
+    if (!c.key) throw new HttpError(400, 'no_lemonserver', 'The LemonServer API key or access token is not set (Settings → LemonServer).');
     return new LemonServerClient(c.url.replace(/\/+$/, ''), c.key, signal);
   }
 
@@ -40,7 +40,7 @@ export class LemonServerClient {
     } catch (e) {
       if (this.signal?.aborted) throw e;
       const cause = (e as { cause?: { code?: string; message?: string } }).cause;
-      throw new HttpError(502, 'lemonserver_unreachable', `Cannot reach LemonLime Server at ${this.url}: ${cause?.code ?? cause?.message ?? (e as Error).message}`);
+      throw new HttpError(502, 'lemonserver_unreachable', `Cannot reach LemonServer at ${this.url}: ${cause?.code ?? cause?.message ?? (e as Error).message}`);
     }
   }
 
@@ -52,7 +52,7 @@ export class LemonServerClient {
       const message = (body as { error?: string } | undefined)?.error ?? `HTTP ${res.status}`;
       throw new LemonServerError(res.status, message);
     }
-    if (body === undefined) throw new HttpError(502, 'lemonserver_bad_response', `${this.url} did not answer as a LemonLime Server.`);
+    if (body === undefined) throw new HttpError(502, 'lemonserver_bad_response', `${this.url} did not answer as a LemonServer.`);
     return body as T;
   }
 
@@ -75,11 +75,14 @@ export class LemonServerClient {
   async login(): Promise<void> {
     type Status = { authenticated?: boolean; version?: string; lemonlimeVersion?: string; platform?: string; setupRequired?: boolean };
     const status = await this.read<Status>(await this.fetch('/api/auth/status', { auth: this.key }));
-    if (typeof status.authenticated !== 'boolean') throw new HttpError(502, 'lemonserver_bad_response', `${this.url} did not answer as a LemonLime Server.`);
+    if (typeof status.authenticated !== 'boolean') throw new HttpError(502, 'lemonserver_bad_response', `${this.url} did not answer as a LemonServer.`);
     if (status.authenticated) this.credential = this.key;
+    // API keys (llk_… / lsk_…) are never access tokens: do not count a failed login for them.
+    // Never answer 401 here: that status means "TaskWeave's own token is wrong" to the UI.
+    else if (/^l[a-z]k_/i.test(this.key)) throw new HttpError(400, 'lemonserver_auth', 'LemonServer rejected the API key. It may have been deleted, or belong to another server: create a new one in the LemonServer web page (Settings → Access token and API keys).');
     else {
       const res = await this.fetch('/api/auth/login', { method: 'POST', auth: '', body: JSON.stringify({ token: this.key }), headers: { 'content-type': 'application/json' } });
-      if (res.status === 401) throw new HttpError(401, 'lemonserver_auth', 'LemonLime Server rejected the API key or access token.');
+      if (res.status === 401) throw new HttpError(400, 'lemonserver_auth', 'LemonServer rejected the API key or access token.');
       this.credential = (await this.read<{ session: string }>(res)).session;
     }
     // Only LemonServer's own version is shown (it also reports its LemonLime core's as lemonlimeVersion).

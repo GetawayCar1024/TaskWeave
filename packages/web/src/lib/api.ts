@@ -95,7 +95,8 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   const text = await res.text();
   const data = text ? JSON.parse(text) : undefined;
   if (!res.ok) {
-    if (res.status === 401) unauthorizedListeners.forEach((f) => f());
+    // Only TaskWeave's own token check means this page is not authorized (not e.g. a remote service's 401).
+    if (res.status === 401 && (data?.error ?? 'unauthorized') === 'unauthorized') unauthorizedListeners.forEach((f) => f());
     throw new ApiError(res.status, data?.error ?? 'error', data?.message ?? res.statusText);
   }
   return data as T;

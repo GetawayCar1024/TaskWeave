@@ -102,7 +102,7 @@ export interface StatementSample {
 }
 
 export function sampleFileNames(problemName: string, number: number) {
-  return { inputFile: `${problemName}/${problemName}${number}.in`, outputFile: `${problemName}/${problemName}${number}.out` };
+  return { inputFile: `${problemName}/${problemName}${number}.in`, outputFile: `${problemName}/${problemName}${number}.ans` };
 }
 export function largeSampleNotice(sample: StatementSample, lang: string, number: number): string {
   return lang === 'zh' ? `样例 ${number} 见选手目录下的 ${sample.inputFile} 与 ${sample.outputFile}。` : `Sample ${number}: see ${sample.inputFile} and ${sample.outputFile} in the contestant directory.`;

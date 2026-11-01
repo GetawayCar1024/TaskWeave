@@ -48,7 +48,7 @@ import {
   MemoryStick,
   ListOrdered,
 } from 'lucide-vue-next';
-import { CONTEST_INDEX_RE, PROBLEM_NAME_RE, luoguExportOptions, testsetsOf, type LuoguExportOptions, type ContestAction, type ContestBatchItem, type ContestBatchResult, type ContestDetail, type JobInfo, type ProblemSummary } from '@taskweave/shared';
+import { CONTEST_INDEX_RE, PROBLEM_NAME_RE, commonContestLanguages, luoguExportOptions, testsetsOf, type LuoguExportOptions, type ContestAction, type ContestBatchItem, type ContestBatchResult, type ContestDetail, type JobInfo, type ProblemSummary } from '@taskweave/shared';
 import AppHeader from '../components/AppHeader.vue';
 import AiDrawer from '../components/AiDrawer.vue';
 import ContestSyncDialog from '../components/ContestSyncDialog.vue';
@@ -136,7 +136,8 @@ const hasDataOnly = computed(() => !!detail.value?.problems.some(p => p.summary?
 const downloadingDown = ref(false);
 async function exportDown() {
   if (downloadingDown.value) return;
-  if (!hasDataOnly.value) return router.push({ name: 'contest-print', params: { id: props.id }, query: { style: 'oi', down: '1', doc: 'statements' } });
+  // With statements (data-only problems too) down.zip carries the OI statement PDF; otherwise samples only.
+  if (detail.value && commonContestLanguages(detail.value.problems, 'statements').length) return router.push({ name: 'contest-print', params: { id: props.id }, query: { style: 'oi', down: '1', doc: 'statements' } });
   downloadingDown.value = true;
   try { await api.downSamples(props.id, locale.value === 'zh-CN' ? 'zh' : 'en'); message.success(t('export.saved', { file: 'down.zip' })); }
   catch (e) { message.error(errorMessage(e)); }
@@ -315,7 +316,7 @@ async function exportContest() {
   } finally { submitting.value = false; }
 }
 
-// ---- push to LemonLime Server: build the LemonLime package for the server's system and import it there ----
+// ---- push to LemonServer: build the LemonLime package for the server's system and import it there ----
 const showPush = ref(false);
 function openPush() {
   if (submitting.value) return;

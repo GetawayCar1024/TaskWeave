@@ -85,7 +85,7 @@ test('data-only workspaces retain answers across cache deletion and export Lemon
   const zip = new ZipWriter();
   const r = await addLemonProblem(judge, ctx, 'A', zip, job());
   assert.equal(r.tests, 2); assert.equal(r.task.comparisonMode, 1); assert.equal(r.task.specialJudge, '');
-  assert.equal(readZip(zip.finish()).get('data/data-only/2.ans')?.toString(), '9\n');
+  assert.equal(readZip(zip.finish()).get('data/data-only/data-only2.ans')?.toString(), '9\n');
   await fs.unlink(path.join(p.dir, 'tests/manual/1.out'));
   assert.equal((await readManifest(ctx))?.ok, false);
   await assert.rejects(addLemonProblem(judge, ctx, 'A', new ZipWriter(), job()), /missing|Missing/);

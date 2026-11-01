@@ -35,7 +35,7 @@ test('LemonLime spreads 100 points over more than 100 ungrouped tests', () => {
   // Other testsets are prefixed and dependency numbers continue after the previous testsets.
   const c = problemTomlSchema.parse({ problem: { name: 'p' }, tests: { points: true }, testsets: { extra: { groups: true, group: [{ name: 'a', tests: '1', points: 10 }, { name: 'b', tests: '2', points: 5, dependencies: ['a'] }] } } });
   const extra = lemonTestCases(c, [1, 2], 'p', 'extra', 4);
-  assert.deepEqual(extra[1].inputFiles, ['p/extra-2.in', '5_lemon_SUbtaskDEPENDENCE_fLAg']);
+  assert.deepEqual(extra[1].inputFiles, ['p/p-extra-2.in', '5_lemon_SUbtaskDEPENDENCE_fLAg']);
 });
 
 test('EACH_TEST points are integers that add up exactly', () => {

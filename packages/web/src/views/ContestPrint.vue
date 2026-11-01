@@ -42,7 +42,9 @@ async function prepareDown() {
   if (preparingDown.value) return;
   preparingDown.value = true;
   try {
-    if (detail.value?.problems.some(p => p.summary?.dataOnly)) {
+    // The OI PDF needs a statement for every problem in this language (data-only problems may
+    // have one too); without it down.zip has the samples only.
+    if (!statements.value.length || statements.value.some(s => !s.body?.trim() && !s.sections.legend?.trim())) {
       await api.downSamples(props.id, lang.value, props.single);
       message.success(t('export.saved', { file: 'down.zip' }));
       return;

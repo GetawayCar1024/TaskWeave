@@ -10,12 +10,16 @@ export function cnoiMarkdown(source: string, macros: MacroTable, imageUrl: (name
   return cnoiHtmlMarkdown(root, lang);
 }
 
-function cnoiHtmlMarkdown(root: HTMLElement, lang: string): string {
+function cnoiHtmlMarkdown(root: HTMLElement, lang: string, headingShift = 0): string {
   if (root.querySelector('.tex-unknown,.tex-error,.katex-error')) throw new Error(lang === 'zh' ? '题面含未支持或错误的 TeX，请先在普通预览中修复后再生成 OI PDF。' : 'Unsupported or invalid TeX. Fix the errors in the regular preview before exporting OI.');
   const block = (s: string) => `\n\n${s.trim()}\n\n`;
   const escape = (s: string) => s.replace(/([\\`*_{}\[\]<>!|#$~])/g, '\\$1');
   const children = (n: Node): string => [...n.childNodes].map(walk).join('');
   const mark = (n: Element | null | undefined) => (n?.textContent ?? '').trim().replace(/[^\p{L}\p{N}\p{S}\p{P}]|["\\]/gu, '');
+  // Inside a GFM table row every unescaped | ends the cell, also within $…$ and `…`.
+  // Code unescapes \| again, math keeps it (\| is ‖ in TeX): write | as \vert there.
+  let inTable = false;
+  const cellMath = (tex: string) => (inTable ? tex.replace(/\\[a-zA-Z]+|\\.|\|/g, m => (m === '|' ? '\\vert ' : m === '\\|' ? '\\Vert ' : m)) : tex);
   function walk(n: Node): string {
     if (n.nodeType === Node.TEXT_NODE) return escape((n.textContent ?? '').replace(/[\t\r\n ]+/g, ' '));
     if (!(n instanceof HTMLElement)) return '';
@@ -30,7 +34,7 @@ function cnoiHtmlMarkdown(root: HTMLElement, lang: string): string {
     }), ENDNOTE.end].join('\n\n'));
     if (n.matches('.math-display,.katex-display,.katex')) {
       const tex = n.querySelector('annotation[encoding="application/x-tex"]')?.textContent;
-      if (tex) return n.matches('.math-display,.katex-display') ? block(`$$\n${tex}\n$$`) : `$${tex}$`;
+      if (tex) return n.matches('.math-display,.katex-display') ? block(`$$\n${tex}\n$$`) : `$${cellMath(tex)}$`;
     }
     if (n.tagName === 'PRE') {
       const code = n.textContent ?? '';
@@ -38,7 +42,7 @@ function cnoiHtmlMarkdown(root: HTMLElement, lang: string): string {
       return block(`${fence}\n${code.replace(/\n$/, '')}\n${fence}`);
     }
     if (n.tagName === 'CODE') {
-      const value = n.textContent ?? '';
+      const value = inTable ? (n.textContent ?? '').replace(/\|/g, '\\|') : n.textContent ?? '';
       const fence = '`'.repeat(Math.max(1, ...[...value.matchAll(/`+/g)].map(m => m[0].length + 1)));
       return `${fence} ${value} ${fence}`;
     }
@@ -54,7 +58,10 @@ function cnoiHtmlMarkdown(root: HTMLElement, lang: string): string {
     if (n.tagName === 'TABLE') {
       const rows = [...(n as HTMLTableElement).rows];
       if (rows.some(row => [...row.cells].some(c => c.colSpan !== 1 || c.rowSpan !== 1))) throw new Error(lang === 'zh' ? 'OI 导出暂不支持 TeX 合并单元格，请将此表改为普通表格。' : 'OI export does not support merged TeX table cells yet. Use a table without merged cells.');
-      const lines = rows.map(row => '| ' + [...row.cells].map(c => children(c).trim().replace(/\n+/g, ' ')).join(' | ') + ' |');
+      const outer = inTable; inTable = true;
+      let lines: string[];
+      try { lines = rows.map(row => '| ' + [...row.cells].map(c => children(c).trim().replace(/\n+/g, ' ')).join(' | ') + ' |'); }
+      finally { inTable = outer; }
       if (rows.length) lines.splice(1, 0, '| ' + [...rows[0].cells].map(() => '---').join(' | ') + ' |');
       return block(lines.join('\n'));
     }
@@ -66,7 +73,7 @@ function cnoiHtmlMarkdown(root: HTMLElement, lang: string): string {
       }).join('\n'));
     }
     const c = children(n);
-    if (/^H[1-6]$/.test(n.tagName)) return block(`${'#'.repeat(Math.max(2, Number(n.tagName[1])))} ${c.trim()}`);
+    if (/^H[1-6]$/.test(n.tagName)) return block(`${'#'.repeat(Math.max(2, Number(n.tagName[1]) - headingShift))} ${c.trim()}`);
     if (n.matches('strong,b')) return `**${c.trim()}**`;
     if (n.matches('em,i')) return `*${c.trim()}*`;
     if (n.matches('del,s')) return `~~${c.trim()}~~`;
@@ -80,7 +87,11 @@ function cnoiHtmlMarkdown(root: HTMLElement, lang: string): string {
 }
 
 export function cnoiProblemMarkdown(s: ContestStatement, doc: 'statements' | 'tutorials', lang: string, macros: MacroTable) {
-  return cnoiHtmlMarkdown(cnoiProblemElement(s, doc, lang, macros), lang);
+  const root = cnoiProblemElement(s, doc, lang, macros);
+  // The template styles level-2 headings as the 【section】 titles (level 1 is the problem title).
+  // Whole statements often use ### for their sections: lift the shallowest level to ##.
+  const levels = [...root.querySelectorAll('h1,h2,h3,h4,h5,h6')].map(h => Number(h.tagName[1]));
+  return cnoiHtmlMarkdown(root, lang, levels.length ? Math.max(0, Math.min(...levels) - 2) : 0);
 }
 
 /** Semantic content for both the upstream adapter and the shared Markdown exporter. */
