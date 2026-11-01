@@ -25,7 +25,7 @@
 - **数据包交换**：ZIP、已解压目录和 Hydro FPS XML 中的每道题独立识别格式；LemonLime 比赛在比赛页整场导入；支持 Polygon、Hydro、洛谷与 JOI / AtCoder 工作流，导入前整批核对配置、实际文件与重名，修复说明可预览，额外文件和原配置保留。导入完成即扫描数据；单题及比赛可导出各平台题包。
 - **文件管理**：题目／比赛支持与磁盘对应的嵌套文件夹，短名称在所在文件夹内唯一并与题目文件夹同步重命名；持久身份保留比赛引用与历史，回收站采用原盘移动。
 - **兼容模式**：只有 `.in/.out` 或 `.in/.ans` 与分数配置也能管理样例、编排子任务和导出；可选择解法重造输出，保留唯一的初始备份并一键恢复。
-- **评测包**：Polygon package、LemonLime（原生比较模式与等效本地实现、六种 Lemon checker 模板、Windows / Linux 目标及 g++ 编译脚本）、洛谷（数据、`config.yml`、处理捆绑与依赖的计分脚本）。
+- **评测包**：Polygon package、LemonLime（原生比较模式与等效本地实现、六种 Lemon checker 模板、Windows / Linux 目标及 g++ 编译脚本）、洛谷（数据、`config.yml`、处理捆绑与依赖的计分脚本）；比赛可一键推送到 LemonLime Server（网页版 LemonLime），按服务器系统生成评测包，必要时在服务器上编译检查器。
 - **AI 辅助（可选）**：支持 Anthropic、OpenAI Chat Completions、OpenAI Responses 协议及兼容服务；AI 可读写文件、编译、生成测试和评测，改动经过审阅后应用。兼容模式支持文件／数据整理，转为完整造题保留会话；接受修改时保护编辑器草稿。
 - **统一工作区与自动设置**：CF／OI 为文档样式选择，题库与比赛共同管理；设置修改自动应用并保存，设置编辑器持续保存，离开时等待写入完成。
 - **中英文界面**，深色 / 浅色主题。
@@ -45,7 +45,7 @@
 ### Linux
 
 1. 从 [Releases](https://github.com/GetawayCar1024/taskweave/releases/latest) 下载 `TaskWeave-<版本>-linux-x86_64.AppImage`（`chmod +x` 后直接运行）或 `TaskWeave-<版本>-linux-x64.tar.gz`（解压后运行 `taskweave`）。
-2. 安装 g++（例如 `sudo apt install g++`）。运行环境需提供 GTK 3、NSS、GBM 和 ALSA；AppImage 需要 FUSE。
+2. 安装 g++（例如 `sudo apt install g++`）。运行环境需提供 GTK 3、NSS、GBM 和 ALSA；AppImage 需要 FUSE 2（Ubuntu 上 `sudo apt install libfuse2t64`，或加 `--appimage-extract-and-run` 运行）。Chromium 沙箱不可用时（如 Ubuntu 23.10 起的 AppArmor 限制）启动脚本会自动关闭沙箱，见 [Linux 版](docs/linux.md)。
 3. 可选：其他语言的编译器或解释器。
 
 全局目录为 `~/.taskweave`。更多说明见 [Linux 版](docs/linux.md)。
@@ -74,7 +74,7 @@
 ## 注意事项与限制
 
 - 本地评测在 Windows 上使用 Job Object、在 Linux 上使用原生监督程序限制时间与内存（Linux 按常驻内存统计）；计时受系统粒度和负载影响，结果不保证与 Polygon 一致。本地编译通过也不代表 Polygon 的编译器一定通过。
-- OI 排版所用的宋体、黑体、楷体版权不允许随应用分发，排版时读取本机字体（Windows 自带）。缺少时预览上方会提示，也可以把 `simsun.ttc`、`simhei.ttf`、`simkai.ttf` 放到全局目录的 `fonts/` 中；Linux 上只从该目录读取。
+- OI 排版所用的宋体、黑体、楷体版权不允许随应用分发，排版时读取本机字体（Windows 自带）。缺少时预览上方会提示，也可以把 `simsun.ttc`、`simhei.ttf`、`simkai.ttf` 放到全局目录的 `fonts/` 中；没有这些字体时（例如 Linux）改用已安装的中文字体（如 Noto CJK）排版。
 - Polygon API 不能新建或列出额外测试集，额外测试集需先在 Polygon 上创建；grader 题、以文件下发的大样例、子任务单独的 validator 等 Polygon 不支持的功能会在同步前提示。
 - Polygon 同步、LemonLime 与洛谷导出主要通过模拟接口和本地检查验证，欢迎反馈实际使用中的问题。
 - 启用 AI 时，请求会发送到你配置的服务，可能包含题面、程序、测试和工具输出；不配置 AI 不影响其他功能。

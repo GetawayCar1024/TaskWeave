@@ -2,6 +2,12 @@
 
 每个版本的使用说明位于 [docs/releases/](docs/releases/)，详细改动位于 [docs/changes/](docs/changes/)。下载见 [GitHub Releases](https://github.com/GetawayCar1024/taskweave/releases)。
 
+## 0.4.3 — 2026-11-01
+
+比赛一键推送到 LemonServer：按服务器系统生成评测包并导入，推送后在服务器上编译检查器，可同时推送 down.zip（样例或 OI 题面 PDF + 样例），替换同名比赛时可保留选手程序、比赛时间与 down.zip。Linux 版在 Chromium 沙箱不可用时自动关闭沙箱以正常启动，缺少宋体等字体时改用已安装的中文字体排版。
+
+[发布说明](docs/releases/0.4.3.md) · [改动明细](docs/changes/0.4.3.md)
+
 ## 0.4.2 — 2026-10-29
 
 新增 Linux x64 版本（AppImage、tar.gz），使用原生评测监督程序。LemonLime 改为在比赛页整场导入；批量导入逐题识别格式并在写入前整批检查，短名称只需在所在文件夹内唯一，移动与恢复时检查目标文件夹。新增可单独设置的源文件名，统一用于 OI 题面、down.zip 与 LemonLime。产品名称统一为 TaskWeave 并自动迁移旧数据；修复导入窗口字段错位，精简冗余提示。

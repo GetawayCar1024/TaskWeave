@@ -13,6 +13,8 @@ import { buildTree, FileService, SelfWrites } from '../workspace/files.js';
 import { contestFile, contestNotes } from '../workspace/contestFiles.js';
 import { convertStatement, largeSampleNotice } from '@taskweave/shared';
 import type { WsHub } from '../ws.js';
+import { LemonServerClient } from '../lemonserver/client.js';
+import { pushContestToLemonServer } from '../lemonserver/push.js';
 
 /** Contest jobs use `contest:<id>` as their owner so the contest page can find them. */
 export const contestJobOwner = (id: string) => `contest:${id}`;
@@ -213,12 +215,19 @@ export function contestRoutes(app: FastifyInstance, deps: ContestDeps & { aiRunn
     const owner = contestJobOwner(ref.id);
     const running = jobs.running(owner, 'contest');
     if (running) throw new HttpError(409, 'busy', 'Another batch is running for this contest');
+    if (body.action === 'lemon-push') {
+      // Fail early (before tests are generated) when the server is not configured.
+      await LemonServerClient.fromSettings(judge.global);
+      return jobs.start('contest', owner, (job) => pushContestToLemonServer(deps, ref.id, body, job));
+    }
     return jobs.start('contest', owner, async (job) => {
       const r = await runContestBatch(deps, ref.id, body, job);
       if (body.action === 'polygon-push') hub.broadcast({ type: 'problems:changed' });
       return r;
     });
   });
+
+  app.post('/api/lemonserver/test', async () => (await LemonServerClient.fromSettings(judge.global)).test());
 
   // ---- Polygon sync of the whole contest: status, then pull only what changed there ----
   app.get<P>('/api/contests/:id/polygon/status', async (req) => contestSyncStatus(deps, (await contests.get(req.params.id)).id));

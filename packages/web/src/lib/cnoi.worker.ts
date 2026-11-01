@@ -14,6 +14,9 @@ const fontNames = ['FiraMono-Regular.ttf', 'FiraMono-Bold.ttf', 'FiraMono-Medium
 /** SimSun / SimHei / KaiTi may not be redistributed: they come from the user's system through the local server. */
 const systemFontKeys = ['simsun', 'simhei', 'simkai'];
 let missingFonts: string[] = [];
+/** Installed CJK substitutes loaded because a template font is missing (e.g. Noto CJK on Linux). */
+const fallbackFontKeys = ['cjkserif', 'cjksans', 'cjkkai'];
+let fallbackFonts: string[] = [];
 const compiler = createTypstCompiler();
 const renderer = createTypstRenderer();
 const processor = getProcessor(plugins);
@@ -33,13 +36,16 @@ async function fetchPackage(url: string) {
 }
 async function systemFonts(token: string) {
   const loaded: Uint8Array[] = [];
-  missingFonts = [];
-  for (const key of systemFontKeys) {
+  missingFonts = []; fallbackFonts = [];
+  const load = async (key: string) => {
     const response = await fetch(`/api/system-fonts/${key}?token=${encodeURIComponent(token)}`);
-    if (response.ok) loaded.push(new Uint8Array(await response.arrayBuffer()));
-    else if (response.status === 404) missingFonts.push(key);
-    else throw new Error(`无法加载 OI 排版资源：${key} (${response.status})`);
-  }
+    if (response.ok) { loaded.push(new Uint8Array(await response.arrayBuffer())); return true; }
+    if (response.status === 404) return false;
+    throw new Error(`无法加载 OI 排版资源：${key} (${response.status})`);
+  };
+  for (const key of systemFontKeys) if (!await load(key)) missingFonts.push(key);
+  // Without them Chinese text would be blank: Typst then falls back per glyph to installed CJK fonts.
+  if (missingFonts.length) for (const key of fallbackFontKeys) if (await load(key)) fallbackFonts.push(key);
   return loaded;
 }
 async function init(token: string) {
@@ -80,7 +86,7 @@ self.onmessage = ({ data }: MessageEvent) => {
       });
       const result = await compiler.compile({ mainFilePath: '/main.typ', format: CompileFormatEnum.pdf, diagnostics: 'unix' });
       if (!result.result) throw new Error(JSON.stringify(result.diagnostics));
-      self.postMessage({ pdf: result.result, svg, missingFonts });
+      self.postMessage({ pdf: result.result, svg, missingFonts, fallbackFonts });
     } catch (e) {
       let error = e instanceof Error ? e.message : String(e);
       if (data.content.lang !== 'zh') error = error

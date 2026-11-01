@@ -186,5 +186,10 @@ test('OI fonts that may not be redistributed come from the system or <global>/fo
     assert.equal(r.body, 'fake font', 'the user folder comes before the system fonts');
     assert.equal((await s.app.inject({ method: 'GET', url: '/api/system-fonts/simkai?token=wrong', headers: { host: 'localhost' } })).statusCode, 401);
     assert.equal((await s.call('GET', '/api/system-fonts/arial')).statusCode, 404);
+    // Substitutes (e.g. Noto CJK on Linux) are found case-insensitively and listed as fallbacks.
+    await fs.writeFile(path.join(s.home, 'fonts', 'NotoSerifCJK-Regular.ttc'), 'fake cjk');
+    const fb = (await s.call('GET', '/api/system-fonts')).json().fallbacks;
+    assert.deepEqual(fb.find((f: { key: string }) => f.key === 'cjkserif'), { key: 'cjkserif', label: 'CJK serif', found: true, file: 'NotoSerifCJK-Regular.ttc' });
+    assert.equal((await s.app.inject({ method: 'GET', url: '/api/system-fonts/cjkserif?token=test-only', headers: { host: 'localhost' } })).body, 'fake cjk');
   } finally { await s.cleanup(); }
 });

@@ -16,9 +16,11 @@ chmod +x TaskWeave-*-linux-x86_64.AppImage
 ./TaskWeave-*-linux-x86_64.AppImage
 ```
 
-tar.gz 解压后运行其中的 `taskweave`。运行环境需提供 GTK 3、NSS、GBM 和 ALSA；本地评测需要 g++（例如 `sudo apt install g++`）。AppImage 使用系统 FUSE；无 FUSE 环境可用其 `--appimage-extract` 功能解压后运行 `AppRun`。
+tar.gz 解压后运行其中的 `taskweave`。运行环境需提供 GTK 3、NSS、GBM 和 ALSA；本地评测需要 g++（例如 `sudo apt install g++`）。AppImage 需要 FUSE 2：Ubuntu 22.04 及以后默认没有，可运行 `sudo apt install libfuse2t64`（22.04 为 `libfuse2`），或者用 `./TaskWeave-*.AppImage --appimage-extract-and-run` 直接运行。
 
-全局目录为 `~/.taskweave`，可用 `TASKWEAVE_HOME` 指定。OI 排版所需的宋体、黑体、楷体不随应用分发，Linux 上只从全局目录读取：请把 `simsun.ttc`、`simhei.ttf`、`simkai.ttf` 放到 `~/.taskweave/fonts/`。
+`taskweave` 是一个启动脚本：Chromium 沙箱需要 root 所有、带 setuid 的 `chrome-sandbox`，或者允许非特权用户命名空间；Ubuntu 23.10 起用 AppArmor 限制后者，AppImage 和用户解压的 tar.gz 又无法满足前者。两者都不满足时，脚本以 `--no-sandbox` 启动真正的程序 `taskweave-bin`（TaskWeave 只显示自己的本地页面，外部链接在系统浏览器中打开），否则保留沙箱。想在 tar.gz 中启用沙箱，可执行 `sudo chown root:root chrome-sandbox && sudo chmod 4755 chrome-sandbox`。
+
+全局目录为 `~/.taskweave`，可用 `TASKWEAVE_HOME` 指定。OI 排版所需的宋体、黑体、楷体不随应用分发：Linux 上先找 `~/.taskweave/fonts/` 和系统字体目录中的 `simsun.ttc`、`simhei.ttf`、`simkai.ttf`；缺少时自动改用已安装的中文字体（Noto CJK、思源、文泉驿、AR PL 等，Ubuntu 桌面版通常已带 Noto CJK，否则 `sudo apt install fonts-noto-cjk`），文字完整，字形与 NOI 官方题面略有不同。
 
 ## 从源码构建
 

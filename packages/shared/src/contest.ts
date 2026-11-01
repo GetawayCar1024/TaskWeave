@@ -90,7 +90,7 @@ export interface UpdateContestRequest {
 }
 
 /** Actions run over every problem of a contest, one after another. */
-export const CONTEST_ACTIONS = ['generate', 'invocation', 'checks', 'export', 'polygon-push'] as const;
+export const CONTEST_ACTIONS = ['generate', 'invocation', 'checks', 'export', 'polygon-push', 'lemon-push'] as const;
 export type ContestAction = (typeof CONTEST_ACTIONS)[number];
 
 export type LuoguAggregate = 'sum' | 'min' | 'max';
@@ -113,6 +113,37 @@ export interface ContestBatchRequest {
   indices?: string[];
   /** polygon-push: commit message. */
   message?: string;
+  /** lemon-push: the LemonLime package is built for the server's system and imported there. */
+  lemonServer?: LemonServerPushOptions;
+}
+
+export interface LemonServerPushOptions {
+  /** Contest name on the server (default: the contest's short name). */
+  name?: string;
+  /** Replace a contest of the same name on the server. */
+  overwrite?: boolean;
+  /** When replacing: keep the server's source/ folder (contestant programs); results must be judged again. */
+  keepSources?: boolean;
+  /**
+   * Compile custom checkers on the server after the import (default true). Across systems the
+   * server build is always needed; on the same system a successful build replaces TaskWeave's.
+   */
+  compileOnServer?: boolean;
+  /**
+   * Also upload a down.zip (contestant materials) as the contest's down.zip on the server:
+   * "samples" packs the sample files only; "pdf" adds the OI statement PDF rendered by the
+   * browser, checked against the statement snapshot it was rendered from.
+   */
+  down?: { mode: 'samples' | 'pdf'; lang: string; pdf?: string; statements?: ContestStatement[]; notes?: string };
+}
+
+/** A custom Lemon checker shipped as source (rebuilt on the target system). Paths are archive-relative. */
+export interface LemonCheckerBuildInfo {
+  index: string;
+  source: string;
+  include: string;
+  output: string;
+  standard: string;
 }
 
 export interface ContestBatchItem {
@@ -133,6 +164,16 @@ export interface ContestBatchResult {
   /** export: contest package file name (download from /api/contests/:id/export/:file). */
   file?: string;
   size?: number;
+  /** lemonlime export: checkers shipped as source. */
+  lemonCheckers?: LemonCheckerBuildInfo[];
+  /** lemon-push: where the contest went. */
+  lemonServer?: {
+    url: string; name: string; platform: string; compiled: number; keptSources: number;
+    /** down.zip on the server: uploaded now, kept from the replaced contest, or none. */
+    downZip?: 'uploaded' | 'kept';
+    /** The replaced contest's start / end time was restored. */
+    keptTime?: boolean;
+  };
 }
 
 export interface ContestImportRequest {

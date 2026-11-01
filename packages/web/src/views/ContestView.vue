@@ -37,6 +37,7 @@ import {
   FlaskConical,
   FolderOpen,
   Package,
+  CloudUpload,
   Pencil,
   Play,
   Trash2,
@@ -53,6 +54,7 @@ import AiDrawer from '../components/AiDrawer.vue';
 import ContestSyncDialog from '../components/ContestSyncDialog.vue';
 import ContestFiles from '../components/ContestFiles.vue';
 import ToolWindow from '../components/ToolWindow.vue';
+import LemonServerPushDialog from '../components/LemonServerPushDialog.vue';
 import { useAi } from '../lib/ai';
 import { api, errorMessage } from '../lib/api';
 import { problemTitle } from '../lib/format';
@@ -312,6 +314,14 @@ async function exportContest() {
     exportError.value = errorMessage(e);
   } finally { submitting.value = false; }
 }
+
+// ---- push to LemonLime Server: build the LemonLime package for the server's system and import it there ----
+const showPush = ref(false);
+function openPush() {
+  if (submitting.value) return;
+  showPush.value = true;
+  loadExportTestsets();
+}
 const follower = createJobFollower(waitJob, current => {
   if (job.value?.id !== current.id) result.value = null;
   job.value = current;
@@ -324,6 +334,7 @@ const follower = createJobFollower(waitJob, current => {
   if (!alive) return;
   const bad = r.items.filter((x) => !x.ok).length;
   if (bad) message.warning(t('contest.batchBad', { n: bad }));
+  else if (r.lemonServer) message.success(t('contest.lemonServerDone', { name: r.lemonServer.name, url: r.lemonServer.url }) + (r.lemonServer.compiled ? t('contest.lemonServerCompiled', { n: r.lemonServer.compiled }) : '') + (r.lemonServer.downZip ? t(`contest.lemonServerDown_${r.lemonServer.downZip}`) : '') + (r.lemonServer.keptSources ? t('contest.lemonServerKept', { n: r.lemonServer.keptSources }) : ''));
   else message.success(t(`contest.done.${r.action}`));
   if (r.file) api.downloadContestExport(props.id, r.file).catch((e) => message.error(errorMessage(e)));
   await load();
@@ -474,6 +485,9 @@ const columns = computed<DataTableColumns<Row>>(() => [
                 <n-button v-for="a in ACTIONS" :key="a.action" size="small" :disabled="busy || !rows.length || hasDataOnly && a.action === 'invocation'" @click="run(a.action)">
                   <template #icon><component :is="a.icon" /></template>{{ t(`contest.action.${a.action}`) }}
                 </n-button>
+                <n-button size="small" :disabled="busy || !rows.length" :title="t('contest.lemonServerPushHint')" @click="openPush">
+                  <template #icon><cloud-upload /></template>{{ t('contest.lemonServerPush') }}
+                </n-button>
                 <n-button size="small" :disabled="running || !rows.length || hasDataOnly" @click="showSync = true">
                   <template #icon><refresh-cw /></template>{{ t('toolbar.sync') }}
                 </n-button>
@@ -563,6 +577,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
         <n-button type="primary" :disabled="busy || loadingExportOptions" :loading="submitting || loadingExportOptions || exportJob?.status === 'running'" @click="exportContest">{{ t('contest.export') }}</n-button>
       </template>
     </tool-window>
+    <lemon-server-push-dialog v-model:show="showPush" :contest-id="id" :detail="detail" :job="job" :contest-busy="running" :testsets="exportTestsets" :loading-options="loadingExportOptions" :follow="follow" />
     <tool-window v-model:show="showNumbering" :title="t('improve.numbering')" size="md">
       <n-form label-placement="left" label-width="auto" size="small" :show-feedback="false" class="numbering">
         <n-form-item v-for="entry in numberDraft" :key="entry.problem" :label="entry.problem">
@@ -658,6 +673,7 @@ const columns = computed<DataTableColumns<Row>>(() => [
   gap: 6px;
   margin-top: 12px;
 }
+
 .export-testset {
   display: flex;
   gap: 10px;

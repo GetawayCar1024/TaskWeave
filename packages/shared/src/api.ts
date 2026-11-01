@@ -11,6 +11,8 @@ export const TOKEN_HEADER = 'x-taskweave-token';
 /** Non-redistributable OI template fonts, loaded from the user's system (GET /api/system-fonts). */
 export interface SystemFontStatus {
   fonts: { key: string; family: string; label: string; found: boolean }[];
+  /** Installed CJK fonts used in place of missing template fonts (e.g. Noto CJK on Linux). */
+  fallbacks?: { key: string; label: string; found: boolean; file?: string }[];
   /** Folder searched first; users without the fonts can put the files there. */
   userDir: string;
 }

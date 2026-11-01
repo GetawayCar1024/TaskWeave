@@ -236,6 +236,7 @@ export const api = {
   secrets: () => request<SecretsResponse>('GET', '/secrets'),
   saveSecrets: (req: SaveSecretsRequest) => request<SecretsResponse>('PUT', '/secrets', req),
   polygonTest: () => request<{ ok: true; problems: number; ms: number }>('POST', '/polygon/test'),
+  lemonServerTest: () => request<import('@taskweave/shared').LemonServerStatus>('POST', '/lemonserver/test'),
   polygonProblems: () => request<PolygonProblem[]>('GET', '/polygon/problems'),
   pushPreview: (id: string) => request<PushPreview>('POST', `/problems/${pid(id)}/polygon/diff`),
   push: (id: string, req: PushRequest) => request<JobInfo>('POST', `/problems/${pid(id)}/polygon/push`, req),

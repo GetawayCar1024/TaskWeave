@@ -78,7 +78,8 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
   const zip = req.action === 'export' ? new ZipWriter({ async: true }) : null;
   const exported: { index: string; name: string }[] = [];
   const lemonTasks: Awaited<ReturnType<typeof addLemonProblem>>['task'][] = [];
-  const lemonBuilds: LemonCheckerBuild[] = [];
+  const lemonBuilds: LemonCheckerBuild[] = [], lemonIndices: string[] = [];
+  if (req.action === 'lemon-push') throw new HttpError(400, 'bad_request', 'lemon-push runs through pushContestToLemonServer');
   if ((lemon || luogu || hydro || joi || fps) && !list.length) throw new HttpError(400, 'empty_contest', 'No problems to export.');
   if (luogu || hydro || joi) {
     const names = new Set<string>();
@@ -182,7 +183,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
           if (lemon) {
             const r = await addLemonProblem(judge, ctx, p.index, zip!, sub, exportTestsets(ctx, p.index, req.testsets?.[p.problem]), req.lemon?.subfolders === true, lemonTarget);
             lemonTasks.push(r.task);
-            if (r.checkerBuild) lemonBuilds.push(r.checkerBuild);
+            if (r.checkerBuild) { lemonBuilds.push(r.checkerBuild); lemonIndices.push(p.index); }
             item.ok = true;
             item.message = plural(r.tests, 'test');
             break;
@@ -253,6 +254,7 @@ export async function runContestBatch(deps: ContestDeps, contestId: string, req:
       zip.add('source/', '');
       addLemonBuildScripts(zip, lemonBuilds);
       zip.add('README.txt', lemonReadme(lemonTarget, req.lemon?.subfolders === true));
+      result.lemonCheckers = lemonBuilds.map((b, i) => ({ index: lemonIndices[i], ...b }));
     }
     else if (joi) zip.add('README.txt', 'Each problem folder contains an in/out ZIP. taskweave.yaml is an optional TaskWeave companion for scoring and limits.\n');
     else zip.add('contest.xml', contestXml(config.contest.title, config.contest.name, exported));

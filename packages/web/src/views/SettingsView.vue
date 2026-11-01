@@ -183,6 +183,43 @@ async function loadSecrets() {
   secrets.value = await api.secrets();
   polyUrl.value = secrets.value.polygon.apiUrl;
   polygonSaved = JSON.stringify(polygonSnapshot()); polygonReady = true;
+  lemonUrl.value = secrets.value.lemonServer?.url ?? '';
+  lemonSaved = JSON.stringify(lemonSnapshot()); lemonReady = true;
+}
+
+// ---- LemonLime Server ----
+const lemonUrl = ref('');
+const lemonKey = ref('');
+const lemonTesting = ref(false);
+const lemonTestResult = ref<{ ok: boolean; text: string } | null>(null);
+let lemonReady = false, lemonSaved = '';
+const lemonSnapshot = () => ({ url: lemonUrl.value, key: lemonKey.value });
+async function saveLemonServer() {
+  try {
+    lemonAuto.schedule(0); await lemonAuto.flush();
+    message.success(t('common.saved'));
+  } catch (e) {
+    message.error(errorMessage(e));
+  }
+}
+async function clearLemonKey() {
+  try {
+    secrets.value = await api.saveSecrets({ lemonServer: { clearKey: true } });
+    lemonKey.value = ''; lemonSaved = JSON.stringify(lemonSnapshot());
+  } catch (e) { message.error(errorMessage(e)); }
+}
+async function testLemonServer() {
+  lemonTesting.value = true;
+  lemonTestResult.value = null;
+  try {
+    lemonAuto.schedule(0); await lemonAuto.flush();
+    const r = await api.lemonServerTest();
+    lemonTestResult.value = { ok: !r.setupRequired, text: r.setupRequired ? t('settings.lemonServerSetup') : t('settings.lemonServerOk', { version: r.version || '?', platform: r.platform || '?', n: r.contests, ms: r.ms }) };
+  } catch (e) {
+    lemonTestResult.value = { ok: false, text: errorMessage(e) };
+  } finally {
+    lemonTesting.value = false;
+  }
 }
 
 async function savePolygon() {
@@ -387,6 +424,11 @@ const polygonAuto = createAutosave(() => queued(async () => {
   secrets.value = await api.saveSecrets({ polygon: snapshot });
   polygonSaved = JSON.stringify(snapshot);
 }));
+const lemonAuto = createAutosave(() => queued(async () => {
+  const snapshot = lemonSnapshot();
+  secrets.value = await api.saveSecrets({ lemonServer: snapshot });
+  lemonSaved = JSON.stringify(snapshot);
+}));
 const endpointsAuto = createAutosave(() => queued(async () => {
   const rows = [...endpoints.value], snapshot = endpointSnapshot();
   const stored = await api.saveAiEndpoints(snapshot);
@@ -397,7 +439,7 @@ const endpointsAuto = createAutosave(() => queued(async () => {
     if (saved) row.maskedKey = saved.hasKey ? saved.apiKey : '';
   }
 }));
-const autosaves = [generalAuto, languagesAuto, polygonAuto, endpointsAuto];
+const autosaves = [generalAuto, languagesAuto, polygonAuto, lemonAuto, endpointsAuto];
 watch(draft, value => {
   if (JSON.stringify(value) === generalSaved) return;
   const parsed = globalConfigSchema.safeParse(value);
@@ -406,6 +448,7 @@ watch(draft, value => {
 }, { deep: true });
 watch(langText, () => { if (languagesReady && langDirty.value) languagesAuto.schedule(); });
 watch([polyKey, polySecret, polyUrl], () => { if (polygonReady && JSON.stringify(polygonSnapshot()) !== polygonSaved) polygonAuto.schedule(); });
+watch([lemonUrl, lemonKey], () => { if (lemonReady && JSON.stringify(lemonSnapshot()) !== lemonSaved) lemonAuto.schedule(); });
 watch(() => JSON.stringify(endpointSnapshot()), value => { if (endpointsReady && value !== endpointsSaved) endpointsAuto.schedule(); });
 
 async function flushSettings(): Promise<boolean> {
@@ -414,6 +457,7 @@ async function flushSettings(): Promise<boolean> {
   if (JSON.stringify(draft.value) !== generalSaved) generalAuto.schedule(0);
   if (languagesReady && langDirty.value) languagesAuto.schedule(0);
   if (polygonReady && JSON.stringify(polygonSnapshot()) !== polygonSaved) polygonAuto.schedule(0);
+  if (lemonReady && JSON.stringify(lemonSnapshot()) !== lemonSaved) lemonAuto.schedule(0);
   if (endpointsReady && JSON.stringify(endpointSnapshot()) !== endpointsSaved) endpointsAuto.schedule(0);
   const results = await Promise.allSettled(autosaves.map(save => save.flush()));
   return results.every(result => result.status === 'fulfilled');
@@ -680,6 +724,27 @@ onMounted(() => {
             </n-space>
           </n-card>
         </n-tab-pane>
+        <n-tab-pane name="lemonserver" tab="LemonLime Server">
+          <n-card size="small">
+            <n-form label-placement="left" label-width="160">
+              <n-form-item :label="t('settings.lemonServerUrl')">
+                <n-input v-model:value="lemonUrl" placeholder="http://192.168.1.10:8080" class="mono" />
+              </n-form-item>
+              <n-form-item :label="t('settings.lemonServerKey')">
+                <n-input v-model:value="lemonKey" type="password" show-password-on="click" :placeholder="secrets?.lemonServer?.hasKey ? secrets.lemonServer.key + ' (' + t('settings.keepEmpty') + ')' : ''" class="mono" />
+                <n-button v-if="secrets?.lemonServer?.hasKey" quaternary size="small" class="clear-key" @click="clearLemonKey">{{ t('settings.clearKey') }}</n-button>
+              </n-form-item>
+            </n-form>
+            <p class="hint">{{ t('settings.lemonServerHint') }}</p>
+            <n-space justify="space-between" align="center">
+              <span v-if="lemonTestResult" class="small status" :class="lemonTestResult.ok ? 'good' : 'bad'"><check v-if="lemonTestResult.ok" :size="13" /><x v-else :size="13" />{{ lemonTestResult.text }}</span><span v-else />
+              <n-space>
+                <n-button :loading="lemonTesting" :disabled="!lemonUrl.trim() || (!secrets?.lemonServer?.hasKey && !lemonKey.trim())" @click="testLemonServer">{{ t('settings.testConnection') }}</n-button>
+                <n-button type="primary" @click="saveLemonServer">{{ t('common.save') }}</n-button>
+              </n-space>
+            </n-space>
+          </n-card>
+        </n-tab-pane>
       </n-tabs>
     </main>
 
@@ -689,6 +754,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.clear-key { margin-left: 8px; flex-shrink: 0; }
 .page {
   height: 100%;
   display: flex;

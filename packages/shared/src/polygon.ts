@@ -167,13 +167,38 @@ export interface SecretsResponse {
     hasSecret: boolean;
     apiUrl: string;
   };
+  /** LemonLime Server (web version of LemonLime): address and API key or access token. */
+  lemonServer: { url: string; key: string; hasKey: boolean };
 }
 
 export interface SaveSecretsRequest {
-  polygon: {
+  polygon?: {
     /** Omitted or empty keeps the stored value. */
     key?: string;
     secret?: string;
     apiUrl?: string;
   };
+  lemonServer?: {
+    /** Empty string removes the address. */
+    url?: string;
+    /** Omitted or empty keeps the stored value. */
+    key?: string;
+    /** Forget the stored key. */
+    clearKey?: boolean;
+  };
+}
+
+export interface LemonServerStatus {
+  ok: true;
+  url: string;
+  version: string;
+  platform: string;
+  /** windows / linux: the system the package is built for. */
+  target: 'windows' | 'linux';
+  /** The server's default contest folder is not set yet (set it in its web page). */
+  setupRequired: boolean;
+  contests: number;
+  /** Contest names on the server. */
+  names: string[];
+  ms: number;
 }

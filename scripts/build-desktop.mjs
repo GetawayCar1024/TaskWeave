@@ -9,7 +9,7 @@
  * Usage: pnpm desktop            (pnpm desktop -- --dir: unpacked app only, for a quick try)
  */
 import { build as esbuild } from 'esbuild';
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -100,36 +100,63 @@ if (appOnly) {
   process.exit(0);
 }
 
+/**
+ * Chromium's sandbox needs either a setuid-root chrome-sandbox (impossible in an AppImage or a
+ * user-extracted tar.gz) or unprivileged user namespaces, which Ubuntu 23.10+ restricts with
+ * AppArmor. Without either the app aborts at start. `taskweave` becomes a launcher that keeps
+ * the sandbox when one of them is available and otherwise starts the real binary with
+ * --no-sandbox (TaskWeave only shows its own local pages; other links open in the browser).
+ */
+function linuxSandboxLauncher(dir) {
+  const bin = path.join(dir, 'taskweave'), real = path.join(dir, 'taskweave-bin');
+  if (!existsSync(bin) || existsSync(real)) return;
+  renameSync(bin, real);
+  writeFileSync(bin, `#!/bin/sh
+# TaskWeave launcher: see scripts/build-desktop.mjs (linuxSandboxLauncher).
+HERE=$(dirname "$(readlink -f "$0")")
+SANDBOX="$HERE/chrome-sandbox"
+if [ -u "$SANDBOX" ] && [ "$(stat -c %u "$SANDBOX" 2>/dev/null)" = 0 ]; then exec "$HERE/taskweave-bin" "$@"; fi
+if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" != 1 ] && [ "$(cat /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null || echo 1)" = 1 ]; then exec "$HERE/taskweave-bin" "$@"; fi
+exec "$HERE/taskweave-bin" --no-sandbox "$@"
+`, { mode: 0o755 });
+}
+
 // electron-builder: reuse the Electron that is installed; its own tools (NSIS, rcedit) from a mirror if set.
 if (process.platform === 'win32') process.env.ELECTRON_BUILDER_BINARIES_MIRROR ??= 'https://npmmirror.com/mirrors/electron-builder-binaries/';
 const require = createRequire(path.join(desk, 'package.json'));
 const electronPkg = JSON.parse(readFileSync(require.resolve('electron/package.json'), 'utf8'));
 const installedElectron = path.join(path.dirname(require.resolve('electron/package.json')), 'dist');
 const { build, Platform, Arch } = require('electron-builder');
-const files = await build({
-  // Packaging is local; releases are published separately after review.
-  publish: 'never',
-  projectDir: desk,
-  targets: (targetPlatform === 'linux' ? Platform.LINUX : Platform.WINDOWS).createTarget(dirOnly ? ['dir'] : targetPlatform === 'linux' ? ['AppImage', 'tar.gz'] : ['nsis', 'portable'], Arch.x64),
-  config: {
-    appId: 'dev.taskweave.desktop',
-    productName: 'TaskWeave',
-    directories: { app: out, output: path.join(desk, 'dist') },
-    asar: true,
-    asarUnpack: ['runner/**'],
-    // The exe is never a plain Node (ELECTRON_RUN_AS_NODE, e.g. set by VS Code terminals, would
-    // make it one and it would exit at once); also a hardening measure.
-    electronFuses: { runAsNode: false },
-    electronVersion: electronPkg.version,
-    electronDist: targetPlatform === process.platform && existsSync(installedElectron) ? installedElectron : undefined,
-    linux: { category: 'Development', executableName: 'taskweave', icon: path.join(desk, 'build/icon.png'), artifactName: 'TaskWeave-${version}-linux-${arch}.${ext}' },
-    // Icon and version info go into the exe (rcedit); there is no code signing certificate.
-    win: { target: dirOnly ? ['dir'] : ['nsis', 'portable'], icon: path.join(desk, 'build/icon.ico'), signExecutable: false },
-    // Desktop and Start-menu shortcuts: TaskWeave starts with a double click.
-    // Keep the existing uninstall/upgrade GUID while using the new application namespace.
-    nsis: { guid: '900fe186-d19c-5f01-8401-fdfca40fd475', oneClick: false, allowToChangeInstallationDirectory: true, perMachine: false, shortcutName: 'TaskWeave', createDesktopShortcut: true, createStartMenuShortcut: true, runAfterFinish: true },
-    portable: { artifactName: 'TaskWeave-${version}-portable.exe' },
-    artifactName: 'TaskWeave-${version}-setup.${ext}',
-  },
-});
-console.log(`desktop app built (TaskWeave ${version}):\n${files.map((f) => `  ${path.relative(root, f)}`).join('\n')}`);
+const config = {
+  appId: 'dev.taskweave.desktop',
+  productName: 'TaskWeave',
+  directories: { app: out, output: path.join(desk, 'dist') },
+  asar: true,
+  asarUnpack: ['runner/**'],
+  // The exe is never a plain Node (ELECTRON_RUN_AS_NODE, e.g. set by VS Code terminals, would
+  // make it one and it would exit at once); also a hardening measure.
+  electronFuses: { runAsNode: false },
+  electronVersion: electronPkg.version,
+  electronDist: targetPlatform === process.platform && existsSync(installedElectron) ? installedElectron : undefined,
+  linux: { category: 'Development', executableName: 'taskweave', icon: path.join(desk, 'build/icon.png'), artifactName: 'TaskWeave-${version}-linux-${arch}.${ext}' },
+  // Icon and version info go into the exe (rcedit); there is no code signing certificate.
+  win: { target: dirOnly ? ['dir'] : ['nsis', 'portable'], icon: path.join(desk, 'build/icon.ico'), signExecutable: false },
+  // Desktop and Start-menu shortcuts: TaskWeave starts with a double click.
+  // Keep the existing uninstall/upgrade GUID while using the new application namespace.
+  nsis: { guid: '900fe186-d19c-5f01-8401-fdfca40fd475', oneClick: false, allowToChangeInstallationDirectory: true, perMachine: false, shortcutName: 'TaskWeave', createDesktopShortcut: true, createStartMenuShortcut: true, runAfterFinish: true },
+  portable: { artifactName: 'TaskWeave-${version}-portable.exe' },
+  artifactName: 'TaskWeave-${version}-setup.${ext}',
+};
+// Packaging is local; releases are published separately after review.
+const builderOptions = { publish: 'never', projectDir: desk, config };
+let files;
+if (targetPlatform === 'linux') {
+  // Linux: pack the app folder first (Electron fuses go into the real binary), add the sandbox
+  // launcher, then build AppImage / tar.gz from that folder.
+  files = await build({ ...builderOptions, targets: Platform.LINUX.createTarget(['dir'], Arch.x64) });
+  const unpacked = path.join(desk, 'dist', 'linux-unpacked');
+  linuxSandboxLauncher(unpacked);
+  if (!dirOnly) files = await build({ ...builderOptions, prepackaged: unpacked, targets: Platform.LINUX.createTarget(['AppImage', 'tar.gz'], Arch.x64) });
+} else {
+  files = await build({ ...builderOptions, targets: Platform.WINDOWS.createTarget(dirOnly ? ['dir'] : ['nsis', 'portable'], Arch.x64) });
+}console.log(`desktop app built (TaskWeave ${version}):\n${files.map((f) => `  ${path.relative(root, f)}`).join('\n')}`);

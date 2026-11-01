@@ -5,7 +5,8 @@ import { NAlert, NButton, NDropdown, NInput, NSpin, useMessage } from 'naive-ui'
 import { Check, ChevronDown, Download, FileText, SlidersHorizontal } from 'lucide-vue-next';
 import type { ContestDetail, ContestStatement } from '@taskweave/shared';
 import { renderLatex, type MacroTable } from '../lib/latex';
-import { cnoiMarkdown, cnoiProblemElement, cnoiProblemMarkdown } from '../lib/cnoiDocument';
+import { cnoiProblemElement } from '../lib/cnoiDocument';
+import { oiContent, oiFileIo, oiLayout, oiNotesBody, oiNotesImage, oiProblems, oiRows, oiTitle } from '../lib/oiDocument';
 import { exportMarkdown } from '../lib/markdownExport';
 import { api, token } from '../lib/api';
 import { serverText } from '../lib/serverText';
@@ -18,57 +19,39 @@ watch(() => [props.lang, props.doc], () => { pendingDown = false; });
 const { locale, t } = useI18n(); const message = useMessage();
 const ui = (zh: string, en: string) => locale.value.startsWith('zh') ? zh : en;
 const word = (zh: string, en: string) => props.lang === 'zh' ? zh : en;
-const subtitle = ref(props.detail.summary.statement?.subtitle ?? '');
-const dayname = ref(props.detail.summary.statement?.session ?? '');
-const options = ref(props.detail.summary.statement?.compileOptions || '-O2 -std=c++14');
-const today = new Date(); const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-const schedule = props.detail.summary.statement?.schedule.split('/') ?? [];
-const start = ref(schedule[0]?.includes('T') ? schedule[0] : `${date}T08:00`);
-const end = ref(schedule[1]?.includes('T') ? schedule[1] : `${date}T12:00`);
+const initial = oiLayout(props.detail);
+const subtitle = ref(initial.subtitle);
+const dayname = ref(initial.dayname);
+const options = ref(initial.options);
+const start = ref(initial.start);
+const end = ref(initial.end);
 const settingsKey = () => JSON.stringify([subtitle.value, dayname.value, options.value, start.value, end.value]);
 let savedSettings = settingsKey(); let saveQueue = Promise.resolve();
 const busy = ref(true); const error = ref(''); const pdf = ref(''); const svg = ref(''); const stale = ref(true); const exporting = ref(false);
 /** SimSun / SimHei / KaiTi are not bundled (not redistributable): the worker reports the ones this system lacks. */
-const missingFonts = ref<string[]>([]); const fontDir = ref('');
+const missingFonts = ref<string[]>([]); const fallbackFonts = ref<string[]>([]); const fontDir = ref('');
 const FONT_NAMES: Record<string, [string, string, string]> = { simsun: ['宋体', 'SimSun', 'simsun.ttc'], simhei: ['黑体', 'SimHei', 'simhei.ttf'], simkai: ['楷体', 'KaiTi', 'simkai.ttf'] };
 const missingFontText = computed(() => missingFonts.value.map(k => FONT_NAMES[k] ? ui(`${FONT_NAMES[k][0]}（${FONT_NAMES[k][1]}）`, FONT_NAMES[k][1]) : k).join(ui('、', ', ')));
 const missingFontFiles = computed(() => missingFonts.value.map(k => FONT_NAMES[k]?.[2] ?? k).join(ui('、', ', ')));
-const problems = computed(() => props.statements.filter(s => props.doc === 'tutorials' ? s.sections.tutorial?.trim() : s.body || s.sections.legend || s.sections.input || s.sections.output));
-const title = computed(() => (props.detail.summary.title[props.lang] || props.detail.summary.title.en || props.detail.summary.name) + (props.doc === 'tutorials' ? word(' · 题解', ' · Tutorial') : ''));
-const notesImage = (n: string) => `/api/contests/${encodeURIComponent(props.detail.summary.id)}/file/raw?path=${encodeURIComponent(n)}&token=${encodeURIComponent(token)}`;
+const problems = computed(() => oiProblems(props.statements, props.doc));
+const title = computed(() => oiTitle(props.detail, props.lang, props.doc));
+const notesImage = oiNotesImage(props.detail.summary.id);
 /** Cover, overview tables and instructions: optional for statements, never for tutorials. */
 const withToc = computed(() => props.doc === 'statements' && props.toc !== false);
-const notesBody = computed(() => props.notes.replace(/^\s*\*\*(?:注意事项[^\n]*|Instructions[^\n]*)\*\*\s*/i, ''));
-const fileIo = computed(() => problems.value.some(p => p.input !== 'stdin' && !!p.input || p.output !== 'stdout' && !!p.output));
-const rows = computed(() => problems.value.map(p => ({
-  name: p.name || p.problem, title: p.title, type: p.interactive ? word('交互型', 'Interactive') : word('传统型', 'Batch'), dir: p.name || p.problem, exec: p.name || p.problem,
-  input: !p.input || p.input === 'stdin' ? word('标准输入', 'standard input') : p.input,
-  output: !p.output || p.output === 'stdout' ? word('标准输出', 'standard output') : p.output,
-  time_limit: `${p.timeLimit / 1000} ${word('秒', 's')}`, memory_limit: `${p.memoryLimit} MiB`, testcase: String(p.testCount ?? '—'),
-  point_equal: p.equalPoints === undefined ? '—' : p.equalPoints ? word('是', 'Yes') : word('否', 'No'),
-  submit_filename: [`${p.name || p.problem}.cpp`], pretestcase: '',
-})));
+const notesBody = computed(() => oiNotesBody(props.notes));
+const fileIo = computed(() => oiFileIo(problems.value));
+const rows = computed(() => oiRows(problems.value, props.lang));
 let worker: Worker | undefined; let timer: ReturnType<typeof setTimeout> | undefined; let generation = 0;
 function stop() { generation++; clearTimeout(timer); worker?.terminate(); worker = undefined; busy.value = false; }
 function schedulePreview() { stop(); stale.value = true; busy.value = true; error.value = ''; if (!props.loading) timer = setTimeout(generate, 350); }
 watch(() => [props.statements, props.notes, props.lang, props.doc, props.macros, withToc.value, props.loading, props.detail.summary.title, subtitle.value, dayname.value, options.value, start.value, end.value], schedulePreview, { immediate: true });
 onBeforeUnmount(() => { stop(); if (pdf.value) URL.revokeObjectURL(pdf.value); });
-const dateArray = (s: string) => { const d = new Date(s); if (!Number.isFinite(+d)) throw new Error(ui('请填写有效的比赛起止时间', 'Enter a valid start and end time.')); return [d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()]; };
 async function generate() {
   stop(); if (props.loading) return;
   error.value = ''; busy.value = true;
   const current = generation;
   try {
-    const startDate = dateArray(start.value); const endDate = dateArray(end.value);
-    if (new Date(end.value) <= new Date(start.value)) throw new Error(ui('结束时间应晚于开始时间', 'The end time must be after the start time.'));
-    if (!problems.value.length) throw new Error(ui('当前语言没有可导出的内容', 'No content is available in this language.'));
-    const content = {
-      lang: props.lang, title: title.value, subtitle: subtitle.value, dayname: dayname.value, date: { start: startDate, end: endDate },
-      noi_style: true, file_io: fileIo.value, use_pretest: false, pf_toc: withToc.value,
-      support_languages: [{ name: 'C++', compile_options: options.value }],
-      problems: rows.value.map((row, i) => ({ ...row, markdown: cnoiProblemMarkdown(problems.value[i], props.doc, props.lang, props.macros) })),
-      extraContents: { precaution: { markdown: notesBody.value.trim() ? `**${word('注意事项（请仔细阅读）', 'Instructions (please read carefully)')}**\n\n` + cnoiMarkdown(notesBody.value, props.macros, notesImage, props.lang) : '' } },
-    };
+    const content = oiContent({ detail: props.detail, statements: props.statements, lang: props.lang, doc: props.doc, notes: props.notes, macros: props.macros, ui, layout: { subtitle: subtitle.value, dayname: dayname.value, options: options.value, start: start.value, end: end.value, toc: props.toc !== false } });
     const key = settingsKey();
     if (!props.single && key !== savedSettings) {
       const statement = { ...props.detail.summary.statement!, subtitle: subtitle.value, session: dayname.value, compileOptions: options.value, schedule: `${start.value}/${end.value}` };
@@ -83,7 +66,7 @@ async function generate() {
       if (data.error) { error.value = data.error; pendingDown = false; }
       else {
         if (pdf.value) URL.revokeObjectURL(pdf.value); pdf.value = URL.createObjectURL(new Blob([data.pdf], { type: 'application/pdf' })); svg.value = data.svg; stale.value = false;
-        missingFonts.value = data.missingFonts ?? [];
+        missingFonts.value = data.missingFonts ?? []; fallbackFonts.value = data.fallbackFonts ?? [];
         if (missingFonts.value.length && !fontDir.value) api.systemFonts().then(s => { fontDir.value = s.userDir; }).catch(() => {});
       }
       stop();
@@ -174,10 +157,13 @@ async function onExport(format: string) {
       </div>
     </div>
     <n-alert v-if="error" type="error">{{ error }}</n-alert>
-    <n-alert v-if="missingFonts.length && !error" type="warning" :title="ui(`本机缺少 OI 排版字体：${missingFontText}`, `Missing OI fonts on this computer: ${missingFontText}`)">
-      {{ ui(
-        `这些字体的版权不允许随 TaskWeave 分发，排版时从本机读取。缺少时，对应文字会改用其他已加载的中文字体；若中文字体全部缺少，中文将显示为方框。Windows 通常自带这些字体；也可以把字体文件（${missingFontFiles}）放到 ${fontDir || '全局目录的 fonts 文件夹'}，再重新检测。`,
-        `These fonts may not be redistributed with TaskWeave, so they are read from this computer. Missing ones are replaced by other loaded Chinese fonts; without any, Chinese text shows as boxes. Windows usually includes them; you can also put the font files (${missingFontFiles}) into ${fontDir || 'the fonts folder of the global directory'} and check again.`,
+    <n-alert v-if="missingFonts.length && !error" :type="fallbackFonts.length ? 'info' : 'warning'" :title="ui(`本机缺少 OI 排版字体：${missingFontText}`, `Missing OI fonts on this computer: ${missingFontText}`)">
+      {{ fallbackFonts.length ? ui(
+        `这些字体的版权不允许随 TaskWeave 分发，排版时从本机读取。现已改用本机安装的中文字体（如 Noto CJK）排版，文字完整，但字形与 NOI 官方题面略有不同。如需一致，可把字体文件（${missingFontFiles}）放到 ${fontDir || '全局目录的 fonts 文件夹'}，再重新检测。`,
+        `These fonts may not be redistributed with TaskWeave, so they are read from this computer. Installed Chinese fonts (such as Noto CJK) are used instead: the text is complete but the glyphs differ slightly from official NOI statements. For the exact look, put the font files (${missingFontFiles}) into ${fontDir || 'the fonts folder of the global directory'} and check again.`,
+      ) : ui(
+        `这些字体的版权不允许随 TaskWeave 分发，排版时从本机读取。本机也没有可代替的中文字体，中文将无法显示。Windows 通常自带这些字体；Linux 可安装 fonts-noto-cjk（如 sudo apt install fonts-noto-cjk）；也可以把字体文件（${missingFontFiles}）放到 ${fontDir || '全局目录的 fonts 文件夹'}，再重新检测。`,
+        `These fonts may not be redistributed with TaskWeave, so they are read from this computer. No other Chinese font is installed either, so Chinese text cannot be shown. Windows usually includes them; on Linux install fonts-noto-cjk (e.g. sudo apt install fonts-noto-cjk); or put the font files (${missingFontFiles}) into ${fontDir || 'the fonts folder of the global directory'} and check again.`,
       ) }}
       <div class="font-actions"><n-button size="small" @click="generate">{{ ui('重新检测', 'Check again') }}</n-button></div>
     </n-alert>
