@@ -10,7 +10,8 @@ import { pathKey } from '../global.js';
 import { atomicWrite, exists, HttpError, validateFileName } from '../util/fs.js';
 import { readCdf } from './cdf.js';
 import { PackageReferences } from './references.js';
-import { dataReader, dropGroups, missingTestWarnings } from './data.js';
+import { dataReader, missingTestWarnings } from './data.js';
+import { dropGroups } from '../judge/renumber.js';
 import { publishProblem } from './publish.js';
 
 export const LEMON_CONTEST_ONLY = 'LemonLime packages are imported as whole contests. Use Import local package on the Contests page.';

@@ -6,7 +6,8 @@ import type { Judge } from '../judge/index.js';
 import { parseScript } from '../judge/script.js';
 import { validateFileName } from '../util/fs.js';
 import { checkGroups } from '../workspace/problems.js';
-import { badPackage, dropGroups, missingTestWarnings } from './data.js';
+import { badPackage, missingTestWarnings } from './data.js';
+import { dropGroups } from '../judge/renumber.js';
 import { publishProblem } from './publish.js';
 
 type Xml = Record<string, any>;

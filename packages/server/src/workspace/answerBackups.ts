@@ -51,6 +51,24 @@ export async function answerBackupInfo(dir: string, ts: TestsetConfig): Promise<
   return original ? { available: true, origin: original.origin, createdAt: original.createdAt, tests: original.entries.length } : { available: false, tests: 0 };
 }
 
+/**
+ * Manual tests were deleted or renamed (renumbered): the baseline follows their inputs, so a restore
+ * never puts a removed test's answer on the test that now has its number.
+ */
+export async function followOriginalAnswers(dir: string, ts: TestsetConfig, renamed: Map<string, string>, removed: Set<string>) {
+  if (!ts.answerBaseline || (!renamed.size && !removed.size)) return;
+  const baseline = await readOriginalAnswers(dir, ts);
+  if (!baseline) return;
+  const stem = (file: string) => file.replace(/\.[^./]*$/, '');
+  baseline.entries = baseline.entries.filter(entry => !removed.has(entry.input)).map(entry => {
+    const input = renamed.get(entry.input);
+    if (!input) return entry;
+    const output = entry.output.startsWith(stem(entry.input) + '.') ? stem(input) + entry.output.slice(stem(entry.input).length) : entry.output;
+    return { ...entry, input, output };
+  });
+  await atomicWrite(path.join(baselineDir(dir, ts.answerBaseline), 'manifest.json'), JSON.stringify(baseline));
+}
+
 /** Older workspaces have no import-time snapshot. Capture existing answers once, explicitly labelled. */
 export async function ensureOriginalAnswers(dir: string, ts: TestsetConfig, pairs: AnswerPair[]) {
   if (ts.answerBaseline) { await readOriginalAnswers(dir, ts); return; }

@@ -454,7 +454,9 @@
     "removeManyManual": "Deletes {n} manual test(s) with their statement input / output; this cannot be undone.",
     "removeManyScript": "Removes {lines} script line(s) and the {n} test(s) they make:",
     "removeMany": "Delete",
-    "removedMany": "Deleted {n} test(s)"
+    "removedMany": "Deleted {n} test(s)",
+    "removeShift": "Later tests move down; subtasks and samples follow.",
+    "gapsLeft": "Deleted. Numbers in the template script cannot move down, so the test numbers now have gaps; edit the script."
   },
   "run": {
     "custom": "Custom input",
@@ -820,7 +822,7 @@
     "lemonServerDownSamples": "Samples only",
     "lemonServerDownNone": "Don’t push",
     "lemonServerSectionDown": "Contestant package down.zip",
-    "lemonServerOverwriteHint": "Its data, settings and results are deleted; the contest time is kept.",
+    "lemonServerOverwriteHint": "Its data, settings and results are deleted.",
     "lemonServerNameInvalid": "The name must not be empty, contain characters such as < > : \" / \\ ? *, or end with a space or a period.",
     "lemonServerSectionContest": "Contest",
     "lemonServerChecking": "Connecting…",

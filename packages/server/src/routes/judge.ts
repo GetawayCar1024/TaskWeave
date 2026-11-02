@@ -102,8 +102,8 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     const ctx = await judge.ctx(req.params.id);
     const n = Number(req.params.n);
     if (!Number.isInteger(n) || n < 1) throw new HttpError(400, 'bad_test', 'Invalid test index');
-    const r = await removeTest(ctx, n, { testset: req.query.testset, source: req.query.source });
-    if (r.samples !== undefined) await judge.registry.patch(ctx.ref.id, { testsets: { [r.testset]: { samples: r.samples, largeSamples: r.largeSamples ?? '' } } });
+    const { patch, ...r } = await removeTest(ctx, n, { testset: req.query.testset, source: req.query.source });
+    if (patch) await judge.registry.patch(ctx.ref.id, { testsets: { [r.testset]: patch } });
     return r;
   });
   /** Remove several tests at once; all or none. */
@@ -111,8 +111,8 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     const ctx = await judge.ctx(req.params.id);
     const tests = req.body?.tests;
     if (!Array.isArray(tests) || !tests.length || tests.length > 100000 || tests.some((t) => !t || !Number.isInteger(t.index) || t.index < 1 || typeof t.source !== 'string')) throw new HttpError(400, 'bad_test', 'Invalid test selection');
-    const r = await removeTests(ctx, tests, typeof req.body.testset === 'string' ? req.body.testset : undefined);
-    if (r.samples !== undefined) await judge.registry.patch(ctx.ref.id, { testsets: { [r.testset]: { samples: r.samples, largeSamples: r.largeSamples ?? '' } } });
+    const { patch, ...r } = await removeTests(ctx, tests, typeof req.body.testset === 'string' ? req.body.testset : undefined);
+    if (patch) await judge.registry.patch(ctx.ref.id, { testsets: { [r.testset]: patch } });
     return r;
   });
 

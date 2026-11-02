@@ -454,7 +454,9 @@
     "removeManyManual": "删除 {n} 个手写测试及其题面输入 / 输出，无法恢复。",
     "removeManyScript": "从 script 删除 {lines} 行，连同其生成的 {n} 个测试点：",
     "removeMany": "删除",
-    "removedMany": "已删除 {n} 个测试点"
+    "removedMany": "已删除 {n} 个测试点",
+    "removeShift": "后面的测试点依次前移，子任务与样例随之调整。",
+    "gapsLeft": "已删除。模板脚本中的编号无法自动前移，测试点编号现不连续，请修改脚本。"
   },
   "run": {
     "custom": "自定义输入",
@@ -820,7 +822,7 @@
     "lemonServerDownSamples": "仅样例",
     "lemonServerDownNone": "不推送",
     "lemonServerSectionDown": "选手下发包 down.zip",
-    "lemonServerOverwriteHint": "原比赛的数据、配置和评测结果会被删除；比赛时间会保留。",
+    "lemonServerOverwriteHint": "原比赛的数据、配置和评测结果会被删除。",
     "lemonServerNameInvalid": "比赛名不能为空，不能含 < > : \" / \\ ? * 等字符，也不能以空格或句点结尾。",
     "lemonServerSectionContest": "比赛",
     "lemonServerChecking": "正在连接…",

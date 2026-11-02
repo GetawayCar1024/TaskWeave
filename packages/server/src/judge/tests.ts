@@ -1,8 +1,9 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_TESTSET, TESTSET_NAME_RE, compressRanges, parseIndexList, testsetOf, testMetadata, type RemoveTestsResult, type TestInfo, type TestsManifest, type TestsetConfig } from '@taskweave/shared';
+import { DEFAULT_TESTSET, TESTSET_NAME_RE, compressRanges, parseIndexList, sampleNotePath, testsetOf, testMetadata, type RemoveTestsResult, type TestInfo, type TestsManifest, type TestsetConfig, type TestsetPatch } from '@taskweave/shared';
 import { randomBytes } from 'node:crypto';
-import { recoverAnswerTransaction } from '../workspace/answerBackups.js';
+import { followOriginalAnswers, recoverAnswerTransaction } from '../workspace/answerBackups.js';
+import { remapKeys, withoutTests } from './renumber.js';
 import { HttpError } from '../util/fs.js';
 import type { JobCtx } from '../jobs.js';
 import { atomicWrite, exists, safeJoin, sha1 } from '../util/fs.js';
@@ -653,14 +654,40 @@ export function parseTestMarkup(buf: Buffer | null): number[] | undefined {
   return seen ? lines : undefined;
 }
 
+/** A test across renumbering: a manual test by its file (after renaming), a script test by its command and position. */
+const identity = (p: Planned, renamed?: Map<string, string>) => p.origin === 'manual' ? `manual|${renamed?.get(p.source) ?? p.source}`
+  : `script|${p.cmd ? [p.cmd.generator, ...p.cmd.args].join('\0') : p.source}|${p.multiPos ?? ''}`;
+const targetIndices = (cmd: ScriptCommand) => (cmd.target.kind === 'index' ? [cmd.target.index] : cmd.target.kind === 'multi' ? cmd.target.indices : []);
+
+/** Rename files without overwriting each other: first to hidden temporary names, then to their targets. */
+async function moveFiles(dir: string, moves: [string, string][]) {
+  const tag = randomBytes(4).toString('hex'), staged: [string, string][] = [];
+  for (const [from, to] of moves) {
+    const source = safeJoin(dir, from);
+    if (from === to || !(await exists(source))) continue;
+    const temporary = path.join(path.dirname(source), `.renumber-${tag}-${path.basename(source)}`);
+    await fsp.rename(source, temporary);
+    staged.push([temporary, safeJoin(dir, to)]);
+  }
+  for (const [temporary, target] of staged) await fsp.rename(temporary, target);
+}
+
+/** What removeTests changes in the testset configuration; the caller saves it. */
+export type RemovedTests = RemoveTestsResult & { patch?: TestsetPatch };
+
 /**
  * Remove tests, all resolved against one plan so no index shifts in between. A manual
  * test's files (input, statement input / output, provided answers) are deleted. A script
  * test loses its line in the script; a line that makes several tests ({a-b}) removes all
  * of them. Lines produced by a FreeMarker loop cannot be removed one by one. Nothing
- * changes unless every test can be removed. Removed tests leave the sample lists.
+ * changes unless every test can be removed.
+ *
+ * Later tests then move down to close the gaps, keeping their order, as on Polygon: numbered
+ * manual tests are renamed, explicit script targets ("> 7", "> {8-9}") are rewritten and
+ * "$" lines follow by themselves. Samples, subtasks, per-test settings, statement samples, sample
+ * explanations and the original-answer backup follow their tests; removed tests leave them.
  */
-export async function removeTests(ctx: ProblemCtx, targets: { index: number; source?: string }[], testset?: string): Promise<RemoveTestsResult> {
+export async function removeTests(ctx: ProblemCtx, targets: { index: number; source?: string }[], testset?: string): Promise<RemovedTests> {
   const ts = requireTestset(ctx, testset);
   const planned = await plan(ctx, [], ts);
   const byIndex = new Map(planned.map((p) => [p.index, p]));
@@ -674,39 +701,89 @@ export async function removeTests(ctx: ProblemCtx, targets: { index: number; sou
     else if (ts.script && p.cmd) { if (!commands.has(p.cmd)) commands.set(p.cmd, index); }
     else throw new HttpError(400, 'not_removable', `Test ${index} has no source to remove`);
   }
-  if (commands.size) {
+  const generated = planned.filter((x) => x.cmd && commands.has(x.cmd));
+  const removed = [...new Set([...manual, ...generated].map((x) => x.index))].sort((a, b) => a - b), gone = new Set(removed);
+  const shift = (i: number) => i - removed.filter((r) => r < i).length;
+  const kept = planned.filter((p) => !gone.has(p.index));
+  const retargets = [...new Set(kept.flatMap((p) => (p.cmd && targetIndices(p.cmd).some((i) => shift(i) !== i) ? [p.cmd] : [])))];
+  let renumber = true;
+  if (commands.size || retargets.length) {
     const file = safeJoin(ctx.ref.dir, ts.script!);
     const text = (await fsp.readFile(file, 'utf8')).replace(/\r\n/g, '\n');
     const lines = text.split('\n');
-    const templated = /<#|\$\{/.test(text), drop = new Set<number>();
+    const templated = /<#|\$\{/.test(text), drop = new Set<number>(), rewrite = new Map<number, string>();
+    const locate = (cmd: ScriptCommand) => {
+      if (!templated && lines[cmd.line - 1]?.trim() === cmd.text) return cmd.line - 1;
+      const same = lines.map((l, i) => (l.trim() === cmd.text ? i : -1)).filter((i) => i >= 0);
+      return same.length === 1 ? same[0] : -1;
+    };
     for (const [cmd, index] of commands) {
-      let at = -1;
-      if (!templated && lines[cmd.line - 1]?.trim() === cmd.text) at = cmd.line - 1;
-      else {
-        const same = lines.map((l, i) => (l.trim() === cmd.text ? i : -1)).filter((i) => i >= 0);
-        if (same.length === 1) at = same[0];
-      }
+      const at = locate(cmd);
       if (at < 0) throw new HttpError(400, 'templated_script', `Test ${index} comes from a template loop in ${ts.script}; edit the script instead`);
       drop.add(at);
     }
-    await atomicWrite(file, lines.filter((_, i) => !drop.has(i)).join('\n'));
+    for (const cmd of retargets) {
+      const at = locate(cmd);
+      // A target made by the template cannot be rewritten: then nothing is renumbered.
+      if (at < 0) { renumber = false; rewrite.clear(); break; }
+      const indices = targetIndices(cmd).map(shift), gt = lines[at].lastIndexOf('>');
+      rewrite.set(at, `${lines[at].slice(0, gt + 1)} ${cmd.target.kind === 'index' ? indices[0] : `{${compressRanges(indices)}}`}`);
+    }
+    if (drop.size || rewrite.size) await atomicWrite(file, lines.flatMap((l, i) => (drop.has(i) ? [] : [rewrite.get(i) ?? l])).join('\n'));
   }
   for (const p of manual) {
     const sp = statementPaths(p.source);
     const answers = providedAnswers(ctx, ts) ? [p.source.replace(/\.in$/i, '.ans'), p.source.replace(/\.in$/i, '.out')] : [];
     for (const rel of [p.source, sp.input, sp.output, ...answers]) await fsp.rm(safeJoin(ctx.ref.dir, rel), { force: true });
   }
-  const generated = planned.filter((x) => x.cmd && commands.has(x.cmd));
   // Their statement input / output (keyed by index) go with them.
   for (const x of generated) for (const rel of Object.values(scriptStatementPaths(x.index, ts.name))) await fsp.rm(safeJoin(ctx.ref.dir, rel), { force: true });
-  const result: RemoveTestsResult = { testset: ts.name, removed: [...manual, ...generated].map((x) => x.index).sort((a, b) => a - b), manual: manual.size, lines: commands.size };
-  // Removed tests leave the sample lists; tests that move down keep their marks.
-  const moved = remapSamples(ts, planned, await plan(ctx, [], ts));
-  return moved ? { ...result, ...moved } : result;
+
+  // Numbered manual tests take their new numbers (keeping zero padding) with their statement files and answers.
+  const renamed = new Map<string, string>(), moves: [string, string][] = [];
+  if (renumber) for (const p of kept) {
+    const name = path.posix.basename(p.source), base = name.replace(/\.[^.]*$/, '');
+    if (p.origin !== 'manual' || !/^\d+$/.test(base) || shift(p.index) === p.index) continue;
+    const source = `${path.posix.dirname(p.source)}/${String(shift(p.index)).padStart(base.startsWith('0') ? base.length : 0, '0')}${name.slice(base.length)}`;
+    const from = statementPaths(p.source), to = statementPaths(source);
+    renamed.set(p.source, source);
+    moves.push([p.source, source], [from.input, to.input], [from.output, to.output]);
+    if (providedAnswers(ctx, ts) && /\.in$/i.test(p.source)) for (const ext of ['.ans', '.out']) moves.push([p.source.replace(/\.in$/i, ext), source.replace(/\.in$/i, ext)]);
+  }
+  await moveFiles(ctx.ref.dir, moves);
+
+  // Where every remaining test is now ("$" tests move into free numbers by themselves).
+  const after = new Map((await plan(ctx, [], ts)).map((p) => [identity(p), p.index]));
+  const map = (i: number) => (gone.has(i) ? undefined : byIndex.has(i) ? after.get(identity(byIndex.get(i)!, renamed)) ?? i : i);
+  await moveFiles(ctx.ref.dir, kept.filter((p) => p.origin === 'script' && map(p.index) !== p.index).flatMap((p) => {
+    const from = scriptStatementPaths(p.index, ts.name), to = scriptStatementPaths(map(p.index)!, ts.name);
+    return [[from.input, to.input], [from.output, to.output]] as [string, string][];
+  }));
+  await followOriginalAnswers(ctx.ref.dir, ts, renamed, new Set([...manual].map((p) => p.source)));
+  // Sample explanations (statement/<lang>/samples/<index>.tex) follow their tests; a removed test's go with it.
+  const langs = (await fsp.readdir(safeJoin(ctx.ref.dir, 'statement'), { withFileTypes: true }).catch(() => [])).filter((e) => e.isDirectory()).map((e) => e.name);
+  for (const lang of langs) {
+    for (const i of removed) await fsp.rm(safeJoin(ctx.ref.dir, sampleNotePath(lang, i, ts.name)), { force: true });
+    await moveFiles(ctx.ref.dir, kept.filter((p) => map(p.index) !== p.index).map((p) => [sampleNotePath(lang, p.index, ts.name), sampleNotePath(lang, map(p.index)!, ts.name)]));
+  }
+
+  const list = (value?: string) => compressRanges(parseIndexList(value ?? '').flatMap((i) => map(i) ?? []));
+  const same = (a: unknown, b: unknown) => JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
+  const patch: TestsetPatch = { followsTests: true };
+  const samples = list(ts.samples), largeSamples = list(ts.largeSamples);
+  if (samples !== compressRanges(parseIndexList(ts.samples ?? '')) || largeSamples !== compressRanges(parseIndexList(ts.largeSamples ?? ''))) Object.assign(patch, { samples, largeSamples });
+  if (ts.group.length) { const { groups } = withoutTests(ts.group, ts.cases ?? {}, map); if (!same(groups, ts.group)) patch.group = groups; }
+  if (ts.cases) { const cases = remapKeys(ts.cases, map); if (!same(cases, ts.cases)) patch.cases = cases; }
+  const renumbered = kept.filter((p) => map(p.index) !== p.index).length;
+  const indices = [...after.values()].sort((a, b) => a - b), gaps = indices.some((index, i) => index !== i + 1);
+  return {
+    testset: ts.name, removed, manual: manual.size, lines: commands.size, renumbered, ...(gaps && !renumber ? { gaps: true } : {}),
+    ...(patch.samples !== undefined ? { samples, largeSamples } : {}), ...(Object.keys(patch).length > 1 ? { patch } : {}),
+  };
 }
 
 /** Remove one test (see removeTests). */
-export async function removeTest(ctx: ProblemCtx, index: number, opts: { testset?: string; source?: string }): Promise<{ kind: 'manual' | 'script'; removed: number[]; testset: string; samples?: string; largeSamples?: string }> {
+export async function removeTest(ctx: ProblemCtx, index: number, opts: { testset?: string; source?: string }): Promise<Omit<RemovedTests, 'manual' | 'lines'> & { kind: 'manual' | 'script' }> {
   const { manual, lines: _lines, ...result } = await removeTests(ctx, [{ index, source: opts.source }], opts.testset);
   return { kind: manual ? 'manual' : 'script', ...result };
 }

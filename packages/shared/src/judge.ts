@@ -290,8 +290,12 @@ export interface TestFileResponse {
 
 /** DELETE /api/problems/:id/tests: tests as the caller last saw them, removed together. */
 export interface RemoveTestsRequest { testset?: string; tests: { index: number; source: string }[] }
-/** `manual` test files and script `lines` removed; `removed` also has the other tests of those lines. */
-export interface RemoveTestsResult { testset: string; removed: number[]; manual: number; lines: number; samples?: string; largeSamples?: string }
+/**
+ * `manual` test files and script `lines` removed; `removed` also has the other tests of those lines.
+ * Later tests move down to close the gaps (`renumbered` of them), subtasks and samples following;
+ * `gaps`: the explicit indices of a template script could not be changed, so gaps remain.
+ */
+export interface RemoveTestsResult { testset: string; removed: number[]; manual: number; lines: number; renumbered: number; gaps?: boolean; samples?: string; largeSamples?: string }
 
 // ---------------------------------------------------------------------------
 // Tag semantics (DESIGN §4.2 Invocation): which verdicts a tag allows and which

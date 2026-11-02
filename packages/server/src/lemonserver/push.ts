@@ -46,7 +46,8 @@ export async function pushContestToLemonServer(deps: ContestDeps, contestId: str
     if (!keptSources) sources = undefined;
   }
 
-  // The contest properties (start / end time, down.zip) live in its folder and go with a replacement.
+  // The contest properties (down.zip; the start / end time of LemonServer 0.1.5 and earlier, which 0.1.6
+  // no longer has) live in its folder and go with a replacement.
   type Props = { startTime?: number | null; endTime?: number | null; downZip?: { path: string; exists: boolean } | null };
   let previous: Props | undefined, previousDown: Buffer | undefined;
   if (existing) {

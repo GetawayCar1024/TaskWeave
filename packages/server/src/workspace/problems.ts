@@ -535,8 +535,8 @@ export class ProblemRegistry {
       if (p.group !== undefined) {
         const groups = checkGroups(name, p.group, true);
         // An explicit edit of scoring replaces unsupported imported script semantics.
-        delete target.unresolved_scoring;
-        for (const group of groups) {
+        if (!p.followsTests) delete target.unresolved_scoring;
+        for (const group of p.followsTests ? [] : groups) {
           const old = (target.group ?? []).find((g: TestGroup) => g.name === group.name);
           // Overrides belong to this membership, never erase another group's imported values.
           for (const i of parseIndexList(group.tests ?? '')) if (group.cases?.[i]) {
@@ -546,6 +546,10 @@ export class ProblemRegistry {
         }
         if (groups.length) target.group = groups;
         else delete target.group;
+      }
+      if (p.cases !== undefined) {
+        if (Object.keys(p.cases ?? {}).length) target.cases = p.cases;
+        else delete target.cases;
       }
       if (p.samples !== undefined) {
         checkGroups(`${name} samples`, [{ name: 'samples', tests: p.samples }]);

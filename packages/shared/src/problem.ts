@@ -350,4 +350,8 @@ export interface TestsetPatch {
   script?: string | null;
   groups?: boolean;
   group?: TestGroup[];
+  /** Per-test settings, replacing the current ones (empty object removes). */
+  cases?: TestsetConfig['cases'];
+  /** `group` / `cases` only follow removed or renumbered tests: imported scoring stays as it was. */
+  followsTests?: boolean;
 }

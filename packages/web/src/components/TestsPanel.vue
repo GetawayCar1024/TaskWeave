@@ -107,9 +107,10 @@ const dialog = useDialog();
 function removeTest(test: TestInfo) {
   const siblings = test.origin === 'script' ? (manifest.value?.tests ?? []).filter((x) => x.origin === 'script' && x.source === test.source).map((x) => x.index) : [test.index];
   const content =
-    test.origin === 'manual'
+    (test.origin === 'manual'
       ? t('tests.removeManual', { file: test.source })
-      : t('tests.removeScript', { cmd: test.source }) + (siblings.length > 1 ? '\n' + t('tests.removeMulti', { list: siblings.join(', ') }) : '');
+      : t('tests.removeScript', { cmd: test.source }) + (siblings.length > 1 ? '\n' + t('tests.removeMulti', { list: siblings.join(', ') }) : ''))
+    + (laterTests(siblings) ? '\n' + t('tests.removeShift') : '');
   dialog.warning({
     title: t('tests.removeTitle', { n: test.index }),
     content,
@@ -118,13 +119,16 @@ function removeTest(test: TestInfo) {
     onPositiveClick: async () => {
       try {
         const r = await api.removeTest(props.problemId, test.index, test.source, testset.value);
-        message.success(r.kind === 'manual' ? t('tests.removedManual') : t('tests.removedScript', { n: r.removed.length }));
+        if (r.gaps) message.warning(t('tests.gapsLeft'), { duration: 8000 });
+        else message.success(r.kind === 'manual' ? t('tests.removedManual') : t('tests.removedScript', { n: r.removed.length }));
       } catch (e) {
         message.error(errorMessage(e));
       }
     },
   });
 }
+/** Tests after the first removed one keep nothing of their number: they move down. */
+const laterTests = (removed: number[]) => (manifest.value?.tests ?? []).some((x) => x.index > Math.min(...removed) && !removed.includes(x.index));
 
 // ---- checked tests, removed together; the current test of the detail area is separate ----
 const checked = ref<number[]>([]);
@@ -156,6 +160,7 @@ function removeChecked() {
       lines.size ? h('p', { class: 'pf-dialog-line' }, t('tests.removeManyScript', { lines: lines.size, n: generated })) : null,
       lines.size ? h('ul', { class: 'pf-dialog-list' }, [...[...lines.values()].slice(0, 10).map((l) => h('li', [h('span', { class: 'mono' }, l.text), h('span', { class: 'pf-hint' }, ` · #${compressRanges(l.tests)}`)])),
         lines.size > 10 ? h('li', '…') : null]) : null,
+      laterTests([...picked.map((x) => x.index), ...[...lines.values()].flatMap((l) => l.tests)]) ? h('p', { class: 'pf-dialog-line' }, t('tests.removeShift')) : null,
     ]),
     positiveText: t('tests.removeMany'),
     negativeText: t('common.cancel'),
@@ -163,7 +168,8 @@ function removeChecked() {
       try {
         const r = await api.removeTests(props.problemId, { testset: testset.value, tests: picked.map((x) => ({ index: x.index, source: x.source })) });
         checked.value = [];
-        message.success(t('tests.removedMany', { n: r.removed.length }));
+        if (r.gaps) message.warning(t('tests.gapsLeft'), { duration: 8000 });
+        else message.success(t('tests.removedMany', { n: r.removed.length }));
       } catch (e) {
         message.error(errorMessage(e));
       }

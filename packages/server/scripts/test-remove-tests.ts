@@ -14,7 +14,8 @@ import { Judge } from '../src/judge/index.js';
 import { JobManager } from '../src/jobs.js';
 import { WsHub } from '../src/ws.js';
 import { buildApp } from '../src/app.js';
-import { planTests, removeTests } from '../src/judge/tests.js';
+import { planTests, removeTests, requireTestset } from '../src/judge/tests.js';
+import { ensureOriginalAnswers, readOriginalAnswers } from '../src/workspace/answerBackups.js';
 
 type Call = (method: 'DELETE' | 'GET', url: string, payload?: object) => Promise<LightMyRequestResponse>;
 async function fixture(run: (ctx: { registry: ProblemRegistry; judge: Judge; call: Call }) => Promise<void>) {
@@ -46,14 +47,58 @@ test('checked tests are removed in one operation against one plan, and samples f
   const response = await call('DELETE', `/api/problems/${p.id}/tests`, { tests: [{ index: 1, source: 'tests/manual/01.in' }, { index: 5, source: 'multi > {5-6}' }, { index: 3, source: 'gen 1 > $' }] });
   assert.equal(response.statusCode, 200, response.body);
   const result: RemoveTestsResult = response.json();
-  assert.deepEqual([result.removed, result.manual, result.lines], [[1, 3, 5, 6], 1, 2]);
+  assert.deepEqual([result.removed, result.manual, result.lines, result.renumbered], [[1, 3, 5, 6], 1, 2, 3]);
   assert.equal(await fs.readFile(path.join(p.dir, 'tests/script.txt'), 'utf8'), 'gen 2 > $\ngen 3 > $\n');
-  for (const gone of ['manual/01.in', 'manual/01.statement.in', '_statement/03.in']) await assert.rejects(fs.access(path.join(p.dir, 'tests', gone)));
-  // "$" tests moved down; their sample marks moved with them and were saved.
-  assert.deepEqual(await sources(judge, p.id), ['1:gen 2 > $', '2:tests/manual/02.in', '3:gen 3 > $']);
+  for (const gone of ['manual/02.in', 'manual/01.statement.in', '_statement/03.in']) await assert.rejects(fs.access(path.join(p.dir, 'tests', gone)));
+  // Later tests moved down in their order (the manual one was renamed); sample marks moved with them and were saved.
+  assert.deepEqual(await sources(judge, p.id), ['1:tests/manual/01.in', '2:gen 2 > $', '3:gen 3 > $']);
+  assert.equal(await fs.readFile(path.join(p.dir, 'tests/manual/01.in'), 'utf8'), '2\n');
   assert.deepEqual([result.samples, result.largeSamples], ['1-3', '3']);
   const config = (await registry.detail(p.id)).config!;
   assert.deepEqual([config.tests.samples, config.tests.large_samples], ['1-3', '3']);
+}));
+
+test('later tests move down: files, explicit script targets, subtasks, per-test settings, notes and the answer backup follow', async () => fixture(async ({ registry, judge, call }) => {
+  const p = await registry.create({ name: 'renumber' });
+  await fs.rm(path.join(p.dir, 'tests'), { recursive: true });
+  const files: Record<string, string> = { 'tests/script.txt': 'gen a > 6\ngen b > {7-8}\n', 'statement/en/samples/5.tex': 'note of 5\n', 'statement/en/samples/3.tex': 'note of 3\n' };
+  for (let i = 1; i <= 5; i++) Object.assign(files, { [`tests/manual/${i}.in`]: `in ${i}\n`, [`tests/manual/${i}.ans`]: `ans ${i}\n` });
+  for (const [file, text] of Object.entries(files)) { await fs.mkdir(path.dirname(path.join(p.dir, file)), { recursive: true }); await fs.writeFile(path.join(p.dir, file), text); }
+  await registry.patch(p.id, { points: true, testsets: { tests: { answers: 'provided', samples: '1,5', groups: true, cases: { 5: { time_limit: 2000 }, 7: { time_limit: 3000 } }, group: [
+    { name: 'g1', tests: '1-2', points: 20, policy: 'EACH_TEST' }, { name: 'g2', tests: '3-4', points: 30, policy: 'COMPLETE_GROUP', dependencies: ['g1'] },
+    { name: 'g3', tests: '5-8', points: 50, policy: 'EACH_TEST', dependencies: ['g2'] }] } } });
+  let ctx = await judge.ctx(p.id);
+  const pairs = Array.from({ length: 5 }, (_, i) => ({ input: `tests/manual/${i + 1}.in`, output: `tests/manual/${i + 1}.ans` }));
+  await ensureOriginalAnswers(p.dir, requireTestset(ctx), pairs);
+  const response = await call('DELETE', `/api/problems/${p.id}/tests`, { tests: [2, 3, 4].map(index => ({ index, source: `tests/manual/${index}.in` })) });
+  assert.equal(response.statusCode, 200, response.body);
+  const result: RemoveTestsResult = response.json();
+  assert.deepEqual([result.removed, result.renumbered, result.gaps], [[2, 3, 4], 4, undefined]);
+  assert.deepEqual(await sources(judge, p.id), ['1:tests/manual/1.in', '2:tests/manual/2.in', '3:gen a > 3', '4:gen b > {4-5}', '5:gen b > {4-5}']);
+  assert.equal(await fs.readFile(path.join(p.dir, 'tests/script.txt'), 'utf8'), 'gen a > 3\ngen b > {4-5}\n');
+  assert.deepEqual([await fs.readFile(path.join(p.dir, 'tests/manual/2.in'), 'utf8'), await fs.readFile(path.join(p.dir, 'tests/manual/2.ans'), 'utf8')], ['in 5\n', 'ans 5\n']);
+  for (const gone of ['tests/manual/3.in', 'tests/manual/5.in', 'tests/manual/5.ans', 'statement/en/samples/3.tex', 'statement/en/samples/5.tex']) await assert.rejects(fs.access(path.join(p.dir, gone)), gone);
+  assert.equal(await fs.readFile(path.join(p.dir, 'statement/en/samples/2.tex'), 'utf8'), 'note of 5\n');
+  const config = (await registry.detail(p.id)).config!;
+  assert.equal(config.tests.samples, '1-2');
+  assert.deepEqual(config.tests.cases, { 2: { time_limit: 2000 }, 4: { time_limit: 3000 } });
+  // g2 lost all its tests and was removed: g3 now depends on g1; the sum group g1 lost the points of test 2.
+  assert.deepEqual(config.tests.group!.map(g => [g.name, g.tests, g.points, g.dependencies ?? []]), [['g1', '1', 10, []], ['g3', '2-5', 50, ['g1']]]);
+  // Restoring original answers puts test 5's answer on the test that is now number 2.
+  ctx = await judge.ctx(p.id);
+  const baseline = (await readOriginalAnswers(p.dir, requireTestset(ctx)))!;
+  assert.deepEqual(baseline.entries.map(e => [e.input, e.output, e.backup]), [['tests/manual/1.in', 'tests/manual/1.ans', '1.ans'], ['tests/manual/2.in', 'tests/manual/2.ans', '5.ans']]);
+}));
+
+test('a template script whose targets cannot be rewritten keeps its numbers and reports the gap', async () => fixture(async ({ registry, judge }) => {
+  const p = await registry.create({ name: 'templated' });
+  await fs.rm(path.join(p.dir, 'tests'), { recursive: true });
+  for (const [file, text] of Object.entries({ 'manual/1.in': '1\n', 'manual/2.in': '2\n', 'script.txt': '<#list 3..3 as i>\ngen x > ${i}\n</#list>\n' })) {
+    await fs.mkdir(path.dirname(path.join(p.dir, 'tests', file)), { recursive: true }); await fs.writeFile(path.join(p.dir, 'tests', file), text);
+  }
+  const result = await removeTests(await judge.ctx(p.id), [{ index: 1, source: 'tests/manual/1.in' }]);
+  assert.deepEqual([result.removed, result.renumbered, result.gaps], [[1], 0, true]);
+  assert.deepEqual(await sources(judge, p.id), ['2:tests/manual/2.in', '3:gen x > 3']);
 }));
 
 test('a batch changes nothing when one test is stale, unknown or comes from a template loop', async () => fixture(async ({ registry, judge, call }) => {
