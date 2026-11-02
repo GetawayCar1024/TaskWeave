@@ -2,6 +2,12 @@
 
 每个版本的使用说明位于 [docs/releases/](docs/releases/)，详细改动位于 [docs/changes/](docs/changes/)。下载见 [GitHub Releases](https://github.com/GetawayCar1024/taskweave/releases)。
 
+## 0.4.5 — 2026-11-03
+
+测试面板支持勾选多个测试点一次删除；删除后其余测试点依次前移、编号保持连续，样例、子任务、逐点设置与初始答案备份随之调整。导入时，配置中引用但包内不存在的测试数据不再使导入失败：这些测试点被跳过并在预览中提示，变空的子任务被删除；引用有歧义时仍拒绝导入。适配已删除比赛时间的 LemonServer 0.1.6；精简界面与导入提示。
+
+[发布说明](docs/releases/0.4.5.md) · [改动明细](docs/changes/0.4.5.md)
+
 ## 0.4.4 — 2026-11-01
 
 修复推送到 LemonServer 时错误的 API Key 显示“未授权”页面，界面统一称 LemonServer；每道题都有题面即可使用 OI 题面 PDF 版 down.zip（含纯数据题）。LemonLime 包数据文件按“源文件名 + 编号”命名，down.zip 样例答案改为 `.ans`。CNOI 题面：`###` 小节标题按原项目显示为【…】，表格中含 `|` 的公式不再拆乱表格。
