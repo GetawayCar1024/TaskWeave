@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NCheckbox, NForm, NFormItem, NInput, NInputNumber, NSelect, useMessage } from 'naive-ui';
 import { PROBLEM_NAME_RE, TESTSET_NAME_RE, type DetectedPackageFormat, type ImportPackageFormat, type PackageImportResult, type PackageItem, type PackageSelection } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
-import { serverText } from '../lib/serverText';
+import { serverText, skippedTestsNotice } from '../lib/serverText';
 import { formatSize } from '../lib/format';
 import { labelWidth } from '../lib/labelWidth';
 import ToolWindow from './ToolWindow.vue';
@@ -166,6 +166,8 @@ async function submit() {
   } catch (e) { error.value = errorMessage(e); }
   finally { busy.value = false; }
 }
+const skipped = computed(() => current.value?.candidate.warnings?.filter(skippedTestsNotice) ?? []);
+const notices = computed(() => current.value?.candidate.warnings?.filter(warning => !skippedTestsNotice(warning)) ?? []);
 const footer = computed(() => [t('packages.selectedProblems', { n: selectedItems.value.length, total: items.value.length }),
   issues.value ? t('packages.needsAttention', { n: issues.value }) : pending.value ? t('packages.validating') : ''].filter(Boolean).join(' · '));
 </script>
@@ -186,7 +188,8 @@ const footer = computed(() => [t('packages.selectedProblems', { n: selectedItems
       <n-form-item v-if="!problemId" :label="t('packages.selection')"><n-checkbox v-model:checked="current.included" :disabled="busy || current.imported || !!current.candidate.error">{{ t('packages.includeProblem') }}</n-checkbox></n-form-item>
       <n-alert v-if="status" :type="status.type" :show-icon="false" class="import-status">{{ status.text }}</n-alert>
       <n-alert v-if="current.candidate.warnings?.length" type="warning" :show-icon="false" class="import-status">
-        <details :open="current.candidate.warnings.length <= 5" class="import-warnings"><summary>{{ t('packages.warnings', { n: current.candidate.warnings.length }) }}</summary><ul><li v-for="warning in current.candidate.warnings" :key="warning">{{ serverText(warning) }}</li></ul></details>
+        <div v-for="warning in skipped" :key="warning">{{ serverText(warning) }}</div>
+        <details v-if="notices.length" :open="notices.length <= 5" class="import-warnings"><summary>{{ t('packages.warnings', { n: notices.length }) }}</summary><ul><li v-for="warning in notices" :key="warning">{{ serverText(warning) }}</li></ul></details>
       </n-alert>
       <template v-if="!problemId">
         <n-form-item :label="t('create.name')"><n-input v-model:value="current.name" :status="PROBLEM_NAME_RE.test(current.name.trim()) ? undefined : 'error'" :disabled="busy || current.imported" /></n-form-item>
@@ -212,5 +215,6 @@ const footer = computed(() => [t('packages.selectedProblems', { n: selectedItems
 .import-form :deep(.n-form-item) { margin-bottom: 14px; }
 .import-status { margin-bottom: 14px; overflow-wrap: anywhere; }
 .import-warnings summary { cursor: pointer; }
+div + .import-warnings { margin-top: 6px; }
 .import-warnings ul { padding-left: 18px; margin: 6px 0 0; overflow-wrap: anywhere; }
 </style>

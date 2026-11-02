@@ -288,6 +288,11 @@ export interface TestFileResponse {
   truncated: boolean;
 }
 
+/** DELETE /api/problems/:id/tests: tests as the caller last saw them, removed together. */
+export interface RemoveTestsRequest { testset?: string; tests: { index: number; source: string }[] }
+/** `manual` test files and script `lines` removed; `removed` also has the other tests of those lines. */
+export interface RemoveTestsResult { testset: string; removed: number[]; manual: number; lines: number; samples?: string; largeSamples?: string }
+
 // ---------------------------------------------------------------------------
 // Tag semantics (DESIGN §4.2 Invocation): which verdicts a tag allows and which
 // verdict must appear at least once.

@@ -20,14 +20,41 @@ const SECTION: Record<string, string> = {
   tutorial: '题解',
 };
 const LANG: Record<string, string> = { chinese: '中文', english: '英文', russian: '俄文' };
-const ROLE: Record<string, string> = { validator: '校验器', checker: '检查器', interactor: '交互器', generator: '生成器', source: '源文件', 'Main solution': '主解法', Validator: '校验器', Checker: '检查器', Interactor: '交互器', Generator: '生成器' };
+const ROLE: Record<string, string> = { validator: '校验器', checker: '检查器', interactor: '交互器', generator: '生成器', source: '源文件', solution: '解法', executable: '可执行文件', 'Main solution': '主解法', Validator: '校验器', Checker: '检查器', Interactor: '交互器', Generator: '生成器' };
 
 const RULES: Rule[] = [
   [/^Package reference corrected: (.+) -> (.+)$/, m => `已按实际文件修正配置引用：${m[1]} → ${m[2]}`],
+  [/^Skipped (\d+) missing tests?: (.+)$/, m => `已忽略 ${m[1]} 个不存在的测试点：${m[2].split(', ').join('、')}`],
+  [/^Removed empty subtasks?: (.+)$/, m => `已删除空子任务：${m[1].split(', ').join('、')}`],
+  [/^Missing file referenced by problem\.xml: (.+)$/, m => `problem.xml 引用的文件不存在：${m[1]}`],
+  [/^Invalid TaskWeave metadata comment; imported the official config\.yml fields instead\.$/, () => 'TaskWeave 元数据注释无效，已改用 config.yml 的字段。'],
+  [/^Hydro subtask (.+) uses unsupported scoring (.+); edit the subtask before judging or exporting\.$/, m => `Hydro 子任务 ${m[1]} 使用了不支持的计分方式 ${m[2]}，请编辑该子任务后再评测或导出。`],
+  [/^Hydro subtask (.+) has unequal case scores in min mode; its raw configuration is preserved\.$/, m => `Hydro 子任务 ${m[1]} 在 min 模式下各测试点分值不同，已保留原配置。`],
+  [/^Test (\d+) has no reference output in Hydro; .*$/, m => `测试点 ${m[1]} 在 Hydro 中没有标准输出，已导入空答案（可能需要特判）。`],
+  [/^Hydro subtask (.+) has zero scores, .*$/, m => `Hydro 子任务 ${m[1]} 含 0 分（Hydro 视为未指定），本地按 Hydro 默认分值计分，原 YAML 已保留。`],
+  [/^Hydro (\w+) is kept in Other files but not applied by the local judge\.$/, m => `Hydro 的 ${m[1]} 已保留在“其他文件”，本地评测不使用。`],
+  [/^Hydro problem type (.+) is kept; .*$/, m => `已保留 Hydro 题型 ${m[1]}；启用完整造题前请配置对应的评测方式和程序。`],
+  [/^Statement (.+) is kept in Other files; .*$/, m => `题面 ${m[1]} 已保留在“其他文件”；添加可编辑的文本题面后才能造题。`],
+  [/^The Hydro statement uses HTML \(original kept\); .*$/, () => 'Hydro 题面使用了 HTML（原文已保留），请检查题面预览。'],
+  [/^(\w+): the statement has a different sample count; .*$/, m => `${m[1]}：题面的样例数量不同，已保留其样例代码块，请检查样例设置。`],
+  [/^Unknown built-in Hydro checker (.+); configure a local checker before enabling authoring\.$/, m => `未知的 Hydro 内置检查器 ${m[1]}，启用造题前请配置本地检查器。`],
+  [/^Hydro checker protocol (.+) is preserved but needs conversion before local judging\.$/, m => `已保留 Hydro 检查器协议 ${m[1]}，本地评测前需转换。`],
+  [/^(checker|validator|interactor|solution|executable): binary-only source preserved in Other files\.$/, m => `${ROLE[m[1]]}：只有二进制文件，已保留在“其他文件”。`],
+  [/^(checker|validator|interactor|solution|executable): source (.+) is missing; its descriptor was retained\.$/, m => `${ROLE[m[1]]}：缺少源文件 ${m[2]}，已保留其描述。`],
+  [/^Several Polygon validators were kept; the first is the problem validator\.$/, () => '保留了多个 Polygon 校验器，第一个用作本题校验器。'],
+  [/^Solution tag (.+) is preserved in problem\.xml; the local solution is marked NR\.$/, m => `解法标签 ${m[1]} 已保留在 problem.xml，本地标为 NR。`],
+  [/^No main solution was declared; the first accepted one is used\.$/, () => '未声明主解法，已选用第一个通过的解法。'],
+  [/^Unknown validator-test verdict: (.*)$/, m => `未知的校验器自测结论：${m[1]}`],
+  [/^Polygon checker-percent scoring is kept in the original descriptor; .*$/, () => 'Polygon 检查器百分比计分保留在原描述文件中，评测或转换前请核对本地计分。'],
+  [/^This standard Polygon package lacks built data; .*$/, () => '此 Polygon 标准包缺少已生成的数据，请生成测试以补全输入和答案。'],
+  [/^Statement (.+) is missing from the archive\.$/, m => `包中缺少题面 ${m[1]}。`],
+  [/^Invalid (.*)problem-properties\.json; imported the TeX statement\.$/, m => `${m[1]}problem-properties.json 无效，已导入 TeX 题面。`],
+  [/^Missing authoring programs or editable statement: .*$/, () => '缺少造题程序或可编辑题面，构建题目包前请补全。'],
+  [/^Invalid TaskWeave filename metadata; used the native Polygon paths\.$/, () => 'TaskWeave 文件名元数据无效，已使用 Polygon 原路径。'],
   [/^FPS (.+) order was corrected using the explicit test names\.$/, m => `FPS ${m[1]} 的顺序已按显式测试名称匹配。`],
   [/^FPS (.+) (counts|names) do not match\.$/, m => `FPS ${m[1]} 的${m[2] === 'counts' ? '数量' : '测试名称'}不一致，请修正后再导入。`],
   [/^Package data directory corrected: (.+) -> (.+)$/, m => `已按实际文件夹修正数据目录：${m[1]} → ${m[2]}`],
-  [/^Missing file referenced by configuration: (.+)\. Restore the file or correct the reference\.$/, m => `配置引用了不存在的文件：${m[1]}。请补回文件或修正配置引用。`],
+  [/^Missing file referenced by configuration: (.+)\. Restore the file or correct the reference\.$/, m => `配置引用的文件不存在：${m[1]}，请补回文件或修正引用。`],
   [/^Ambiguous file reference (.+): (.+)\. Correct the package configuration\.$/, m => `文件引用 ${m[1]} 对应多个候选：${m[2]}。请明确题包配置中的引用。`],
   [/^Ambiguous answers for (.+): (.+)\. Specify the intended answer in the configuration\.$/, m => `输入 ${m[1]} 有多个内容不同的答案：${m[2]}。请在配置中指定所用答案。`],
   [/^No LemonLime CDF descriptor found\..*$/, () => '未找到 LemonLime CDF 配置，请选择包含 CDF 和 data/ 的比赛目录或 ZIP。'],
@@ -58,10 +85,10 @@ const RULES: Rule[] = [
   [/^No problem root directory configured$/, () => '还没有配置题目根目录'],
   [/^Unknown problem root$/, () => '未知的题目根目录'],
   [/^Select a LemonLime task from the package\.$/, () => '请选择要导入的 LemonLime 题目。'],
-  [/^CDF has no task configuration\..*$/, () => 'CDF 中没有题目配置。已发现的完整输入／答案对将以无分值数据导入，请手动配置子任务。'],
+  [/^CDF has no task configuration[.;].*$/, () => 'CDF 没有题目配置，已导入找到的完整数据对（无分值），请配置子任务。'],
   [/^CDF has no tasks or complete unconfigured data pairs\.$/, () => 'CDF 中没有题目，也未找到完整的未配置数据对。'],
   [/^Unconfigured data files were preserved in Other files: (.+)$/, m => `未被配置引用的数据保留在“其他文件”：${m[1]}`],
-  [/^The imported Lemon special judge has no unique source\..*$/, () => '导入的 Lemon 特判未找到唯一对应的源码，原二进制已保留。请在信息面板选择可用的检查器或原生比较方式后再评测／导出。'],
+  [/^The imported Lemon special judge has no unique source\..*$/, () => '导入的 Lemon 特判没有唯一对应的源码（二进制已保留），请在信息面板选择检查器或原生比较后再评测／导出。'],
   [/^The imported Lemon external diff command is not a portable local checker\..*$/, () => '导入的 Lemon 外部 diff 命令不能直接用作本地检查器，请选择检查器或原生比较方式。'],
   [/^Lemon checker executable (.+) is absent; the supplied source (.+) will be rebuilt for export\.$/, m => `没有可用的 Lemon 检查器可执行文件 ${m[1]}；导出时将重新编译附带源码 ${m[2]}。`],
   [/^Lemon custom-checker partial dependency scoring needs review\..*$/, () => 'Lemon 特判的部分分依赖规则需要核对，请编辑子任务配置后再评测／导出。'],
@@ -125,14 +152,14 @@ const RULES: Rule[] = [
   [/^Hydro file I\/O requires matching <name>\.in and <name>\.out filenames\.$/, () => 'Hydro 文件输入输出要求使用同一前缀的 <name>.in 与 <name>.out。'],
   [/^Hydro interactive packages require the interactor to decide the verdict\..*$/, () => 'Hydro 交互包需要交互器自行决定评测结果，请核对交互协议。'],
   [/^Whole statements \((.+)\) will be converted to sections for Polygon; all text is placed in legend\.$/, m => `整体题面（${m[1]}）会为 Polygon 自动转为分段；全部内容放入 legend。`],
-  [/^Both statement.tex and (.+) contain text\. Move the section file aside before converting\.$/, m => `statement.tex 与 ${m[1]} 同时包含内容。请先移走该分段文件再转换，以免覆盖编辑内容。`],
+  [/^Both statement.tex and (.+) contain text\. Move the section file aside before converting\.$/, m => `statement.tex 与 ${m[1]} 都有内容，请先移走该分段文件再转换。`],
   [/^Data-only mode is not recommended for authoring\..*$/, () => '补全题面、校验器、检查器和标程后可启用完整造题。'],
   [/^This feature requires full authoring\..*$/, () => '此功能需要完整造题模式，请先补全造题文件。'],
   [/^(?:Data-only|Compatibility-mode) problems cannot sync with Polygon\..*$/, () => '兼容模式不能同步到 Polygon，请补全造题文件后启用完整模式。'],
   [/^Complete these files before enabling full authoring: (.+)$/, m => `启用完整造题前请补全：${m[1].replace('statement', '题面').replace('main solution (MA)', '标程（MA）')}`],
   [/^Luogu does not automatically install score.txt\..*$/, () => '洛谷不会自动安装 score.txt。上传 data.zip 后请将其内容粘贴到整题计分脚本中。'],
-  [/^Some tests have no score in config.yml;.*$/, () => '部分测试点未配置分数，已暂按总分 100 分均分。请检查子任务分值。'],
-  [/^The Luogu scoring script cannot be represented as local subtasks\..*$/, () => '洛谷计分脚本无法表达为本地子任务。原脚本保存在“其他文件”中，请编辑子任务配置后再评测或导出。'],
+  [/^Some tests have no score in config.yml;.*$/, () => '部分测试点没有分数，已按 100 分均分，请检查子任务分值。'],
+  [/^The Luogu scoring script cannot be (?:represented as local|converted to) subtasks.*$/, () => '洛谷计分脚本无法转为子任务（原脚本保留在“其他文件”），请编辑子任务后再评测或导出。'],
   [/^(?:Imported|imported) scoring is not representable\..*$/, () => '导入的计分规则无法直接表达，请编辑子任务配置后再评测或导出。'],
   [/^loaded provided answers$/, () => '已加载现有数据与答案'],
   [/^An answer is required when using provided test data\.$/, () => '使用已有数据时必须提供答案（允许为空）。'],
@@ -176,8 +203,8 @@ const RULES: Rule[] = [
   [/^No tests to export\.$/, () => '没有可导出的测试点。'],
   [/^No problems to export\.$/, () => '没有可导出的题目。'],
   [/^Points are enabled but there are no subtasks\. Configure subtask scores before exporting\.$/, () => '已启用分值但没有子任务，请先设置子任务分值再导出。'],
-  [/^Subtasks are enabled without scores\. Enable points and set each subtask score before exporting\.$/, () => '已启用子任务但没有分值，请先启用分值并设置每个子任务的分数再导出。'],
-  [/^Some tests do not belong to a subtask\. Assign all tests before exporting\.$/, () => '有测试点不属于任何子任务，请先把所有测试点分配到子任务再导出。'],
+  [/^Subtasks are enabled without scores\. Enable points and set each subtask score before exporting\.$/, () => '已启用子任务但没有分值，请启用分值并设置各子任务分数后再导出。'],
+  [/^Some tests do not belong to a subtask\. Assign all tests before exporting\.$/, () => '有测试点不属于任何子任务，请先分配再导出。'],
   [/^Subtask (.+) is empty or refers to missing tests\.$/, m => `子任务 ${m[1]} 为空或引用了不存在的测试点。`],
   [/^Subtask (.+) has no score\.$/, m => `子任务 ${m[1]} 没有设置分数。`],
   [/^Subtask (.+): LemonLime requires integer scores\.$/, m => `子任务 ${m[1]}：LemonLime 只支持整数分值。`],
@@ -288,7 +315,7 @@ const RULES: Rule[] = [
   [/^bad target "(.+)" \(expected \$, a number or \{a-b\}\)$/, m => `目标“${m[1]}”无效（应为 $、数字或 {a-b}）`],
   [/^missing "> target" in "(.+)"$/, m => `“${m[1]}”缺少“> 目标”`],
   [/^missing generator name$/, () => '缺少生成器名称'],
-  [/^Polygon does not support downloadable large samples\. Show all samples in the statement before syncing\.$/, () => 'Polygon 不支持以文件下发的大样例。请先将所有样例设为在题面中展示，再进行同步。'],
+  [/^Polygon does not support downloadable large samples\. Show all samples in the statement before syncing\.$/, () => 'Polygon 不支持以文件下发的大样例，请将所有样例设为在题面中展示后再同步。'],
   [/^Statements or samples changed\. Refresh the OI preview and export down.zip again\.$/, () => '题面或样例已修改，请刷新 OI 预览后重新导出 down.zip。'],
   [/^Sample test (.+?) exceeds 256 KiB\. Mark it as a large sample to display a file reference\.$/, m => `样例测试 ${m[1]} 超过 256 KiB，请在测试面板中关闭“在题面中展示”，改为大样例文件提示。`],
   [/^Grader problems cannot connect to Polygon\.$/, () => 'Grader 交互题不支持连接或同步到 Polygon。'],
@@ -475,6 +502,9 @@ function translate(s: string): string {
   }
   return s;
 }
+
+/** Import notices about tests skipped for missing files: previews show them outside the collapsible list. */
+export const skippedTestsNotice = (s: string) => /^(?:Skipped \d+ missing tests?|Removed empty subtasks?): /.test(s);
 
 /** Localize a server-produced text for the current UI language. */
 export function serverText(s: string | undefined | null): string {

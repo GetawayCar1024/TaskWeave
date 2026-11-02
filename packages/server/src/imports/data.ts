@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { parseDocument } from 'yaml';
 import { parse as parseToml } from 'smol-toml';
-import { compressRanges, LEGACY_ID, packageFormatIs, type TestGroup, type TestsetConfig } from '@taskweave/shared';
+import { compressRanges, groupLayout, LEGACY_ID, packageFormatIs, parseIndexList, type TestGroup, type TestsetConfig } from '@taskweave/shared';
 import { HttpError, validateFileName } from '../util/fs.js';
 import { splitScore } from '../judge/lemonlime.js';
 import { luoguScript, type LuoguSubtask } from '../judge/luogu.js';
@@ -9,7 +9,8 @@ import { checkGroups } from '../workspace/problems.js';
 import { PackageReferences } from './references.js';
 
 export type DataFormat = 'luogu' | 'hydro' | 'auto' | 'joi';
-export interface DataPair { input: string; output: string; inputData: Buffer; outputData: Buffer }
+/** `missing`: configured files that are not in the package; such a test is skipped. */
+export interface DataPair { input: string; output: string; inputData: Buffer; outputData: Buffer; missing?: string[] }
 export interface DataPlan {
   pairs: DataPair[];
   groups: TestGroup[];
@@ -65,17 +66,20 @@ export function dataReader(files: Map<string, Buffer>, used: Set<string>, warnin
   const byName = new Map([...files.keys()].map(k => [k.toLowerCase(), k]));
   const references = new PackageReferences(files, warnings);
   const find = (name: string) => byName.get(name.toLowerCase());
-  const read = (name: unknown, nullable = false, answer = false): [string, Buffer] => {
+  const read = (name: unknown, nullable = false, answer = false, exclude?: string): [string, Buffer | undefined] => {
     if (nullable && (name === undefined || name === '' || name === '/dev/null')) return ['', Buffer.alloc(0)];
     if (typeof name !== 'string') return badPackage('A test case has no filename.');
-    const key = references.require(name, answer);
+    const key = references.find(name, answer, exclude);
+    if (!key) return [name.replace(/\\/g, '/'), undefined];
     used.add(key);
     return [key, files.get(key)!];
   };
+  /** A configured pair; a file that is not in the package is listed in `missing`. A missing file is never "found" as the other file of the pair. */
   const pair = (input: unknown, output: unknown, nullable = false): DataPair => {
-    const [inName, inputData] = read(input, nullable), [outName, outputData] = read(output, nullable, true);
+    const [inName, inputData] = read(input, nullable, false, references.named(output)), [outName, outputData] = read(output, nullable, true, inputData ? inName : references.named(input));
     if (inName && inName === outName) return badPackage(`Input and answer refer to the same file: ${inName}`);
-    return { input: inName, output: outName, inputData, outputData };
+    const missing = [...inputData ? [] : [inName], ...outputData ? [] : [outName]];
+    return { input: inName, output: outName, inputData: inputData ?? Buffer.alloc(0), outputData: outputData ?? Buffer.alloc(0), ...missing.length ? { missing } : {} };
   };
   const pairedOutput = (input: string) => {
     const stem = input.replace(/\.(?:in|txt)(?:\.txt)?$/i, '');
@@ -87,6 +91,57 @@ export function dataReader(files: Map<string, Buffer>, used: Set<string>, warnin
   return { find, pair, pairedOutput };
 }
 const reader = dataReader;
+
+/** Test-indexed values after renumbering; `map` returns undefined for removed tests. */
+const remapKeys = <T>(values: Record<string, T>, map: (index: number) => number | undefined): Record<string, T> =>
+  Object.fromEntries(Object.entries(values).flatMap(([index, value]) => { const next = map(Number(index)); return next === undefined ? [] : [[String(next), value] as const]; }));
+const shortList = (items: string[]) => { const unique = [...new Set(items)]; return unique.slice(0, 10).join(', ') + (unique.length > 10 ? ', …' : ''); };
+
+/** One notice per problem for tests skipped because a configured file is missing, and for the subtasks this emptied. */
+export function missingTestWarnings(files: string[], tests: number, subtasks: string[]): string[] {
+  if (!tests) return [];
+  return [`Skipped ${tests} missing test${tests === 1 ? '' : 's'}: ${shortList(files)}`, ...subtasks.length ? [`Removed empty subtask${subtasks.length === 1 ? '' : 's'}: ${shortList(subtasks)}`] : []];
+}
+
+/** Remove groups; a group that depended on a removed one depends on that group's prerequisites instead. */
+export function dropGroups(groups: TestGroup[], dropped: Set<string>): TestGroup[] {
+  const prerequisites = new Map(groups.map(g => [g.name, g.dependencies ?? []]));
+  const resolve = (name: string, seen: Set<string>): string[] => !dropped.has(name) ? [name]
+    : seen.has(name) ? [] : (seen.add(name), (prerequisites.get(name) ?? []).flatMap(d => resolve(d, seen)));
+  return groups.filter(g => !dropped.has(g.name)).map(g => {
+    if (!g.dependencies?.length) return g;
+    const { dependencies, ...rest } = g, next = [...new Set(dependencies.flatMap(d => resolve(d, new Set())))];
+    return next.length ? { ...rest, dependencies: next } : rest;
+  });
+}
+
+/**
+ * Renumber the tests of groups: `map` gives each kept test its new index (undefined: removed).
+ * Sum groups lose the points of their removed tests; a group left without tests is dropped.
+ */
+export function withoutTests(groups: TestGroup[], cases: NonNullable<TestsetConfig['cases']>, map: (index: number) => number | undefined) {
+  const layout = groupLayout({ name: 'tests', manual: '', groups: true, group: groups, cases }, true), dropped = new Set<string>();
+  const kept = groups.map((g): TestGroup => {
+    const before = [...new Set(parseIndexList(g.tests ?? ''))], after = before.flatMap(i => map(i) ?? []), lost = before.filter(i => map(i) === undefined);
+    if (before.length && !after.length) dropped.add(g.name);
+    const next: TestGroup = { ...g, tests: compressRanges(after), ...g.cases ? { cases: remapKeys(g.cases, map) } : {} };
+    if (lost.length && g.policy === 'EACH_TEST' && g.points !== undefined) next.points = g.test_points !== undefined ? g.test_points * after.length
+      : Math.max(0, Math.round((g.points - lost.reduce((sum, i) => sum + (layout.byGroup[g.name]?.[i] ?? 0), 0)) * 1e6) / 1e6);
+    return next;
+  });
+  return { groups: dropGroups(kept, dropped), dropped: [...dropped] };
+}
+
+/** Configured tests with a missing input or answer leave the plan; the others keep their order, subtasks, scores and samples. */
+function skipMissing(plan: DataPlan): DataPlan {
+  const skipped = plan.pairs.filter(p => p.missing);
+  if (!skipped.length) return plan;
+  const index = new Map<number, number>(), pairs = plan.pairs.filter(p => !p.missing);
+  plan.pairs.forEach((p, i) => { if (!p.missing) index.set(i + 1, index.size + 1); });
+  const map = (i: number) => index.get(i), { groups, dropped } = withoutTests(plan.groups, plan.cases, map);
+  return { ...plan, pairs, groups: checkGroups('tests', groups), cases: remapKeys(plan.cases, map), samples: plan.samples.flatMap(i => map(i) ?? []),
+    used: new Set(pairs.flatMap(p => [p.input, p.output].filter(Boolean))), warnings: [...plan.warnings, ...missingTestWarnings(skipped.map(p => p.missing![0]), skipped.length, dropped)] };
+}
 
 /** Recognize only our declarative Luogu script subset, never evaluate imported code. */
 function scoringScript(script: string, initial: LuoguSubtask[]): LuoguSubtask[] | null {
@@ -117,31 +172,45 @@ export function parseLuoguData(files: Map<string, Buffer>): DataPlan {
   const source = configName ? files.get(configName) : undefined;
   const originalConfig = yamlObject(source, configName ?? 'config.yml'), cfg: Record<string, any> = { ...originalConfig };
   const references = new PackageReferences(files, warnings), configured = new Map<string, unknown>();
+  // A configured test whose file is missing keeps its place (and subtask) until it is skipped.
+  const absent = new Map<string, string>();
   for (const [file, value] of Object.entries(originalConfig)) if (/\.(in|out|ans)$/i.test(file)) {
-    const actual = references.require(file, /\.(out|ans)$/i.test(file));
+    const answer = /\.(out|ans)$/i.test(file), actual = references.find(file, answer);
+    if (!actual) {
+      const input = answer ? file.replace(/\.(out|ans)$/i, '.in') : file;
+      absent.set(r.find(input) ?? input, file); continue;
+    }
     if (configured.has(actual) && JSON.stringify(configured.get(actual)) !== JSON.stringify(value)) return badPackage(`Conflicting configuration entries resolve to ${actual}.`);
     configured.set(actual, value); delete cfg[file]; cfg[actual] = value;
   }
-  const inputs = [...files.keys()].filter(f => /\.in$/i.test(f)).sort(natural);
+  const inputs = [...new Set([...files.keys()].filter(f => /\.in$/i.test(f)).concat([...absent.keys()]))].sort(natural);
   if (!inputs.length) return badPackage('No .in/.out or .in/.ans pairs in this data package.');
-  const pairs = inputs.map(input => r.pair(input, r.pairedOutput(input) ?? badPackage(`Missing answer for ${input}`)));
+  const pairs = inputs.map((input): DataPair => {
+    const file = absent.get(input), output = file ? undefined : r.pairedOutput(input);
+    if (output) return r.pair(input, output);
+    if (!file && !configured.has(input)) return badPackage(`Missing answer for ${input}`);
+    const missing = file ?? input.replace(/\.in$/i, '.out');
+    return { input, output: /\.(out|ans)$/i.test(missing) ? missing : '', inputData: Buffer.alloc(0), outputData: Buffer.alloc(0), missing: [missing] };
+  });
   const cases: DataPlan['cases'] = {};
   const groups = new Map<number, number[]>();
-  const defaults = splitScore(100, pairs.length);
-  let defaultScores = false;
+  // tests without a score share 100 points among the tests that are imported (skipped ones get none)
+  const defaults = splitScore(100, pairs.filter(p => !p.missing).length || 1);
+  let defaultScores = false, kept = 0;
   pairs.forEach((p, i) => {
+    const share = p.missing ? 0 : defaults[kept++];
     const a = cfg[p.input] ?? {}, b = cfg[p.output] ?? {};
     if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) || Array.isArray(b)) badPackage('Invalid filename configuration.');
     for (const key of Object.keys(a)) if (b[key] !== undefined && JSON.stringify(a[key]) !== JSON.stringify(b[key])) badPackage(`Conflicting config for ${p.input} and ${p.output}: ${key}`);
     const c = { ...a, ...b };
-    if (c.score === undefined) defaultScores = true;
+    if (c.score === undefined && !p.missing) defaultScores = true;
     const id = number(c.subtaskId, 'subtaskId', 0);
     if (!Number.isSafeInteger(id)) badPackage('subtaskId must be an integer.');
     if (c.isPretest !== undefined && typeof c.isPretest !== 'boolean') badPackage('isPretest must be a boolean.');
-    cases[i + 1] = { points: number(c.score, `${p.input}.score`, defaults[i]), time_limit: positive(c.timeLimit, 'timeLimit', 1000), memory_limit: positive(c.memoryLimit, 'memoryLimit', 256 * 1024) / 1024, ...(c.isPretest ? { pretest: true } : {}) };
+    cases[i + 1] = { points: number(c.score, `${p.input}.score`, share), time_limit: positive(c.timeLimit, 'timeLimit', 1000), memory_limit: positive(c.memoryLimit, 'memoryLimit', 256 * 1024) / 1024, ...(c.isPretest ? { pretest: true } : {}) };
     groups.set(id, [...(groups.get(id) ?? []), i + 1]);
   });
-  if (defaultScores) warnings.push('Some tests have no score in config.yml; their local scores default to an even share of 100. Review subtask scores.');
+  if (defaultScores) warnings.push('Some tests have no score in config.yml; they share 100 points evenly. Review subtask scores.');
   let subtasks: LuoguSubtask[] = [...groups].sort(([a], [b]) => a - b).map(([id, indices]) => ({ id, label: `subtask-${id}`, points: indices.reduce((s, i) => s + cases[i].points!, 0), policy: 'EACH_TEST', dependencies: [] }));
   const scriptName = r.find('score.txt') ?? r.find('scoring-script.txt');
   const script = scriptName ? files.get(scriptName)!.toString('utf8') : '';
@@ -149,7 +218,7 @@ export function parseLuoguData(files: Map<string, Buffer>): DataPlan {
   if (script.trim()) {
     const recognized = scoringScript(script, subtasks);
     if (recognized) subtasks = recognized;
-    else { unresolvedScoring = true; warnings.push('The Luogu scoring script cannot be represented as local subtasks. The original script is preserved in Other files; edit the subtask configuration before judging or exporting.'); }
+    else { unresolvedScoring = true; warnings.push('The Luogu scoring script cannot be converted to subtasks (kept in Other files). Edit the subtasks before judging or exporting.'); }
   }
   let samples: number[] = [];
   const metadata = source?.toString('utf8').match(new RegExp(`^# (?:taskweave|${LEGACY_ID})-scoring: (.+)$`, 'm'))?.[1];
@@ -168,7 +237,9 @@ export function parseLuoguData(files: Map<string, Buffer>): DataPlan {
   }
   const names = new Map(subtasks.map(s => [s.id, s.label]));
   const localGroups = subtasks.map(s => ({ name: s.label, points: s.points, policy: s.policy, tests: compressRanges(groups.get(s.id)!), dependencies: s.dependencies.map(d => names.get(d) ?? badPackage(`Unknown subtask dependency: ${d}`)) }));
-  return { pairs, groups: checkGroups('tests', localGroups), cases, samples, used, warnings, sourceConfig: originalConfig, timeLimit: cases[1].time_limit!, memoryLimit: Math.ceil(cases[1].memory_limit!), unresolvedScoring };
+  const first = cases[pairs.findIndex(p => !p.missing) + 1];
+  return skipMissing({ pairs, groups: checkGroups('tests', localGroups), cases, samples, used, warnings, sourceConfig: originalConfig,
+    timeLimit: first?.time_limit ?? 1000, memoryLimit: Math.ceil(first?.memory_limit ?? 256), unresolvedScoring });
 }
 
 export function parseHydroData(files: Map<string, Buffer>): DataPlan {
@@ -207,14 +278,14 @@ export function parseHydroData(files: Map<string, Buffer>): DataPlan {
   const defaultScores = splitScore(Math.max(0, 100 - subtasks.reduce((s, g) => s + number(g.score, 'subtask score', 0), 0)), subtasks.filter(s => !s.score).length);
   let defaultIndex = 0, unresolvedScoring = false;
   const pairs: DataPair[] = [], groups: TestGroup[] = [], cases: DataPlan['cases'] = {};
-  const pairIndices = new Map<string, number>();
+  const pairIndices = new Map<string, number>(), unanswered = new Set<number>();
   const ids = subtasks.map((s, i) => s.id ?? i + 1);
   if (ids.some(id => !Number.isSafeInteger(id) || id < 0) || new Set(ids).size !== ids.length) badPackage('Hydro subtask IDs must be unique nonnegative integers.');
   for (const [pos, s] of subtasks.entries()) {
     if (!Array.isArray(s.cases) || !s.cases.length) badPackage(`Hydro subtask ${ids[pos]} has no cases.`);
     const points = s.score || defaultScores[defaultIndex++];
     const type = s.type ?? 'min';
-    if (!['min', 'sum'].includes(type)) { unresolvedScoring = true; warnings.push(`Hydro subtask ${ids[pos]} uses unsupported scoring ${type}; edit its local subtask configuration before judging or exporting.`); }
+    if (!['min', 'sum'].includes(type)) { unresolvedScoring = true; warnings.push(`Hydro subtask ${ids[pos]} uses unsupported scoring ${type}; edit the subtask before judging or exporting.`); }
     const time = hydroLimit(s.time, 'time', timeLimit), memory = hydroLimit(s.memory, 'memory', memoryLimit);
     const caseDefaults = splitScore(Math.max(0, points - s.cases.reduce((n: number, c: any) => n + number(c.score, 'case score', 0), 0)), s.cases.filter((c: any) => !c.score).length);
     let caseDefaultIndex = 0;
@@ -232,18 +303,21 @@ export function parseHydroData(files: Map<string, Buffer>): DataPlan {
       groupCases[index] = { points: score, time_limit: hydroLimit(c.time, 'time', time), memory_limit: hydroLimit(c.memory, 'memory', memory) };
       cases[index] ??= { ...groupCases[index] };
       if (type === 'min' && score !== points) { unresolvedScoring = true; warnings.push(`Hydro subtask ${ids[pos]} has unequal case scores in min mode; its raw configuration is preserved.`); }
-      if (!pair.output) warnings.push(`Test ${index} has no reference output in Hydro; imported an empty answer. A special judge may be required.`);
+      if (!pair.output) unanswered.add(index);
     }
     const dependencies = s.if ?? [];
     if (!Array.isArray(dependencies) || dependencies.some(d => !ids.includes(d))) badPackage(`Invalid dependencies for Hydro subtask ${ids[pos]}.`);
     groups.push({ name: `subtask-${ids[pos]}`, points, policy: type === 'sum' ? 'EACH_TEST' : 'COMPLETE_GROUP', tests: compressRanges(indices),
       time_limit: time, memory_limit: memory, cases: groupCases, dependencies: dependencies.map((d: number) => `subtask-${d}`) });
-    if (s.score === 0 || s.cases.some((c: any) => c.score === 0)) warnings.push(`Hydro subtask ${ids[pos]} contains zero scores; Hydro treats them as unspecified. Local scores follow Hydro's defaults; the original YAML is preserved.`);
+    if (s.score === 0 || s.cases.some((c: any) => c.score === 0)) warnings.push(`Hydro subtask ${ids[pos]} has zero scores, which Hydro treats as unspecified; local scores use Hydro's defaults (original YAML kept).`);
   }
   const checkedGroups = checkGroups('tests', groups);
-  for (const key of ['time_limit_rate', 'memory_limit_rate', 'multi_pass']) if (cfg[key]) warnings.push(`Hydro ${key} is preserved in Other files but is not applied by the local judge.`);
-  if (cfg.type && cfg.type !== 'default') warnings.push(`Hydro problem type ${cfg.type} is preserved; configure the corresponding local judge mode and programs before enabling full authoring.`);
-  return { pairs, groups: checkedGroups, cases, samples: [], used, warnings, timeLimit, memoryLimit, sourceConfig: cfg, unresolvedScoring };
+  // Numbered as imported, after skipped tests.
+  let kept = 0; const imported = pairs.map(p => p.missing ? 0 : ++kept);
+  for (const index of unanswered) if (imported[index - 1]) warnings.push(`Test ${imported[index - 1]} has no reference output in Hydro; imported an empty answer (a special judge may be needed).`);
+  for (const key of ['time_limit_rate', 'memory_limit_rate', 'multi_pass']) if (cfg[key]) warnings.push(`Hydro ${key} is kept in Other files but not applied by the local judge.`);
+  if (cfg.type && cfg.type !== 'default') warnings.push(`Hydro problem type ${cfg.type} is kept; set up the matching judge mode and programs before full authoring.`);
+  return skipMissing({ pairs, groups: checkedGroups, cases, samples: [], used, warnings, timeLimit, memoryLimit, sourceConfig: cfg, unresolvedScoring });
 }
 
 function companionData(files: Map<string, Buffer>, cfg: Record<string, any>): DataPlan {
@@ -266,8 +340,8 @@ function companionData(files: Map<string, Buffer>, cfg: Record<string, any>): Da
     points: group.points, test_points: group.test_points, time_limit: group.time_ms, memory_limit: group.memory_mib,
     cases: group.overrides && Object.fromEntries(Object.entries(group.overrides).map(([id, value]) => [ids.get(id) ?? badPackage(`Unknown case id: ${id}`), value])),
     tests: compressRanges((group.cases ?? []).map((id: unknown) => ids.get(String(id)) ?? badPackage(`Unknown case id: ${id}`))), dependencies: group.dependencies ?? [] }));
-  return { pairs, cases, groups: checkGroups('tests', groups), samples, used, warnings, timeLimit: cfg.problem?.time_ms ?? 1000, memoryLimit: cfg.problem?.memory_mib ?? 256,
-    sourceConfig: cfg, pointsEnabled: cfg.points_enabled ?? groups.length > 0 };
+  return skipMissing({ pairs, cases, groups: checkGroups('tests', groups), samples, used, warnings, timeLimit: cfg.problem?.time_ms ?? 1000, memoryLimit: cfg.problem?.memory_mib ?? 256,
+    sourceConfig: cfg, pointsEnabled: cfg.points_enabled ?? groups.length > 0 });
 }
 
 /** Directory pairing is independent of scoring: JOI/AtCoder have no universal score manifest. */

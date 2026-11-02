@@ -130,12 +130,15 @@ test('Polygon shared tests are copied natively then reunited by checked provenan
   assert.deepEqual(manifest!.tests[0].groups?.map(group => group.points), [30, 20]);
 }));
 
-test('ZIP previews reject invalid Polygon XML references and XML entities before creating a problem', () => {
+test('ZIP previews reject invalid Polygon XML references and XML entities, and announce skipped tests before creating a problem', () => {
   assert.equal(polygonPath('tests/%02d.a', 406), 'tests/406.a');
   assert.throws(() => polygonPath('../outside/%02d', 1));
   assert.throws(() => polygonXml(Buffer.from('<!DOCTYPE problem [<!ENTITY x SYSTEM "file:///x">]><problem/>')), /DTD/);
   const damaged = readZip(polygonFixture()); damaged.delete('tests/01');
-  assert.match(inspectPackage(damaged, { format: 'polygon-package' })[0].error!, /Missing input/);
+  const [preview] = inspectPackage(damaged, { format: 'polygon-package' });
+  assert.deepEqual([preview.error, preview.tests], [undefined, 1]); assert.ok(preview.warnings?.includes('Skipped 1 missing test: tests/01'));
+  damaged.delete('files/helper.h');
+  assert.match(inspectPackage(damaged, { format: 'polygon-package' })[0].error!, /Missing file referenced by problem\.xml: files\/helper\.h/);
 });
 
 test('staged archives are reusable for per-problem settings and are removed when dismissed', async () => fixture(async (judge, home) => {

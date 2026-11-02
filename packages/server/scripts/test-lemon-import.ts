@@ -81,15 +81,29 @@ test('excluded tasks stay in the contest originals and are not imported', async 
   assert.equal(await fs.readFile(path.join(imported.contest.dir, 'files/lemonlime/data/road/1.out'), 'utf8'), '2\r\n');
 }));
 
-test('missing references are task errors; a missing file is never repaired from another task folder', async () => fixture(async ({ judge, registry, contests }) => {
+test('missing test files are skipped with the subtasks they empty; a missing file is never repaired from another task folder', async () => fixture(async ({ judge, registry, contests }) => {
   const files = packageFiles([task(), sum()]); delete files['wrapper/data/road/2.out'];
-  const preview = lemonContests(readPackageArchive(zip(files)));
-  assert.match(preview[0].tasks[0].error ?? '', /Missing file referenced/); assert.equal(preview[0].tasks[1].error, undefined);
-  const archive = readPackageArchive(zip(files)), req = request(archive); req.tasks[0].include = true;
-  await assert.rejects(importLemonContest(judge, contests, archive, req), /Missing file referenced/);
-  assert.equal((await registry.list()).length, 0); assert.equal((await contests.list()).length, 0);
-  const crossTask = packageFiles([{ ...sum(), testCases: [{ fullScore: 100, timeLimit: 1000, memoryLimit: 128, inputFiles: ['sum/1.in'], outputFiles: ['sum/extra.in'] }] }]);
-  assert.match(lemonContests(readPackageArchive(zip(crossTask)))[0].tasks[0].error ?? '', /Missing file referenced by configuration: sum\/extra\.in/);
+  const [preview] = lemonContests(readPackageArchive(zip(files)));
+  assert.deepEqual(preview.tasks.map(item => [item.tests, item.error]), [[1, undefined], [2, undefined]]);
+  const notices = preview.tasks[0].warnings!;
+  assert.ok(notices.includes('Skipped 1 missing test: Road/2.ans')); assert.ok(notices.includes('Removed empty subtask: subtask-2'));
+  // The input whose answer is missing is kept with the problem, not listed as unconfigured data.
+  assert.ok(notices.some(notice => /^Unconfigured data files.*extra\.in/.test(notice) && !notice.includes('2.in')));
+  const imported = await importAll(judge, contests, zip(files)), road = imported.problems[0];
+  assert.deepEqual((await registry.detail(road.id)).config!.tests.group?.map(group => [group.name, group.tests, group.points, group.dependencies ?? []]), [['subtask-1', '1', 30, []]]);
+  assert.ok(imported.warnings.includes('A: Skipped 1 missing test: Road/2.ans'));
+  assert.equal(await fs.readFile(path.join(road.dir, 'other/lemonlime/data/road/2.in'), 'utf8'), '2\n');
+  // A dependency on an emptied subtask moves to its prerequisites; a task with nothing left still imports.
+  const row = (score: number, input: string, output: string, after?: number) => ({ fullScore: score, timeLimit: 1000, memoryLimit: 128, inputFiles: [input, ...after ? [`${after}_lemon_SUbtaskDEPENDENCE_fLAg`] : []], outputFiles: [output] });
+  const chain = { ...sum(), sourceFileName: 'chain', testCases: [row(30, 'sum/1.in', 'sum/1.out'), row(30, 'sum/9.in', 'sum/9.out', 1), row(40, 'sum/2.in', 'sum/2.out', 2)] };
+  const crossTask = { ...sum(), sourceFileName: 'cross', testCases: [row(100, 'sum/1.in', 'sum/extra.in')] };
+  const [second] = lemonContests(readPackageArchive(zip(packageFiles([chain, crossTask]))));
+  assert.deepEqual(second.tasks.map(item => [item.name, item.tests, item.error]), [['chain', 2, undefined], ['cross', 0, undefined]]);
+  assert.deepEqual(second.tasks[1].warnings?.slice(0, 2), ['Skipped 1 missing test: sum/extra.in', 'Removed empty subtask: subtask-1']);
+  const both = await importAll(judge, contests, zip(packageFiles([chain, crossTask])), { name: 'second-round' });
+  assert.deepEqual((await registry.detail(both.problems[0].id)).config!.tests.group?.map(group => [group.name, group.tests, group.dependencies ?? []]), [['subtask-1', '1', []], ['subtask-3', '2', ['subtask-1']]]);
+  const empty = (await registry.detail(both.problems[1].id)).config!;
+  assert.deepEqual([both.problems[1].name, empty.tests.groups, empty.tests.group ?? []], ['cross', false, []]);
   const invalid = task(); invalid.testCases[1].inputFiles.push('2_lemon_SUbtaskDEPENDENCE_fLAg');
   assert.match(lemonContests(readPackageArchive(zip(packageFiles([invalid]))))[0].tasks[0].error ?? '', /invalid preceding dependency/);
 }));
@@ -202,7 +216,9 @@ test('Lemon directory selection keeps CDF roots independent and native real prec
   const kept = path.join(imported.contest.dir, 'files/lemonlime');
   assert.equal(await fs.readFile(path.join(kept, 'archive/README.txt'), 'utf8'), 'archive note');
   await assert.rejects(fs.access(path.join(kept, 'archive/wrapper/contest.cdf')));
-  assert.match(lemonContests(readPackageArchive(Buffer.from(files['wrapper/contest.cdf'])))[0].tasks[0].error ?? '', /Missing file referenced/);
+  // A CDF without its data imports no tests and says which ones are missing.
+  const [bare] = lemonContests(readPackageArchive(Buffer.from(files['wrapper/contest.cdf'])))[0].tasks;
+  assert.deepEqual([bare.tests, bare.error, bare.warnings?.slice(0, 2)], [0, undefined, ['Skipped 2 missing tests: Road/1.IN, Road/2.in', 'Removed empty subtasks: subtask-1, subtask-2']]);
 }));
 
 test('Lemon source-only checkers recover casing and build a usable native mode-4 export', async () => fixture(async ({ judge, contests }) => {

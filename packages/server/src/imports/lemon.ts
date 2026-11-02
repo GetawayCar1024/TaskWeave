@@ -10,7 +10,7 @@ import { pathKey } from '../global.js';
 import { atomicWrite, exists, HttpError, validateFileName } from '../util/fs.js';
 import { readCdf } from './cdf.js';
 import { PackageReferences } from './references.js';
-import { dataReader } from './data.js';
+import { dataReader, dropGroups, missingTestWarnings } from './data.js';
 import { publishProblem } from './publish.js';
 
 export const LEMON_CONTEST_ONLY = 'LemonLime packages are imported as whole contests. Use Import local package on the Contests page.';
@@ -62,17 +62,19 @@ function plan(files: Map<string, Buffer>, contest: Contest, item: Task, options:
   const mode = integer(task.comparisonMode ?? 1, 'comparisonMode');
   if (mode > 5) fail(`Unknown Lemon comparison mode: ${mode}`);
   const warnings: string[] = [];
-  if (item.unconfigured) warnings.push('CDF has no task configuration. Imported only the discovered complete pairs, without scores; configure subtasks explicitly.');
+  if (item.unconfigured) warnings.push('CDF has no task configuration; the complete pairs found were imported without scores. Configure subtasks.');
   const { files: data, root: dataRoot } = dataFiles(files, contest.prefix), refs = new PackageReferences(data, warnings, true);
   const dataDir = dataRoot.slice(contest.prefix.length), tests = new Set<string>(), referenced = new Set<string>();
   if (dataDir !== 'data/') warnings.push(`Package data directory corrected: data/ -> ${dataDir}`);
-  const resolve = (file: string, answer = false) => {
+  /** `optional`: a missing file is undefined instead of an error (test data); it is never repaired to `exclude`. */
+  const resolve = (file: string, answer = false, optional = false, exclude?: string) => {
     const normalized = file.replace(/\\/g, '/').replace(/^(?:\.\/)+/, '');
     let value: string | undefined;
-    if (/^data\//i.test(normalized) && !data.has(normalized) && (value = refs.find(normalized.slice(5), answer))) {
+    if (/^data\//i.test(normalized) && !data.has(normalized) && (value = refs.find(normalized.slice(5), answer, exclude))) {
       warnings.push(`Package reference corrected: ${file} -> ${value}`);
-    } else value = refs.require(file, answer);
-    referenced.add(value); return value;
+    } else value = optional ? refs.find(file, answer, exclude) : refs.require(file, answer);
+    if (value) referenced.add(value);
+    return value;
   };
   const original = text(task.sourceFileName, 'sourceFileName').trim().replace(/\.(cpp|cc|cxx|pas)$/i, ''), originalTitle = text(task.problemTitle, 'problemTitle').trim();
   const name = options.name || slug(original || originalTitle) || `lemon-${item.index + 1}`;
@@ -83,7 +85,10 @@ function plan(files: Map<string, Buffer>, contest: Contest, item: Task, options:
     if (/[\\/]/.test(file)) fail(`${label}FileName must be a simple runtime filename.`);
     return file;
   };
-  const local = new Map<string, Buffer>(), cases: Record<string, any> = {}, groups: TestGroup[] = [], indices = new Map<string, number>();
+  const local = new Map<string, Buffer>(), cases: Record<string, any> = {}, indices = new Map<string, number>();
+  // Tests with a missing file are skipped; `partial` keeps their existing files out of the unconfigured list.
+  const absent: string[] = [], skipped = new Set<string>(), partial = new Set<string>(), emptied = new Set<string>();
+  let groups: TestGroup[] = [];
   if (!Array.isArray(task.testCases) || !task.testCases.length || task.testCases.length > 10000) fail('CDF task has no test entries or too many entries.');
   for (const [position, row] of task.testCases.entries()) {
     if (!row || typeof row !== 'object' || Array.isArray(row)) fail(`Entry ${position + 1}: invalid testcase configuration.`);
@@ -100,11 +105,16 @@ function plan(files: Map<string, Buffer>, contest: Contest, item: Task, options:
     if (!inputs.length || inputs.length !== answers.length) fail(`Entry ${position + 1}: input/output occurrence counts do not match.`);
     const members: number[] = [], occurrences = new Map<string, number>();
     for (const [i, input] of inputs.entries()) {
-      const inFile = resolve(input), outFile = resolve(answers[i], true);
-      if (inFile === outFile) fail(`Entry ${position + 1}: input and answer use the same file.`);
-      tests.add(inFile); tests.add(outFile);
-      const pair = JSON.stringify([inFile, outFile]), occurrence = occurrences.get(pair) ?? 0; occurrences.set(pair, occurrence + 1);
+      const inFile = resolve(input, false, true, refs.named(answers[i])), outFile = resolve(answers[i], true, true, inFile ?? refs.named(input));
+      if (inFile && inFile === outFile) fail(`Entry ${position + 1}: input and answer use the same file.`);
+      const pair = JSON.stringify([inFile ?? input, outFile ?? answers[i]]), occurrence = occurrences.get(pair) ?? 0; occurrences.set(pair, occurrence + 1);
       const key = `${pair}:${occurrence}`;
+      if (!inFile || !outFile) {
+        if (!skipped.has(key)) { skipped.add(key); absent.push(inFile ? answers[i] : input); }
+        for (const file of [inFile, outFile]) if (file) partial.add(file);
+        continue;
+      }
+      tests.add(inFile); tests.add(outFile);
       let index = indices.get(key);
       if (index === undefined) {
         index = indices.size + 1; if (index > 10000) fail('Too many Lemon test occurrences.'); indices.set(key, index);
@@ -113,13 +123,16 @@ function plan(files: Map<string, Buffer>, contest: Contest, item: Task, options:
       }
       members.push(index);
     }
+    if (!members.length) emptied.add(`subtask-${position + 1}`);
     groups.push({ name: `subtask-${position + 1}`, tests: compressRanges(members), points: score, policy: 'COMPLETE_GROUP', time_limit: time, memory_limit: memory, ...(dependencies.length ? { dependencies } : {}) });
   }
+  groups = dropGroups(groups, emptied);
+  warnings.push(...missingTestWarnings(absent, absent.length, [...emptied]));
   const own = (file: string) => `other/lemonlime/${dataDir}${file}`;
   const doc: Record<string, any> = {
     problem: { name, type: 'oi', title: { [options.lang || 'en']: title }, data_only: true, time_limit: task.testCases[0].timeLimit, memory_limit: task.testCases[0].memoryLimit,
       input: ioFile(bool(task.standardInputCheck, 'standardInputCheck'), task.inputFileName, 'input'), output: ioFile(bool(task.standardOutputCheck, 'standardOutputCheck'), task.outputFileName, 'output'), judge_mode: type === 0 ? 'batch' : 'grader' },
-    tests: { manual: 'tests/manual', answers: 'provided', points: !item.unconfigured, groups: !item.unconfigured, group: item.unconfigured ? [] : groups, cases },
+    tests: { manual: 'tests/manual', answers: 'provided', points: !item.unconfigured, groups: !item.unconfigured && groups.length > 0, group: item.unconfigured ? [] : groups, cases },
     lemon_import: { descriptor: contest.entry, task_index: item.index },
   };
   if (original && original !== name) {
@@ -162,7 +175,7 @@ function plan(files: Map<string, Buffer>, contest: Contest, item: Task, options:
     const names = new Set(sourceNames.map(name => name.toLowerCase())), sources: string[] = [], headers: string[] = [];
     for (const file of [...sourceNames, ...sourcePaths]) validateFileName(file.replace(/\\/g, '/'));
     for (const [i, source] of graderPaths.entries()) {
-      const file = resolve(text(source, 'grader path')), name = text(graderNames[i], 'grader build name'); validateFileName(name);
+      const file = resolve(text(source, 'grader path'))!, name = text(graderNames[i], 'grader build name'); validateFileName(name);
       if (/[\\/]/.test(name) || names.has(name.toLowerCase())) fail('Conflicting Lemon grader build filenames.'); names.add(name.toLowerCase());
       const target = `grader/${name}`; local.set(target, data.get(file)!); (/\.(cpp|cc|cxx)$/i.test(name) ? sources : headers).push(target);
     }
@@ -172,7 +185,7 @@ function plan(files: Map<string, Buffer>, contest: Contest, item: Task, options:
   const top = (file: string) => file.includes('/') ? file.slice(0, file.indexOf('/') + 1) : file;
   const folders = new Set([...referenced].map(top)), owned = [...data.keys()].filter(file => folders.has(top(file)));
   for (const file of owned) if (!tests.has(file)) local.set(own(file), data.get(file)!);
-  const extras = owned.filter(file => /\.(in|out|ans)$/i.test(file) && !tests.has(file));
+  const extras = owned.filter(file => /\.(in|out|ans)$/i.test(file) && !tests.has(file) && !partial.has(file));
   if (extras.length) warnings.push(`Unconfigured data files were preserved in Other files: ${extras.slice(0, 12).join(', ')}${extras.length > 12 ? ', …' : ''}`);
   local.set('other/lemonlime/task.json', Buffer.from(JSON.stringify(task, null, 2) + '\n'));
   local.set('other/lemonlime-import.md', Buffer.from(`# LemonLime import\n\nContest: ${contest.entry}\nTask: ${item.index + 1}\n\n${warnings.map(warning => '- ' + warning).join('\n')}\n`));

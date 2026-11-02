@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n';
 import { NAlert, NButton, NCheckbox, NForm, NFormItem, NInput, NSelect, useMessage } from 'naive-ui';
 import { PROBLEM_NAME_RE, type ContestPackageImportRequest, type ContestPackageUpload, type ContestPackageValidation, type ContestSummary, type LemonTaskCandidate } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
-import { serverText } from '../lib/serverText';
+import { serverText, skippedTestsNotice } from '../lib/serverText';
 import { labelWidth } from '../lib/labelWidth';
 import ToolWindow from './ToolWindow.vue';
 import DirPicker from './DirPicker.vue';
@@ -89,7 +89,9 @@ const rowIssue = (row: Row) => !row.include ? '' : row.candidate.error ? serverT
   : !PROBLEM_NAME_RE.test(row.name.trim()) ? t('create.nameRule') : validated.value ? serverText(validation.value.tasks[row.key] ?? '') : '';
 const issues = computed(() => [...(validated.value ? validation.value.errors.map(serverText) : []),
   ...rows.value.flatMap(row => rowIssue(row) ? [`${letters.value.get(row.key)} · ${row.name.trim() || row.candidate.name}：${rowIssue(row)}`] : [])]);
-const warnings = computed(() => rows.value.filter(row => row.include).flatMap(row => (row.candidate.warnings ?? []).map(warning => `${letters.value.get(row.key)} · ${serverText(warning)}`)));
+const notices = (skipped: boolean) => rows.value.filter(row => row.include).flatMap(row => (row.candidate.warnings ?? []).filter(warning => skippedTestsNotice(warning) === skipped)
+  .map(warning => `${letters.value.get(row.key)} · ${serverText(warning)}`));
+const skipped = computed(() => notices(true)), warnings = computed(() => notices(false));
 const included = computed(() => rows.value.filter(row => row.include).length);
 const canImport = computed(() => !!request.value && !busy.value && !reading.value && validated.value && included.value > 0 && !issues.value.length);
 const footer = computed(() => !rows.value.length ? '' : [t('packages.selectedProblems', { n: included.value, total: rows.value.length }),
@@ -148,8 +150,9 @@ async function submit() {
       <n-alert v-if="issues.length" type="error" :show-icon="false" class="contest-note">
         <div class="note-title">{{ t('contestImport.issues') }}</div><ul><li v-for="issue in issues" :key="issue">{{ issue }}</li></ul>
       </n-alert>
-      <n-alert v-if="warnings.length" type="warning" :show-icon="false" class="contest-note">
-        <details :open="warnings.length <= 5"><summary>{{ t('packages.warnings', { n: warnings.length }) }}</summary><ul><li v-for="warning in warnings" :key="warning">{{ warning }}</li></ul></details>
+      <n-alert v-if="skipped.length || warnings.length" type="warning" :show-icon="false" class="contest-note">
+        <div v-for="warning in skipped" :key="warning">{{ warning }}</div>
+        <details v-if="warnings.length" :open="warnings.length <= 5"><summary>{{ t('packages.warnings', { n: warnings.length }) }}</summary><ul><li v-for="warning in warnings" :key="warning">{{ warning }}</li></ul></details>
       </n-alert>
     </template>
     <dir-picker v-model:show="showDirectory" :initial="directory" @pick="selectDirectory" />
@@ -172,4 +175,5 @@ async function submit() {
 .contest-note ul { margin: 4px 0 0; padding-left: 18px; }
 .note-title { font-weight: 600; }
 details summary { cursor: pointer; }
+div + details { margin-top: 6px; }
 </style>

@@ -6,7 +6,7 @@ import type { Judge } from '../judge/index.js';
 import { parseScript } from '../judge/script.js';
 import { validateFileName } from '../util/fs.js';
 import { checkGroups } from '../workspace/problems.js';
-import { badPackage } from './data.js';
+import { badPackage, dropGroups, missingTestWarnings } from './data.js';
 import { publishProblem } from './publish.js';
 
 type Xml = Record<string, any>;
@@ -139,7 +139,7 @@ export function readPolygonPackage(archive: Map<string, Buffer>, options: Packag
   }
   const validators = list<Xml>(xml.assets?.validators?.validator);
   doc.validator = source(validators[0], 'validator');
-  if (validators.length > 1) warnings.push('Several Polygon validators were retained; the first is the local problem validator.');
+  if (validators.length > 1) warnings.push('Several Polygon validators were kept; the first is the problem validator.');
   doc.interactor = source(xml.assets?.interactor, 'interactor');
   if (doc.interactor) { doc.problem.judge_mode = 'io'; doc.problem.interactive = true; }
   for (const solution of list<Xml>(xml.assets?.solutions?.solution)) {
@@ -150,7 +150,7 @@ export function readPolygonPackage(archive: Map<string, Buffer>, options: Packag
   }
   if (doc.solutions.length && !doc.solutions.some((s: any) => s.tag === 'MA')) {
     (doc.solutions.find((s: any) => s.tag === 'OK') ?? doc.solutions[0]).tag = 'MA';
-    warnings.push('No main solution was declared; selected the first accepted source as the local main solution.');
+    warnings.push('No main solution was declared; the first accepted one is used.');
   }
   for (const executable of list<Xml>(xml.files?.executables?.executable)) {
     const name = attr(executable.source ?? {}, 'path');
@@ -176,9 +176,10 @@ export function readPolygonPackage(archive: Map<string, Buffer>, options: Packag
   };
   selfTests(xml.assets?.checker?.testset, true); selfTests(validators[0]?.testset, false);
 
+  // `index: 0`: a skipped sample, which still owns its statement example number.
   const samples: { index: number; manual: string }[] = [];
   let count = 0, incomplete = false, pointsEnabled = false;
-  const names = new Set<string>();
+  const names = new Set<string>(), absent: string[] = [], emptied: string[] = [];
   for (const ts of list<Xml>(xml.judging.testset)) {
     const name = attr(ts, 'name') ?? DEFAULT_TESTSET;
     if (!TESTSET_NAME_RE.test(name) || names.has(name)) return badPackage(`Invalid or duplicate Polygon testset: ${name}`);
@@ -192,38 +193,60 @@ export function readPolygonPackage(archive: Map<string, Buffer>, options: Packag
     const identities = new Map<number, { input: Buffer | undefined; output: Buffer | undefined }>();
     const sampleIndices: number[] = [];
     let generated = false;
-    for (const [position, node] of tests.entries()) {
-      const ordinal = position + 1, test = obj(node, `${name}/test ${ordinal}`), original = provenance[`${name}:${ordinal}`];
+    const indexOf = (ordinal: number) => {
+      const original = provenance[`${name}:${ordinal}`];
       const sourceId = typeof original?.source === 'string' && original.source.startsWith(name + ':') ? Number(original.source.slice(name.length + 1)) : NaN;
-      const index = Number.isSafeInteger(sourceId) && sourceId > 0 && sourceId <= 100000 ? sourceId : ordinal;
+      return Number.isSafeInteger(sourceId) && sourceId > 0 && sourceId <= 100000 ? sourceId : ordinal;
+    };
+    // A test without its input file and without a generator command is skipped; the others are renumbered in order.
+    const present = new Set<number>(), all = new Set<number>();
+    tests.forEach((node, position) => {
+      const test = obj(node, `${name}/test ${position + 1}`), index = indexOf(position + 1); all.add(index);
+      if (files.has(polygonPath(ts['input-path-pattern'], position + 1)) || attr(test, 'method') === 'generated' && attr(test, 'cmd')) present.add(index);
+    });
+    const kept = [...all].filter(index => present.has(index)).sort((a, b) => a - b), skipped = new Set<number>();
+    const renumbered = new Map(kept.map((index, k) => [index, kept.length < all.size ? k + 1 : index]));
+    const touched = new Set<string>(), lost = new Map<string, number>();
+    for (const [position, node] of tests.entries()) {
+      const ordinal = position + 1, test = obj(node, `${name}/test ${ordinal}`), original = provenance[`${name}:${ordinal}`], index = indexOf(ordinal);
       const input = polygonPath(ts['input-path-pattern'], ordinal), output = polygonPath(ts['answer-path-pattern'], ordinal);
+      const method = attr(test, 'method') ?? 'manual', rawPoints = attr(test, 'points'), group = attr(test, 'group');
+      if (!['manual', 'generated'].includes(method)) return badPackage(`${name}/${index}: unknown test method ${method}.`);
+      pointsEnabled ||= rawPoints !== undefined;
+      if (group) touched.add(group);
+      if (!present.has(index)) {
+        if (!skipped.has(index)) {
+          skipped.add(index); absent.push(input);
+          if (attr(test, 'sample') === 'true' && name === 'tests') samples.push({ index: 0, manual });
+        }
+        if (group && rawPoints !== undefined) lost.set(group, (lost.get(group) ?? 0) + numeric(rawPoints, `${group}/${index}/points`));
+        continue;
+      }
+      const at = renumbered.get(index)!;
       const [, inputData] = read(input, false), [, outputData] = read(output, false);
       const previous = identities.get(index);
       if (previous && (!inputData || !outputData || !previous.input?.equals(inputData) || !previous.output?.equals(outputData))) return badPackage('Shared Polygon test metadata refers to different data.');
       identities.set(index, { input: inputData, output: outputData });
-      const method = attr(test, 'method') ?? 'manual';
-      if (!['manual', 'generated'].includes(method)) return badPackage(`${name}/${index}: unknown test method ${method}.`);
-      if (inputData) local.set(`${manual}/${index}.in`, inputData);
+      if (inputData) local.set(`${manual}/${at}.in`, inputData);
       else {
         const command = attr(test, 'cmd');
-        if (method !== 'generated' || !command) return badPackage(`Missing input ${input}; a standard package needs its generator command.`);
+        // Another copy of this shared test has its input.
+        if (method !== 'generated' || !command) return badPackage('Shared Polygon test metadata refers to different data.');
         const normalized = command.replace(/^(?:\.\/)?([^\s]+)/, (_all, exe: string) => path.posix.basename(exe).replace(/\.(?:exe|cpp)$/i, ''));
-        try { parseScript(`${normalized} > ${index}`); } catch { return badPackage(`Cannot import generator command for ${input}. Build a Linux/Windows package containing its data.`); }
-        script.push(`${normalized} > ${index}`); generated = true;
+        try { parseScript(`${normalized} > ${at}`); } catch { return badPackage(`Cannot import generator command for ${input}. Build a Linux/Windows package containing its data.`); }
+        script.push(`${normalized} > ${at}`); generated = true;
       }
-      if (outputData) local.set(`${manual}/${index}.ans`, outputData); else generated = true;
-      const rawPoints = attr(test, 'points');
-      pointsEnabled ||= rawPoints !== undefined;
-      cases[index] = { original_input: typeof original?.input === 'string' ? original.input : input, original_output: typeof original?.output === 'string' ? original.output : output,
+      if (outputData) local.set(`${manual}/${at}.ans`, outputData); else generated = true;
+      cases[at] = { original_input: typeof original?.input === 'string' ? original.input : input, original_output: typeof original?.output === 'string' ? original.output : output,
         ...(outputData && inputData ? { provided_answer: true } : {}),
         ...(rawPoints !== undefined ? { points: numeric(rawPoints, `${name}/${index}/points`) } : {}),
         ...(time !== candidate.timeLimit ? { time_limit: time } : {}), ...(memory !== candidate.memoryLimit ? { memory_limit: memory } : {}) };
-      const group = attr(test, 'group'); if (group) {
-        const list = memberships.get(group) ?? []; if (list.includes(index)) return badPackage(`Polygon subtask ${group} repeats one shared test.`);
-        list.push(index); memberships.set(group, list);
-        if (rawPoints !== undefined) { const overrides = groupCases.get(group) ?? {}; overrides[index] = { points: numeric(rawPoints, `${group}/${index}/points`) }; groupCases.set(group, overrides); }
+      if (group) {
+        const list = memberships.get(group) ?? []; if (list.includes(at)) return badPackage(`Polygon subtask ${group} repeats one shared test.`);
+        list.push(at); memberships.set(group, list);
+        if (rawPoints !== undefined) { const overrides = groupCases.get(group) ?? {}; overrides[at] = { points: numeric(rawPoints, `${group}/${index}/points`) }; groupCases.set(group, overrides); }
       }
-      if (attr(test, 'sample') === 'true' && !sampleIndices.includes(index)) { sampleIndices.push(index); if (name === 'tests') samples.push({ index, manual }); }
+      if (attr(test, 'sample') === 'true' && !sampleIndices.includes(at)) { sampleIndices.push(at); if (name === 'tests') samples.push({ index: at, manual }); }
       if (inputData && !roles.has(input)) local.delete(`other/polygon/${input}`);
       if (outputData && !roles.has(output)) local.delete(`other/polygon/${output}`);
     }
@@ -231,25 +254,30 @@ export function readPolygonPackage(archive: Map<string, Buffer>, options: Packag
       const name = attr(g, 'name') ?? badPackage('Polygon group has no name.');
       const indices = memberships.get(name) ?? [], policy = attr(g, 'points-policy') ?? 'complete-group';
       if (!['each-test', 'complete-group'].includes(policy)) return badPackage(`Unknown Polygon group points policy: ${policy}`);
-      const total = attr(g, 'points');
+      const total = attr(g, 'points'), missing = policy === 'each-test' ? lost.get(name) ?? 0 : 0;
       pointsEnabled ||= total !== undefined;
-      return { name, tests: compressRanges(indices), policy: policy === 'each-test' ? 'EACH_TEST' : 'COMPLETE_GROUP',
-        points: total !== undefined ? numeric(total, `group ${name}/points`) : indices.reduce((n, index) => n + (groupCases.get(name)?.[index]?.points ?? cases[index].points ?? 0), 0), cases: groupCases.get(name),
+      const points = total === undefined ? indices.reduce((n, index) => n + (groupCases.get(name)?.[index]?.points ?? cases[index].points ?? 0), 0)
+        : missing ? Math.max(0, Math.round((numeric(total, `group ${name}/points`) - missing) * 1e6) / 1e6) : numeric(total, `group ${name}/points`);
+      return { name, tests: compressRanges(indices), policy: policy === 'each-test' ? 'EACH_TEST' : 'COMPLETE_GROUP', points, cases: groupCases.get(name),
         dependencies: list<Xml>(g.dependencies?.dependency).map(dep => attr(dep, 'group') ?? badPackage(`Missing dependency of ${name}`)) };
     });
-    for (const group of memberships.keys()) if (!groups.some(g => g.name === group)) return badPackage(`Unknown Polygon test group: ${group}`);
-    const configuration = { manual, answers: generated ? 'generated' : 'provided', cases, groups: groups.length > 0, group: checkGroups(name, groups),
+    for (const group of touched) if (!groups.some(g => g.name === group)) return badPackage(`Unknown Polygon test group: ${group}`);
+    const dropped = new Set([...touched].filter(group => !memberships.has(group)));
+    emptied.push(...[...dropped].map(group => name === DEFAULT_TESTSET ? group : `${name}/${group}`));
+    const group = checkGroups(name, dropGroups(groups, dropped));
+    const configuration = { manual, answers: generated ? 'generated' : 'provided', cases, groups: group.length > 0, group,
       ...(sampleIndices.length ? { samples: compressRanges(sampleIndices) } : {}), ...(script.length ? { script: `tests/script-${name}.txt` } : {}) };
     if (script.length) local.set(`tests/script-${name}.txt`, Buffer.from(script.join('\n') + '\n'));
     if (name === DEFAULT_TESTSET) doc.tests = configuration; else doc.testsets[name] = configuration;
     count += identities.size; incomplete ||= generated;
   }
+  warnings.push(...missingTestWarnings(absent, absent.length, emptied));
   doc.tests.points = pointsEnabled;
   if (attr(xml.judging, 'treat-points-from-checker-as-percent') === 'true') {
     for (const ts of [doc.tests, ...Object.values(doc.testsets)] as any[]) ts.unresolved_scoring = true;
-    warnings.push('Polygon checker-percent scoring is preserved in the original descriptor. Review the local scoring before judging or converting formats.');
+    warnings.push('Polygon checker-percent scoring is kept in the original descriptor; review the local scoring before judging or converting.');
   }
-  if (incomplete) warnings.push('This standard Polygon package has unbuilt data. Sources and commands were imported; generate tests to build missing inputs/answers.');
+  if (incomplete) warnings.push('This standard Polygon package lacks built data; generate tests to build the missing inputs and answers.');
 
   const statementRoots = new Map<string, string>();
   for (const file of files.keys()) {
@@ -278,6 +306,7 @@ export function readPolygonPackage(archive: Map<string, Buffer>, options: Packag
     }
     const tutorial = files.get(`${root}tutorial.tex`); if (tutorial && !local.has(`statement/${lang}/tutorial.tex`)) local.set(`statement/${lang}/tutorial.tex`, tutorial);
     for (const [ordinal, sample] of samples.entries()) {
+      if (!sample.index) continue;
       const number = String(ordinal + 1).padStart(2, '0');
       for (const [suffix, localSuffix] of [['', 'in'], ['.a', 'out']]) {
         const bytes = files.get(`${root}example.${number}${suffix}`);

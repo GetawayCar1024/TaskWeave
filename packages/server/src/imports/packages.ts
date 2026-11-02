@@ -68,7 +68,7 @@ function hydroStatements(files: Map<string, Buffer>, meta: Record<string, any>, 
     validateFileName(source);
     const bytes = files.get(source) ?? badPackage(`Missing Hydro statement: ${source}`);
     if (/\.(?:md|tex|txt)$/i.test(source)) result.push({ source, lang: language(lang), text: bytes.toString('utf8') });
-    else warnings.push(`Statement ${source} is preserved in Other files; add an editable text statement to enable authoring.`);
+    else warnings.push(`Statement ${source} is kept in Other files; add an editable text statement to enable authoring.`);
   };
   if (meta.statements !== undefined) {
     if (!Array.isArray(meta.statements)) return badPackage('Hydro statements must be a list.');
@@ -94,7 +94,7 @@ function hydroStatements(files: Map<string, Buffer>, meta: Record<string, any>, 
     if (typeof content === 'string' && content.trim().startsWith('{')) { try { content = JSON.parse(content); } catch { /* plain statement */ } }
     if (typeof content === 'string') result.push({ lang: fallbackLang, source: 'problem.yaml', text: content });
     else if (typeof content === 'object') for (const [lang, text] of Object.entries(content)) if (typeof text === 'string') result.push({ lang: language(lang), source: 'problem.yaml', text });
-    if (meta.html) warnings.push('The Hydro statement uses HTML. Its original source is preserved; check the editable statement preview.');
+    if (meta.html) warnings.push('The Hydro statement uses HTML (original kept); check the statement preview.');
   }
   return result;
 }

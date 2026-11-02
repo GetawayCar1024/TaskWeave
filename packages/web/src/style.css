@@ -84,6 +84,8 @@ body.pf-resizing-x, body.pf-resizing-x * { cursor: ew-resize !important; user-se
 .pf-center { display: flex; align-items: center; justify-content: center; flex: 1; padding: 24px; }
 .pf-section-title { font-size: 13px; font-weight: 600; }
 .pf-dialog-note { margin: 0 0 12px; font-size: 12px; }
+.pf-dialog-line { margin: 0 0 6px; }
+.pf-dialog-list { margin: 0 0 6px; padding-left: 18px; max-height: 180px; overflow: auto; overflow-wrap: anywhere; }
 .pf-label { font-size: 12px; color: var(--pf-text-secondary); }
 /* Selectable rows in lists (files, items, testsets …). */
 .pf-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 13px; }

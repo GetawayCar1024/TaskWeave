@@ -42,6 +42,8 @@ import {
   type JobInfo,
   type QuickRunRequest,
   type QuickRunResponse,
+  type RemoveTestsRequest,
+  type RemoveTestsResult,
   type TestFileResponse,
   type TestsManifest,
   type CreateProblemRequest,
@@ -217,6 +219,8 @@ export const api = {
       'DELETE',
       `/problems/${pid(id)}/tests/${n}?source=${encodeURIComponent(source)}${testset && testset !== 'tests' ? `&testset=${encodeURIComponent(testset)}` : ''}`,
     ),
+  /** Several tests in one operation; nothing is removed if any of them changed. */
+  removeTests: (id: string, req: RemoveTestsRequest) => request<RemoveTestsResult>('DELETE', `/problems/${pid(id)}/tests`, req),
   tests: (id: string, testset?: string) => request<TestsManifest | null>('GET', `/problems/${pid(id)}/tests${tsq(testset)}`),
   testFile: (id: string, n: number, kind: 'in' | 'ans' | 'overview' | 'statement-in' | 'statement-out', testset?: string) =>
     request<TestFileResponse>('GET', `/problems/${pid(id)}/tests/${n}/${kind}${tsq(testset)}`),

@@ -1,7 +1,7 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { isSourceFile, parseIndexList, type CompileResult, type InvocationSelection, type QuickRunRequest, type StressRequest, type TestFileResponse } from '@taskweave/shared';
+import { isSourceFile, parseIndexList, type CompileResult, type InvocationSelection, type QuickRunRequest, type RemoveTestsRequest, type StressRequest, type TestFileResponse } from '@taskweave/shared';
 import type { JobManager } from '../jobs.js';
 import type { Judge } from '../judge/index.js';
 import { listInvocations, readInvocation, refOutputPath, runInvocation } from '../judge/invocation.js';
@@ -10,7 +10,7 @@ import { runStress } from '../judge/stress.js';
 import { exportDir, exportPackage } from '../judge/package.js';
 import { localChecks } from '../judge/checks.js';
 import { runCheckerTests, runValidatorTests } from '../judge/selftest.js';
-import { addManualTest, removeTest, answerPath, generateTests, inputPath, overviewPath, publicManifest, readManifest, requireTestset, sampleStatementPaths } from '../judge/tests.js';
+import { addManualTest, removeTest, removeTests, answerPath, generateTests, inputPath, overviewPath, publicManifest, readManifest, requireTestset, sampleStatementPaths } from '../judge/tests.js';
 import { HttpError, safeJoin, exists, atomicWrite } from '../util/fs.js';
 import { readSamples } from '../judge/samples.js';
 import { buildProblemDataPackage, requireLuoguOptions } from '../judge/problemExport.js';
@@ -103,6 +103,15 @@ export function judgeRoutes(app: FastifyInstance, judge: Judge, jobs: JobManager
     const n = Number(req.params.n);
     if (!Number.isInteger(n) || n < 1) throw new HttpError(400, 'bad_test', 'Invalid test index');
     const r = await removeTest(ctx, n, { testset: req.query.testset, source: req.query.source });
+    if (r.samples !== undefined) await judge.registry.patch(ctx.ref.id, { testsets: { [r.testset]: { samples: r.samples, largeSamples: r.largeSamples ?? '' } } });
+    return r;
+  });
+  /** Remove several tests at once; all or none. */
+  app.delete<P & { Body: RemoveTestsRequest }>('/api/problems/:id/tests', async (req) => {
+    const ctx = await judge.ctx(req.params.id);
+    const tests = req.body?.tests;
+    if (!Array.isArray(tests) || !tests.length || tests.length > 100000 || tests.some((t) => !t || !Number.isInteger(t.index) || t.index < 1 || typeof t.source !== 'string')) throw new HttpError(400, 'bad_test', 'Invalid test selection');
+    const r = await removeTests(ctx, tests, typeof req.body.testset === 'string' ? req.body.testset : undefined);
     if (r.samples !== undefined) await judge.registry.patch(ctx.ref.id, { testsets: { [r.testset]: { samples: r.samples, largeSamples: r.largeSamples ?? '' } } });
     return r;
   });

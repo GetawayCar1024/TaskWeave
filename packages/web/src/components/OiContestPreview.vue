@@ -159,11 +159,11 @@ async function onExport(format: string) {
     <n-alert v-if="error" type="error">{{ error }}</n-alert>
     <n-alert v-if="missingFonts.length && !error" :type="fallbackFonts.length ? 'info' : 'warning'" :title="ui(`本机缺少 OI 排版字体：${missingFontText}`, `Missing OI fonts on this computer: ${missingFontText}`)">
       {{ fallbackFonts.length ? ui(
-        `这些字体的版权不允许随 TaskWeave 分发，排版时从本机读取。现已改用本机安装的中文字体（如 Noto CJK）排版，文字完整，但字形与 NOI 官方题面略有不同。如需一致，可把字体文件（${missingFontFiles}）放到 ${fontDir || '全局目录的 fonts 文件夹'}，再重新检测。`,
-        `These fonts may not be redistributed with TaskWeave, so they are read from this computer. Installed Chinese fonts (such as Noto CJK) are used instead: the text is complete but the glyphs differ slightly from official NOI statements. For the exact look, put the font files (${missingFontFiles}) into ${fontDir || 'the fonts folder of the global directory'} and check again.`,
+        `这些字体不能随 TaskWeave 分发，需从本机读取。已改用本机的中文字体（如 Noto CJK）排版，字形与官方题面略有不同；如需一致，可把 ${missingFontFiles} 放到 ${fontDir || '全局目录的 fonts 文件夹'} 后重新检测。`,
+        `These fonts cannot ship with TaskWeave and are read from this computer. Installed Chinese fonts (such as Noto CJK) are used instead, with slightly different glyphs; for the exact look, put ${missingFontFiles} into ${fontDir || 'the fonts folder of the global directory'} and check again.`,
       ) : ui(
-        `这些字体的版权不允许随 TaskWeave 分发，排版时从本机读取。本机也没有可代替的中文字体，中文将无法显示。Windows 通常自带这些字体；Linux 可安装 fonts-noto-cjk（如 sudo apt install fonts-noto-cjk）；也可以把字体文件（${missingFontFiles}）放到 ${fontDir || '全局目录的 fonts 文件夹'}，再重新检测。`,
-        `These fonts may not be redistributed with TaskWeave, so they are read from this computer. No other Chinese font is installed either, so Chinese text cannot be shown. Windows usually includes them; on Linux install fonts-noto-cjk (e.g. sudo apt install fonts-noto-cjk); or put the font files (${missingFontFiles}) into ${fontDir || 'the fonts folder of the global directory'} and check again.`,
+        `这些字体不能随 TaskWeave 分发，需从本机读取；本机也没有可代替的中文字体，中文无法显示。Linux 可安装 fonts-noto-cjk，或把 ${missingFontFiles} 放到 ${fontDir || '全局目录的 fonts 文件夹'} 后重新检测。`,
+        `These fonts cannot ship with TaskWeave and are read from this computer; no other Chinese font is installed, so Chinese text cannot be shown. On Linux install fonts-noto-cjk, or put ${missingFontFiles} into ${fontDir || 'the fonts folder of the global directory'} and check again.`,
       ) }}
       <div class="font-actions"><n-button size="small" @click="generate">{{ ui('重新检测', 'Check again') }}</n-button></div>
     </n-alert>

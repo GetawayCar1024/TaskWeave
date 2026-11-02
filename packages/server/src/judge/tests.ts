@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_TESTSET, TESTSET_NAME_RE, compressRanges, parseIndexList, testsetOf, testMetadata, type TestInfo, type TestsManifest, type TestsetConfig } from '@taskweave/shared';
+import { DEFAULT_TESTSET, TESTSET_NAME_RE, compressRanges, parseIndexList, testsetOf, testMetadata, type RemoveTestsResult, type TestInfo, type TestsManifest, type TestsetConfig } from '@taskweave/shared';
 import { randomBytes } from 'node:crypto';
 import { recoverAnswerTransaction } from '../workspace/answerBackups.js';
 import { HttpError } from '../util/fs.js';
@@ -654,51 +654,59 @@ export function parseTestMarkup(buf: Buffer | null): number[] | undefined {
 }
 
 /**
- * Remove one test. A manual test's files (input and statement input / output) are
- * deleted. A script test loses its line in the script;
- * a line that makes several tests ({a-b}) removes all of them. Lines produced by a
- * FreeMarker loop cannot be removed one by one. The index leaves tests.samples.
+ * Remove tests, all resolved against one plan so no index shifts in between. A manual
+ * test's files (input, statement input / output, provided answers) are deleted. A script
+ * test loses its line in the script; a line that makes several tests ({a-b}) removes all
+ * of them. Lines produced by a FreeMarker loop cannot be removed one by one. Nothing
+ * changes unless every test can be removed. Removed tests leave the sample lists.
  */
-export async function removeTest(
-  ctx: ProblemCtx,
-  index: number,
-  opts: { testset?: string; source?: string },
-): Promise<{ kind: 'manual' | 'script'; removed: number[]; testset: string; samples?: string; largeSamples?: string }> {
-  const ts = requireTestset(ctx, opts.testset);
+export async function removeTests(ctx: ProblemCtx, targets: { index: number; source?: string }[], testset?: string): Promise<RemoveTestsResult> {
+  const ts = requireTestset(ctx, testset);
   const planned = await plan(ctx, [], ts);
-  const p = planned.find((x) => x.index === index);
-  if (!p) throw new HttpError(404, 'test_not_found', `Test ${index} does not exist`);
-  // The caller saw the test in a manifest that may be out of date: never remove another one.
-  if (opts.source !== undefined && opts.source !== p.source) {
-    throw new HttpError(409, 'test_changed', `Test ${index} is now ${p.source}, not ${opts.source}; regenerate the tests and try again`);
+  const byIndex = new Map(planned.map((p) => [p.index, p]));
+  const manual = new Set<Planned>(), commands = new Map<ScriptCommand, number>();
+  for (const { index, source } of targets) {
+    const p = byIndex.get(index);
+    if (!p) throw new HttpError(404, 'test_not_found', `Test ${index} does not exist`);
+    // The caller saw the test in a manifest that may be out of date: never remove another one.
+    if (source !== undefined && source !== p.source) throw new HttpError(409, 'test_changed', `Test ${index} is now ${p.source}, not ${source}; regenerate the tests and try again`);
+    if (p.origin === 'manual' && p.manualPath) manual.add(p);
+    else if (ts.script && p.cmd) { if (!commands.has(p.cmd)) commands.set(p.cmd, index); }
+    else throw new HttpError(400, 'not_removable', `Test ${index} has no source to remove`);
   }
-  let result: { kind: 'manual' | 'script'; removed: number[] };
-  if (p.origin === 'manual' && p.manualPath) {
+  if (commands.size) {
+    const file = safeJoin(ctx.ref.dir, ts.script!);
+    const text = (await fsp.readFile(file, 'utf8')).replace(/\r\n/g, '\n');
+    const lines = text.split('\n');
+    const templated = /<#|\$\{/.test(text), drop = new Set<number>();
+    for (const [cmd, index] of commands) {
+      let at = -1;
+      if (!templated && lines[cmd.line - 1]?.trim() === cmd.text) at = cmd.line - 1;
+      else {
+        const same = lines.map((l, i) => (l.trim() === cmd.text ? i : -1)).filter((i) => i >= 0);
+        if (same.length === 1) at = same[0];
+      }
+      if (at < 0) throw new HttpError(400, 'templated_script', `Test ${index} comes from a template loop in ${ts.script}; edit the script instead`);
+      drop.add(at);
+    }
+    await atomicWrite(file, lines.filter((_, i) => !drop.has(i)).join('\n'));
+  }
+  for (const p of manual) {
     const sp = statementPaths(p.source);
     const answers = providedAnswers(ctx, ts) ? [p.source.replace(/\.in$/i, '.ans'), p.source.replace(/\.in$/i, '.out')] : [];
     for (const rel of [p.source, sp.input, sp.output, ...answers]) await fsp.rm(safeJoin(ctx.ref.dir, rel), { force: true });
-    result = { kind: 'manual', removed: [index] };
-  } else {
-    if (!ts.script || !p.cmd) throw new HttpError(400, 'not_removable', `Test ${index} has no source to remove`);
-    const file = safeJoin(ctx.ref.dir, ts.script);
-    const text = (await fsp.readFile(file, 'utf8')).replace(/\r\n/g, '\n');
-    const lines = text.split('\n');
-    const templated = /<#|\$\{/.test(text);
-    let at = -1;
-    if (!templated && lines[p.cmd.line - 1]?.trim() === p.cmd.text) at = p.cmd.line - 1;
-    else {
-      const same = lines.map((l, i) => (l.trim() === p.cmd!.text ? i : -1)).filter((i) => i >= 0);
-      if (same.length === 1) at = same[0];
-    }
-    if (at < 0) throw new HttpError(400, 'templated_script', `Test ${index} comes from a template loop in ${ts.script}; edit the script instead`);
-    lines.splice(at, 1);
-    await atomicWrite(file, lines.join('\n'));
-    const removed = planned.filter((x) => x.cmd === p.cmd).map((x) => x.index);
-    // Their statement input / output (keyed by index) go with them.
-    for (const i of removed) for (const rel of Object.values(scriptStatementPaths(i, ts.name))) await fsp.rm(safeJoin(ctx.ref.dir, rel), { force: true });
-    result = { kind: 'script', removed };
   }
+  const generated = planned.filter((x) => x.cmd && commands.has(x.cmd));
+  // Their statement input / output (keyed by index) go with them.
+  for (const x of generated) for (const rel of Object.values(scriptStatementPaths(x.index, ts.name))) await fsp.rm(safeJoin(ctx.ref.dir, rel), { force: true });
+  const result: RemoveTestsResult = { testset: ts.name, removed: [...manual, ...generated].map((x) => x.index).sort((a, b) => a - b), manual: manual.size, lines: commands.size };
   // Removed tests leave the sample lists; tests that move down keep their marks.
   const moved = remapSamples(ts, planned, await plan(ctx, [], ts));
-  return moved ? { ...result, testset: ts.name, ...moved } : { ...result, testset: ts.name };
+  return moved ? { ...result, ...moved } : result;
+}
+
+/** Remove one test (see removeTests). */
+export async function removeTest(ctx: ProblemCtx, index: number, opts: { testset?: string; source?: string }): Promise<{ kind: 'manual' | 'script'; removed: number[]; testset: string; samples?: string; largeSamples?: string }> {
+  const { manual, lines: _lines, ...result } = await removeTests(ctx, [{ index, source: opts.source }], opts.testset);
+  return { kind: manual ? 'manual' : 'script', ...result };
 }

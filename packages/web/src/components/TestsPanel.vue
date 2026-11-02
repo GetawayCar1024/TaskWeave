@@ -2,7 +2,7 @@
 import { computed, h, ref, watch } from 'vue';
 import { serverText } from '../lib/serverText';
 import { useI18n } from 'vue-i18n';
-import { NAlert, NButton, NDataTable, NInput, NProgress, NScrollbar, NSelect, NSpace, NSwitch, NTabPane, NTabs, NTag, useDialog, useMessage, type DataTableColumns } from 'naive-ui';
+import { NAlert, NButton, NDataTable, NInput, NProgress, NScrollbar, NSelect, NSpace, NSwitch, NTabPane, NTabs, NTag, useDialog, useMessage, type DataTableColumns, type DataTableRowKey } from 'naive-ui';
 import { compressRanges, originalTestName, parseIndexList, testsetsOf, type TestFileResponse, type TestInfo } from '@taskweave/shared';
 import TestsetDialog from './TestsetDialog.vue';
 import AnswersDialog from './AnswersDialog.vue';
@@ -126,6 +126,51 @@ function removeTest(test: TestInfo) {
   });
 }
 
+// ---- checked tests, removed together; the current test of the detail area is separate ----
+const checked = ref<number[]>([]);
+let anchor: number | null = null;
+const check = (keys: DataTableRowKey[]) => (checked.value = keys.map(Number));
+watch(testset, () => (checked.value = []));
+// A check belongs to a test: it is dropped when its index now names another test.
+watch(() => manifest.value?.tests, (tests, before) => {
+  const was = new Map(before?.map((x) => [x.index, x.source])), now = new Map(tests?.map((x) => [x.index, x.source]));
+  checked.value = checked.value.filter((i) => now.has(i) && now.get(i) === was.get(i));
+});
+function checkRange(from: number, to: number) {
+  const tests = manifest.value?.tests ?? [], a = tests.findIndex((x) => x.index === from), b = tests.findIndex((x) => x.index === to);
+  if (a >= 0 && b >= 0) checked.value = [...new Set([...checked.value, ...tests.slice(Math.min(a, b), Math.max(a, b) + 1).map((x) => x.index)])];
+}
+/** One confirmation and one server operation for every checked test; a script line goes with all of its tests. */
+function removeChecked() {
+  const tests = manifest.value?.tests ?? [], picked = tests.filter((x) => checked.value.includes(x.index));
+  if (!picked.length) return;
+  const manual = picked.filter((x) => x.origin === 'manual').length;
+  const lineOf = (x: TestInfo) => `${x.line ?? ''}\n${x.source}`;
+  const lines = new Map(picked.filter((x) => x.origin === 'script').map((x) => [lineOf(x), { text: x.source, tests: [] as number[] }]));
+  for (const x of tests) if (x.origin === 'script') lines.get(lineOf(x))?.tests.push(x.index);
+  const generated = [...lines.values()].reduce((n, l) => n + l.tests.length, 0);
+  dialog.warning({
+    title: t('tests.removeManyTitle', { n: manual + generated }),
+    content: () => h('div', [
+      manual ? h('p', { class: 'pf-dialog-line' }, t('tests.removeManyManual', { n: manual })) : null,
+      lines.size ? h('p', { class: 'pf-dialog-line' }, t('tests.removeManyScript', { lines: lines.size, n: generated })) : null,
+      lines.size ? h('ul', { class: 'pf-dialog-list' }, [...[...lines.values()].slice(0, 10).map((l) => h('li', [h('span', { class: 'mono' }, l.text), h('span', { class: 'pf-hint' }, ` · #${compressRanges(l.tests)}`)])),
+        lines.size > 10 ? h('li', '…') : null]) : null,
+    ]),
+    positiveText: t('tests.removeMany'),
+    negativeText: t('common.cancel'),
+    onPositiveClick: async () => {
+      try {
+        const r = await api.removeTests(props.problemId, { testset: testset.value, tests: picked.map((x) => ({ index: x.index, source: x.source })) });
+        checked.value = [];
+        message.success(t('tests.removedMany', { n: r.removed.length }));
+      } catch (e) {
+        message.error(errorMessage(e));
+      }
+    },
+  });
+}
+
 const testsetConfig = () => (props.ws.state.detail?.config ? testsetsOf(props.ws.state.detail.config).find((x) => x.name === testset.value) : undefined);
 /**
  * Mark / unmark a test of the shown testset as a sample (samples in problem.toml). A new
@@ -187,6 +232,7 @@ async function generate() {
 }
 
 const columns = computed<DataTableColumns<TestInfo>>(() => [
+  { type: 'selection' },
   { title: '#', key: 'index', width: 36 },
   {
     title: t('tests.source'),
@@ -224,10 +270,20 @@ const columns = computed<DataTableColumns<TestInfo>>(() => [
   },
 ]);
 
+/** A click shows the test; Ctrl/⌘-click also checks or unchecks it, Shift-click checks the range from the last clicked test. */
 const rowProps = (r: TestInfo) => ({
   style: 'cursor: pointer',
   class: r.index === selected.value ? 'row-selected' : '',
-  onClick: () => (selected.value = r.index),
+  onMousedown: (e: MouseEvent) => e.shiftKey && e.preventDefault(),
+  onClick: (e: MouseEvent) => {
+    if ((e.target as HTMLElement).closest('.n-data-table-td--selection')) return void (anchor = r.index);
+    if (e.shiftKey) checkRange(anchor ?? selected.value ?? r.index, r.index);
+    else {
+      if (e.ctrlKey || e.metaKey) checked.value = checked.value.includes(r.index) ? checked.value.filter((i) => i !== r.index) : [...checked.value, r.index];
+      anchor = r.index;
+    }
+    selected.value = r.index;
+  },
 });
 
 const current = computed(() => manifest.value?.tests.find((x) => x.index === selected.value) ?? null);
@@ -278,6 +334,7 @@ watch(
         />
         <n-button size="small" quaternary :title="t('testsets.title')" @click="showTestsets = true"><template #icon><layers :size="15" /></template>{{ t('testsets.title') }}</n-button>
         <n-button size="small" quaternary :disabled="running" @click="openAdd"><template #icon><plus /></template>{{ t('tests.addTest') }}</n-button>
+        <n-button v-if="checked.length" size="small" quaternary :disabled="running" @click="removeChecked"><template #icon><trash2 :size="14" /></template>{{ t('tests.removeSelected', { n: checked.length }) }}</n-button>
       </n-space>
       <span v-if="manifest" class="dim small">{{ t('tests.count', { n: manifest.tests.length }) }} · {{ new Date(manifest.generatedAt).toLocaleTimeString() }}</span>
     </n-space>
@@ -307,6 +364,8 @@ watch(
       :data="manifest.tests"
       :row-key="(r: TestInfo) => r.index"
       :row-props="rowProps"
+      :checked-row-keys="checked"
+      @update:checked-row-keys="check"
       :max-height="260"
       virtual-scroll
       :bordered="false"
