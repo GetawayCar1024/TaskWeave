@@ -1,7 +1,7 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import type { FileContent, FileNode } from '@taskweave/shared';
-import { atomicWrite, exists, HttpError, looksBinary, safeJoin, sha1, TMP_MARKER, toPosix, validateFileName } from '../util/fs.js';
+import { atomicWrite, confinedPath, exists, HttpError, looksBinary, safeJoin, sha1, TMP_MARKER, toPosix, validateFileName } from '../util/fs.js';
 
 /** Directories never shown in the tree nor watched. */
 export const HIDDEN_DIRS = new Set(['.taskweave', '.taskweave-trash', '.git', 'node_modules']);
@@ -66,7 +66,7 @@ export class FileService {
   constructor(public selfWrites: SelfWrites) {}
 
   async read(base: string, rel: string): Promise<FileContent> {
-    const abs = safeJoin(base, rel);
+    const abs = await confinedPath(base, rel);
     let st;
     try {
       st = await fsp.stat(abs);
@@ -111,7 +111,7 @@ export class FileService {
 
   async write(base: string, rel: string, content: string, baseHash?: string): Promise<string> {
     validateFileName(rel);
-    const abs = safeJoin(base, rel);
+    const abs = await confinedPath(base, rel);
     if (abs === path.resolve(base)) throw new HttpError(400, 'bad_path', 'Empty path');
     if (baseHash !== undefined) {
       const current = await this.hashOf(abs);
@@ -127,7 +127,7 @@ export class FileService {
   }
 
   async remove(base: string, rel: string): Promise<void> {
-    const abs = safeJoin(base, rel);
+    const abs = await confinedPath(base, rel);
     if (abs === path.resolve(base)) throw new HttpError(400, 'bad_path', 'Refusing to delete the problem folder');
     if (!(await exists(abs))) throw new HttpError(404, 'file_not_found', `Not found: ${rel}`);
     await fsp.rm(abs, { recursive: true });
@@ -135,8 +135,8 @@ export class FileService {
 
   async move(base: string, from: string, to: string): Promise<void> {
     validateFileName(to);
-    const a = safeJoin(base, from);
-    const b = safeJoin(base, to);
+    const a = await confinedPath(base, from);
+    const b = await confinedPath(base, to);
     const root = path.resolve(base);
     if (a === root || b === root) throw new HttpError(400, 'bad_path', 'Invalid move');
     if (!(await exists(a))) throw new HttpError(404, 'file_not_found', `Not found: ${from}`);
@@ -147,6 +147,6 @@ export class FileService {
 
   async mkdir(base: string, rel: string): Promise<void> {
     validateFileName(rel);
-    await fsp.mkdir(safeJoin(base, rel), { recursive: true });
+    await fsp.mkdir(await confinedPath(base, rel), { recursive: true });
   }
 }

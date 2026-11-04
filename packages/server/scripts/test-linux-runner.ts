@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
   else if (mode == "eof-solution") { int n, count = 0; while (std::cin >> n) ++count; return count == 1 ? 0 : 13; }
   else if (mode == "eof-interactor") std::cout << 1 << std::endl;
   else if (mode == "fork") {
-    pid_t child = fork(); if (!child) { std::ofstream(argv[2]) << getpid() << std::endl; sleep(30); return 0; }
+    pid_t child = fork(); if (!child) { std::ofstream heartbeat(argv[2]); for (int n=0;;++n) { heartbeat << n << std::endl; usleep(20000); } }
     if (child < 0) return 14; waitpid(child, nullptr, 0);
   }
   return 0;
@@ -84,15 +84,13 @@ test('Linux runner limits child processes and cancels a running process tree', l
   const controller = new AbortController();
   const running = runner.run(spec('fork', { argv: [exe, 'fork', pidFile], processLimit: 2 }), controller.signal);
   const checked = assert.rejects(running, /abort/i);
-  let pid: number | undefined;
-  for (let i = 0; i < 100 && !pid; i++) {
-    pid = Number(await fs.readFile(pidFile, 'utf8').catch(() => '')) || undefined;
-    if (!pid) await new Promise(resolve => setTimeout(resolve, 10));
+  let heartbeat = '';
+  for (let i = 0; i < 100 && !heartbeat; i++) {
+    heartbeat = await fs.readFile(pidFile, 'utf8').catch(() => '');
+    if (!heartbeat) await new Promise(resolve => setTimeout(resolve, 10));
   }
-  assert.ok(pid, 'fixture child started'); controller.abort(); await checked;
-  for (let i = 0; i < 100; i++) {
-    if (!await fs.stat(`/proc/${pid}`).catch(() => null)) return;
-    await new Promise(resolve => setTimeout(resolve, 10));
-  }
-  assert.fail(`Cancelled child ${pid} is still present`);
+  assert.ok(heartbeat, 'fixture child started'); controller.abort(); await checked;
+  const stopped = await fs.readFile(pidFile, 'utf8');
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.equal(await fs.readFile(pidFile, 'utf8'), stopped, 'cancelled child stopped writing (PIDs are private to its namespace)');
 }));

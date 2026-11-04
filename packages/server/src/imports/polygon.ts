@@ -134,6 +134,7 @@ export function readPolygonPackage(archive: Map<string, Buffer>, options: Packag
     return { source: relative };
   };
   doc.checker = source(xml.assets?.checker, 'checker');
+  if (doc.checker) doc.checker.scoring = attr(xml.judging, 'treat-points-from-checker-as-percent') === 'true' ? 'fraction' : 'points';
   if (!doc.checker) {
     const standard = attr(xml.assets?.checker ?? {}, 'name')?.match(/^std::([\w-]+)(?:\.cpp)?$/)?.[1];
     if (standard) doc.checker = { source: `std:${standard}` };

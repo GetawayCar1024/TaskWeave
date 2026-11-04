@@ -23,6 +23,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - name: Execution isolation prerequisites
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends bubblewrap
       - name: Native Linux runner contract
         run: pnpm --filter @taskweave/server exec tsx --test --test-concurrency=1 scripts/test-linux-runner.ts
       - name: Full regression suite
@@ -33,6 +35,10 @@ jobs:
           sudo apt-get install -y --no-install-recommends xvfb libgtk-3-0 libnss3 libgbm1 libasound2
       - run: pnpm build
       - run: node scripts/build-desktop.mjs --linux
+      - name: Enable packaged renderer sandbox for smoke test
+        run: |
+          sudo chown root:root packages/desktop/dist/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 packages/desktop/dist/linux-unpacked/chrome-sandbox
       - name: Run packaged application
         run: xvfb-run -a pnpm --filter @taskweave/server exec tsx ../../scripts/smoke-desktop.mts
       - name: Corresponding source archive

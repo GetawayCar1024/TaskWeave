@@ -1,7 +1,7 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import type { AiChange, AiChangeContent } from '@taskweave/shared';
-import { atomicWrite, exists, HttpError, looksBinary, safeJoin, sha1, toPosix } from '../util/fs.js';
+import { atomicWrite, confinedPath, exists, HttpError, looksBinary, safeJoin, sha1, toPosix, validateFileName } from '../util/fs.js';
 import { HIDDEN_DIRS } from '../workspace/files.js';
 import { contestFile } from '../workspace/contestFiles.js';
 
@@ -13,7 +13,7 @@ async function walk(root: string): Promise<Map<string, string>> {
       const abs = path.join(dir, e.name);
       const rel = base ? `${base}/${e.name}` : e.name;
       if (e.isDirectory()) await rec(abs, rel);
-      else if (e.isFile()) out.set(rel, abs);
+      else if (e.isFile()) out.set(rel, await confinedPath(root, rel));
     }
   };
   await rec(root, '');
@@ -45,7 +45,7 @@ export class Sandbox {
     for (const [rel, abs] of real) {
       if (rel.startsWith('scratch/')) continue;
       if (this.touched.has(rel)) continue;
-      const target = path.join(this.dir, rel);
+      const target = await confinedPath(this.dir, rel);
       const [a, b] = await Promise.all([fsp.readFile(abs), readOrNull(target)]);
       if (!same(a, b)) {
         await fsp.mkdir(path.dirname(target), { recursive: true });
@@ -61,11 +61,13 @@ export class Sandbox {
     if (!clean || clean.split('/').some((seg) => HIDDEN_DIRS.has(seg))) throw new HttpError(400, 'bad_path', `Path not allowed: ${rel}`);
     const abs = safeJoin(this.dir, clean);
     if (path.resolve(abs) === path.resolve(this.dir)) throw new HttpError(400, 'bad_path', 'The problem root cannot be modified');
+    validateFileName(clean);
     return { abs, rel: toPosix(path.relative(this.dir, abs)) };
   }
 
   async read(rel: string): Promise<Buffer> {
     const { abs } = this.resolve(rel);
+    await confinedPath(this.dir, path.relative(this.dir, abs));
     const b = await readOrNull(abs);
     if (!b) throw new HttpError(404, 'file_not_found', `File not found: ${rel}`);
     return b;
@@ -73,6 +75,7 @@ export class Sandbox {
 
   async write(rel: string, content: string | Buffer): Promise<string> {
     const r = this.resolve(rel);
+    await confinedPath(this.dir, r.rel);
     await fsp.mkdir(path.dirname(r.abs), { recursive: true });
     await fsp.writeFile(r.abs, content);
     if (!r.rel.startsWith('scratch/')) this.touched.add(r.rel);
@@ -81,6 +84,7 @@ export class Sandbox {
 
   async remove(rel: string): Promise<string> {
     const r = this.resolve(rel);
+    await confinedPath(this.dir, r.rel);
     if (!(await exists(r.abs))) throw new HttpError(404, 'file_not_found', `File not found: ${rel}`);
     const children = (await fsp.stat(r.abs)).isDirectory() ? [...(await this.files()).keys()].filter(p => p.startsWith(r.rel + '/')) : [r.rel];
     await fsp.rm(r.abs, { recursive: true, force: true });
@@ -100,6 +104,8 @@ export class Sandbox {
   async changes(): Promise<AiChange[]> {
     const out: AiChange[] = [];
     for (const rel of [...this.touched].sort()) {
+      this.resolve(rel);
+      await Promise.all([confinedPath(this.dir, rel), confinedPath(this.realDir, rel)]);
       const [mine, real] = await Promise.all([readOrNull(path.join(this.dir, rel)), readOrNull(path.join(this.realDir, rel))]);
       if (same(mine, real)) {
         // Reverted to the original: nothing to review.
@@ -114,6 +120,7 @@ export class Sandbox {
 
   async content(rel: string): Promise<AiChangeContent> {
     const { rel: clean } = this.resolve(rel);
+    await Promise.all([confinedPath(this.dir, clean), confinedPath(this.realDir, clean)]);
     const [mine, real] = await Promise.all([readOrNull(path.join(this.dir, clean)), readOrNull(path.join(this.realDir, clean))]);
     const binary = [mine, real].some((b) => b && looksBinary(b));
     const text = (b: Buffer | null) => (b === null ? null : binary ? `<binary, ${b.length} bytes, sha1 ${sha1(b).slice(0, 12)}>` : b.toString('utf8'));
@@ -126,8 +133,9 @@ export class Sandbox {
     for (const p of paths) {
       const { rel } = this.resolve(p);
       if (!this.touched.has(rel)) continue;
+      await confinedPath(this.dir, rel);
       const mine = await readOrNull(path.join(this.dir, rel));
-      const target = safeJoin(this.realDir, rel);
+      const target = await confinedPath(this.realDir, rel);
       if (this.contestFiles) await contestFile(path.dirname(this.realDir), rel);
       if (mine) await atomicWrite(target, mine);
       else {
@@ -154,6 +162,7 @@ export class Sandbox {
     for (const p of paths) {
       const { rel, abs } = this.resolve(p);
       if (!this.touched.has(rel)) continue;
+      await Promise.all([confinedPath(this.dir, rel), confinedPath(this.realDir, rel)]);
       const real = await readOrNull(path.join(this.realDir, rel));
       if (real) {
         await fsp.mkdir(path.dirname(abs), { recursive: true });

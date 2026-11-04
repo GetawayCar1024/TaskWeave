@@ -12,7 +12,7 @@ const home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'taskweav
 const exe = process.argv[2] || path.join(root, 'packages/desktop/dist', process.platform === 'linux' ? 'linux-unpacked/taskweave' : 'win-unpacked/TaskWeave.exe');
 const token = 'isolated-desktop-smoke';
 const env = { ...process.env, TASKWEAVE_HOME: home, TASKWEAVE_TOKEN: token }; delete env.ELECTRON_RUN_AS_NODE;
-const child = spawn(exe, process.env.CI && process.platform === 'linux' ? ['--no-sandbox'] : [], { env, stdio: ['ignore', 'ignore', 'pipe'] });
+const child = spawn(exe, [], { env, stdio: ['ignore', 'ignore', 'pipe'] });
 let log = ''; child.stderr.on('data', bytes => { log += bytes; });
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 try {

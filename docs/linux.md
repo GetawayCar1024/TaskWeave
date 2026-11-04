@@ -16,9 +16,9 @@ chmod +x TaskWeave-*-linux-x86_64.AppImage
 ./TaskWeave-*-linux-x86_64.AppImage
 ```
 
-tar.gz 解压后运行其中的 `taskweave`。运行环境需提供 GTK 3、NSS、GBM 和 ALSA；本地评测需要 g++（例如 `sudo apt install g++`）。AppImage 需要 FUSE 2：Ubuntu 22.04 及以后默认没有，可运行 `sudo apt install libfuse2t64`（22.04 为 `libfuse2`），或者用 `./TaskWeave-*.AppImage --appimage-extract-and-run` 直接运行。
+tar.gz 解压后运行其中的 `taskweave`。运行环境需提供 GTK 3、NSS、GBM 和 ALSA；本地评测需要 g++ 与 bubblewrap（例如 `sudo apt install g++ bubblewrap`）。AppImage 需要 FUSE 2：Ubuntu 22.04 及以后默认没有，可运行 `sudo apt install libfuse2t64`（22.04 为 `libfuse2`），或者用 `./TaskWeave-*.AppImage --appimage-extract-and-run` 直接运行。
 
-`taskweave` 是一个启动脚本：Chromium 沙箱需要 root 所有、带 setuid 的 `chrome-sandbox`，或者允许非特权用户命名空间；Ubuntu 23.10 起用 AppArmor 限制后者，AppImage 和用户解压的 tar.gz 又无法满足前者。两者都不满足时，脚本以 `--no-sandbox` 启动真正的程序 `taskweave-bin`（TaskWeave 只显示自己的本地页面，外部链接在系统浏览器中打开），否则保留沙箱。想在 tar.gz 中启用沙箱，可执行 `sudo chown root:root chrome-sandbox && sudo chmod 4755 chrome-sandbox`。
+`taskweave` 是一个启动脚本：Chromium 沙箱需要 root 所有、带 setuid 的 `chrome-sandbox`，或者允许非特权用户命名空间；Ubuntu 23.10 起用 AppArmor 限制后者。从 0.4.6 起，两者都不满足时脚本给出错误，不再自动添加 `--no-sandbox`。在可信 tar.gz 发行包中可由管理员执行 `sudo chown root:root chrome-sandbox && sudo chmod 4755 chrome-sandbox`；bubblewrap 仍需要可用的用户命名空间权限。
 
 全局目录为 `~/.taskweave`，可用 `TASKWEAVE_HOME` 指定。OI 排版所需的宋体、黑体、楷体不随应用分发：Linux 上先找 `~/.taskweave/fonts/` 和系统字体目录中的 `simsun.ttc`、`simhei.ttf`、`simkai.ttf`；缺少时自动改用已安装的中文字体（Noto CJK、思源、文泉驿、AR PL 等，Ubuntu 桌面版通常已带 Noto CJK，否则 `sudo apt install fonts-noto-cjk`），文字完整，字形与 NOI 官方题面略有不同。
 
@@ -42,7 +42,7 @@ node scripts/build-desktop.mjs --linux
 - 内存采用 RSS，和 Windows 的提交内存统计口径不同。取消、超限或根进程退出时终止其进程组与已跟踪的后代，回收退出进程。
 - 沿用旧语言配置时，会在 Linux 编译阶段移除 PE 链接器专用的 `--stack` 参数；运行时把默认栈上限提升至 256 MiB（受系统硬上限约束），内存预算仍按 RSS 独立执行。
 - 默认允许一个进程，支持单独配置多进程预算；交互题为解法和 interactor 分别计量。
-- 当前机制用于本地运行和资源监督，不提供文件系统／网络隔离。
+- 从 0.4.6 起，在独立 bubblewrap 命名空间中启动每个程序，按角色只读挂载必要文件，工作目录单独可写，清理宿主环境，禁止网络和危险系统调用。隔离不可用时报错，不降级运行；见 [安全与计分边界](security.md)。0.4.5 及之前的发行包不包含这一改动。
 
 ## 名称与数据迁移
 

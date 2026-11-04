@@ -191,10 +191,13 @@ export async function runInvocation(
                 message: r.message,
               };
               if (r.verdict === 'OK') {
-                const c = await runChecker(judge.runner, checker, { input: inFile, output: r.outputFile, answer: ansFile }, tmp, job.signal);
+                const maxima = context.groups.flatMap(name => t.groups?.find(group => group.name === name)?.points ?? []);
+                const maximum = maxima.length ? Math.max(...maxima) : t.points ?? 100;
+                const c = await runChecker(judge.runner, checker, { input: inFile, output: r.outputFile, answer: ansFile }, tmp, job.signal, maximum);
                 cell.verdict = c.verdict;
                 cell.message = c.message;
                 cell.points = c.points;
+                cell.fraction = c.fraction;
               }
               if (!summary || summary.verdict === 'OK' && cell.verdict !== 'OK') {
                 const st = await fsp.stat(r.outputFile).catch(() => null);
@@ -206,9 +209,13 @@ export async function runInvocation(
                 } else await fsp.rm(dest, { force: true });
                 summary = cell;
               }
-              for (const name of context.groups) groupResults[name] = cell;
+              for (const name of context.groups) {
+                const maximum = t.groups?.find(group => group.name === name)?.points;
+                groupResults[name] = cell.points !== undefined && maximum !== undefined && (cell.verdict === 'OK' || cell.verdict === 'PC')
+                  ? { ...cell, verdict: cell.points >= maximum ? 'OK' : 'PC' } : cell;
+              }
             });
-            setCell({ ...summary!, ...(contexts.size > 1 ? { groupResults, message: Object.entries(groupResults).map(([name, result]) => `${name}: ${result.verdict} (${result.timeMs} ms, ${result.memoryKb} KiB)`).join('\n') } : {}) });
+            setCell({ ...summary!, ...((t.groups?.length ?? 0) > 1 ? { groupResults, ...(contexts.size > 1 ? { message: Object.entries(groupResults).map(([name, result]) => `${name}: ${result.verdict} (${result.timeMs} ms, ${result.memoryKb} KiB)`).join('\n') } : {}) } : {}) });
             job.progress(++done, total, 'running');
           },
         );

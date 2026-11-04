@@ -1,6 +1,6 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { testsetOf, testsetsOf, testLimitLookup, type QuickRunRequest, type QuickRunResponse } from '@taskweave/shared';
+import { groupLayout, testsetOf, testsetsOf, testLimitLookup, type QuickRunRequest, type QuickRunResponse } from '@taskweave/shared';
 import { exists, HttpError } from '../util/fs.js';
 import { readHead, runChecker, runHelper, runSolution, withTmp } from './execute.js';
 import type { Judge, ProblemCtx } from './index.js';
@@ -63,7 +63,10 @@ export async function quickRun(judge: Judge, ctx: ProblemCtx, req: QuickRunReque
     }
     if (r.verdict === 'OK' && ans && (await exists(ans)) && judge.hasChecker(ctx.config)) {
       const checker = await judge.checker(ctx);
-      res.checker = await runChecker(judge.runner, checker, { input: inFile, output: r.outputFile, answer: ans }, tmp);
+      const layout = groupLayout(testsetOf(c, req.testset) ?? testsetsOf(c)[0], !!c.tests.points);
+      const points = req.test === undefined ? [] : Object.values(layout.byGroup).flatMap(group => group[req.test!] ?? []);
+      const maximum = points.length ? Math.max(...points) : req.test === undefined ? 100 : layout.points[req.test] ?? 100;
+      res.checker = await runChecker(judge.runner, checker, { input: inFile, output: r.outputFile, answer: ans }, tmp, undefined, maximum);
       res.verdict = res.checker.verdict;
     }
     return res;

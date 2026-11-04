@@ -35,7 +35,7 @@ export class Judge {
   ) {
     this.runner = new Runner(path.join(global.cacheDir, 'bin'));
     this.runner.setParallel(global.config.judge?.parallel ?? 0);
-    this.compiler = new Compiler(global, this.runner.compilePool);
+    this.compiler = new Compiler(global, this.runner);
   }
 
   async ctx(problemId: string): Promise<ProblemCtx> {
@@ -97,7 +97,7 @@ export class Judge {
       return { ...compiled.program, argv: [...compiled.program.argv, String(mode), String(native.precision)], hash: `${compiled.program.hash}:${mode}:${native.precision}`, checkerProtocol: 'lemon-native' };
     }
     if (!ctx.config.checker) throw new HttpError(400, 'no_checker', 'No checker configured');
-    return this.require(ctx, ctx.config.checker.source, 'Checker');
+    return { ...await this.require(ctx, ctx.config.checker.source, 'Checker'), checkerScoring: ctx.config.checker.scoring ?? 'fraction' };
   }
 
   /**

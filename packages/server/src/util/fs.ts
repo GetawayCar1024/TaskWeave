@@ -98,6 +98,23 @@ export function safeJoin(base: string, rel: string): string {
   return abs;
 }
 
+/** Lexical confinement is not enough: refuse links and hard-linked files too. */
+export async function confinedPath(base: string, rel: string): Promise<string> {
+  const absolute = safeJoin(base, rel);
+  const relative = path.relative(base, absolute);
+  let current = path.resolve(base);
+  for (const segment of relative.split(path.sep).filter(Boolean)) {
+    current = path.join(current, segment);
+    const stat = await fsp.lstat(current).catch(error => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    });
+    if (!stat) break;
+    if (stat.isSymbolicLink() || stat.isFile() && stat.nlink !== 1) throw new HttpError(403, 'unsafe_link', `Symbolic links and hard links are not allowed: ${rel}`);
+  }
+  return absolute;
+}
+
 /** Validate portable relative names before Windows normalizes reserved names. */
 export function validateFileName(rel: string): void {
   if (typeof rel !== 'string' || !rel || rel.split(/[\\/]/).some(s =>

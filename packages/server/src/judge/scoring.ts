@@ -8,9 +8,10 @@ export function scoringInput(ctx: Pick<ProblemCtx, 'config'>, ts: TestsetConfig,
   const layout = groupLayout(ts, !!ctx.config.tests.points);
   const limits = testLimitLookup(ctx.config, ts);
   return {
+    ...(ctx.config.checker?.scoring === 'hydro' ? { rounding: 'floor' as const } : {}),
     tests: tests.map((index, k) => {
       const c = cells[k];
-      return { index, group: layout.mapping[index], points: layout.points[index], verdict: c?.verdict ?? 'SKIP', checkerPoints: c?.points, timeMs: c?.timeMs, memoryKb: c?.memoryKb, wallMs: c?.wallMs };
+      return { index, group: layout.mapping[index], points: layout.points[index], verdict: c?.verdict ?? 'SKIP', checkerPoints: c?.points, checkerFraction: c?.fraction, timeMs: c?.timeMs, memoryKb: c?.memoryKb, wallMs: c?.wallMs };
     }),
     groups: ts.groups
       ? ts.group.map(g => ({ name: g.name, points: groupTotal(g), policy: g.policy ?? 'COMPLETE_GROUP', dependencies: [...new Set(g.dependencies ?? [])],
@@ -22,19 +23,23 @@ export function scoringInput(ctx: Pick<ProblemCtx, 'config'>, ts: TestsetConfig,
 }
 
 /**
- * Polygon rules: COMPLETE_GROUP scores the group's points only if every test passes;
- * EACH_TEST sums the test scores (checker points from quitp when given); a group whose
+ * COMPLETE_GROUP takes the minimum scaled case score; EACH_TEST sums the scores.
+ * Binary checkers therefore award a bundle only when all its tests pass. A group whose
  * dependencies did not all pass scores 0. Tests outside groups add their own points.
  * Groups not run at all are left out.
  */
 export function groupScore(input: ScoringInput): SolutionScore {
   const byIndex = new Map(input.tests.map((t) => [t.index, t]));
-  const testScore = (t: ScoringInput['tests'][number]) => t.verdict === 'OK' ? Math.max(0, Math.min(t.points ?? 0, t.checkerPoints ?? t.points ?? 0)) : 0;
+  const testScore = (t: ScoringInput['tests'][number]) => {
+    if (t.verdict !== 'OK' && t.verdict !== 'PC') return 0;
+    const value = Math.max(0, Math.min(t.points ?? 0, t.checkerFraction !== undefined ? (t.points ?? 0) * t.checkerFraction : t.checkerPoints ?? t.points ?? 0));
+    return input.rounding === 'floor' ? Math.floor(value) : value;
+  };
   const passed = new Map<string, boolean>();
   const definitions = new Map(input.groups.map(g => [g.name, g]));
   const groupedTest = (g: ScoringInput['groups'][number], t: ScoringInput['tests'][number]) => {
     const result = g.results?.[t.index];
-    if (result) t = { ...t, ...result, checkerPoints: result.points };
+    if (result) t = { ...t, ...result, checkerPoints: result.points, checkerFraction: result.fraction };
     const limits = g.limits?.[t.index];
     return { ...t, points: g.testPoints?.[t.index] ?? (g.policy === 'COMPLETE_GROUP' ? g.points : undefined) ?? t.points,
       verdict: limits && ((t.timeMs ?? 0) > limits.timeLimit || (t.wallMs ?? 0) > limits.timeLimit * 3) ? 'TL' as const
@@ -48,7 +53,7 @@ export function groupScore(input: ScoringInput): SolutionScore {
     visiting.add(name);
     const ok = g.tests.length > 0 && g.tests.every(i => {
       const original = byIndex.get(i), t = original && groupedTest(g, original);
-      return !!t && t.verdict === 'OK' && (t.checkerPoints === undefined || t.checkerPoints >= (t.points ?? 0));
+      return !!t && t.verdict === 'OK' && (t.checkerFraction === undefined || t.checkerFraction === 1) && (t.checkerPoints === undefined || t.checkerPoints >= (t.points ?? 0));
     }) && g.dependencies.every(passes);
     visiting.delete(name);
     passed.set(name, ok);

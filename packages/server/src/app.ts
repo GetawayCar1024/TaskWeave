@@ -122,6 +122,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   // DESIGN §8: reject DNS-rebinding hosts and require the launch token on API/WS.
   app.addHook('onRequest', async (req, reply) => {
+    reply.header('referrer-policy', 'no-referrer');
+    reply.header('x-content-type-options', 'nosniff');
     const host = (req.headers.host ?? '').replace(/:\d+$/, '');
     if (!ALLOWED_HOSTS.has(host)) return reply.code(403).send({ error: 'forbidden_host', message: 'Forbidden host' });
     const isApi = req.url.startsWith('/api/');

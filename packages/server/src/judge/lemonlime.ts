@@ -9,6 +9,7 @@ import { verifyBuild, withBuildLocks } from './buildLock.js';
 import { pickLanguage, type Program } from './compiler.js';
 import type { Judge, ProblemCtx } from './index.js';
 import { answerPath, generateTests, inputPath } from './tests.js';
+import { programSpec } from './execute.js';
 
 /** LemonLime JSON CDF v1.0, verified against upstream 9f2386849ae2d972431bcc738ce465e648756ad8:
  * core/{contest,task,testcase}.cpp. All paths are relative to data/, never the host workspace. */
@@ -101,6 +102,9 @@ export async function preflightLemonChecker(judge: Judge, ctx: ProblemCtx, index
     if (file && file !== standard && (!/^[\w.-]+$/.test(file) || file === '.' || file === '..')) fail(`${index}: input/output file names must be simple file names for LemonLime.`);
   }
   const source = config.lemon_checker?.source;
+  if (!config.lemon_comparison && !source && config.checker && !config.checker.source.startsWith('std:')) {
+    fail(`${index}: a custom checker is configured locally. Select a Lemon checker (or explicitly choose native comparison); exporting with default comparison would change the judging rules.`);
+  }
   if (config.lemon_comparison || !source) return null;
   const resolved = judge.compiler.resolveSource(ctx.ref.dir, source!).srcPath;
   if (!/\.(cpp|cc|cxx)$/i.test(resolved) || !await exists(resolved)) fail(`${index}: Lemon checker must be an existing C++ source for g++.`);
@@ -125,7 +129,7 @@ async function checkLemonProtocol(judge: Judge, ctx: ProblemCtx, checker: Progra
     await fs.copyFile(answerPath(ctx, test, testset), answer);
     const score = path.join(dir, 'score'), message = path.join(dir, 'message');
     const testlib = ctx.config.lemon_checker?.protocol === 'testlib';
-    const stats = await judge.runner.run({ argv: [...checker.argv, input, output, answer, ...(testlib ? [] : ['100', score, message])], build: checker.build,
+    const stats = await judge.runner.run({ ...programSpec(checker), argv: [...checker.argv, input, output, answer, ...(testlib ? [] : ['100', score, message])],
       cwd: dir, stdout: path.join(dir, 'stdout'), stderr: path.join(dir, 'stderr'), timeLimitMs: 10000, wallLimitMs: 15000,
       memoryLimitBytes: 512 * 1024 * 1024, outputLimitBytes: 1024 * 1024 }, job.signal);
     if (testlib) {

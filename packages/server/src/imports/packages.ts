@@ -326,7 +326,7 @@ export async function importPackage(judge: Judge, bytes: Buffer | Map<string, Bu
       if (await exists(path.join(judge.global.sharedDir, 'checkers', `${checker}.cpp`))) doc.checker = { source: `std:${checker}` };
       else warnings.push(`Unknown built-in Hydro checker ${checker}; configure a local checker before enabling authoring.`);
     } else if (checker && cfg.checker_type === 'lemon') doc.lemon_checker = { source: sourceRef(cfg.checker) };
-    else if (checker && (!cfg.checker_type || cfg.checker_type === 'testlib')) doc.checker = { source: sourceRef(cfg.checker) };
+    else if (checker && (!cfg.checker_type || cfg.checker_type === 'testlib')) doc.checker = { source: sourceRef(cfg.checker), scoring: 'hydro' };
     else if (checker) warnings.push(`Hydro checker protocol ${cfg.checker_type} is preserved but needs conversion before local judging.`);
     else {
       local.set('checker.cpp', Buffer.from(defaultChecker)); doc.checker = { source: 'checker.cpp' };

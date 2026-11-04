@@ -18,6 +18,7 @@ import { exportedTests, splitScore, testFileStem } from './lemonlime.js';
 import { readSamples } from './samples.js';
 import { answerPath, generateTests, inputPath } from './tests.js';
 import { lemonNativeSource } from './lemonNative.js';
+import { convertLemonChecker } from './lemonChecker.js';
 
 const fail = (message: string): never => { throw new HttpError(400, 'hydro_export', message); };
 interface HydroCase { input: string; output: string; score: number; time: string; memory: string }
@@ -130,13 +131,13 @@ export async function hydroPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, t
   const sourceNames = new Map<string, string>();
   const project = await fs.realpath(ctx.ref.dir), shared = await fs.realpath(judge.global.sharedDir);
   const within = (root: string, file: string) => { const rel = path.relative(root, file); return rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel); };
-  const addSource = async (file: string): Promise<string> => {
+  const addSource = async (file: string, override?: string): Promise<string> => {
     const abs = await fs.realpath(file);
     if (!within(project, abs) && !within(shared, abs)) return fail('A Hydro source dependency is outside the problem and shared directories.');
     const previous = sourceNames.get(abs); if (previous) return previous;
     const name = allocate(path.basename(file), outputNames); sourceNames.set(abs, name);
     if (within(project, abs)) used.add(toPosix(path.relative(project, abs)));
-    let text = await fs.readFile(abs, 'utf8');
+    let text = override ?? await fs.readFile(abs, 'utf8');
     // Quoted local includes are flattened with their files, preserving relative dependencies.
     const code = text.replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|R"([^ ()\\\t\r\n]{0,16})\([\s\S]*?\)\1"|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'/g, s => s.replace(/[^\r\n]/g, ' '));
     for (const include of [...text.matchAll(/^\s*#\s*include\s*"([^"\r\n]+)"/gm)].reverse()) {
@@ -156,9 +157,14 @@ export async function hydroPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, t
     zip.add('testdata/taskweave-lemon.cpp', await lemonNativeSource(judge.global.sharedDir, config.lemon_comparison));
     zip.add('testdata/taskweave-lemon-LICENSE', await fs.readFile(path.join(judge.global.sharedDir, 'lemon-native/LICENSE')));
   }
-  else if (config.checker?.source.startsWith('std:')) { dataConfig.checker_type = 'testlib'; dataConfig.checker = config.checker.source.slice(4); }
+   else if (config.checker && config.checker.scoring && !['fraction', 'hydro'].includes(config.checker.scoring)) {
+     const source = judge.compiler.resolveSource(ctx.ref.dir, config.checker.source).srcPath;
+     dataConfig.checker_type = 'lemon';
+     dataConfig.checker = await addSource(source, convertLemonChecker(await fs.readFile(source, 'utf8'), config.checker.scoring));
+   }
+   else if (config.checker?.source.startsWith('std:')) { dataConfig.checker_type = 'testlib'; dataConfig.checker = config.checker.source.slice(4); }
   else if (config.checker) { dataConfig.checker_type = 'testlib'; dataConfig.checker = await addSource(safeJoin(ctx.ref.dir, config.checker.source)); }
-  else if (config.lemon_checker) { dataConfig.checker_type = 'lemon'; dataConfig.checker = await addSource(judge.compiler.resolveSource(ctx.ref.dir, config.lemon_checker.source).srcPath); }
+   else if (config.lemon_checker) { dataConfig.checker_type = config.lemon_checker.protocol === 'testlib' ? 'testlib' : 'lemon'; dataConfig.checker = await addSource(judge.compiler.resolveSource(ctx.ref.dir, config.lemon_checker.source).srcPath); }
   if (config.validator) dataConfig.validator = await addSource(judge.compiler.resolveSource(ctx.ref.dir, config.validator.source).srcPath);
   if (mode === 'io') {
     if (!config.interactor) fail('Interactive problem without an interactor.');

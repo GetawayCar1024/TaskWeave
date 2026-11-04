@@ -261,7 +261,7 @@ function scoreClass(score: number, max: number) {
 
 function cellTitle(c: InvocationCell | null): string {
   if (!c) return '';
-  return [`${c.verdict}  CPU: ${c.timeMs} ms  Wall: ${c.wallMs ?? '?'} ms  ${fmtMem(c.memoryKb)}`, c.points !== undefined ? `${t('tests.points')}: ${c.points}` : '', serverText(c.message)].filter(Boolean).join('\n');
+  return [`${c.verdict}  CPU: ${c.timeMs} ms  Wall: ${c.wallMs ?? '?'} ms  ${fmtMem(c.memoryKb)}`, c.fraction !== undefined ? `${t('tests.points')}: ${Number((c.fraction * 100).toFixed(6))}%` : c.points !== undefined ? `${t('tests.points')}: ${c.points}` : '', serverText(c.message)].filter(Boolean).join('\n');
 }
 function cellClass(si: number, ti: number): string[] {
   const s = inv.value?.solutions[si];

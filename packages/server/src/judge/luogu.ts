@@ -9,6 +9,7 @@ import { checkGroups } from '../workspace/problems.js';
 import type { Judge, ProblemCtx } from './index.js';
 import { exportedTests, splitScore } from './lemonlime.js';
 import { answerPath, inputPath } from './tests.js';
+import { fractionalChecker } from './lemonChecker.js';
 
 /**
  * Luogu data package (help.luogu.com.cn: testcase-config, scoring-script, special-judge,
@@ -108,6 +109,31 @@ export function luoguScript(subtasks: LuoguSubtask[], agg: { time: LuoguAggregat
   return lines.join('\n') + '\n';
 }
 
+/** Native Luogu subtask scripts preserve partial credit, not only AC/WA bundles. */
+export function luoguSubtaskScript(subtask: LuoguSubtask, cases: LuoguCase[], agg: { time: LuoguAggregate; memory: LuoguAggregate }): string {
+  const ids = cases.filter(test => test.subtask === subtask.id).map(test => test.k);
+  const lines = aggregate('@total_score', ids.map(id => `@score${id}`), subtask.policy === 'COMPLETE_GROUP' ? 'min' : 'sum');
+  const passed = ids.map(ac).join(' and ') || '1 == 1';
+  lines.push(`if (${passed}) and (@total_score == ${subtask.points}); then\n    @final_status = AC;\nelse\n    @final_status = UNAC;\nfi`);
+  lines.push(...aggregate('@final_time', ids.map(id => `@time${id}`), agg.time));
+  lines.push(...aggregate('@final_memory', ids.map(id => `@memory${id}`), agg.memory));
+  return lines.join('\n') + '\n';
+}
+
+/** The subtask already applied min/sum; whole-problem scoring only applies dependencies. */
+export function luoguPartialScript(subtasks: LuoguSubtask[], agg: { time: LuoguAggregate; memory: LuoguAggregate }): string {
+  const lines = ['@total_score = 0;'];
+  for (const subtask of subtasks) {
+    const add = `@total_score = @total_score + @score${subtask.id};`;
+    lines.push(subtask.dependencies.length ? `if ${subtask.dependencies.map(ac).join(' and ')}; then\n    ${add}\nfi` : add);
+  }
+  const passed = subtasks.map(subtask => ac(subtask.id)).join(' and ') || '1 == 1';
+  lines.push(`if ${passed}; then\n    @final_status = AC;\nelse\n    @final_status = UNAC;\nfi`);
+  lines.push(...aggregate('@final_time', subtasks.map(s => `@time${s.id}`), agg.time));
+  lines.push(...aggregate('@final_memory', subtasks.map(s => `@memory${s.id}`), agg.memory));
+  return lines.join('\n') + '\n';
+}
+
 export function luoguConfig(config: ProblemToml, cases: LuoguCase[]): string {
   return cases.map(c => {
     const test = testsetOf(config, c.testset)?.cases?.[c.index];
@@ -124,6 +150,12 @@ export async function luoguData(judge: Judge, ctx: ProblemCtx, index: string, jo
   const warnings: string[] = [];
   const sets = await exportedTests(judge, ctx, testsets, index, job);
   const { cases, subtasks } = luoguLayout(config, sets, warnings);
+  // In a min subtask every case has the whole group maximum. Splitting that
+  // maximum would shrink quitp partial credit by the number of bundled cases.
+  for (const test of cases) {
+    const subtask = subtasks.find(subtask => subtask.id === test.subtask)!;
+    if (subtask.policy === 'COMPLETE_GROUP') test.score = subtask.points;
+  }
   const folder = p.name;
   const zip = new ZipWriter({ async: true });
   for (const c of cases) {
@@ -135,9 +167,10 @@ export async function luoguData(judge: Judge, ctx: ProblemCtx, index: string, jo
   }
   // YAML comments are ignored by Luogu, and let our own importer restore policies,
   // dependency edges and sample flags without evaluating arbitrary scoring scripts.
-  const metadata = { version: 1, subtasks, aggregation: agg, samples: cases.filter(c => parseIndexList(testsetOf(config, c.testset)?.samples ?? '').includes(c.index)).map(c => c.k) };
+  const metadata = { version: 2, subtasks, aggregation: agg, samples: cases.filter(c => parseIndexList(testsetOf(config, c.testset)?.samples ?? '').includes(c.index)).map(c => c.k) };
   zip.add('config.yml', `# taskweave-scoring: ${JSON.stringify(metadata)}\n` + luoguConfig(config, cases));
-  zip.add('score.txt', luoguScript(subtasks, agg));
+  zip.add('score.txt', luoguPartialScript(subtasks, agg));
+  for (const subtask of subtasks) zip.add(`score-subtask-${subtask.id}.txt`, luoguSubtaskScript(subtask, cases, agg));
   if (p.input !== 'stdin' || p.output !== 'stdout') warnings.push(`${index}: Luogu uses standard input / output; file input / output (${p.input} / ${p.output}) is not exported.`);
   const read = (source: string) => fs.readFile(judge.compiler.resolveSource(ctx.ref.dir, source).srcPath, 'utf8');
   const localIncludes = (text: string) => [...text.matchAll(/^\s*#\s*include\s*"([^"\r\n]+)"/gm)].map(m => m[1]).filter(h => h !== 'testlib.h');
@@ -150,7 +183,11 @@ export async function luoguData(judge: Judge, ctx: ProblemCtx, index: string, jo
   } else if (config.lemon_comparison) {
     checker = await lemonNativeSource(judge.global.sharedDir, config.lemon_comparison);
     zip.add('lemon-native-LICENSE', await fs.readFile(path.join(judge.global.sharedDir, 'lemon-native/LICENSE')));
-  } else if (config.checker) checker = await read(config.checker.source);
+  } else if (config.checker) checker = fractionalChecker(await read(config.checker.source), config.checker.scoring ?? 'fraction');
+  else if (config.lemon_checker) {
+    if (config.lemon_checker.protocol !== 'testlib') fail('Luogu requires a Testlib checker; a six-argument Lemon checker cannot be copied unchanged.');
+    checker = await read(config.lemon_checker.source);
+  }
   if (mode === 'grader') {
     const sources = config.grader?.sources ?? [];
     if (sources.length !== 1) fail(`${index}: Luogu needs exactly one grader source (interactive_lib.cpp).`);
@@ -166,7 +203,7 @@ export async function luoguData(judge: Judge, ctx: ProblemCtx, index: string, jo
     if (localIncludes(checker).length) warnings.push(`${index}: checker.cpp includes ${localIncludes(checker).join(', ')}; Luogu only provides testlib.h.`);
   }
   const readme = luoguReadme(config, { cases: cases.length, subtasks, spj: !!checker, mode, agg, sets: sets.map(s => s.name) });
-  warnings.push('Luogu does not automatically install score.txt. Paste its contents into the whole-problem scoring script after uploading data.zip.');
+  warnings.push('Luogu does not automatically install scoring scripts. Apply score-subtask-<id>.txt to each subtask and score.txt to the whole problem after uploading data.zip.');
   const data = await zip.finishAsync();
   if (data.length > 50 * 1024 * 1024) warnings.push('Luogu documents a 50 MiB compressed upload limit; this package is larger.');
   return { data, readme, tests: cases.length, warnings };
@@ -189,18 +226,18 @@ const AGG: Record<LuoguAggregate, string> = { sum: '求和', min: '取最小值'
 
 export function luoguReadme(config: ProblemToml, o: { cases: number; subtasks: LuoguSubtask[]; spj: boolean; mode: string; agg: { time: LuoguAggregate; memory: LuoguAggregate }; sets: string[] }): string {
   const name = config.problem.name;
-  const st = o.subtasks.map(s => `  Subtask ${s.id}（${s.label.endsWith('—') ? `${s.label.slice(0, -1)}不属于任何子任务的测试点` : s.label}）：${s.points} 分，${s.policy === 'COMPLETE_GROUP' ? '捆绑（全部通过才得分）' : '按测试点累加'}${s.dependencies.length ? `，依赖 Subtask ${s.dependencies.join(', ')}` : ''}`).join('\n');
+  const st = o.subtasks.map(s => `  Subtask ${s.id}（${s.label.endsWith('—') ? `${s.label.slice(0, -1)}不属于任何子任务的测试点` : s.label}）：${s.points} 分，${s.policy === 'COMPLETE_GROUP' ? '取最小分（普通比较器全部通过才得分，部分分检查器保留部分分）' : '按测试点累加'}${s.dependencies.length ? `，依赖 Subtask ${s.dependencies.join(', ')}` : ''}；脚本 score-subtask-${s.id}.txt`).join('\n');
   return `洛谷题目数据包：${name}
 
 一、上传测试数据
-1. 在洛谷题目管理的“测试信息 / 上传测试数据”中上传 data.zip。压缩包根目录包含 1.in … ${o.cases}.out、config.yml 和 score.txt${o.spj ? '、checker.cpp' : ''}${o.mode !== 'batch' ? '、interactive_lib.cpp' : ''}。score.txt 是计分脚本副本，洛谷没有文档保证自动读取它；如上传器拒绝额外文件，取出 score.txt 后上传数据与 config.yml。
+1. 在洛谷题目管理的“测试信息 / 上传测试数据”中上传 data.zip。压缩包根目录包含 1.in … ${o.cases}.out、config.yml、score.txt 和各 score-subtask-<id>.txt${o.spj ? '、checker.cpp' : ''}${o.mode !== 'batch' ? '、interactive_lib.cpp' : ''}。洛谷不会自动安装计分脚本；如上传器拒绝额外文件，取出所有 score*.txt 后上传数据与 config.yml。
 2. config.yml 设置了每个测试点的时间限制（${config.problem.time_limit} ms）、内存限制（${config.problem.memory_limit * 1024} KB）、分值和所属 Subtask。上传后网页上的设置会覆盖配置文件，请以网页显示为准。
 3. 导出的测试集：${o.sets.join('、')}（共 ${o.cases} 个测试点，按顺序编号）。
 
 二、子任务与计分脚本
 ${st}
-4. 将 score.txt 的内容粘贴到题目的“计分脚本”（整题计分脚本）中。脚本实现了捆绑测试、子任务依赖（含间接依赖）和总分，满分时整题状态为 AC。
-5. 各 Subtask 的计分方式请保持默认的“求和”，脚本中按测试点累加的子任务使用 @scoreX。
+4. 为每个 Subtask 启用自定义计分脚本，粘贴对应 score-subtask-<id>.txt。捆绑子任务按各点得分取最小值；按点计分子任务求和。不得将捆绑子任务留在默认“求和”。
+5. 将 score.txt 粘贴到整题计分脚本中。它汇总子任务得分并处理依赖（含间接依赖）；部分得分不会因子任务状态非 AC 被直接丢弃。
 6. 用时按子任务${AGG[o.agg.time]}、内存按子任务${AGG[o.agg.memory]}汇总。
 ${o.spj ? `
 三、Special Judge

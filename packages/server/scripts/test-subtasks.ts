@@ -93,7 +93,9 @@ test('shared memberships with different budgets run independently through the in
       { name: '1', tests: '1', points: 40, time_limit: 2000, memory_limit: 512 },
     ] } }, points: true });
     const budgets: number[] = [];
+    const runNative = judge.runner.run.bind(judge.runner);
     judge.runner.run = async spec => {
+      if (spec.processLimit === 32) return runNative(spec);
       if (spec.stdout) await atomicWrite(spec.stdout, '3\n');
       const solution = spec.timeLimitMs === 500 || spec.timeLimitMs === 2000;
       if (solution) budgets.push(spec.timeLimitMs!);

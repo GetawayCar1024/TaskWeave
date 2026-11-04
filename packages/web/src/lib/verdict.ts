@@ -7,6 +7,7 @@ export function verdictType(v: Verdict | undefined): TagType {
     case 'OK':
       return 'success';
     case 'TL':
+    case 'PC':
     case 'ML':
     case 'OL':
       return 'warning';

@@ -373,6 +373,8 @@
     "noLanguage": "No matching language in languages.toml",
     "problem": "Problem",
     "stdCheckers": "Standard checkers",
+    "checkerScoring": "Checker score unit",
+    "checkerScoringUnits": { "fraction": "Fraction (0–1)", "points": "Absolute points", "percent": "Percentage (0–100)", "hydro": "Hydro Testlib compatibility" },
     "localFiles": "Problem files",
     "noSolutions": "No solutions registered yet",
     "compile": "Compile",

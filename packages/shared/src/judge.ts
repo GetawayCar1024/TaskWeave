@@ -4,7 +4,7 @@ import type { SolutionTag, TestsetConfig } from './problem.js';
 export type RunStatus = 'OK' | 'RE' | 'TL' | 'ML' | 'OL' | 'IE';
 
 /** Verdict of a solution on one test. `IE` = internal error of the judge itself. */
-export type Verdict = 'OK' | 'WA' | 'PE' | 'TL' | 'ML' | 'RE' | 'OL' | 'FAIL' | 'IE' | 'SKIP';
+export type Verdict = 'OK' | 'PC' | 'WA' | 'PE' | 'TL' | 'ML' | 'RE' | 'OL' | 'FAIL' | 'IE' | 'SKIP';
 
 export interface RunStats {
   status: RunStatus;
@@ -112,6 +112,8 @@ export interface CheckerOutcome {
   verdict: Verdict;
   message: string;
   points?: number;
+  /** Normalized proportion, independent of the test/subtask's maximum score. */
+  fraction?: number;
 }
 
 export interface InvocationOutcome {
@@ -122,6 +124,7 @@ export interface InvocationOutcome {
   exitCode?: number;
   message?: string;
   points?: number;
+  fraction?: number;
   /** Solution output saved for the diff view. */
   hasOutput?: boolean;
 }
@@ -174,7 +177,9 @@ export type InvocationSelection = { testset: string; tests?: number[] }[];
 
 /** Per-test results and group definitions a score is computed from. */
 export interface ScoringInput {
-  tests: { index: number; group?: string; points?: number; verdict: Verdict; checkerPoints?: number; timeMs?: number; memoryKb?: number; wallMs?: number }[];
+  /** Hydro truncates every case score before aggregating subtasks. */
+  rounding?: 'floor';
+  tests: { index: number; group?: string; points?: number; verdict: Verdict; checkerPoints?: number; checkerFraction?: number; timeMs?: number; memoryKb?: number; wallMs?: number }[];
   groups: { name: string; points?: number; policy: 'COMPLETE_GROUP' | 'EACH_TEST'; dependencies: string[]; tests: number[];
     testPoints?: Record<string, number>; limits?: Record<string, { timeLimit: number; memoryLimit: number }>;
     results?: Record<string, InvocationOutcome> }[];
@@ -310,16 +315,16 @@ interface TagRule {
 export const TAG_RULES: Record<SolutionTag, TagRule> = {
   MA: { allowed: ['OK'] },
   OK: { allowed: ['OK'] },
-  WA: { allowed: ['OK', 'WA', 'PE'], required: ['WA', 'PE'] },
+  WA: { allowed: ['OK', 'PC', 'WA', 'PE'], required: ['PC', 'WA', 'PE'] },
   PE: { allowed: ['OK', 'PE'], required: ['PE'] },
   TL: { allowed: ['OK', 'TL'], required: ['TL'] },
   'TL-OR-OK': { allowed: ['OK', 'TL'] },
   TM: { allowed: ['OK', 'TL', 'ML'], required: ['TL', 'ML'] },
-  NR: { allowed: ['OK', 'WA', 'PE', 'TL', 'ML', 'RE', 'OL', 'FAIL'] },
+  NR: { allowed: ['OK', 'PC', 'WA', 'PE', 'TL', 'ML', 'RE', 'OL', 'FAIL'] },
   ML: { allowed: ['OK', 'ML'], required: ['ML'] },
   RE: { allowed: ['OK', 'RE'], required: ['RE'] },
-  RJ: { allowed: ['OK', 'WA', 'PE', 'TL', 'ML', 'RE', 'OL', 'FAIL'], required: ['WA', 'PE', 'TL', 'ML', 'RE', 'OL', 'FAIL'] },
-  FL: { allowed: ['OK', 'WA', 'PE', 'TL', 'ML', 'RE', 'OL', 'FAIL'], required: ['FAIL'] },
+  RJ: { allowed: ['OK', 'PC', 'WA', 'PE', 'TL', 'ML', 'RE', 'OL', 'FAIL'], required: ['PC', 'WA', 'PE', 'TL', 'ML', 'RE', 'OL', 'FAIL'] },
+  FL: { allowed: ['OK', 'PC', 'WA', 'PE', 'TL', 'ML', 'RE', 'OL', 'FAIL'], required: ['FAIL'] },
 };
 
 export interface TagCheck {

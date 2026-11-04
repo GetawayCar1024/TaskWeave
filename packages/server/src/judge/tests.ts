@@ -443,9 +443,11 @@ export async function generateTests(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
         for (const { group, program } of activeValidators) await withTmp(ctx.ref.dir, async (tmp) => {
           const err = path.join(tmp, 'err.txt');
           const mu = path.join(tmp, 'markup.txt');
-          const args = ['--testOverviewLogFileName', ov, '--testset', ts.name, ...(group ? ['--group', group] : []), ...(markup ? ['--testMarkupFileName', mu] : [])];
+          const localOverview = path.join(tmp, 'overview.txt');
+          const args = ['--testOverviewLogFileName', localOverview, '--testset', ts.name, ...(group ? ['--group', group] : []), ...(markup ? ['--testMarkupFileName', mu] : [])];
           await fsp.rm(ov, { force: true });
           const r = await runHelper(judge.runner, program, args, { cwd: tmp, stdin: inFile, stderr: err }, job.signal);
+          if (await exists(localOverview)) await copyNormalized(localOverview, ov);
           e.validKey = key;
           e.valid = e.valid && r.status === 'OK';
           const msg = (await readHead(err, 2000)).trim();

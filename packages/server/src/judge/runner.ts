@@ -3,8 +3,9 @@ import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { RUNNER_SRC } from '../paths.js';
 import type { RunStats, RunStatus } from '@taskweave/shared';
-import { exists, HttpError, sha1 } from '../util/fs.js';
+import { confinedPath, exists, HttpError, sha1 } from '../util/fs.js';
 import { withBuildLocks, verifyBuild, type BuildIdentity } from './buildLock.js';
+import { prepareRuntime } from './runtime.js';
 
 
 export interface ProcSpec {
@@ -20,6 +21,14 @@ export interface ProcSpec {
   memoryLimitBytes?: number;
   outputLimitBytes?: number;
   processLimit?: number;
+  /** Explicit access for judge-side inputs; command arguments do not grant access. */
+  readPaths?: string[];
+  /** Directory lookup metadata only, not permission to read its contents. */
+  directories?: string[];
+  writePaths?: string[];
+  /** Trusted language/toolchain installations, read/execute only. */
+  runtimePaths?: string[];
+  env?: Record<string, string>;
 }
 
 /** Serialize measured runs by default to avoid competing for CPU time. */
@@ -84,6 +93,14 @@ function specText(p: ProcSpec): string {
   if (p.stdin) lines.push(`stdin=${p.stdin}`);
   if (p.stdout) lines.push(`stdout=${p.stdout}`);
   if (p.stderr) lines.push(`stderr=${p.stderr}`);
+  for (const file of [p.argv[0], ...(p.readPaths ?? [])]) lines.push(`read=${file}`);
+  for (const file of p.writePaths ?? []) lines.push(`write=${file}`);
+  for (const file of p.directories ?? []) lines.push(`list=${file}`);
+  for (const file of p.runtimePaths ?? []) lines.push(`runtime=${file}`);
+  for (const [key, value] of Object.entries(p.env ?? {})) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) throw new HttpError(400, 'bad_spec', 'Invalid environment variable name');
+    lines.push(`env=${key}=${value}`);
+  }
   lines.push(`time_limit=${Math.round(p.timeLimitMs ?? 0)}`);
   lines.push(`wall_limit=${Math.round(p.wallLimitMs ?? 0)}`);
   lines.push(`memory_limit=${Math.round(p.memoryLimitBytes ?? 0)}`);
@@ -91,6 +108,16 @@ function specText(p: ProcSpec): string {
   lines.push(`process_limit=${p.processLimit ?? 1}`);
   for (const l of lines) if (/[\r\n\0]/.test(l)) throw new HttpError(400, 'bad_spec', 'Newline or NUL in run spec');
   return lines.join('\n');
+}
+
+async function checkRedirects(spec: ProcSpec) {
+  for (const file of [spec.stdout, spec.stderr]) {
+    if (!file) continue;
+    const relative = path.relative(spec.cwd, file);
+    if (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith('..' + path.sep)) await confinedPath(spec.cwd, relative);
+    const stat = await fsp.lstat(file).catch(() => null);
+    if (stat && (!stat.isFile() || stat.nlink !== 1)) throw new HttpError(403, 'unsafe_output', 'Program output must be a regular private file');
+  }
 }
 
 interface RawResult {
@@ -112,6 +139,7 @@ const toStats = (r: RawResult): RunStats => ({
   idle: r.idle,
   error: r.error || undefined,
 });
+const startFailure = (error: Error): RunStats => ({ status: 'IE', exitCode: 0, timeMs: 0, wallMs: 0, memoryKb: 0, idle: false, error: error.message });
 
 export class Runner {
   private exe: string | null = null;
@@ -155,7 +183,7 @@ export class Runner {
       await fsp.mkdir(this.binDir, { recursive: true });
       const tmp = `${exe}.tmp${windows ? '.exe' : ''}`;
       await new Promise<void>((resolve, reject) => {
-        execFile('g++', ['-O2', ...(windows ? ['-static'] : []), '-std=c++17', '-o', tmp, RUNNER_SRC], { timeout: 120_000, windowsHide: true }, (err, _o, stderr) =>
+        execFile('g++', ['-O2', ...(windows ? ['-static'] : []), '-std=c++17', '-o', tmp, RUNNER_SRC, ...(windows ? ['-ladvapi32', '-lbcrypt'] : [])], { timeout: 120_000, windowsHide: true }, (err, _o, stderr) =>
           err ? reject(new HttpError(500, 'runner_build_failed', `Failed to build runner with g++: ${stderr || err.message}`)) : resolve(),
         );
       });
@@ -189,7 +217,11 @@ export class Runner {
     return withBuildLocks(spec.build ? [spec.build.dir] : [], () => this.pool.use(async () => {
       signal?.throwIfAborted();
       await verifyBuild(spec.build);
-      const out = await this.exec(exe, [], specText(spec), signal);
+      let prepared: ProcSpec;
+      try { prepared = await prepareRuntime(spec); }
+      catch (error) { if (error instanceof HttpError && error.code === 'runtime_missing') return startFailure(error); throw error; }
+      const out = await this.exec(exe, [], specText(prepared), signal);
+      await checkRedirects(spec);
       return toStats(JSON.parse(out) as RawResult);
     }), 'read');
   }
@@ -199,7 +231,11 @@ export class Runner {
     return withBuildLocks([sol.build?.dir, inter.build?.dir].filter((x): x is string => !!x), () => this.pool.use(async () => {
       signal?.throwIfAborted();
       await verifyBuild(sol.build); await verifyBuild(inter.build);
-      const out = await this.exec(exe, [], specText(sol) + '\n[interactor]\n' + specText(inter), signal);
+      let solution: ProcSpec, interactor: ProcSpec;
+      try { [solution, interactor] = await Promise.all([prepareRuntime(sol), prepareRuntime(inter)]); }
+      catch (error) { if (error instanceof HttpError && error.code === 'runtime_missing') return { solution: startFailure(error), interactor: startFailure(error) }; throw error; }
+      const out = await this.exec(exe, [], specText(solution) + '\n[interactor]\n' + specText(interactor), signal);
+      await Promise.all([checkRedirects(sol), checkRedirects(inter)]);
       const r = JSON.parse(out) as { solution: RawResult; interactor: RawResult };
       return { solution: toStats(r.solution), interactor: toStats(r.interactor) };
     }), 'read');

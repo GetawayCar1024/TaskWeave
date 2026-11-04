@@ -2,6 +2,18 @@
 
 每个版本的使用说明位于 [docs/releases/](docs/releases/)，详细改动位于 [docs/changes/](docs/changes/)。下载见 [GitHub Releases](https://github.com/GetawayCar1024/taskweave/releases)。
 
+## 0.4.6 — 2026-11-04
+
+- 编译和所有本地运行统一隔离：Windows AppContainer / Job Object，Linux bubblewrap / seccomp；清理子进程环境，解法与 interactor 分开目录，隔离失败不降级。
+- AI 和文件接口拒绝链接越界；编译器拒绝把私有状态或测试答案作为头文件，宿主拒绝读取链接型程序输出。
+- 修正 `quitp(0.5)` 的比例计分，区分比例、绝对分数和百分比，正确识别 `_pc`，部分正确显示 PC。
+- 洛谷导出独立子任务脚本，保留捆绑组的部分分；Hydro 按目标协议转换受支持的单位；不等价的 Polygon 依赖或未配置的 Lemon 自定义 checker 明确报错。
+- Electron 保留渲染沙箱，精确检查导航来源，禁止危险外部协议；Linux 不再自动添加 `--no-sandbox`。
+
+环境要求、适配限制与测试入口见 [执行隔离与计分边界](docs/security.md)。
+
+[发布说明](docs/releases/0.4.6.md) · [改动明细](docs/changes/0.4.6.md)
+
 ## 0.4.5 — 2026-11-03
 
 测试面板支持勾选多个测试点一次删除；删除后其余测试点依次前移、编号保持连续，样例、子任务、逐点设置与初始答案备份随之调整。导入时，配置中引用但包内不存在的测试数据不再使导入失败：这些测试点被跳过并在预览中提示，变空的子任务被删除；引用有歧义时仍拒绝导入。适配已删除比赛时间的 LemonServer 0.1.6；精简界面与导入提示。

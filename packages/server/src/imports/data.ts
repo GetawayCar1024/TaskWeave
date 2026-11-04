@@ -4,7 +4,7 @@ import { parse as parseToml } from 'smol-toml';
 import { compressRanges, LEGACY_ID, packageFormatIs, type TestGroup, type TestsetConfig } from '@taskweave/shared';
 import { HttpError, validateFileName } from '../util/fs.js';
 import { splitScore } from '../judge/lemonlime.js';
-import { luoguScript, type LuoguSubtask } from '../judge/luogu.js';
+import { luoguPartialScript, luoguScript, luoguSubtaskScript, type LuoguCase, type LuoguSubtask } from '../judge/luogu.js';
 import { checkGroups } from '../workspace/problems.js';
 import { remapKeys, withoutTests } from '../judge/renumber.js';
 import { PackageReferences } from './references.js';
@@ -184,17 +184,42 @@ export function parseLuoguData(files: Map<string, Buffer>): DataPlan {
   const scriptName = r.find('score.txt') ?? r.find('scoring-script.txt');
   const script = scriptName ? files.get(scriptName)!.toString('utf8') : '';
   let unresolvedScoring = false;
+  const metadata = source?.toString('utf8').match(new RegExp(`^# (?:taskweave|${LEGACY_ID})-scoring: (.+)$`, 'm'))?.[1];
+  let sourceMetadata: any;
+  if (metadata) try { sourceMetadata = JSON.parse(metadata); } catch { warnings.push('Invalid TaskWeave metadata comment; imported the official config.yml fields instead.'); }
   if (script.trim()) {
-    const recognized = scoringScript(script, subtasks);
+    let recognized: LuoguSubtask[] | null = null;
+    if (sourceMetadata?.version === 2) {
+      const meta = sourceMetadata, aggregation = meta.aggregation;
+      const compact = (value: string) => value.replace(/\s/g, '');
+      if (['sum', 'min', 'max'].includes(aggregation?.time) && ['sum', 'min', 'max'].includes(aggregation?.memory) && Array.isArray(meta.subtasks) && meta.subtasks.length === subtasks.length) {
+        const proposed: LuoguSubtask[] = [];
+        const exportedCases: LuoguCase[] = [];
+        let valid = true;
+        for (const current of subtasks) {
+          const item = meta.subtasks.find((item: any) => item?.id === current.id);
+          if (!item || !['EACH_TEST', 'COMPLETE_GROUP'].includes(item.policy) || !Array.isArray(item.dependencies) || item.dependencies.some((id: unknown) => !subtasks.some(s => s.id === id))) { valid = false; break; }
+          const members = groups.get(current.id)!;
+          const values = members.map(index => cases[index].points!);
+          const maximum = item.policy === 'COMPLETE_GROUP' ? values[0] : values.reduce((a, b) => a + b, 0);
+          if (item.points !== maximum || item.policy === 'COMPLETE_GROUP' && values.some(value => value !== maximum)) { valid = false; break; }
+          proposed.push({ ...current, points: maximum, policy: item.policy, dependencies: item.dependencies });
+          exportedCases.push(...members.map(index => ({ k: index, index, testset: 'tests', score: cases[index].points!, subtask: current.id })));
+        }
+        if (valid && compact(luoguPartialScript(proposed, aggregation)) === compact(script) && proposed.every(subtask => {
+          const file = r.find(`score-subtask-${subtask.id}.txt`);
+          return !!file && compact(files.get(file)!.toString('utf8')) === compact(luoguSubtaskScript(subtask, exportedCases, aggregation));
+        })) recognized = proposed;
+      }
+    } else recognized = scoringScript(script, subtasks);
     if (recognized) subtasks = recognized;
     else { unresolvedScoring = true; warnings.push('The Luogu scoring script cannot be converted to subtasks (kept in Other files). Edit the subtasks before judging or exporting.'); }
   }
   let samples: number[] = [];
-  const metadata = source?.toString('utf8').match(new RegExp(`^# (?:taskweave|${LEGACY_ID})-scoring: (.+)$`, 'm'))?.[1];
   if (metadata && !unresolvedScoring) {
     try {
       const m = JSON.parse(metadata);
-      if (m.version === 1 && Array.isArray(m.subtasks) && m.subtasks.length === subtasks.length) {
+      if ([1, 2].includes(m.version) && Array.isArray(m.subtasks) && m.subtasks.length === subtasks.length) {
         // Labels and samples are hints only: all scoring semantics come from config + the verified script.
         for (const s of subtasks) {
           const original = m.subtasks.find((x: any) => x.id === s.id);

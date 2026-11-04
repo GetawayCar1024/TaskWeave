@@ -1,11 +1,10 @@
-import { execFile } from 'node:child_process';
-import type { Semaphore } from './runner.js';
+import type { Runner } from './runner.js';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import { STD_PREFIX, type CompileResult, type Diagnostic, type Language, type LanguagesConfig } from '@taskweave/shared';
+import { STD_PREFIX, type CheckerScoring, type CompileResult, type Diagnostic, type Language, type LanguagesConfig } from '@taskweave/shared';
 import type { GlobalStore } from '../global.js';
 import { stdRefToPath } from '../sharedFiles.js';
-import { atomicWrite, exists, HttpError, safeJoin, sha1, toPosix } from '../util/fs.js';
+import { atomicWrite, confinedPath, exists, HttpError, safeJoin, sha1, toPosix } from '../util/fs.js';
 import { withBuildLocks, type BuildIdentity } from './buildLock.js';
 
 /** A compiled (or interpreted) program ready to be run. */
@@ -20,7 +19,10 @@ export interface Program {
   /** Identifies source + language + toolchain; used as a cache key for derived results. */
   hash: string;
   build?: BuildIdentity;
+  /** Program resources only; data paths are granted by the caller separately. */
+  readPaths?: string[];
   checkerProtocol?: 'lemon-native';
+  checkerScoring?: CheckerScoring;
 }
 
 export interface CompileOutcome {
@@ -168,8 +170,8 @@ export class Compiler {
 
   constructor(
     private global: GlobalStore,
-    /** Bounds concurrent compiler processes. */
-    private pool?: Semaphore,
+    /** Compilation and execution use the same fail-closed isolation. */
+    private runner: Runner,
   ) {}
 
   /** Resolve a problem.toml source reference to an absolute path. */
@@ -187,11 +189,20 @@ export class Compiler {
     const started = Date.now();
     const resolved = this.resolveSource(problemDir, source);
     const srcPath = await fsp.realpath(resolved.srcPath).catch(() => resolved.srcPath);
+    const roots = await Promise.all([problemDir, this.global.sharedDir].map(root => fsp.realpath(root)));
+    const allowed = (file: string) => roots.some(root => {
+      const rel = path.relative(root, file);
+      return rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel);
+    });
     // Shared std checkers keep their global cache; problem sources may use an override.
     const buildRoot = source.startsWith(STD_PREFIX) || source.startsWith('lemon:') || !buildRootOverride ? resolved.buildRoot : buildRootOverride;
     const fail = (log: string, lang?: string): CompileOutcome => ({
       result: { source, ok: false, cached: false, lang, log, diagnostics: [], durationMs: Date.now() - started },
     });
+    if (!allowed(srcPath)) return fail('Source resolves outside the problem and shared directories.');
+    const sourceRoot = source.startsWith(STD_PREFIX) || source.startsWith('lemon:') ? this.global.sharedDir : problemDir;
+    try { await confinedPath(sourceRoot, path.relative(sourceRoot, resolved.srcPath)); }
+    catch (error) { return fail((error as Error).message); }
     let content: Buffer;
     try {
       content = await fsp.readFile(srcPath);
@@ -211,10 +222,10 @@ export class Compiler {
       if (!grader.sources.length) return fail('Grader mode requires at least one C++ grader source.', id);
       const command = splitCommand(lang.compile ?? '');
       if (!/\.(cpp|cc|cxx)$/i.test(srcPath) || !C_COMPILERS.test(path.basename(command[0] ?? '')) || !command.includes('{src}')) return fail('Grader mode requires a C++ compiler command with a separate {src} argument.', id);
-      const sources = grader.sources.map(s => safeJoin(problemDir, s));
+      const sources = await Promise.all(grader.sources.map(s => fsp.realpath(safeJoin(problemDir, s))));
       if (sources.some(s => this.sourceKey(s) === this.sourceKey(srcPath))) return fail('A submission cannot also be a grader source.', id);
       if (sources.some(s => !/\.(cpp|cc|cxx)$/i.test(s))) return fail('Grader sources must be C++ translation units.', id);
-      const files = [...sources, ...grader.headers.map(s => safeJoin(problemDir, s))];
+      const files = [...sources, ...await Promise.all(grader.headers.map(s => fsp.realpath(safeJoin(problemDir, s))))];
       includeDirs.push(...new Set(files.map(s => path.dirname(s))));
       extraArgs.push(...sources, ...includeDirs.flatMap(d => ['-I', d]));
       dependencyFiles.push(...files);
@@ -222,6 +233,15 @@ export class Compiler {
     // Checker headers (including Testlib for Lemons) also invalidate the one executable slot.
     if (/\.(cpp|cc|cxx|c)$/i.test(srcPath)) {
       const collect = async (file: string): Promise<void> => {
+        file = await fsp.realpath(file);
+        if (!allowed(file)) throw new Error('Source dependency resolves outside the problem and shared directories.');
+        if ((await fsp.lstat(file)).nlink !== 1) throw new Error('Source dependencies must not be hard links.');
+        const rawRelative = path.relative(roots[0], file), relative = toPosix(rawRelative);
+        const local = !path.isAbsolute(rawRelative) && relative !== '..' && !relative.startsWith('../');
+        if (local && relative.split('/').some(part => ['.taskweave', '.git', 'node_modules', '.taskweave-trash'].includes(part)) ||
+          file !== srcPath && (local && (relative.startsWith('tests/') || relative.startsWith('statement/')) || !/\.(?:h|hpp|hh|hxx|inc|cpp|cc|cxx|c|def)$/i.test(file))) {
+          throw new Error('Source dependencies must be code or headers, not private state or test data.');
+        }
         if (dependencies.has(file)) return;
         const bytes = await fsp.readFile(file);
         dependencies.set(file, sha1(bytes));
@@ -238,7 +258,7 @@ export class Compiler {
     const usesShared = `${lang.compile ?? ''} ${lang.run}`.includes('{shared}');
     const testlib = usesShared ? await fsp.readFile(path.join(this.global.sharedDir, 'testlib.h')).catch(() => '') : '';
     const base = path.basename(srcPath, path.extname(srcPath));
-    const hash = sha1(JSON.stringify([this.sourceKey(srcPath), id, lang.compile ?? '', lang.run, base, sha1(content), sha1(testlib), extraArgs, [...dependencies]]));
+    const hash = sha1(JSON.stringify(['isolated-build-v1', this.sourceKey(srcPath), id, lang.compile ?? '', lang.run, base, sha1(content), sha1(testlib), extraArgs, [...dependencies]]));
     // One slot per build variant: the grader-linked build must not overwrite the plain build
     // of the same source (and invalidate queued runs). A changed language reuses the slot:
     // every caller takes the language from problem.toml, so it cannot alternate.
@@ -271,7 +291,8 @@ export class Compiler {
     const dir = a.dir;
     const exe = path.join(dir, process.platform === 'win32' ? `${a.base}.exe` : a.base);
     const vars = { src: a.srcPath, exe, dir, class: a.base, shared: this.global.sharedDir };
-    const program: Program = { source: a.source, srcPath: a.srcPath, lang: a.id, argv: substitute(splitCommand(a.lang.run), vars), hash: a.hash, build: a.lang.compile ? { dir, hash: a.hash } : undefined };
+    const program: Program = { source: a.source, srcPath: a.srcPath, lang: a.id, argv: substitute(splitCommand(a.lang.run), vars), hash: a.hash,
+      readPaths: a.lang.compile ? [dir] : [a.srcPath], build: a.lang.compile ? { dir, hash: a.hash } : undefined };
     const recordPath = path.join(dir, 'compile.json');
     const problemDir = a.source.startsWith(STD_PREFIX) ? null : a.problemDir;
     const done = (rec: CacheRecord, cached: boolean): CompileOutcome => ({
@@ -316,20 +337,46 @@ export class Compiler {
       ? configuredArgs.filter(arg => !/^-Wl,--stack(?:=|,)\d+(?:,\d+)?$/.test(arg))
       : configuredArgs;
     args.push(...a.extraArgs);
-    const compileOnce = () => new Promise<CacheRecord>((resolve) => {
-      execFile(
-        cmd,
-        args,
-        { cwd: path.dirname(a.srcPath), timeout: 120_000, windowsHide: true, maxBuffer: 16 * 1024 * 1024 },
-        (err, stdout, stderr) => {
-          const log = `${stdout}${stderr}`.trim();
-          if (err && (err as NodeJS.ErrnoException).code === 'ENOENT') resolve({ ok: false, log: `Compiler not found: ${cmd}` });
-          else if (err && (err as { killed?: boolean }).killed) resolve({ ok: false, log: `${log}\nCompilation timed out`.trim() });
-          else resolve({ ok: !err, log });
-        },
-      );
-    });
-    const rec = this.pool ? await this.pool.use(compileOnce) : await compileOnce();
+    const scratch = await fsp.mkdtemp(path.join(dir, '.compile-'));
+    let rec: CacheRecord;
+    try {
+      const stdout = path.join(scratch, 'stdout'), stderr = path.join(scratch, 'stderr');
+      const result = await this.runner.run({ argv: [cmd, ...args], cwd: scratch, stdout, stderr,
+        readPaths: [...new Set([a.srcPath, this.global.sharedDir, ...a.dependencies.keys()])], writePaths: [dir],
+        directories: [...new Set([...a.dependencies.keys()].map(file => path.dirname(file)))],
+        wallLimitMs: 120_000, outputLimitBytes: 16 * 1024 * 1024, processLimit: 32,
+        env: { GOCACHE: path.join(scratch, 'go-cache'), GOPROXY: 'off', GOTOOLCHAIN: 'local', CGO_ENABLED: '0', CARGO_NET_OFFLINE: 'true' },
+      });
+      const head = async (file: string) => {
+        const handle = await fsp.open(file, 'r').catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+        if (!handle) return '';
+        try { const bytes = Buffer.alloc(16 * 1024 * 1024); const { bytesRead } = await handle.read(bytes); return bytes.subarray(0, bytesRead).toString('utf8'); }
+        finally { await handle.close(); }
+      };
+      let log = (await head(stdout) + await head(stderr)).trim();
+      if (result.status === 'IE' && result.error?.startsWith('Executable not found:')) log = `Compiler not found: ${cmd}`;
+      if (result.status !== 'OK') log = [log, result.status === 'TL' ? 'Compilation timed out' : result.error || (result.status !== 'RE' ? `Compiler: ${result.status}` : '')].filter(Boolean).join('\n');
+      rec = { ok: result.status === 'OK', log };
+    } catch (error) {
+      rec = { ok: false, log: (error as { code?: string }).code === 'runtime_missing' ? `Compiler not found: ${cmd}` : `Compilation isolation failed: ${(error as Error).message}` };
+    } finally { await fsp.rm(scratch, { recursive: true, force: true }); }
+    if (rec.ok) {
+      if (a.lang.compile?.includes('{exe}') && !await exists(exe)) { rec.ok = false; rec.log = 'Compiler did not produce the configured executable.'; }
+      // A low-integrity compiler creates low-labelled Windows images. Copy bytes
+      // into fresh parent-owned files, not their security descriptors: otherwise
+      // exported executables unexpectedly inherit low integrity when run normally.
+      const promote = async (directory: string): Promise<void> => {
+        for (const entry of await fsp.readdir(directory, { withFileTypes: true })) {
+          const file = path.join(directory, entry.name);
+          const stat = await fsp.lstat(file);
+          if (stat.isSymbolicLink() || (!stat.isDirectory() && (!stat.isFile() || stat.nlink !== 1))) throw new Error('Compiler output must consist of regular private files.');
+          if (stat.isDirectory()) await promote(file);
+          else if (process.platform === 'win32') await atomicWrite(file, await fsp.readFile(file));
+        }
+      };
+      try { await promote(dir); }
+      catch (error) { rec.ok = false; rec.log = (error as Error).message; }
+    }
     const sourceChanged = sha1(await fsp.readFile(a.srcPath).catch(() => '')) !== a.contentHash || (await Promise.all([...a.dependencies].map(async ([file, hash]) => sha1(await fsp.readFile(file).catch(() => '')) !== hash))).some(Boolean);
     if (sourceChanged) {
       rec.ok = false;

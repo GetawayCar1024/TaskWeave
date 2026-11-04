@@ -2,7 +2,8 @@
 // as repeated arg= lines and passed directly to execvp, without a shell.
 // CPU and resident-memory accounting cover the observed process tree. Limits are
 // checked every 5 ms; rlimits additionally bound CPU seconds and regular-file output.
-// This is local judging/resource supervision, not a filesystem/network sandbox.
+// bubblewrap supplies per-process filesystem, network, IPC and PID namespaces.
+// Sandbox setup failures are errors, never an unsandboxed fallback.
 
 #include <sys/prctl.h>
 #include <sys/resource.h>
@@ -13,6 +14,12 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <unistd.h>
+#include <sys/syscall.h>
+#include <linux/audit.h>
+#include <linux/filter.h>
+#include <linux/seccomp.h>
+#include <sched.h>
+#include <cstddef>
 
 #include <algorithm>
 #include <cerrno>
@@ -34,6 +41,7 @@ void stop(int) { interrupted = 1; }
 
 struct Spec {
   std::vector<std::string> argv;
+  std::vector<std::string> readPaths, writePaths, runtimes, environment;
   std::string cwd, in, out, err;
   long long timeLimit = 0, wallLimit = 0, memoryLimit = 0, outputLimit = 0;
   long long processLimit = 1;
@@ -48,8 +56,12 @@ struct Proc {
   Spec spec;
   Result res;
   pid_t pid = -1;
-  int gate = -1, errors = -1, output = -1;
+  int gate = -1, errors = -1, output = -1, sandboxInfo = -1;
+  pid_t sandboxPid = -1;
+  std::string sandboxReport;
   std::map<pid_t, unsigned long long> members;
+  std::map<pid_t, long long> cpuTicks;
+  std::map<pid_t, long long> overheadTicks;
   std::string killed;
   Clock::time_point start;
   bool running = false;
@@ -87,6 +99,10 @@ bool parseSpec(const std::string& text, Spec& sol, Spec& inter, bool& interactiv
     else if (key == "stdin") current->in = value;
     else if (key == "stdout") current->out = value;
     else if (key == "stderr") current->err = value;
+    else if (key == "read") current->readPaths.push_back(value);
+    else if (key == "write") current->writePaths.push_back(value);
+    else if (key == "runtime") current->runtimes.push_back(value);
+    else if (key == "env") current->environment.push_back(value);
     else if (key == "time_limit") current->timeLimit = std::atoll(value.c_str());
     else if (key == "wall_limit") current->wallLimit = std::atoll(value.c_str());
     else if (key == "memory_limit") current->memoryLimit = std::atoll(value.c_str());
@@ -113,8 +129,9 @@ bool usage(pid_t pid, Usage& out) {
   std::vector<std::string> values;
   for (std::string value; fields >> value;) values.push_back(value);
   if (values.size() < 22) return false;
-  // values[0] is field 3 (state); fields 14..17 are own and waited-child CPU.
-  for (int index : {11, 12, 13, 14}) out.ticks += std::atoll(values[index].c_str());
+  // Retain each process's own CPU after exit; adding waited-child CPU here
+  // would double-count it while the child is still a visible zombie.
+  for (int index : {11, 12}) out.ticks += std::atoll(values[index].c_str());
   out.started = std::strtoull(values[19].c_str(), nullptr, 10);
   out.memoryKb = std::max(0LL, std::atoll(values[21].c_str())) * sysconf(_SC_PAGESIZE) / 1024;
   return true;
@@ -148,17 +165,104 @@ void killTree(Proc& p) {
   const auto ignored = write(fd, message.data(), message.size()); (void)ignored;
   _exit(127);
 }
+
+int sandboxFilter(long long processLimit) {
+#ifndef __x86_64__
+  errno = ENOTSUP; return -1;
+#else
+  std::vector<sock_filter> rules;
+  const auto statement = [&](unsigned short code, unsigned int value) { rules.push_back({code, 0, 0, value}); };
+  const auto jump = [&](unsigned short code, unsigned int value, unsigned char yes, unsigned char no) { rules.push_back({code, yes, no, value}); };
+  statement(BPF_LD | BPF_W | BPF_ABS, offsetof(seccomp_data, arch));
+  jump(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_X86_64, 1, 0);
+  statement(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS);
+  statement(BPF_LD | BPF_W | BPF_ABS, offsetof(seccomp_data, nr));
+  jump(BPF_JMP | BPF_JGE | BPF_K, 0x40000000, 0, 1); // Reject x32, not just int 0x80.
+  statement(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS);
+  const auto deny = [&](unsigned int call, int err = EPERM) {
+    jump(BPF_JMP | BPF_JEQ | BPF_K, call, 0, 1);
+    statement(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | static_cast<unsigned int>(err));
+  };
+  for (unsigned int call : {SYS_socket, SYS_ptrace, SYS_process_vm_readv, SYS_process_vm_writev,
+       SYS_unshare, SYS_setns, SYS_mount, SYS_umount2, SYS_pivot_root, SYS_chroot,
+       SYS_keyctl, SYS_add_key, SYS_request_key, SYS_perf_event_open, SYS_bpf,
+       SYS_open_by_handle_at, SYS_userfaultfd, SYS_kexec_load}) deny(call);
+  // clone3 / io_uring have extensible pointer arguments which a cBPF filter
+  // cannot inspect. ENOSYS makes libc use the inspectable clone fallback.
+  deny(435, ENOSYS); // clone3
+  deny(425, ENOSYS); deny(426, ENOSYS); deny(427, ENOSYS); // io_uring
+  jump(BPF_JMP | BPF_JEQ | BPF_K, SYS_clone, 0, processLimit <= 1 ? 5 : 3);
+  statement(BPF_LD | BPF_W | BPF_ABS, offsetof(seccomp_data, args[0]));
+  jump(BPF_JMP | BPF_JSET | BPF_K, CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWIPC | CLONE_NEWUTS | CLONE_NEWCGROUP, 0, 1);
+  statement(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM);
+  if (processLimit <= 1) {
+    jump(BPF_JMP | BPF_JSET | BPF_K, CLONE_THREAD, 1, 0);
+    statement(BPF_RET | BPF_K, SECCOMP_RET_TRAP);
+  }
+  statement(BPF_LD | BPF_W | BPF_ABS, offsetof(seccomp_data, nr));
+  if (processLimit <= 1) for (unsigned int call : {SYS_fork, SYS_vfork}) {
+    jump(BPF_JMP | BPF_JEQ | BPF_K, call, 0, 1);
+    statement(BPF_RET | BPF_K, SECCOMP_RET_TRAP);
+  }
+  statement(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
+  const int fd = static_cast<int>(syscall(SYS_memfd_create, "taskweave-seccomp", 0));
+  if (fd < 0) return -1;
+  const auto size = rules.size() * sizeof(sock_filter);
+  if (write(fd, rules.data(), size) != static_cast<ssize_t>(size) || lseek(fd, 0, SEEK_SET) < 0) { close(fd); return -1; }
+  return fd;
+#endif
+}
+
+std::vector<std::string> sandboxCommand(const Spec& spec, int info, int filter) {
+  std::vector<std::string> args = {"bwrap", "--unshare-all", "--unshare-user", "--die-with-parent", "--new-session",
+    "--cap-drop", "ALL", "--clearenv", "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",
+    "--json-status-fd", std::to_string(info), "--seccomp", std::to_string(filter)};
+  const auto bind = [&](const std::string& file, bool writable) {
+    args.insert(args.end(), {writable ? "--bind" : "--ro-bind", file, file});
+  };
+  for (const char* file : {"/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/ld.so.cache", "/etc/localtime", "/sys/devices/system/cpu"}) {
+    if (access(file, F_OK) == 0) bind(file, false);
+  }
+  for (const auto& file : spec.runtimes) if (file != "/usr" && file.rfind("/usr/", 0) != 0 && file != "/bin" && file != "/lib" && file != "/lib64") bind(file, false);
+  for (const auto& file : spec.readPaths) bind(file, false);
+  for (const auto& file : spec.writePaths) bind(file, true);
+  bind(spec.cwd, true);
+  // Only explicit writable mounts remain writable. Otherwise empty ancestors
+  // on the private root/tmp tmpfs could accept misleading shadow output files.
+  args.insert(args.end(), {"--remount-ro", "/", "--remount-ro", "/tmp"});
+  for (const auto* name : {"HOME", "TMPDIR"}) args.insert(args.end(), {"--setenv", name, spec.cwd});
+  for (const auto& entry : spec.environment) {
+    const auto split = entry.find('=');
+    if (split != std::string::npos) args.insert(args.end(), {"--setenv", entry.substr(0, split), entry.substr(split + 1)});
+  }
+  args.insert(args.end(), {"--chdir", spec.cwd, "--"});
+  args.insert(args.end(), spec.argv.begin(), spec.argv.end());
+  return args;
+}
+
+std::string bubblewrapPath() {
+  const char* environment = std::getenv("PATH");
+  std::istringstream paths(environment ? environment : "/usr/bin:/bin");
+  std::string directory;
+  while (std::getline(paths, directory, ':')) {
+    if (directory.empty() || directory[0] != '/') continue;
+    const auto file = directory + "/bwrap";
+    if (access(file.c_str(), X_OK) == 0) return file;
+  }
+  errno = ENOENT; return {};
+}
+
 bool create(Proc& p, int input, int output, int stderrFd) {
-  int gate[2] = {-1, -1}, errors[2] = {-1, -1};
-  if (pipe2(gate, O_CLOEXEC) || pipe2(errors, O_CLOEXEC | O_NONBLOCK)) {
+  int gate[2] = {-1, -1}, errors[2] = {-1, -1}, sandboxInfo[2] = {-1, -1};
+  if (pipe2(gate, O_CLOEXEC) || pipe2(errors, O_CLOEXEC | O_NONBLOCK) || pipe2(sandboxInfo, O_CLOEXEC | O_NONBLOCK)) {
     p.res.error = error("pipe2");
-    for (int fd : {gate[0], gate[1], errors[0], errors[1]}) if (fd >= 0) close(fd);
+    for (int fd : {gate[0], gate[1], errors[0], errors[1], sandboxInfo[0], sandboxInfo[1]}) if (fd >= 0) close(fd);
     return false;
   }
   const pid_t parent = getpid();
   p.pid = fork();
   if (p.pid == 0) {
-    close(gate[1]); close(errors[0]);
+    close(gate[1]); close(errors[0]); close(sandboxInfo[0]);
     if (prctl(PR_SET_PDEATHSIG, SIGKILL) || setpgid(0, 0)) childError(errors[1], "process setup");
     if (getppid() != parent) _exit(127);
     signal(SIGINT, SIG_DFL); signal(SIGTERM, SIG_DFL); signal(SIGPIPE, SIG_DFL);
@@ -183,16 +287,25 @@ bool create(Proc& p, int input, int output, int stderrFd) {
     do { got = read(gate[0], &start, 1); } while (got < 0 && errno == EINTR);
     if (got != 1) _exit(127);
     close(gate[0]);
+    const int filter = sandboxFilter(p.spec.processLimit);
+    if (filter < 0 || fcntl(sandboxInfo[1], F_SETFD, 0) < 0) childError(errors[1], "sandbox filter");
+    auto command = sandboxCommand(p.spec, sandboxInfo[1], filter);
+    command[0] = bubblewrapPath();
+    if (command[0].empty()) childError(errors[1], "bubblewrap is required (install bubblewrap)");
+    // The namespace's trusted PID 1 helper must not retain the host environment
+    // either: /proc is visible inside the sandbox, even before app exec.
+    clearenv();
+    if (setenv("PATH", "/usr/bin:/bin", 1)) childError(errors[1], "sandbox environment");
     std::vector<char*> argv;
-    for (auto& arg : p.spec.argv) argv.push_back(arg.data());
+    for (auto& arg : command) argv.push_back(arg.data());
     argv.push_back(nullptr);
     execvp(argv[0], argv.data());
-    childError(errors[1], "execvp");
+    childError(errors[1], "execvp bubblewrap (install bubblewrap; isolation is required)");
   }
-  close(gate[0]); close(errors[1]);
-  if (p.pid < 0) { p.res.error = error("fork"); close(gate[1]); close(errors[0]); return false; }
+  close(gate[0]); close(errors[1]); close(sandboxInfo[1]);
+  if (p.pid < 0) { p.res.error = error("fork"); close(gate[1]); close(errors[0]); close(sandboxInfo[0]); return false; }
   setpgid(p.pid, p.pid);
-  p.gate = gate[1]; p.errors = errors[0];
+  p.gate = gate[1]; p.errors = errors[0]; p.sandboxInfo = sandboxInfo[0];
   Usage initial;
   if (usage(p.pid, initial)) p.members[p.pid] = initial.started;
   return true;
@@ -211,6 +324,21 @@ void readErrors(Proc& p) {
     else { if (!n) closeFd(p.errors); break; }
   }
 }
+void readSandboxInfo(Proc& p) {
+  char buffer[1024];
+  while (p.sandboxInfo >= 0) {
+    const auto n = read(p.sandboxInfo, buffer, sizeof buffer);
+    if (n <= 0) { if (!n) closeFd(p.sandboxInfo); break; }
+    if (p.sandboxReport.size() < 16384) p.sandboxReport.append(buffer, n);
+  }
+  if (p.sandboxPid > 0) return;
+  const auto key = p.sandboxReport.find("\"child-pid\"");
+  if (key == std::string::npos) return;
+  const auto colon = p.sandboxReport.find(':', key);
+  if (colon == std::string::npos) return;
+  p.sandboxPid = static_cast<pid_t>(std::atoi(p.sandboxReport.c_str() + colon + 1));
+  if (p.sandboxPid > 0) p.start = Clock::now();
+}
 void measure(Proc& p) {
   // Forks may originate on any thread. Also revisit known children whose parent exited.
   discover(p, p.pid);
@@ -218,7 +346,16 @@ void measure(Proc& p) {
   long long ticks = 0, memory = 0, processes = 0;
   for (const auto& [pid, started] : p.members) {
     Usage now;
-    if (usage(pid, now) && now.started == started) { ticks += now.ticks; memory += now.memoryKb; ++processes; }
+    if (usage(pid, now) && now.started == started) {
+      // The outer monitor and namespace PID 1 are trusted bubblewrap helpers.
+      if (pid == p.pid || pid == p.sandboxPid) { p.overheadTicks[pid] = std::max(p.overheadTicks[pid], now.ticks); continue; }
+      p.cpuTicks[pid] = std::max(p.cpuTicks[pid], now.ticks); memory += now.memoryKb; ++processes;
+    }
+  }
+  for (const auto& [pid, used] : p.cpuTicks) ticks += used;
+  if (p.sandboxPid <= 0) {
+    if (elapsed(p) > 10000) { p.killed = "IE"; p.res.error = "Sandbox preparation timed out (bubblewrap / user namespaces are required)"; }
+    return;
   }
   p.res.timeMs = std::max(p.res.timeMs, ticks * 1000 / sysconf(_SC_CLK_TCK));
   p.res.memoryKb = std::max(p.res.memoryKb, memory);
@@ -233,30 +370,39 @@ void measure(Proc& p) {
   }
 }
 void finish(Proc& p) {
+  Usage wrapper;
+  if (usage(p.pid, wrapper)) p.overheadTicks[p.pid] = std::max(p.overheadTicks[p.pid], wrapper.ticks);
+  long long overheadTicks = 0;
+  for (const auto& [pid, ticks] : p.overheadTicks) overheadTicks += ticks;
+  const long long overhead = overheadTicks * 1000 / sysconf(_SC_CLK_TCK);
   killTree(p);
   int status = 0; rusage used{};
   while (wait4(p.pid, &status, 0, &used) < 0 && errno == EINTR) {}
   readErrors(p);
+  readSandboxInfo(p);
   p.res.wallMs = elapsed(p);
   const auto micros = (used.ru_utime.tv_sec + used.ru_stime.tv_sec) * 1000000LL + used.ru_utime.tv_usec + used.ru_stime.tv_usec;
-  p.res.timeMs = std::max(p.res.timeMs, (micros + 999) / 1000);
+  p.res.timeMs = std::max(p.res.timeMs, std::max(0LL, (micros + 999) / 1000 - overhead));
   p.res.memoryKb = std::max(p.res.memoryKb, static_cast<long long>(used.ru_maxrss));
   p.res.exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
+  if (p.res.exitCode == 128 + SIGSYS && p.res.error.empty()) p.res.error = "process limit exceeded or forbidden system call";
+  if (p.sandboxPid <= 0 && p.res.error.empty()) p.res.error = "Sandbox could not start; install bubblewrap and enable unprivileged user namespaces. See program stderr.";
   if (!p.killed.empty()) p.res.status = p.killed;
+  else if (p.res.exitCode == 128 + SIGSYS) p.res.status = "RE";
   else if (!p.res.error.empty()) p.res.status = "IE";
-  else if (WIFSIGNALED(status) && WTERMSIG(status) == SIGXCPU) p.res.status = "TL";
-  else if (WIFSIGNALED(status) && WTERMSIG(status) == SIGXFSZ) p.res.status = "OL";
+  else if (p.res.exitCode == 128 + SIGXCPU) p.res.status = "TL";
+  else if (p.res.exitCode == 128 + SIGXFSZ) p.res.status = "OL";
   else if (p.spec.timeLimit > 0 && p.res.timeMs > p.spec.timeLimit) p.res.status = "TL";
   else if (p.spec.memoryLimit > 0 && p.res.memoryKb * 1024 > p.spec.memoryLimit) p.res.status = "ML";
   else p.res.status = p.res.exitCode ? "RE" : "OK";
-  p.running = false; closeFd(p.errors); closeFd(p.output);
+  p.running = false; closeFd(p.errors); closeFd(p.output); closeFd(p.sandboxInfo);
 }
 void runAll(const std::vector<Proc*>& procs) {
   for (;;) {
     bool running = false;
     for (Proc* p : procs) {
       if (!p->running) continue;
-      readErrors(*p); measure(*p);
+      readErrors(*p); readSandboxInfo(*p); measure(*p);
       if (interrupted) { p->killed = "IE"; p->res.error = "runner cancelled"; }
       if (!p->killed.empty()) killTree(*p);
       siginfo_t info{};

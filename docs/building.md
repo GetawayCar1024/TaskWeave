@@ -28,7 +28,11 @@ pnpm build
 node scripts/build-desktop.mjs --app-only
 ```
 
-Running local judging additionally requires g++ on PATH (MinGW-w64 on Windows). No TeX
+Running local judging additionally requires g++ on PATH (MinGW-w64 on Windows),
+and bubblewrap with user namespaces on Linux. Execution and renderer isolation must
+be available; the application does not fall back to unrestricted execution.
+See [execution isolation and scoring limits](security.md), also bundled as `SECURITY.md`.
+No TeX
 installation is needed for the bundled OI renderer. Dependency installation
 requires network access; the installed renderer's fonts and WASM are local.
 

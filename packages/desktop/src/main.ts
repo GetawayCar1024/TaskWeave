@@ -10,6 +10,7 @@ import electron from 'electron';
 import { startServer, type RunningServer } from '../../server/src/server.js';
 import { legacyEnv } from '@taskweave/shared';
 import { migrateDesktopProfile } from '../../server/src/workspace/migrateNames.js';
+import { navigationTarget } from './navigation.js';
 
 // The 'electron' module has no ESM named exports for a bundled main: take them from the default.
 const { app, BrowserWindow, dialog, Menu, shell, nativeTheme, ipcMain } = electron;
@@ -91,7 +92,7 @@ async function createWindow() {
     title: 'TaskWeave',
     icon: path.join(here, 'icon.png'),
     backgroundColor: nativeTheme.themeSource === 'light' ? '#f2f2f7' : '#1c1c1e',
-    webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, devTools: !app.isPackaged },
+    webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, sandbox: true, nodeIntegration: false, devTools: !app.isPackaged },
   });
   win = w;
   w.maximize();
@@ -99,16 +100,27 @@ async function createWindow() {
 
   // Pages of TaskWeave stay in the app; everything else opens in the system browser.
   const origin = new URL(server.url).origin;
-  w.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith(origin)) return { action: 'allow' };
-    void shell.openExternal(url);
-    return { action: 'deny' };
-  });
-  w.webContents.on('will-navigate', (e, url) => {
-    if (url.startsWith(origin)) return;
-    e.preventDefault();
-    void shell.openExternal(url);
-  });
+  const protect = (contents: electron.WebContents) => {
+    contents.setWindowOpenHandler(({ url }) => {
+      const target = navigationTarget(url, origin);
+      if (target === 'internal') return { action: 'allow', overrideBrowserWindowOptions: { webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } } };
+      if (target === 'external') void shell.openExternal(url);
+      return { action: 'deny' };
+    });
+    const navigate = (event: electron.Event, url: string) => {
+      const target = navigationTarget(url, origin);
+      if (target === 'internal') return;
+      event.preventDefault();
+      if (target === 'external') void shell.openExternal(url);
+    };
+    contents.on('will-navigate', navigate);
+    contents.on('will-redirect', navigate);
+    contents.on('will-attach-webview', event => event.preventDefault());
+    contents.on('did-create-window', child => protect(child.webContents));
+  };
+  protect(w.webContents);
+  w.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  w.webContents.session.setPermissionCheckHandler(() => false);
 
   // The few keys the app itself handles: F11 fullscreen, F12 / Ctrl+Shift+I devtools, F5 reload.
   w.webContents.on('before-input-event', (e, input) => {

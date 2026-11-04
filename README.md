@@ -45,7 +45,7 @@
 ### Linux
 
 1. 从 [Releases](https://github.com/GetawayCar1024/taskweave/releases/latest) 下载 `TaskWeave-<版本>-linux-x86_64.AppImage`（`chmod +x` 后直接运行）或 `TaskWeave-<版本>-linux-x64.tar.gz`（解压后运行 `taskweave`）。
-2. 安装 g++（例如 `sudo apt install g++`）。运行环境需提供 GTK 3、NSS、GBM 和 ALSA；AppImage 需要 FUSE 2（Ubuntu 上 `sudo apt install libfuse2t64`，或加 `--appimage-extract-and-run` 运行）。Chromium 沙箱不可用时（如 Ubuntu 23.10 起的 AppArmor 限制）启动脚本会自动关闭沙箱，见 [Linux 版](docs/linux.md)。
+2. 安装 g++ 与 bubblewrap（例如 `sudo apt install g++ bubblewrap`）。运行环境需提供 GTK 3、NSS、GBM 和 ALSA；AppImage 需要 FUSE 2（Ubuntu 上 `sudo apt install libfuse2t64`，或加 `--appimage-extract-and-run` 运行）。Chromium 或执行沙箱不可用时不会自动关闭隔离，见 [Linux 版](docs/linux.md)。
 3. 可选：其他语言的编译器或解释器。
 
 全局目录为 `~/.taskweave`。更多说明见 [Linux 版](docs/linux.md)。
@@ -74,6 +74,7 @@
 ## 注意事项与限制
 
 - 本地评测在 Windows 上使用 Job Object、在 Linux 上使用原生监督程序限制时间与内存（Linux 按常驻内存统计）；计时受系统粒度和负载影响，结果不保证与 Polygon 一致。本地编译通过也不代表 Polygon 的编译器一定通过。
+- 当前源码的执行隔离、环境要求与部分分差异见 [安全与计分边界](docs/security.md)；不要将工作副本误认为操作系统沙箱，也不要使用管理员／root 账户运行来源不明的程序。
 - OI 排版所用的宋体、黑体、楷体版权不允许随应用分发，排版时读取本机字体（Windows 自带）。缺少时预览上方会提示，也可以把 `simsun.ttc`、`simhei.ttf`、`simkai.ttf` 放到全局目录的 `fonts/` 中；没有这些字体时（例如 Linux）改用已安装的中文字体（如 Noto CJK）排版。
 - Polygon API 不能新建或列出额外测试集，额外测试集需先在 Polygon 上创建；grader 题、以文件下发的大样例、子任务单独的 validator 等 Polygon 不支持的功能会在同步前提示。
 - Polygon 同步、LemonLime 与洛谷导出主要通过模拟接口和本地检查验证，欢迎反馈实际使用中的问题。

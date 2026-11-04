@@ -20,7 +20,7 @@ import {
   useDialog,
   type SelectOption,
 } from 'naive-ui';
-import { distinctIoFiles, PROBLEM_NAME_RE, SOLUTION_TAGS, isSourceFile, judgeMode, validSourceName, type JudgeMode, type LemonComparison, type PatchProblemRequest, type SolutionTag } from '@taskweave/shared';
+import { distinctIoFiles, PROBLEM_NAME_RE, SOLUTION_TAGS, isSourceFile, judgeMode, validSourceName, type CheckerScoring, type JudgeMode, type LemonComparison, type PatchProblemRequest, type SolutionTag } from '@taskweave/shared';
 import { api, errorMessage } from '../lib/api';
 import { serverText } from '../lib/serverText';
 import { formatSize } from '../lib/format';
@@ -65,6 +65,7 @@ const form = reactive({
   input: 'stdin',
   output: 'stdout',
   checker: null as string | null,
+  checkerScoring: 'fraction' as CheckerScoring,
   lemonChecker: null as string | null,
   lemonPrecision: 3,
   validator: null as string | null,
@@ -94,6 +95,7 @@ function reset() {
     input: c.problem.input,
     output: c.problem.output,
     checker: c.checker?.source ?? null,
+    checkerScoring: c.checker?.scoring ?? 'fraction',
     lemonChecker: c.lemon_comparison ? `native:${c.lemon_comparison.mode}` : c.lemon_checker?.source ?? null,
     lemonPrecision: c.lemon_comparison?.precision ?? 3,
     validator: c.validator?.source ?? null,
@@ -102,6 +104,9 @@ function reset() {
   baseline.value = JSON.stringify(form);
 }
 watch(cfg, () => { if (!dirty.value) reset(); }, { immediate: true });
+watch(() => form.checker, source => {
+  form.checkerScoring = source === cfg.value?.checker?.source ? cfg.value.checker.scoring ?? 'fraction' : 'fraction';
+});
 async function canLeave() {
   commitStreams();
   if (!dirty.value) return true;
@@ -170,6 +175,7 @@ async function save(): Promise<boolean> {
     input: form.input || 'stdin',
     output: form.output || 'stdout',
     checker: form.checker,
+    checkerScoring: form.checkerScoring,
     lemonChecker: form.lemonChecker?.startsWith('native:') ? null : form.lemonChecker,
     lemonComparison: form.lemonChecker?.startsWith('native:') ? { mode: form.lemonChecker.slice(7) as LemonComparison['mode'], precision: form.lemonPrecision } : null,
     validator: form.validator,
@@ -276,6 +282,9 @@ const activeInfo = computed(() => {
           </template>
           <n-form-item :label="t('roles.checker')">
             <n-select v-model:value="form.checker" :options="checkerOptions" :disabled="form.lemonChecker?.startsWith('native:')" filterable clearable />
+          </n-form-item>
+          <n-form-item v-if="form.checker && !form.checker.startsWith('std:') && !form.lemonChecker?.startsWith('native:')" :label="t('info.checkerScoring')">
+            <n-select v-model:value="form.checkerScoring" :options="['fraction', 'points', 'percent', 'hydro'].map(value => ({ value, label: t(`info.checkerScoringUnits.${value}`) }))" />
           </n-form-item>
           <n-form-item :label="t('roles.validator')">
             <n-select v-model:value="form.validator" :options="sourceOptions" filterable clearable />

@@ -467,6 +467,7 @@ export class ProblemRegistry {
           ...(doc[key]?.source !== v && doc.source_languages?.[v] ? { lang: doc.source_languages[v] } : {}) };
       }
     }
+    if (req.checkerScoring !== undefined && doc.checker) doc.checker.scoring = req.checkerScoring;
     if (req.solution) {
       const list: any[] = Array.isArray(doc.solutions) ? doc.solutions : [];
       const i = list.findIndex((s) => s?.source === req.solution!.source);

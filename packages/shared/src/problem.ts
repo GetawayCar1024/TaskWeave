@@ -55,6 +55,8 @@ const localized = z.record(z.string(), z.string());
 
 /** A program referenced from problem.toml; `lang` overrides the extension-based language. */
 const sourceEntry = z.object({ source: z.string(), lang: z.string().optional() }).loose();
+export const checkerScoringSchema = z.enum(['fraction', 'points', 'percent', 'hydro']);
+export type CheckerScoring = z.infer<typeof checkerScoringSchema>;
 
 /** Testset names: Polygon allows latin letters, digits, dashes. */
 export const TESTSET_NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
@@ -140,7 +142,7 @@ export const problemTomlSchema = z.object({
     })
     .loose().refine(p => distinctIoFiles(p.input, p.output), { message: 'Input and output filenames must be different.', path: ['output'] }),
   polygon: z.object({ id: z.number().int().optional() }).loose().default({}),
-  checker: sourceEntry.optional(),
+  checker: sourceEntry.extend({ scoring: checkerScoringSchema.optional() }).optional(),
   /** Independent Lemon export checker; imported ordinary Testlib sources retain CDF mode 5. */
   lemon_checker: sourceEntry.extend({ protocol: z.enum(['lemon', 'testlib']).optional() }).optional(),
   /** Native Lemon mode; also used by the local C++ comparator. */
@@ -183,6 +185,9 @@ export function polygonFeatureWarnings(config: ProblemToml, target: 'sync' | 'pa
   if (target === 'sync' && config.problem.data_only) warnings.push('Compatibility-mode problems cannot sync with Polygon. Complete the statement, validator, checker and main solution, then enable full authoring.');
   if (config.problem.unresolved_judge) warnings.push(config.problem.unresolved_judge);
   if (testsetsOf(config).some(ts => ts.unresolvedScoring)) warnings.push('Imported scoring is not representable. Edit the subtask configuration before judging or exporting.');
+  const proportional = config.tests.points && config.checker && (config.checker.scoring ?? 'fraction') !== 'points' && !config.checker.source.startsWith('std:');
+  if (proportional && target === 'sync') warnings.push('Polygon API sync cannot set checker-percent mode. Export a Polygon package for a proportional partial-credit checker.');
+  if (proportional && testsetsOf(config).some(ts => ts.group.some(group => group.dependencies?.length))) warnings.push('Polygon checker-percent dependencies propagate partial credit instead of requiring full acceptance. This scoring cannot be exported without changing the dependency policy.');
   if (target === 'sync') {
     if (config.problem.time_limit < 250 || config.problem.time_limit > 15000 || config.problem.time_limit % 50 !== 0) warnings.push('Polygon requires 250–15000 ms in steps of 50 ms.');
     if (!Number.isInteger(config.problem.memory_limit) || config.problem.memory_limit < 4 || config.problem.memory_limit > 1024) warnings.push('Polygon requires integer memory limits from 4 to 1024 MiB.');
@@ -322,6 +327,7 @@ export interface PatchProblemRequest {
   input?: string;
   output?: string;
   checker?: string | null;
+  checkerScoring?: CheckerScoring;
   lemonChecker?: string | null;
   lemonComparison?: LemonComparison | null;
   validator?: string | null;

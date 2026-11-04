@@ -16,6 +16,7 @@ import { buildTree } from '../workspace/files.js';
 import { addAttachments } from '../workspace/attachments.js';
 import { readStatementSections, wholeStatementLanguages, wholeStatementWarning } from '../workspace/statements.js';
 import { checkGroups } from '../workspace/problems.js';
+import { fractionalChecker } from './lemonChecker.js';
 
 /** problem.xml solution tags. RE has no dedicated tag in the package format; "rejected" covers it. */
 const XML_TAG: Record<SolutionTag, string> = {
@@ -90,7 +91,11 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
       return undefined;
     }
   };
-  const read = (rel: string) => fsp.readFile(safeJoin(ref.dir, rel));
+  const read = async (rel: string) => {
+    const bytes = await fsp.readFile(safeJoin(ref.dir, rel));
+    return rel === config.checker?.source && config.checker.scoring && ['percent', 'hydro'].includes(config.checker.scoring)
+      ? Buffer.from(fractionalChecker(bytes.toString('utf8'), config.checker.scoring)) : bytes;
+  };
   const src = (p: string, type?: string) => `<source path="${x(p)}"${type ? ` type="${x(type)}"` : ''}/>`;
 
   // ---- files: resources + executables ----
@@ -300,7 +305,7 @@ export async function exportPackage(judge: Judge, ctx: ProblemCtx, job: JobCtx, 
   <names>${names.join('')}</names>
   <statements>${statements.join('')}</statements>
   <tutorials>${tutorials.join('')}</tutorials>
-  <judging input-file="${x(io(config.problem.input, 'stdin'))}" output-file="${x(io(config.problem.output, 'stdout'))}"${config.problem.interactive ? ' run-count="1"' : ''}>
+  <judging input-file="${x(io(config.problem.input, 'stdin'))}" output-file="${x(io(config.problem.output, 'stdout'))}"${config.problem.interactive ? ' run-count="1"' : ''}${config.tests.points && config.checker && !config.checker.source.startsWith('std:') && (config.checker.scoring ?? 'fraction') !== 'points' ? ' treat-points-from-checker-as-percent="true"' : ''}>
 ${testsetXml.join('\n')}
   </judging>
   <files>

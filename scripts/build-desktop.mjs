@@ -58,6 +58,7 @@ cpSync(path.join(root, 'packages/server/runner'), path.join(out, 'runner'), { re
 // Keep attribution, upstream source and integration source next to the shipped binary.
 for (const name of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) cpSync(path.join(root, name), path.join(out, name));
 cpSync(path.join(root, 'docs/building.md'), path.join(out, 'BUILDING.md'));
+cpSync(path.join(root, 'docs/security.md'), path.join(out, 'SECURITY.md'));
 // SimSun / SimHei / KaiTi may not be redistributed: never ship them, even if a local copy is lying around.
 if (readdirSync(path.join(out, 'web/cnoi/fonts')).some(f => /^sim(sun|hei|kai)/i.test(f))) {
   console.error('app/web/cnoi/fonts contains non-redistributable fonts (SimSun / SimHei / KaiTi); remove them from packages/web/public/cnoi/fonts');
@@ -103,9 +104,8 @@ if (appOnly) {
 /**
  * Chromium's sandbox needs either a setuid-root chrome-sandbox (impossible in an AppImage or a
  * user-extracted tar.gz) or unprivileged user namespaces, which Ubuntu 23.10+ restricts with
- * AppArmor. Without either the app aborts at start. `taskweave` becomes a launcher that keeps
- * the sandbox when one of them is available and otherwise starts the real binary with
- * --no-sandbox (TaskWeave only shows its own local pages; other links open in the browser).
+ * AppArmor. Without either the launcher explains how to enable a sandbox. It must
+ * never silently trade renderer isolation for a successful application launch.
  */
 function linuxSandboxLauncher(dir) {
   const bin = path.join(dir, 'taskweave'), real = path.join(dir, 'taskweave-bin');
@@ -117,7 +117,8 @@ HERE=$(dirname "$(readlink -f "$0")")
 SANDBOX="$HERE/chrome-sandbox"
 if [ -u "$SANDBOX" ] && [ "$(stat -c %u "$SANDBOX" 2>/dev/null)" = 0 ]; then exec "$HERE/taskweave-bin" "$@"; fi
 if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" != 1 ] && [ "$(cat /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null || echo 1)" = 1 ]; then exec "$HERE/taskweave-bin" "$@"; fi
-exec "$HERE/taskweave-bin" --no-sandbox "$@"
+echo "TaskWeave: Chromium sandbox is unavailable. Enable unprivileged user namespaces or install chrome-sandbox root-owned with mode 4755 (see docs/linux.md)." >&2
+exit 1
 `, { mode: 0o755 });
 }
 

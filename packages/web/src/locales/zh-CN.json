@@ -373,6 +373,8 @@
     "noLanguage": "languages.toml 中没有匹配的语言",
     "problem": "题目信息",
     "stdCheckers": "标准检查器",
+    "checkerScoring": "检查器部分分单位",
+    "checkerScoringUnits": { "fraction": "比例（0–1）", "points": "绝对分数", "percent": "百分比（0–100）", "hydro": "Hydro Testlib 兼容" },
     "localFiles": "本题文件",
     "noSolutions": "还没有登记的解法",
     "compile": "编译",
