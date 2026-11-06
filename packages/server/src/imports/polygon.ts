@@ -329,7 +329,7 @@ export function readPolygonPackage(archive: Map<string, Buffer>, options: Packag
   doc.problem.data_only = !(hasStatement && doc.validator && doc.checker && doc.solutions.length);
   if (incomplete && doc.problem.data_only) warnings.push('Missing authoring programs or editable statement: complete these before building the package.');
   local.set('other/polygon/IMPORT.md', Buffer.from(`# Polygon package\n\n${warnings.map(warning => '- ' + warning).join('\n')}\n\nOriginal descriptor and unconsumed resources are preserved here. Imported materialized answers remain authoritative.\n`));
-  return { candidate, doc, local, tests: count, extras: extras.filter(file => local.has(file)), warnings };
+  return { candidate, doc, local, sourceName: attr(xml, 'short-name') || candidate.name, tests: count, extras: extras.filter(file => local.has(file)), warnings };
 }
 
 export async function importPolygonPackage(judge: Judge, archive: Map<string, Buffer>, options: PackageImportOptions): Promise<PackageImportResult> {

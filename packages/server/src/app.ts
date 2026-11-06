@@ -43,7 +43,7 @@ import { importPackage, inspectPackage } from './imports/packages.js';
 import { PackageUploads } from './imports/uploads.js';
 import { inspectUnit, packageItems, packageUnits } from './imports/units.js';
 import { validatePackageSelections } from './imports/selections.js';
-import { importLemonContest, lemonContests, validateLemonContest } from './imports/lemon.js';
+import { importContestPackage, contestPackages, validateContestPackage } from './imports/contest-packages.js';
 import { TrashStore } from './workspace/trash.js';
 import { LibraryFolders } from './workspace/library.js';
 import type { CreateLibraryFolderRequest, LibraryLocation } from '@taskweave/shared';
@@ -347,15 +347,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       return { items: items.map(item => results.get(item)!) } satisfies PackageBatchResult;
     } finally { importing = false; }
   });
-  const contestCandidates = (archive: Map<string, Buffer>) => ({ contests: lemonContests(archive) });
+  const contestCandidates = (archive: Map<string, Buffer>) => ({ contests: contestPackages(archive) });
   app.post<{ Body: Buffer }>('/api/contest-packages/uploads', { bodyLimit: 256 * 1024 * 1024 }, async req => packageUploads.stage(req.body, contestCandidates) satisfies Promise<ContestPackageUpload>);
   app.post<{ Body: { path: string } }>('/api/contest-packages/directories', async req => packageUploads.stageDirectory(req.body?.path, contestCandidates) satisfies Promise<ContestPackageUpload>);
-  app.post<{ Body: ContestPackageImportRequest }>('/api/contest-packages/validate', async req => validateLemonContest(deps.judge, deps.contests, req.body));
+  app.post<{ Body: ContestPackageImportRequest }>('/api/contest-packages/validate', async req => validateContestPackage(deps.judge, deps.contests, req.body));
   app.post<{ Body: ContestPackageImportRequest }>('/api/contest-packages/import', async req => {
     if (!idle() || importing) throw new HttpError(409, 'busy', 'Wait for running tasks before importing data');
     importing = true;
     try {
-      const result = await importLemonContest(deps.judge, deps.contests, await packageUploads.read(req.body?.uploadId), req.body);
+      const result = await importContestPackage(deps.judge, deps.contests, await packageUploads.read(req.body?.uploadId), req.body);
       hub.broadcast({ type: 'problems:changed' });
       hub.broadcast({ type: 'contests:changed' });
       return result;

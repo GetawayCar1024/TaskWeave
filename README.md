@@ -22,7 +22,7 @@
 - **比赛**：一场比赛引用已有题目，整场生成测试、批量评测、检查、同步和导出；比赛文件工作区管理公告与注意事项。
 - **文档与导出**：CF 风格的 PDF / HTML / Markdown / TeX；内置 [CNOI](https://github.com/Mr-Python-in-China/cnoi-statement-generator) 排版引擎生成 tuack 风格的 OI PDF，离线可用，无需安装 TeX；选手下发包 `down.zip`。
 - **题面模式**：按语言选择整体 `statement.tex` 或 Polygon 分段文件，支持双向转换；整体题面同步 Polygon 时自动放入 `legend.tex` 并警告。
-- **数据包交换**：ZIP、已解压目录和 Hydro FPS XML 中的每道题独立识别格式；LemonLime 比赛在比赛页整场导入；支持 Polygon、Hydro、洛谷与 JOI / AtCoder 工作流，导入前整批核对配置、实际文件与重名，修复说明可预览，额外文件和原配置保留。导入完成即扫描数据；单题及比赛可导出各平台题包。
+- **数据包交换**：ZIP、已解压目录和 Hydro FPS XML 中的每道题独立识别格式；本地 Polygon、LemonLime 比赛可在比赛页整场导入；支持 Polygon、Hydro、洛谷与 JOI / AtCoder 工作流，导入前整批核对配置、实际文件与重名，修复说明可预览，额外文件和原配置保留。导入完成即扫描数据；单题及比赛可导出各平台题包。
 - **文件管理**：题目／比赛支持与磁盘对应的嵌套文件夹，短名称在所在文件夹内唯一并与题目文件夹同步重命名；持久身份保留比赛引用与历史，回收站采用原盘移动。
 - **兼容模式**：只有 `.in/.out` 或 `.in/.ans` 与分数配置也能管理样例、编排子任务和导出；可选择解法重造输出，保留唯一的初始备份并一键恢复。
 - **评测包**：Polygon package、LemonLime（原生比较模式与等效本地实现、六种 Lemon checker 模板、Windows / Linux 目标及 g++ 编译脚本）、洛谷（数据、`config.yml`、处理捆绑与依赖的计分脚本）；比赛可一键推送到 LemonServer（网页版 LemonLime），按服务器系统生成评测包，必要时在服务器上编译检查器。

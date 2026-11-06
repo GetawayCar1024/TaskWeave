@@ -28,12 +28,16 @@ export async function publishProblem(judge: Judge, files: Map<string, Buffer>, d
     const failed = writes.find(result => result.status === 'rejected');
     if (failed?.status === 'rejected') throw failed.reason;
     await atomicWrite(path.join(dir, 'problem.toml'), stringify(doc));
-  } catch (e) { await fs.rm(dir, { recursive: true, force: true }); throw e; }
-  let ref = (await judge.registry.scan()).find(ref => samePath(ref.dir, dir));
-  // A watcher scan started before publication may not have seen problem.toml yet.
-  if (!ref) ref = (await judge.registry.scan()).find(ref => samePath(ref.dir, dir));
-  if (!ref) throw new HttpError(409, 'import_changed', 'The imported problem directory changed before registration.');
-  const ctx = await judge.ctx(ref.id);
-  for (const testset of testsetsOf(ctx.config)) if (ctx.config.problem.data_only || testset.answers === 'provided') await prepareProvidedTests(ctx, testset.name);
-  return judge.registry.summary(ref);
+    let ref = (await judge.registry.scan()).find(ref => samePath(ref.dir, dir));
+    // A watcher scan started before publication may not have seen problem.toml yet.
+    if (!ref) ref = (await judge.registry.scan()).find(ref => samePath(ref.dir, dir));
+    if (!ref) throw new HttpError(409, 'import_changed', 'The imported problem directory changed before registration.');
+    const ctx = await judge.ctx(ref.id);
+    for (const testset of testsetsOf(ctx.config)) if (ctx.config.problem.data_only || testset.answers === 'provided') await prepareProvidedTests(ctx, testset.name);
+    return judge.registry.summary(ref);
+  } catch (e) {
+    await fs.rm(dir, { recursive: true, force: true });
+    await judge.registry.scan();
+    throw e;
+  }
 }

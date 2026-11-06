@@ -429,7 +429,7 @@ POST   /packages/uploads, /packages/directories   暂存本地题包；每个题
 POST   /packages/uploads/:id/inspect     以指定格式重新识别其中一个单元
 POST   /packages/validate                整批检查短名称、限制与冲突，不写入
 POST   /packages/import                  整批通过检查后导入；有问题时一道也不导入
-POST   /contest-packages/{uploads,directories,validate,import}   LemonLime 整场导入比赛与题目
+POST   /contest-packages/{uploads,directories,validate,import}   Polygon / LemonLime 整场导入比赛与题目
 POST   /problems/:id/ai/pipeline         启动 AI 造题 → jobId
 POST   /jobs/:jobId/cancel
 GET/PUT /settings, /languages, /secrets

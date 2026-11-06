@@ -952,7 +952,7 @@
     "title": "导入本地比赛包",
     "chooseFile": "选择 ZIP / CDF 文件",
     "invalidInput": "请选择 ZIP 或 CDF 文件。",
-    "empty": "选择 LemonLime 比赛的 ZIP、CDF 或已解压的文件夹，比赛与其题目一起导入。",
+    "empty": "选择 Polygon 或 LemonLime 比赛的 ZIP、CDF 或已解压文件夹，整场比赛与题目一起导入。",
     "contest": "包中的比赛",
     "contestFolder": "比赛文件夹",
     "problemRoot": "题目根目录",

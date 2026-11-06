@@ -54,6 +54,18 @@ try {
   const lemon = await finish(await json('POST', `/contests/${contest.id}/batch`, { action: 'export', exportFormat: 'lemonlime' }));
   const packed = readZip(Buffer.from(await (await api('GET', `/contests/${contest.id}/export/${lemon.file}`)).arrayBuffer()));
   const task = JSON.parse(packed.get('smoke-round.cdf')!.toString()).tasks[0]; assert.equal(task.comparisonMode, 3); assert.equal(task.realPrecision, 18);
+  const polygon = new ZipWriter();
+  polygon.add('contest.xml', '<contest><names><name language="english" value="Polygon smoke"/></names><problems><problem index="C" path="one"/><problem index="A" path="two"/></problems></contest>');
+  for (const name of ['one', 'two']) {
+    polygon.add(`${name}/problem.xml`, `<problem short-name="Poly_${name}"><names><name language="english" value="${name}"/></names><judging input-file="" output-file=""><testset name="tests"><time-limit>1000</time-limit><memory-limit>268435456</memory-limit><test-count>1</test-count><input-path-pattern>tests/%02d</input-path-pattern><answer-path-pattern>tests/%02d.a</answer-path-pattern><tests><test method="manual" points="100"/></tests></testset></judging></problem>`);
+    polygon.add(`${name}/tests/01`, '1\n'); polygon.add(`${name}/tests/01.a`, '2\r\n');
+  }
+  const stagedPolygon = await json('POST', '/contest-packages/uploads', polygon.finish()), polyCandidate = stagedPolygon.contests[0];
+  assert.equal(polyCandidate.format, 'polygon-package');
+  const polyImported = await json('POST', '/contest-packages/import', { uploadId: stagedPolygon.id, entry: polyCandidate.entry, format: polyCandidate.format, name: 'polygon-smoke', title: { en: 'Polygon smoke' },
+    tasks: polyCandidate.tasks.map((item: { key: string; name: string; title: string }) => ({ key: item.key, name: item.name, title: item.title, include: true })) });
+  assert.deepEqual(polyImported.contest.problems.map((item: { index: string }) => item.index), ['C', 'A']);
+  assert.equal((await json('GET', `/problems/${polyImported.problems[0].id}`)).config.problem.source_name, 'Poly_one');
   const fps = await finish(await json('POST', `/problems/${p.id}/export`, { format: 'fps' }));
   assert.match(await (await api('GET', `/problems/${p.id}/export/${fps.file}`)).text(), /<fps version=/);
   await json('PUT', `/problems/${p.id}/files/solutions/std.cpp`, { content: '#include <iostream>\nint main(){int n;std::cin>>n;std::cout<<n*3<<"\\n";}' });
@@ -61,7 +73,7 @@ try {
   assert.equal((await json('GET', `/problems/${p.id}/files/tests/manual/1.ans`)).content.trim(), '21');
   await finish(await json('POST', `/problems/${p.id}/answers/restore`, {}));
   assert.equal((await json('GET', `/problems/${p.id}/files/tests/manual/1.ans`)).content, '700\r\n');
-  console.log('PASS packaged desktop: TaskWeave UI, native judging, nested library, CDF/FPS exports and exact answer restoration');
+  console.log('PASS packaged desktop: TaskWeave UI, native judging, nested library, Polygon contest import, CDF/FPS exports and exact answer restoration');
 } finally {
   if (child.exitCode === null) {
     if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });

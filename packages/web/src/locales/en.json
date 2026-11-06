@@ -952,7 +952,7 @@
     "title": "Import local contest package",
     "chooseFile": "Choose ZIP / CDF file",
     "invalidInput": "Choose a ZIP or CDF file.",
-    "empty": "Choose a LemonLime contest ZIP, CDF or unpacked folder; the contest is imported with all its problems.",
+    "empty": "Choose a Polygon or LemonLime contest ZIP, CDF or unpacked folder; import the whole contest with its problems.",
     "contest": "Contest in package",
     "contestFolder": "Contest folder",
     "problemRoot": "Problem root",

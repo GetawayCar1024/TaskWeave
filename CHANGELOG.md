@@ -2,6 +2,14 @@
 
 每个版本的使用说明位于 [docs/releases/](docs/releases/)，详细改动位于 [docs/changes/](docs/changes/)。下载见 [GitHub Releases](https://github.com/GetawayCar1024/taskweave/releases)。
 
+## 0.4.7 — 2026-11-06
+
+- 比赛页支持导入本地 Polygon 整场比赛 ZIP 或已解压目录，也可把多个 Polygon 题目目录一次建成比赛；保留清单中的题目顺序和题号。
+- 复用现有题包转换，保留各题的源文件名、多语言标题、计分配置及原件；导入前整批验证，失败时回滚本次创建的内容。
+- 修复题目发布最后阶段失败时可能留下半成品目录的问题。原有 LemonLime 整场导入、文件夹内重名检查和执行隔离规则不变。
+
+[发布说明](docs/releases/0.4.7.md) · [改动明细](docs/changes/0.4.7.md)
+
 ## 0.4.6 — 2026-11-04
 
 - 编译和所有本地运行统一隔离：Windows AppContainer / Job Object，Linux bubblewrap / seccomp；清理子进程环境，解法与 interactor 分开目录，隔离失败不降级。

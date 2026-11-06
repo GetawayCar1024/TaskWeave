@@ -51,13 +51,17 @@ export interface PackageSelection extends PackageImportOptions { uploadId: strin
 export interface PackageBatchResult { rejected?: boolean; items: { name: string; result?: PackageImportResult; error?: string }[] }
 export interface PackageValidation { items: { error?: string }[] }
 
-/** LemonLime packages are imported as whole contests. */
+export type ContestPackageFormat = 'lemonlime' | 'polygon-package';
+/** Local contest packages are imported together with their selected problems. */
 export interface LemonTaskCandidate {
   key: string;
   title: string;
+  titles?: Record<string, string>;
   name: string;
-  /** CDF sourceFileName. */
+  /** Original source stem: CDF sourceFileName or Polygon short-name. */
   sourceName: string;
+  /** Polygon's contest index, preserved when present. */
+  index?: string;
   tests?: number;
   timeLimit?: number;
   memoryLimit?: number;
@@ -65,16 +69,19 @@ export interface LemonTaskCandidate {
   error?: string;
 }
 export interface LemonContestCandidate {
-  /** CDF path inside the upload. */
+  format?: ContestPackageFormat;
+  /** CDF / contest.xml path, or the inferred package root. */
   entry: string;
   title: string;
   name: string;
+  titles?: Record<string, string>;
   tasks: LemonTaskCandidate[];
   error?: string;
 }
 export interface ContestPackageUpload { id: string; contests: LemonContestCandidate[] }
 export interface ContestPackageTask { key: string; include: boolean; name: string; title: string }
 export interface ContestPackageImportRequest {
+  format?: ContestPackageFormat;
   uploadId: string;
   entry: string;
   name: string;

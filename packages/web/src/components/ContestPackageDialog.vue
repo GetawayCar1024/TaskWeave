@@ -10,7 +10,7 @@ import ToolWindow from './ToolWindow.vue';
 import DirPicker from './DirPicker.vue';
 import LibraryFolderSelect from './LibraryFolderSelect.vue';
 
-/** LemonLime packages are whole contests: the contest and all of its problems are imported together. */
+/** Local contest packages: the contest and all selected problems are imported together. */
 const props = defineProps<{ show: boolean; roots: string[]; folder?: string; problemRoot?: string; problemFolder?: string }>();
 const emit = defineEmits<{ 'update:show': [boolean]; imported: [ContestSummary] }>();
 const { t, locale } = useI18n(); const message = useMessage();
@@ -24,7 +24,7 @@ const rows = ref<Row[]>([]);
 const busy = ref(false), reading = ref(false), error = ref('');
 const lang = () => locale.value === 'zh-CN' ? 'zh' : 'en';
 const letter = (i: number): string => (i >= 26 ? letter(Math.floor(i / 26) - 1) : '') + String.fromCharCode(65 + i % 26);
-const letters = computed(() => new Map(rows.value.filter(row => row.include).map((row, i) => [row.key, letter(i)])));
+const letters = computed(() => new Map(rows.value.filter(row => row.include).map((row, i) => [row.key, row.candidate.index ?? letter(i)])));
 
 let staged = '';
 function discard() { if (staged) void api.discardPackage(staged).catch(() => {}); staged = ''; }
@@ -38,13 +38,15 @@ watch(() => props.show, show => {
 onBeforeUnmount(() => { version++; clearTimeout(timer); discard(); });
 watch(contest, value => {
   if (!value) { rows.value = []; return; }
-  form.name = value.name; form.titleZh = lang() === 'zh' ? value.title : ''; form.titleEn = lang() === 'zh' ? '' : value.title;
+  form.name = value.name;
+  form.titleZh = value.titles?.zh ?? (lang() === 'zh' ? value.title : '');
+  form.titleEn = value.titles?.en ?? (lang() === 'zh' ? '' : value.title);
   const names = new Set<string>();
   rows.value = value.tasks.map(task => {
     let name = task.name;
     for (let n = 2; names.has(name); n++) name = `${task.name.slice(0, 56)}-${n}`;
     names.add(name);
-    return { key: task.key, candidate: task, include: !task.error, name, title: task.title };
+    return { key: task.key, candidate: task, include: !task.error, name, title: task.titles?.[lang()] || task.title };
   });
 });
 async function stage(file: File | null, path = '') {
@@ -68,7 +70,7 @@ function selectFile(event: Event) {
 function selectDirectory(path: string) { directory.value = path; void stage(null, path); }
 
 const request = computed<ContestPackageImportRequest | null>(() => upload.value && contest.value && !contest.value.error ? {
-  uploadId: upload.value.id, entry: contest.value.entry, name: form.name.trim(), title: { zh: form.titleZh.trim(), en: form.titleEn.trim() }, folder: form.folder,
+  uploadId: upload.value.id, entry: contest.value.entry, format: contest.value.format, name: form.name.trim(), title: { zh: form.titleZh.trim(), en: form.titleEn.trim() }, folder: form.folder,
   root: form.root || undefined, problemFolder: form.problemFolder, lang: lang(), tasks: rows.value.map(row => ({ key: row.key, include: row.include, name: row.name.trim(), title: row.title.trim() })),
 } : null);
 const signature = computed(() => JSON.stringify(request.value));
@@ -120,7 +122,7 @@ async function submit() {
     <p v-if="!upload" class="pf-hint">{{ reading ? t('packages.reading') : t('contestImport.empty') }}</p>
     <template v-else>
       <n-form label-placement="left" :label-width="width" :show-feedback="false" class="contest-form" @submit.prevent="submit">
-        <n-form-item :label="t('packages.format')"><span>{{ t('packages.lemonlime') }}</span></n-form-item>
+        <n-form-item :label="t('packages.format')"><span>{{ t(`packages.${contest?.format ?? 'lemonlime'}`) }}</span></n-form-item>
         <n-form-item v-if="upload.contests.length > 1" :label="t('contestImport.contest')">
           <n-select v-model:value="entry" :disabled="busy" :options="upload.contests.map(item => ({ value: item.entry, label: `${item.title} — ${item.entry}` }))" />
         </n-form-item>
